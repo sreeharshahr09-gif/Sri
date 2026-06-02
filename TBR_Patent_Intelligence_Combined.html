@@ -1,0 +1,1700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TBR Tire Patent Intelligence — Rolling Resistance & Mileage</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<style>
+:root{
+  --navy:#0f2b4a;--blue:#1a4a7a;--accent:#e8641a;--accent2:#2a9d8f;
+  --accent3:#e9c46a;--light:#f4f6f9;--mid:#dce4ef;--text:#1c2b3a;
+  --muted:#6b7f96;--white:#fff;--red:#c0392b;--green:#27ae60;--purple:#8e44ad;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',Arial,sans-serif;background:var(--light);color:var(--text);font-size:14px;}
+
+/* ── Cover ── */
+.cover{background:linear-gradient(135deg,var(--navy) 0%,var(--blue) 55%,#264e7a 100%);color:white;padding:68px 60px 52px;position:relative;overflow:hidden;}
+.cover::before{content:'';position:absolute;right:-80px;top:-80px;width:420px;height:420px;border-radius:50%;background:rgba(232,100,26,.14);}
+.cover::after{content:'';position:absolute;right:100px;bottom:-60px;width:200px;height:200px;border-radius:50%;background:rgba(42,157,143,.12);}
+.cover-tag{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--accent);margin-bottom:14px;}
+.cover h1{font-size:2.2em;font-weight:700;line-height:1.2;max-width:680px;margin-bottom:10px;}
+.cover h1 span{color:var(--accent);}
+.cover-sub{font-size:13px;color:rgba(255,255,255,.72);max-width:600px;line-height:1.65;margin-bottom:26px;}
+.cover-meta{display:flex;gap:32px;flex-wrap:wrap;}
+.cover-meta .lbl{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:3px;}
+.cover-meta .val{font-size:13px;font-weight:600;}
+
+/* ── Top-level nav ── */
+.nav{background:var(--navy);position:sticky;top:0;z-index:200;}
+.nav-inner{max-width:1260px;margin:0 auto;padding:0 28px;display:flex;overflow-x:auto;}
+.nav a{color:rgba(255,255,255,.6);text-decoration:none;font-size:11.5px;font-weight:600;letter-spacing:.4px;padding:13px 16px;display:block;transition:all .2s;white-space:nowrap;border-bottom:2px solid transparent;}
+.nav a:hover{color:white;background:rgba(255,255,255,.07);}
+.nav a.active{color:var(--accent);border-bottom-color:var(--accent);}
+
+/* ── Page layout ── */
+.container{max-width:1260px;margin:0 auto;padding:32px 28px;}
+
+/* ── Section headers ── */
+.section{margin:40px 0 24px;}
+.section-label{font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--accent);margin-bottom:4px;}
+.section h2{font-size:1.5em;font-weight:700;color:var(--navy);margin-bottom:6px;}
+.section p{color:var(--muted);font-size:13px;line-height:1.7;max-width:860px;}
+
+/* ── KPI row ── */
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:22px 0;}
+.kpi{background:white;border-radius:10px;padding:18px 20px;border-top:4px solid var(--accent);box-shadow:0 2px 8px rgba(0,0,0,.06);}
+.kpi.b{border-top-color:var(--blue);} .kpi.g{border-top-color:var(--accent2);} .kpi.y{border-top-color:var(--accent3);}
+.kpi .num{font-size:2em;font-weight:800;color:var(--navy);line-height:1;}
+.kpi .lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-top:5px;}
+.kpi .delta{font-size:11px;margin-top:6px;font-weight:600;color:var(--green);}
+
+/* ── Tab rows ── */
+.tab-row{display:flex;border-bottom:2px solid var(--mid);margin-bottom:18px;flex-wrap:wrap;}
+.tb{padding:9px 18px;font-size:11.5px;font-weight:700;cursor:pointer;border:none;background:none;color:var(--muted);letter-spacing:.4px;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s;}
+.tb:hover{color:var(--navy);}
+.tb.active{color:var(--navy);border-bottom-color:var(--accent);}
+.tab-pane{display:none;} .tab-pane.active{display:block;}
+
+/* ── Chart grid ── */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0;}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin:16px 0;}
+.g1{margin:16px 0;}
+.cbox{background:white;border-radius:10px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.06);}
+.cbox.wide{grid-column:1/-1;}
+.ct{font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:2px;}
+.cs{font-size:11px;color:var(--muted);margin-bottom:12px;}
+.cw{position:relative;}
+.h200{height:200px;} .h260{height:260px;} .h300{height:300px;} .h340{height:340px;} .h380{height:380px;}
+
+/* ── Keyword tags ── */
+.kw-section{background:white;border-radius:10px;padding:20px 22px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin:16px 0;}
+.kw-section h4{font-size:13px;font-weight:700;color:var(--navy);margin-bottom:14px;}
+.kw-cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.kw-group-title{font-size:9.5px;letter-spacing:2px;text-transform:uppercase;font-weight:700;margin-bottom:7px;}
+.kw-group-title.rr{color:var(--accent);}
+.kw-group-title.mil{color:var(--blue);}
+.tags{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px;}
+.tag{font-size:10.5px;padding:2px 8px;border-radius:10px;font-weight:500;}
+.tag.direct{background:#fff0e8;color:#b84e0a;border:1px solid #f0b48a;}
+.tag.physics{background:#eef4fb;color:var(--blue);border:1px solid #bfd0e8;}
+.tag.commercial{background:#edfaf8;color:#1a7a6e;border:1px solid #9fd5cf;}
+.tag.sustain{background:#f0eef9;color:var(--purple);border:1px solid #c5bae8;}
+.tag.fleet{background:#fef9ee;color:#a06c00;border:1px solid #f0d58a;}
+.tag.new{background:#e8f5e9;color:#1b5e20;border:1px solid #a5d6a7;}
+
+/* ── Insight cards ── */
+.ins-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:13px;margin:16px 0;}
+.ins{border-radius:9px;padding:16px;}
+.ins.red{background:#fdf0ee;border-left:4px solid var(--red);}
+.ins.green{background:#edfaf5;border-left:4px solid var(--green);}
+.ins.orange{background:#fef7ee;border-left:4px solid var(--accent);}
+.ins.blue{background:#eef4fb;border-left:4px solid var(--blue);}
+.ins.teal{background:#edfaf8;border-left:4px solid var(--accent2);}
+.ins.purple{background:#f5f0fb;border-left:4px solid var(--purple);}
+.ins .tag-lbl{font-size:9.5px;letter-spacing:2px;font-weight:700;text-transform:uppercase;margin-bottom:4px;}
+.ins.red .tag-lbl{color:var(--red);} .ins.orange .tag-lbl{color:var(--accent);}
+.ins.blue .tag-lbl{color:var(--blue);} .ins.teal .tag-lbl{color:var(--accent2);}
+.ins.green .tag-lbl{color:var(--green);} .ins.purple .tag-lbl{color:var(--purple);}
+.ins h4{font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:4px;}
+.ins p{font-size:11.5px;color:#4a5568;line-height:1.55;}
+
+/* ── Tables ── */
+.tbl{width:100%;border-collapse:collapse;margin:10px 0;font-size:11.5px;}
+.tbl th{background:var(--navy);color:white;padding:8px 11px;font-size:10.5px;text-align:left;font-weight:600;letter-spacing:.4px;}
+.tbl td{padding:8px 11px;border-bottom:1px solid var(--mid);vertical-align:middle;}
+.tbl tr:hover td{background:#f0f4f8;}
+.mbar{display:flex;align-items:center;gap:6px;}
+.mfill{height:7px;border-radius:3px;}
+.chip{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;}
+.chip.hi{background:#fde8e8;color:var(--red);}
+.chip.med{background:#fef3e2;color:#c27803;}
+.chip.lo{background:#e8f5f0;color:var(--accent2);}
+
+/* ── Opportunity cards ── */
+.opp-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:16px 0;}
+.opp-card{background:white;border-radius:10px;padding:16px 18px;box-shadow:0 2px 8px rgba(0,0,0,.06);display:flex;gap:12px;align-items:flex-start;}
+.opp-num{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;margin-top:2px;}
+.opp-num.h{background:#fde8e8;color:var(--red);}
+.opp-num.m{background:#fef3e2;color:#c27803;}
+.opp-card h4{font-size:12px;font-weight:700;color:var(--navy);margin-bottom:3px;}
+.opp-card p{font-size:11px;color:var(--muted);line-height:1.55;}
+.badge{display:inline-block;font-size:9.5px;font-weight:700;padding:2px 6px;border-radius:4px;margin-top:6px;}
+.badge.lo{background:#fde8e8;color:var(--red);}
+.badge.med{background:#fef3e2;color:#c27803;}
+.badge.hi{background:#e8f5f0;color:var(--accent2);}
+
+/* ── Highlight box ── */
+.hl{background:linear-gradient(135deg,var(--navy),var(--blue));color:white;border-radius:11px;padding:24px 28px;margin:16px 0;}
+.hl h3{font-size:1em;margin-bottom:10px;}
+.hl ul{list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.hl li{font-size:11.5px;color:rgba(255,255,255,.85);padding-left:14px;position:relative;line-height:1.55;}
+.hl li::before{content:'→';position:absolute;left:0;color:var(--accent);}
+
+/* ── Trend indicators ── */
+.tup{color:var(--green);font-weight:700;}
+.tdn{color:var(--red);font-weight:700;}
+.tfl{color:var(--muted);font-weight:700;}
+
+/* ── Roadmap ── */
+.roadmap{background:var(--navy);color:white;border-radius:11px;padding:24px 28px;margin:16px 0;display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;}
+.rm-phase{font-size:9.5px;letter-spacing:2px;text-transform:uppercase;margin-bottom:9px;}
+.roadmap-col:nth-child(1) .rm-phase{color:var(--accent);}
+.roadmap-col:nth-child(2) .rm-phase{color:var(--accent2);}
+.roadmap-col:nth-child(3) .rm-phase{color:var(--accent3);}
+.roadmap-col li{font-size:11.5px;color:rgba(255,255,255,.82);line-height:1.65;list-style:none;padding-left:13px;position:relative;}
+.roadmap-col li::before{content:'→';position:absolute;left:0;color:inherit;}
+
+/* ── Footer ── */
+.footer{background:var(--navy);color:rgba(255,255,255,.4);padding:18px 28px;font-size:10.5px;margin-top:48px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;}
+
+@media(max-width:900px){
+  .kpi-row,.g2,.g3,.ins-row,.opp-grid,.kw-cols,.hl ul,.roadmap{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+
+<!-- COVER -->
+<div class="cover">
+  <div class="cover-tag">R&D Patent Intelligence · Confidential</div>
+  <h1>Rolling Resistance & <span>Mileage</span><br>Patent Landscape — TBR Tires</h1>
+  <div class="cover-sub">
+    Comprehensive analysis of 14,063 TBR tire patents (2015–2024) with an exhaustive synonym-based keyword framework covering direct terms, physics measurements, commercial outcomes, fleet language, and sustainability vocabulary across rolling resistance and tread mileage.
+  </div>
+  <div class="cover-meta">
+    <div><div class="lbl">Prepared By</div><div class="val">Sreeharsha HR</div></div>
+    <div><div class="lbl">Date</div><div class="val">June 2026</div></div>
+    <div><div class="lbl">Dataset</div><div class="val">14,063 TBR Patents</div></div>
+    <div><div class="lbl">Period</div><div class="val">2015–2024</div></div>
+    <div><div class="lbl">Classification</div><div class="val">Internal Use Only</div></div>
+  </div>
+</div>
+
+<!-- TOP NAV -->
+<div class="nav">
+  <div class="nav-inner">
+    <a href="#overview" class="active" data-sec="overview">Overview</a>
+    <a href="#rr" data-sec="rr">Rolling Resistance</a>
+    <a href="#mileage" data-sec="mileage">Mileage &amp; Wear</a>
+    <a href="#technology" data-sec="technology">Technology Themes</a>
+    <a href="#competitors" data-sec="competitors">Competitors</a>
+    <a href="#whitespace" data-sec="whitespace">White Spaces</a>
+    <a href="#deepdive" data-sec="deepdive">Deep Dive: RR+Mileage</a>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- ════════════════════════════════════════════ OVERVIEW ════════ -->
+<div id="overview">
+<div class="section">
+  <div class="section-label">Section 01</div>
+  <h2>Overview & Keyword Framework</h2>
+  <p>An exhaustive keyword taxonomy — spanning physics terms, commercial language, fleet vocabulary, and sustainability framing — was applied to ensure no relevant patent is missed. Inventors frequently avoid direct terms like "rolling resistance" or "mileage", instead describing the same objective through measurement outcomes, regulatory compliance, or fleet economics.</p>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi">
+    <div class="num">1,150</div>
+    <div class="lbl">Rolling Resistance Patents</div>
+    <div class="delta">10.9% of all TBR filings · 850 still ALIVE</div>
+  </div>
+  <div class="kpi b">
+    <div class="num">1,760</div>
+    <div class="lbl">Mileage / Wear Patents</div>
+    <div class="delta">16.7% of all TBR filings · 1,327 still ALIVE</div>
+  </div>
+  <div class="kpi g">
+    <div class="num">499</div>
+    <div class="lbl">Both RR + Mileage</div>
+    <div class="delta">Hardest problem · 385 still ALIVE (77%)</div>
+  </div>
+  <div class="kpi y">
+    <div class="num">2,411</div>
+    <div class="lbl">RR or Mileage (Combined)</div>
+    <div class="delta">30.8% of all TBR patent activity</div>
+  </div>
+</div>
+
+<!-- Overview trend chart -->
+<div class="g1">
+  <div class="cbox">
+    <div class="ct">Annual Patent Filing Volume — RR, Mileage & Both (2015–2024)</div>
+    <div class="cs">Stacked bars show RR + Mileage + Dual patents each year. 2019 and 2023 are the two defining peaks.</div>
+    <div class="cw h340"><canvas id="mainChart"></canvas></div>
+  </div>
+</div>
+
+<div class="g2">
+  <div class="cbox">
+    <div class="ct">RR & Mileage as % of All TBR Filings Per Year</div>
+    <div class="cs">Combined these two themes represent 27–34% of all TBR activity each year</div>
+    <div class="cw h260"><canvas id="shareChart"></canvas></div>
+  </div>
+  <div class="cbox">
+    <div class="ct">Geographic Distribution of RR Patents</div>
+    <div class="cs">Country-level split for rolling resistance (2015–2024 cumulative)</div>
+    <div class="cw h260"><canvas id="geoRRChart"></canvas></div>
+  </div>
+</div>
+
+<!-- KEYWORD FRAMEWORK -->
+<div class="kw-section">
+  <h4>Keyword Framework Applied — Rolling Resistance</h4>
+  <div class="kw-cols">
+    <div>
+      <div class="kw-group-title rr">Direct Terms</div>
+      <div class="tags">
+        <span class="tag direct">rolling resistance</span><span class="tag direct">rolling loss</span><span class="tag direct">rolling drag</span><span class="tag direct">rolling friction</span><span class="tag direct">running resistance</span><span class="tag direct">rolling energy loss</span>
+      </div>
+      <div class="kw-group-title rr">Energy & Efficiency</div>
+      <div class="tags">
+        <span class="tag commercial">fuel efficiency</span><span class="tag commercial">fuel economy</span><span class="tag commercial">fuel consumption</span><span class="tag commercial">fuel saving</span><span class="tag commercial">energy saving</span><span class="tag commercial">energy efficiency</span><span class="tag commercial">reduced energy consumption</span><span class="tag commercial">driving range</span><span class="tag commercial">EV range</span><span class="tag commercial">battery range</span>
+      </div>
+      <div class="kw-group-title rr">Sustainability</div>
+      <div class="tags">
+        <span class="tag sustain">CO2 emission</span><span class="tag sustain">carbon emission</span><span class="tag sustain">green tire</span><span class="tag sustain">eco tire</span><span class="tag sustain">low-carbon</span><span class="tag sustain">sustainable mobility</span>
+      </div>
+    </div>
+    <div>
+      <div class="kw-group-title rr">Physics & Material Terms</div>
+      <div class="tags">
+        <span class="tag physics">hysteresis</span><span class="tag physics">low hysteresis</span><span class="tag physics">hysteresis loss</span><span class="tag physics">heat build-up</span><span class="tag physics">heat generation</span><span class="tag physics">low heat</span><span class="tag physics">tan delta</span><span class="tag physics">loss tangent</span><span class="tag physics">rebound resilience</span><span class="tag physics">viscoelastic loss</span><span class="tag physics">storage modulus</span><span class="tag physics">damping</span><span class="tag physics">internal friction</span>
+      </div>
+      <div class="kw-group-title rr">Patent Phrases</div>
+      <div class="tags">
+        <span class="tag direct">energy-saving tire</span><span class="tag direct">fuel-saving tire</span><span class="tag direct">low-loss rubber</span><span class="tag direct">low hysteresis rubber</span><span class="tag direct">energy-efficient tread</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="kw-section">
+  <h4>Keyword Framework Applied — Mileage / Tread Wear</h4>
+  <div class="kw-cols">
+    <div>
+      <div class="kw-group-title mil">Direct Terms</div>
+      <div class="tags">
+        <span class="tag direct">mileage</span><span class="tag direct">tire life</span><span class="tag direct">tyre life</span><span class="tag direct">service life</span><span class="tag direct">operating life</span><span class="tag direct">lifespan</span><span class="tag direct">durability</span><span class="tag direct">longevity</span>
+      </div>
+      <div class="kw-group-title mil">Wear / Abrasion</div>
+      <div class="tags">
+        <span class="tag physics">wear resistance</span><span class="tag physics">abrasion resistance</span><span class="tag physics">tread wear</span><span class="tag physics">tread life</span><span class="tag physics">abrasion</span><span class="tag physics">wear rate</span><span class="tag physics">wear performance</span><span class="tag physics">wear durability</span><span class="tag physics">improved wear</span><span class="tag physics">superior wear</span><span class="tag physics">material loss</span><span class="tag physics">wear particle</span><span class="tag physics">wear debris</span>
+      </div>
+      <div class="kw-group-title mil">Material / Failure Mode</div>
+      <div class="tags">
+        <span class="tag physics">cut resistance</span><span class="tag physics">chip resistance</span><span class="tag physics">chunk resistance</span><span class="tag physics">tread retention</span><span class="tag physics">tread durability</span><span class="tag physics">abrasion performance</span>
+      </div>
+    </div>
+    <div>
+      <div class="kw-group-title mil">Commercial / Customer Terms</div>
+      <div class="tags">
+        <span class="tag commercial">long mileage</span><span class="tag commercial">extended mileage</span><span class="tag commercial">long service</span><span class="tag commercial">extended service</span><span class="tag commercial">long-lasting</span><span class="tag commercial">long lasting</span><span class="tag commercial">extended tire life</span><span class="tag commercial">long service performance</span><span class="tag commercial">enhanced durability</span>
+      </div>
+      <div class="kw-group-title mil">TBR / Fleet Specific</div>
+      <div class="tags">
+        <span class="tag fleet">retread</span><span class="tag fleet">retreadability</span><span class="tag fleet">casing durability</span><span class="tag fleet">belt durability</span><span class="tag fleet">long-haul</span><span class="tag fleet">fleet efficiency</span><span class="tag fleet">cost per kilometer</span><span class="tag fleet">cost per mile</span><span class="tag fleet">lifecycle cost</span><span class="tag fleet">tire replacement interval</span>
+      </div>
+      <div class="kw-group-title mil">Patent Phrases</div>
+      <div class="tags">
+        <span class="tag direct">high wear resistance</span><span class="tag direct">excellent abrasion</span><span class="tag direct">improved tread</span><span class="tag direct">long-lasting tread</span>
+      </div>
+    </div>
+  </div>
+  <div style="font-size:10.5px;color:var(--muted);margin-top:10px;display:flex;gap:14px;flex-wrap:wrap;">
+    <span><span class="tag direct" style="margin-right:4px;">Orange</span>Direct terms</span>
+    <span><span class="tag physics" style="margin-right:4px;">Blue</span>Physics / material terms</span>
+    <span><span class="tag commercial" style="margin-right:4px;">Teal</span>Commercial / customer terms</span>
+    <span><span class="tag fleet" style="margin-right:4px;">Amber</span>Fleet / TBR-specific</span>
+    <span><span class="tag sustain" style="margin-right:4px;">Purple</span>Sustainability</span>
+  </div>
+</div>
+
+<div class="hl">
+  <h3>What the Comprehensive Keywords Revealed</h3>
+  <ul>
+    <li>Loss tangent / tan delta: +61 RR patents — standard lab term used instead of "rolling resistance"</li>
+    <li>Fuel consumption: +83 RR patents — China's dominant vocabulary for the same objective</li>
+    <li>Heat build-up (hyphenated): +31 RR patents — spelling variants matter at dataset scale</li>
+    <li>Abrasion (standalone): +98 mileage patents — core rubber science term used without "resistance"</li>
+    <li>Retread / retreadability: 88 patents entirely missed by narrow keywords</li>
+    <li>Yokohama undercounted by ~30% in narrow search — they use loss tangent + heat build-up language</li>
+    <li>Chinese OEMs use "fuel consumption" not "rolling resistance" — same innovation, different vocabulary</li>
+    <li>Dual RR+Mileage patents: 357 → 499 (+40%) — the hardest problem is more active than narrow search showed</li>
+  </ul>
+</div>
+</div>
+
+<!-- ════════════════════════════════════ ROLLING RESISTANCE ════════ -->
+<div id="rr">
+<div class="section">
+  <div class="section-label">Section 02</div>
+  <h2>Rolling Resistance — Deep Dive</h2>
+  <p>1,150 patents over 2015–2024 address rolling resistance. The technical framing has shifted: from chemistry-first (silica + silane) toward a thermal systems approach where compound, construction, and geometry are treated together. Heat/hysteresis language now accounts for more patents than direct RR terminology — reflecting how compound scientists frame the problem at the lab level.</p>
+</div>
+
+<div class="tab-row" id="rr-tabs">
+  <button class="tb active" onclick="switchTab('rr','trend',this)">Filing Trend</button>
+  <button class="tb" onclick="switchTab('rr','sub',this)">Technology Sub-themes</button>
+  <button class="tb" onclick="switchTab('rr','geo',this)">Geography</button>
+</div>
+
+<!-- RR: TREND -->
+<div class="tab-pane active" id="rr-trend">
+  <div class="g1">
+    <div class="cbox">
+      <div class="ct">RR Patent Keyword Group Trends (2015–2024)</div>
+      <div class="cs">Heat/Hysteresis language and Fuel Consumption now together represent more filings than direct "rolling resistance" terminology. Belt/cord enters RR framing from 2019 onward.</div>
+      <div class="cw h340"><canvas id="rrGroupTrend"></canvas></div>
+    </div>
+  </div>
+  <div class="ins-row">
+    <div class="ins orange">
+      <div class="tag-lbl">Key Finding</div>
+      <h4>Heat / Hysteresis Language Overtakes Direct RR</h4>
+      <p>Patents using loss tangent, tan delta, and heat build-up grew from 32 (2015) to 66 (2023). Japanese and Korean OEMs write compound-science patents — they describe the same RR objective through measurement terms, not application terms.</p>
+    </div>
+    <div class="ins blue">
+      <div class="tag-lbl">Key Finding</div>
+      <h4>Fuel Consumption — China's Dominant Vocabulary</h4>
+      <p>"Fuel consumption reduction" is the primary RR framing for Chinese filers. At 17 (2015) → 51 (2018) → 42 (2024), this group captures a fleet-commercial perspective entirely missed by narrow RR keyword searches.</p>
+    </div>
+    <div class="ins teal">
+      <div class="tag-lbl">Emerging Signal</div>
+      <h4>Belt/Cord Entering the RR Patent Space</h4>
+      <p>Belt and cord structure mentions within RR patents grew from 8 (2015) to 29 (2023) and 27 (2024). Engineers increasingly treat construction — not just rubber chemistry — as an RR lever. A newer framing with room to grow.</p>
+    </div>
+  </div>
+</div>
+
+<!-- RR: SUB-THEMES -->
+<div class="tab-pane" id="rr-sub">
+  <div class="g2">
+    <div class="cbox">
+      <div class="ct">Technology Sub-themes — RR Patents (n=1,150)</div>
+      <div class="cs">Heat/Hysteresis is now the #1 theme. Fuel Consumption nearly equal. Both exceed direct silica and carbon black counts.</div>
+      <div class="cw h340"><canvas id="rrSubChart"></canvas></div>
+    </div>
+    <div class="cbox">
+      <div class="ct">Early Period (2015–18) vs. Recent (2021–24) — Avg/Year</div>
+      <div class="cs">Shift in how inventors describe RR over the decade: heat management rising, functionalized polymers declining toward trade secret</div>
+      <div class="cw h340"><canvas id="rrShiftChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- RR: GEO -->
+<div class="tab-pane" id="rr-geo">
+  <div class="g2">
+    <div class="cbox wide">
+      <div class="ct">Rolling Resistance Patents by Country Over Time</div>
+      <div class="cs">China crossed Japan in 2019 and widened the gap to 2023. Germany (Continental) re-engaging from 2023. Korea growing steadily.</div>
+      <div class="cw h300"><canvas id="rrGeoTrend"></canvas></div>
+    </div>
+  </div>
+  <div class="ins-row">
+    <div class="ins orange">
+      <div class="tag-lbl">China Signal</div>
+      <h4>Volume + Vocabulary Shift</h4>
+      <p>Chinese RR filings tripled from 12/yr (2015) to 60/yr (2023). Vocabulary also shifted — from tread pattern geometry to rubber compound formulation — signalling a technical capability upgrade.</p>
+    </div>
+    <div class="ins blue">
+      <div class="tag-lbl">Japan Signal</div>
+      <h4>Volume Declining, Quality Held</h4>
+      <p>Japanese RR filings fell from 53 (2015) to 32 (2024). Major OEMs appear to be shifting core compound innovations to trade secrets. Physics-term vocabulary (loss tangent, tan delta) remains their signature.</p>
+    </div>
+    <div class="ins teal">
+      <div class="tag-lbl">Germany Signal</div>
+      <h4>Continental Re-engaging on RR</h4>
+      <p>Continental filed 12 German RR patents in 2024 — its highest ever single year. Including a unique patent combining RR optimisation with EV electrical conductivity — the only patent of its kind in the dataset.</p>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ════════════════════════════════════ MILEAGE ════════ -->
+<div id="mileage">
+<div class="section">
+  <div class="section-label">Section 03</div>
+  <h2>Mileage & Tread Wear — Deep Dive</h2>
+  <p>With 1,760 patents, mileage/wear is 53% larger than the RR pool. The approaches are structurally different: mileage is dominated by belt/cord construction and abrasion compound science, while heat management — despite being a primary driver of rubber degradation — remains underrepresented. Two equal peaks in 2019 and 2023 reflect separate drivers: fuel economy regulation and EU tire labelling pressure respectively.</p>
+</div>
+
+<div class="tab-row" id="mileage-tabs">
+  <button class="tb active" onclick="switchTab('mileage','trend',this)">Filing Trend</button>
+  <button class="tb" onclick="switchTab('mileage','sub',this)">Technology Sub-themes</button>
+  <button class="tb" onclick="switchTab('mileage','geo',this)">Geography</button>
+</div>
+
+<!-- MILEAGE: TREND -->
+<div class="tab-pane active" id="mileage-trend">
+  <div class="g1">
+    <div class="cbox">
+      <div class="ct">Mileage Patent Keyword Group Trends (2015–2024)</div>
+      <div class="cs">Direct wear/abrasion terms and durability/life terms move in parallel. Tread pattern/depth is the fastest growing group 2020–2024. Retread is small but steadily growing.</div>
+      <div class="cw h300"><canvas id="milGroupTrend"></canvas></div>
+    </div>
+  </div>
+  <div class="ins-row">
+    <div class="ins orange">
+      <div class="tag-lbl">New Finding</div>
+      <h4>Retread: 88 Patents, Largely Ignored by Major OEMs</h4>
+      <p>Yokohama (10) and Continental (9) lead retread patent activity. Sumitomo, Michelin, and Goodyear are near-absent despite retread being a primary TBR fleet value lever — extending tire life by 40–50% at fraction of new tire cost.</p>
+    </div>
+    <div class="ins blue">
+      <div class="tag-lbl">Accelerating Trend</div>
+      <h4>Tread Pattern as a Wear Management Tool</h4>
+      <p>Tread pattern/depth patents for mileage grew from 4/year (2015–2018) to 16–18/year (2022–2024). Groove geometry, block stiffness, and contact pressure distribution are now being patented as wear control levers, not just design features.</p>
+    </div>
+    <div class="ins red">
+      <div class="tag-lbl">Framing Gap</div>
+      <h4>Heat Management Severely Underweighted for Mileage</h4>
+      <p>Heat management accounts for 31% of RR patents but only 9% of mileage patents. Thermal degradation of rubber is a primary driver of tread wear — yet this mechanism is rarely framed as a mileage innovation. A significant cross-domain blind spot.</p>
+    </div>
+  </div>
+</div>
+
+<!-- MILEAGE: SUB-THEMES -->
+<div class="tab-pane" id="mileage-sub">
+  <div class="g2">
+    <div class="cbox">
+      <div class="ct">Technology Sub-themes — Mileage Patents (n=1,760)</div>
+      <div class="cs">Abrasion/wear compound dominates at 48%. Belt/cord is #2. Contrast with RR (chemistry-first) is stark.</div>
+      <div class="cw h340"><canvas id="milSubChart"></canvas></div>
+    </div>
+    <div class="cbox">
+      <div class="ct">RR vs. Mileage — Technology Approach Comparison</div>
+      <div class="cs">Radar showing % of patents by theme. The divergence in heat management and belt/cord shows two fundamentally different engineering toolboxes.</div>
+      <div class="cw h340"><canvas id="radarChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- MILEAGE: GEO -->
+<div class="tab-pane" id="mileage-geo">
+  <div class="g2">
+    <div class="cbox wide">
+      <div class="ct">Mileage Patents by Country Over Time</div>
+      <div class="cs">China overtook Japan in mileage patents from 2020–2021. Japan's 2024 count collapsed (22) — likely publication lag but also reflects portfolio maturation.</div>
+      <div class="cw h300"><canvas id="milGeoTrend"></canvas></div>
+    </div>
+  </div>
+  <div class="ins-row">
+    <div class="ins red">
+      <div class="tag-lbl">China Signal</div>
+      <h4>China Now Leads Mileage Volume</h4>
+      <p>China's mileage filings grew from 28/yr (2015) to 97/yr (2023), overtaking Japan from 2020. Chinese filings have also upgraded in scope — from tread pattern geometry to rubber compound formulations.</p>
+    </div>
+    <div class="ins blue">
+      <div class="tag-lbl">Japan Signal</div>
+      <h4>Japan Retreating on Mileage Volume</h4>
+      <p>Japan peaked at 94 mileage patents (2018) and dropped to 22 in 2024. Japanese OEMs are consolidating around fewer, higher-quality compound science patents rather than broad portfolio filings.</p>
+    </div>
+    <div class="ins teal">
+      <div class="tag-lbl">Korea Signal</div>
+      <h4>Korea Closing the Gap</h4>
+      <p>Hankook and Kumho together file a growing share of mileage patents with increasingly sophisticated compound chemistry — polyisobutylene-modified compounds, loss tangent-optimised tread formulations. Korea's share is growing year-on-year.</p>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ════════════════════════════════════ TECHNOLOGY ════════ -->
+<div id="technology">
+<div class="section">
+  <div class="section-label">Section 04</div>
+  <h2>Technology Theme Analysis</h2>
+  <p>Across all RR, mileage, and dual patents, several themes are gaining momentum, some are plateauing, and a few remain early signals. The 499 dual RR+Mileage patents — those claiming both objectives simultaneously — reveal the technologies the industry believes can break the traditional trade-off. Heat/hysteresis management (33%), fuel consumption framing (36%), and silica (32%) dominate. AI/simulation appears in zero dual patents — a striking gap for a multi-objective optimisation problem.</p>
+</div>
+
+<div class="tab-row" id="technology-tabs">
+  <button class="tb active" onclick="switchTab('technology','overview',this)">Theme Overview</button>
+  <button class="tb" onclick="switchTab('technology','dual',this)">Dual RR + Mileage</button>
+  <button class="tb" onclick="switchTab('technology','status',this)">Status Table</button>
+</div>
+
+<div class="tab-pane active" id="technology-overview">
+  <div class="g2">
+    <div class="cbox">
+      <div class="ct">Technology Sub-themes — RR Patents (n=1,150)</div>
+      <div class="cs">Heat/Hysteresis overtakes Silica as #1 theme. Fuel Consumption nearly equal. AI/Sim near-zero.</div>
+      <div class="cw h300"><canvas id="rrSubChart2"></canvas></div>
+    </div>
+    <div class="cbox">
+      <div class="ct">Technology Momentum vs. Relevance Bubble Map</div>
+      <div class="cs">Bubble size = patent count · X = filing momentum · Y = relevance to both RR + Mileage</div>
+      <div class="cw h300"><canvas id="bubbleChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<div class="tab-pane" id="technology-dual">
+  <div class="g2">
+    <div class="cbox">
+      <div class="ct">Sub-themes in Dual RR + Mileage Patents (n=499)</div>
+      <div class="cs">Technologies patents claim address BOTH rolling resistance AND mileage simultaneously</div>
+      <div class="cw h300"><canvas id="bothSubChart"></canvas></div>
+    </div>
+    <div class="cbox">
+      <div class="ct">Dual RR+Mileage Patents — Annual Trend</div>
+      <div class="cs">2023 saw a resurgence spike to 86 — the highest year on record, driven by compound science patents</div>
+      <div class="cw h300"><canvas id="bothTrendChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<div class="tab-pane" id="technology-status">
+  <div class="cbox">
+    <div class="ct">Technology Status Table — Full Assessment</div>
+    <div class="cs">Trend based on 2015–18 avg vs. 2021–24 avg per theme</div>
+    <table class="tbl" style="margin-top:10px;">
+      <thead><tr><th>Technology</th><th>RR Patents</th><th>Mileage Patents</th><th>Dual</th><th>Trend</th><th>Maturity</th><th>Key Players</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Heat Mgmt / Hysteresis</strong></td><td>360 (31%)</td><td>151 (9%)</td><td>167 (33%)</td><td><span class="tup">↑↑ Fast</span></td><td>Early–mid</td><td>Yokohama, Sumitomo, Hankook</td></tr>
+        <tr><td><strong>Fuel Consumption / Economy</strong></td><td>348 (30%)</td><td>—</td><td>179 (36%)</td><td><span class="tup">↑ Growing</span></td><td>Active</td><td>Chinese OEMs, Bridgestone</td></tr>
+        <tr><td><strong>Silica Compound</strong></td><td>283 (25%)</td><td>251 (14%)</td><td>158 (32%)</td><td><span class="tup">↑ Growing</span></td><td>Maturing</td><td>Sumitomo, Goodyear, Hankook</td></tr>
+        <tr><td><strong>Carbon Black (incl. hybrid)</strong></td><td>231 (20%)</td><td>261 (15%)</td><td>143 (29%)</td><td><span class="tfl">→ Stable</span></td><td>Mature</td><td>Yokohama, Chinese OEMs</td></tr>
+        <tr><td><strong>Belt / Cord Structure</strong></td><td>171 (15%)</td><td>330 (19%)</td><td>83 (17%)</td><td><span class="tup">↑ Growing</span></td><td>Active</td><td>Bridgestone, Continental, Yokohama</td></tr>
+        <tr><td><strong>Bio-based / NR / Lignin</strong></td><td>153 (13%)</td><td>171 (10%)</td><td>92 (18%)</td><td><span class="tfl">→ Volatile</span></td><td>Early</td><td>Bridgestone, Goodyear</td></tr>
+        <tr><td><strong>Silane Coupling</strong></td><td>115 (10%)</td><td>93 (5%)</td><td>67 (13%)</td><td><span class="tfl">→ Stable</span></td><td>Mature</td><td>Sumitomo, Continental</td></tr>
+        <tr><td><strong>Green / Eco / EV Range</strong></td><td>72 (6%)</td><td>—</td><td>5 (1%)</td><td><span class="tfl">→ Niche</span></td><td>Early</td><td>Continental, Michelin</td></tr>
+        <tr><td><strong>Retread / Multi-life</strong></td><td>8 (&lt;1%)</td><td>88 (5%)</td><td>8 (2%)</td><td><span class="tup">↑ Growing</span></td><td>Very early</td><td>Yokohama, Continental, Flexsys</td></tr>
+        <tr><td><strong>Tread Pattern (RR or wear)</strong></td><td>27 (2%)</td><td>87 (5%)</td><td>12 (2%)</td><td><span class="tup">↑↑ Fast 2020+</span></td><td>Emerging</td><td>Chinese OEMs, Kumho</td></tr>
+        <tr><td><strong>Functionalized Polymers</strong></td><td>30 (3%)</td><td>14 (1%)</td><td>17 (3%)</td><td><span class="tdn">↓ Declining</span></td><td>Mature→Trade secret</td><td>Goodyear (dominant)</td></tr>
+        <tr><td><strong>Graphene / Nano</strong></td><td>18 (2%)</td><td>—</td><td>11 (2%)</td><td><span class="tdn">↓ Collapsed 2021</span></td><td>Stalled</td><td>Chinese universities</td></tr>
+        <tr><td><strong>AI / ML / Simulation</strong></td><td>2 (&lt;1%)</td><td>9 (&lt;1%)</td><td>0</td><td><span class="tup">↑↑ Accelerating</span></td><td>Very early</td><td>Continental, Toyo, Sumitomo Elec.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+</div>
+
+<!-- ════════════════════════════════════ COMPETITORS ════════ -->
+<div id="competitors">
+<div class="section">
+  <div class="section-label">Section 05</div>
+  <h2>Competitor Patent Landscape</h2>
+  <p>The competitive picture differs depending on which lens you apply. Sumitomo leads on total volume and dual optimisation. Yokohama has the highest share of RR patents relative to its portfolio. Chinese OEMs collectively challenge Japanese majors when vocabulary is captured correctly. The "Both/RR%" metric — what share of a company's RR patents also address mileage — reveals which players are tackling the harder simultaneous problem.</p>
+</div>
+
+<div class="tab-row" id="competitors-tabs">
+  <button class="tb active" onclick="switchTab('competitors','rr',this)">Rolling Resistance</button>
+  <button class="tb" onclick="switchTab('competitors','wear',this)">Mileage &amp; Wear</button>
+  <button class="tb" onclick="switchTab('competitors','combined',this)">Combined (Both)</button>
+  <button class="tb" onclick="switchTab('competitors','matrix',this)">Strategy Matrix</button>
+</div>
+
+<!-- COMP: RR -->
+<div class="tab-pane active" id="competitors-rr">
+  <div class="g2">
+    <div class="cbox">
+      <div class="ct">Top Companies — Rolling Resistance Patents</div>
+      <div class="cs">Sumitomo leads. Yokohama's corrected count closes gap with Bridgestone significantly.</div>
+      <div class="cw h300"><canvas id="compRRChart"></canvas></div>
+    </div>
+    <div class="cbox">
+      <div class="ct">China vs. Japan — RR Patent Race</div>
+      <div class="cs">China crossed Japan in 2019 and has maintained its lead. Germany accelerating from 2023.</div>
+      <div class="cw h300"><canvas id="cnJpRR"></canvas></div>
+    </div>
+  </div>
+  <div class="ins-row">
+    <div class="ins orange">
+      <div class="tag-lbl">Sumitomo</div>
+      <h4>350 RR Patents — Broadest Portfolio</h4>
+      <p>Sumitomo leads on volume with consistent filing across all RR sub-themes: silica, heat build-up, fuel saving, and belt structure. Their vocabulary spans physics and commercial terms, indicating a broad patent strategy.</p>
+    </div>
+    <div class="ins blue">
+      <div class="tag-lbl">Yokohama</div>
+      <h4>106 RR Patents — Highest RR Focus Share</h4>
+      <p>Yokohama has the highest explicit RR focus relative to portfolio size. They specialise in loss tangent and heat build-up language — a physics-first strategy that was undercounted in narrow searches.</p>
+    </div>
+    <div class="ins teal">
+      <div class="tag-lbl">Continental</div>
+      <h4>30 RR Patents — Highest Quality, Lowest Volume</h4>
+      <p>Continental files selectively but with differentiated claims: the only EV-specific RR + conductivity patent (2024), sustainability-framed RR, and storage modulus-based compound claims. Quality over quantity strategy.</p>
+    </div>
+  </div>
+</div>
+
+<!-- COMP: WEAR -->
+<div class="tab-pane" id="competitors-wear">
+  <div class="g2">
+    <div class="cbox">
+      <div class="ct">Top Companies — Mileage / Wear Patents</div>
+      <div class="cs">Sumitomo and Yokohama dominate. Chinese OEMs (Doublestar, Linglong, Giti) growing fast in mileage.</div>
+      <div class="cw h300"><canvas id="compMilChart"></canvas></div>
+    </div>
+    <div class="cbox">
+      <div class="ct">China vs. Japan — Mileage Patent Race</div>
+      <div class="cs">China overtook Japan in mileage patents from 2021. Japan's 2024 count dropped sharply.</div>
+      <div class="cw h300"><canvas id="cnJpMil"></canvas></div>
+    </div>
+  </div>
+  <div class="ins-row">
+    <div class="ins orange">
+      <div class="tag-lbl">Sumitomo</div>
+      <h4>467 Mileage Patents — Unmatched Volume</h4>
+      <p>Sumitomo's mileage portfolio covers tread wear compounds, belt structure, sidewall durability, and inner liner. They file across all categories rather than specialising, creating a broad defensive position.</p>
+    </div>
+    <div class="ins blue">
+      <div class="tag-lbl">Chinese OEMs</div>
+      <h4>~230 Combined — Accelerating Fast</h4>
+      <p>Doublestar, Linglong, Giti, and Zhongce together have surpassed Bridgestone in mileage patent volume. They are upgrading from tread pattern geometry (pre-2020) to rubber compound formulations — a significant capability shift.</p>
+    </div>
+    <div class="ins teal">
+      <div class="tag-lbl">Retread Specialists</div>
+      <h4>Yokohama &amp; Continental Lead Retread IP</h4>
+      <p>In the specific retread/multi-life category, Yokohama (10) and Continental (9) lead, followed by specialty firms Flexsys America (6) and Bridgestone Bandag (4). Major OEMs like Sumitomo are near-absent here.</p>
+    </div>
+  </div>
+</div>
+
+<!-- COMP: COMBINED -->
+<div class="tab-pane" id="competitors-combined">
+  <div class="g2">
+    <div class="cbox">
+      <div class="ct">Patents Addressing BOTH RR + Mileage Simultaneously</div>
+      <div class="cs">The dual optimisation problem. Sumitomo holds 35% of all such patents. Yokohama is #2 with a corrected count significantly higher than v1.</div>
+      <div class="cw h300"><canvas id="compBothChart"></canvas></div>
+    </div>
+    <div class="cbox">
+      <div class="ct">RR Portfolio vs. Mileage Portfolio — Scatter</div>
+      <div class="cs">Each bubble = a company. Position shows balance between RR and mileage focus. Size = dual (Both) patents.</div>
+      <div class="cw h300"><canvas id="scatterChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- COMP: MATRIX -->
+<div class="tab-pane" id="competitors-matrix">
+  <div class="cbox">
+    <div class="ct">Competitor Strategy Matrix — Full Overview</div>
+    <div class="cs">RR and Mileage patent counts with vocabulary strategy and Both/RR% (share of RR patents that also address mileage)</div>
+    <table class="tbl" style="margin-top:10px;">
+      <thead><tr><th>Company</th><th>RR</th><th>Mileage</th><th>Both</th><th>Both/RR%</th><th>RR Vocabulary</th><th>Strategic Focus</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Sumitomo Rubber</strong> <small style="color:var(--muted)">JP</small></td><td><div class="mbar"><div class="mfill" style="width:90px;background:var(--accent)"></div>350</div></td><td>467</td><td><strong>174</strong></td><td><span class="chip hi">50%</span></td><td>Loss tangent, silica, heat build-up</td><td>Broadest portfolio; dominant in dual optimisation</td></tr>
+        <tr><td><strong>Yokohama Rubber</strong> <small style="color:var(--muted)">JP</small></td><td><div class="mbar"><div class="mfill" style="width:55px;background:var(--blue)"></div>106</div></td><td>188</td><td>52</td><td><span class="chip hi">49%</span></td><td>Loss tangent, heat build-up, tan delta</td><td>Physics-first; undercounted in narrow searches</td></tr>
+        <tr><td><strong>Bridgestone</strong> <small style="color:var(--muted)">JP</small></td><td><div class="mbar"><div class="mfill" style="width:44px;background:var(--blue)"></div>85</div></td><td>168</td><td>35</td><td><span class="chip hi">41%</span></td><td>Fuel economy, natural rubber, rebound</td><td>Bio-material + fuel economy framing</td></tr>
+        <tr><td><strong>Toyo Tire</strong> <small style="color:var(--muted)">JP</small></td><td><div class="mbar"><div class="mfill" style="width:33px;background:var(--blue)"></div>64</div></td><td>76</td><td>11</td><td><span class="chip med">17%</span></td><td>Loss tangent, fuel economy, heat generation</td><td>Less dual focus; first ML tire model patent (2020)</td></tr>
+        <tr><td><strong>Michelin</strong> <small style="color:var(--muted)">FR</small></td><td><div class="mbar"><div class="mfill" style="width:25px;background:var(--accent2)"></div>48</div></td><td>41</td><td>17</td><td><span class="chip med">35%</span></td><td>Rolling resistance, energy saving</td><td>System-level claims; retread active</td></tr>
+        <tr><td><strong>Hankook</strong> <small style="color:var(--muted)">KR</small></td><td><div class="mbar"><div class="mfill" style="width:21px;background:var(--accent2)"></div>40</div></td><td>61</td><td>17</td><td><span class="chip hi">42%</span></td><td>Tan delta, loss tangent, fuel consumption</td><td>Closing gap with Japanese; polyisobutylene innovation</td></tr>
+        <tr><td><strong>Continental</strong> <small style="color:var(--muted)">DE</small></td><td><div class="mbar"><div class="mfill" style="width:16px;background:var(--accent2)"></div>30</div></td><td>40</td><td>4</td><td><span class="chip lo">13%</span></td><td>CO₂, EV range, storage modulus</td><td>EV + regulatory framing; AI/simulation entrant</td></tr>
+        <tr><td><strong>Qingdao Doublestar</strong> <small style="color:var(--muted)">CN</small></td><td><div class="mbar"><div class="mfill" style="width:16px;background:var(--red)"></div>31</div></td><td>63</td><td>24</td><td><span class="chip hi">77%</span></td><td>Fuel consumption, fuel saving</td><td>High dual%; rapidly upgrading to compound IP</td></tr>
+        <tr><td><strong>Shandong Linglong</strong> <small style="color:var(--muted)">CN</small></td><td><div class="mbar"><div class="mfill" style="width:7px;background:var(--red)"></div>13</div></td><td>47</td><td>10</td><td><span class="chip hi">77%</span></td><td>Fuel saving, low rolling</td><td>Growing fast; compound + tread pattern</td></tr>
+        <tr><td><strong>Zhongce Rubber</strong> <small style="color:var(--muted)">CN</small></td><td><div class="mbar"><div class="mfill" style="width:13px;background:var(--red)"></div>26</div></td><td>34</td><td>12</td><td><span class="chip hi">46%</span></td><td>Fuel consumption, low rolling resistance</td><td>Strong mileage output; compounding focus</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+</div>
+
+<!-- ════════════════════════════════════ WHITE SPACES ════════ -->
+<div id="whitespace">
+<div class="section">
+  <div class="section-label">Section 06</div>
+  <h2>Opportunity Areas & White Spaces</h2>
+  <p>The following areas represent the clearest gaps between where industry is investing and where future value will be created — based on patent density, filing trajectory, and underlying technical logic. With the comprehensive keyword framework applied, these white spaces are confirmed: the low IP density is not an artefact of search limitations.</p>
+</div>
+
+<div class="tab-row" id="whitespace-tabs">
+  <button class="tb active" onclick="switchTab('whitespace','map',this)">Opportunity Map</button>
+  <button class="tb" onclick="switchTab('whitespace','cards',this)">Opportunity Cards</button>
+  <button class="tb" onclick="switchTab('whitespace','roadmap',this)">R&amp;D Roadmap</button>
+</div>
+
+<div class="tab-pane active" id="whitespace-map">
+  <div class="g1">
+    <div class="cbox">
+      <div class="ct">Opportunity Prioritisation — IP Density vs. Commercial Urgency</div>
+      <div class="cs">Bottom-right quadrant = low existing IP + high urgency = most attractive R&D targets. Grey bubbles = mature / crowded areas. Coloured bubbles = white space opportunities.</div>
+      <div class="cw h380"><canvas id="oppChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<div class="tab-pane" id="whitespace-cards">
+  <div class="opp-grid">
+    <div class="opp-card">
+      <div class="opp-num h">1</div>
+      <div>
+        <h4>Thermal System Optimisation for RR + Mileage</h4>
+        <p>Heat is the root cause of both energy dissipation (RR) and rubber degradation (wear). No patent treats it as a unified system — compound + belt + geometry co-optimised for thermal equilibrium. Heat management is 31% of RR patents but only 9% of mileage patents despite being the mechanism connecting both.</p>
+        <span class="badge lo">No System-Level Patents</span><span class="badge med" style="margin-left:5px">High Commercial Pull</span>
+      </div>
+    </div>
+    <div class="opp-card">
+      <div class="opp-num h">2</div>
+      <div>
+        <h4>EV-Specific TBR: RR + Conductivity + Heavy Load + Wear</h4>
+        <p>Continental's 2024 patent is the only one addressing the EV-specific conflict: silica-based low-RR compounds have low conductivity, yet EVs need static charge dissipation. Add heavier loads (batteries) and higher torque (faster wear) and there is no comprehensive EV-TBR system patent anywhere.</p>
+        <span class="badge lo">1 Patent Worldwide</span><span class="badge med" style="margin-left:5px">Growing Market Urgency</span>
+      </div>
+    </div>
+    <div class="opp-card">
+      <div class="opp-num h">3</div>
+      <div>
+        <h4>AI/ML-Guided Compound Design for Dual RR + Mileage</h4>
+        <p>Zero dual RR+Mileage patents use AI or simulation. The "magic triangle" (RR vs. wet grip vs. wear) is the classic multi-objective problem. ML-guided formulation using field wear data and lab tan-delta measurements to simultaneously optimise all three is technically feasible today and entirely unpatented at the system level.</p>
+        <span class="badge lo">0 Dual Patents on AI</span><span class="badge med" style="margin-left:5px">First-Mover Available</span>
+      </div>
+    </div>
+    <div class="opp-card">
+      <div class="opp-num h">4</div>
+      <div>
+        <h4>Retread-Optimised Compound Design (Multi-Life TBR)</h4>
+        <p>88 retread patents, but only 8 address both RR and mileage. The multi-life compound problem differs from single-life: wear uniformity in first life, carcass adhesion preservation, and consistent compound properties for tread bonding in retread. No patent claims this integrated framework. Yokohama and Continental are active but narrow.</p>
+        <span class="badge lo">8 Dual Patents Only</span><span class="badge med" style="margin-left:5px">Fleet TCO Impact</span>
+      </div>
+    </div>
+    <div class="opp-card">
+      <div class="opp-num m">5</div>
+      <div>
+        <h4>Contact Patch Pressure Homogeneity as an RR Lever</h4>
+        <p>Tread pattern patents for RR grew from zero to 27 (2015–2024), mostly from Chinese OEMs using empirical groove geometry. The precise approach — computational contact mechanics to design block geometry that minimises peak pressure gradients, reducing deformation energy — has no patent coverage.</p>
+        <span class="badge lo">Sparse IP Landscape</span><span class="badge med" style="margin-left:5px">Differentiable Claim</span>
+      </div>
+    </div>
+    <div class="opp-card">
+      <div class="opp-num m">6</div>
+      <div>
+        <h4>Graphene as Network Modifier in Carbon Black Hybrid Systems</h4>
+        <p>Graphene as a standalone filler peaked in 2021 and collapsed. A 2023 Chinese university patent showed graphene + multi-grade carbon black synergy during vulcanisation — improved service life and reduced hysteresis through network densification, not bulk filling. This bypasses the dispersion problem and is almost entirely unclaimed by industry.</p>
+        <span class="badge lo">1–2 Patents</span><span class="badge med" style="margin-left:5px">High Technical Upside</span>
+      </div>
+    </div>
+    <div class="opp-card">
+      <div class="opp-num m">7</div>
+      <div>
+        <h4>Low-VOC + Low-RR Tread Compound (Dual Compliance)</h4>
+        <p>One patent (China, 2025) targets low-VOC all-steel truck tread rubber. EU vehicle cabin air quality and tire sustainability regulations are converging. A tread compound achieving both low RR and low VOC emission addresses two regulatory pressures simultaneously — and the IP window is wide open.</p>
+        <span class="badge lo">1 Patent Only</span><span class="badge med" style="margin-left:5px">Pre-Regulatory Window</span>
+      </div>
+    </div>
+    <div class="opp-card">
+      <div class="opp-num m">8</div>
+      <div>
+        <h4>Belt Cord Design Linking RR and Fatigue Life Together</h4>
+        <p>Belt/cord patents appear in 15% of RR patents and 19% of mileage patents — but almost never as deliberate co-optimisation. Belt flexibility affects both rolling energy loss and belt edge separation fatigue. A broad system claim linking cord geometry to simultaneous RR and durability targets is an open territory.</p>
+        <span class="badge lo">Low IP Density</span><span class="badge hi" style="margin-left:5px">Structurally Differentiable</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tab-pane" id="whitespace-roadmap">
+  <div class="roadmap">
+    <div class="roadmap-col">
+      <div class="rm-phase">Near Term · 0–18 Months</div>
+      <ul>
+        <li>Thermal system compound targeting full operating temp range (not just 60°C tan-delta)</li>
+        <li>Silica + CB hybrid for EV-specific RR + conductivity balance</li>
+        <li>Belt cord flex-fatigue + RR co-optimisation — simultaneous claim</li>
+      </ul>
+    </div>
+    <div class="roadmap-col">
+      <div class="rm-phase">Medium Term · 18–36 Months</div>
+      <ul>
+        <li>Contact patch pressure homogeneity via computational tread design</li>
+        <li>Graphene as CB network modifier — vulcanisation synergy mechanism</li>
+        <li>Low-VOC + low-RR tread compound: dual regulatory compliance</li>
+      </ul>
+    </div>
+    <div class="roadmap-col">
+      <div class="rm-phase">Long Term · 36+ Months</div>
+      <ul>
+        <li>AI/ML-guided dual RR + mileage compound design engine</li>
+        <li>EV-TBR system: holistic RR + NVH + conductivity + heavy-load wear</li>
+        <li>Multi-life compound for retread-optimised TBR full lifecycle</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</div>
+</div><!-- /container -->
+
+
+<!-- ════════════════════════════════════ DEEP DIVE ════════ -->
+<div id="deepdive">
+<div class="section">
+  <div class="section-label">Section 07</div>
+  <h2>Deep Dive — Patents Addressing Both RR &amp; Mileage Simultaneously</h2>
+  <p>448 patents (2015–2024) explicitly address both rolling resistance and tread wear in the same invention using a validated keyword set. This section dissects how researchers scientifically handle the tradeoff across 6 distinct technology themes — what approach, what measurement tools, and who is leading each direction.</p>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi">
+    <div class="num">448</div>
+    <div class="lbl">Dual-Goal Patents</div>
+    <div class="delta">Validated — explicit RR + wear language only</div>
+  </div>
+  <div class="kpi b">
+    <div class="num">52%</div>
+    <div class="lbl">Silica &amp; Silane Theme</div>
+    <div class="delta">233 patents — dominant approach</div>
+  </div>
+  <div class="kpi g">
+    <div class="num">2024</div>
+    <div class="lbl">Fastest-Growing Theme</div>
+    <div class="delta">Tread Design — 4× growth since 2019</div>
+  </div>
+  <div class="kpi y">
+    <div class="num">10</div>
+    <div class="lbl">Functionalized Polymers</div>
+    <div class="delta">Frontier — all post-2018, accelerating</div>
+  </div>
+</div>
+
+<!-- Method note -->
+<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:11px 16px;font-size:11.5px;color:#5d4037;margin:0 0 16px;line-height:1.6">
+  <strong>Keyword methodology:</strong> Terms like <em>'groove'</em> (present in ~1,600 TBR patents regardless of mileage context) and <em>'durability'</em> (often refers to belt/bead, not tread wear) were excluded after validation. An earlier pass gave 736 — the 448 figure is the high-confidence set.
+</div>
+
+<!-- Overview charts -->
+<div class="g2">
+  <div class="cbox">
+    <div class="ct">Combined (RR+Wear) Patent Volume — 2015–2024</div>
+    <div class="cs">2023 surge to 70 patents — driven by silica compound cross-domain claims</div>
+    <div class="cw h260"><canvas id="dd_ovTrend"></canvas></div>
+  </div>
+  <div class="cbox">
+    <div class="ct">6 Technology Themes — Share of 448 Dual Patents</div>
+    <div class="cs">Silica dominates at 52%. Carbon Black and Belt Engineering are tied at 11% each.</div>
+    <div class="cw h260"><canvas id="dd_donut"></canvas></div>
+  </div>
+</div>
+
+<!-- Conflict explanation -->
+<div class="hl" style="margin-bottom:16px">
+  <h3>Why Solving Both Simultaneously Is Hard — The Root Conflict</h3>
+  <ul>
+    <li>RR needs low hysteresis: high rebound, low tan&nbsp;δ @ 60°C, minimal energy loss per deformation cycle</li>
+    <li>Wear needs high reinforcement: dense filler network, high modulus, strong filler–polymer interface</li>
+    <li>Both are governed by the SAME polymer chain dynamics — but in opposing directions</li>
+    <li>Every successful approach works by separating operating conditions: frequency domain, spatial, or structural</li>
+    <li>Silica shifts the tan&nbsp;δ peak to lower temperatures — high at 0°C (wear/grip) but low at 60°C (RR)</li>
+    <li>Spatial separation (cap/base compound, undertread) assigns each function to a different material zone</li>
+  </ul>
+</div>
+
+<!-- Theme tabs -->
+<div class="tab-row" style="border-bottom:2px solid var(--mid);margin-bottom:18px;flex-wrap:wrap;display:flex" id="dd-tabrow">
+  <button class="tb active" onclick="switchDD('ov',this)">Theme Overview</button>
+  <button class="tb" onclick="switchDD('t0',this)">① Silica &amp; Silane</button>
+  <button class="tb" onclick="switchDD('t1',this)">② Carbon &amp; Hybrid</button>
+  <button class="tb" onclick="switchDD('t2',this)">③ Belt &amp; Structure</button>
+  <button class="tb" onclick="switchDD('t3',this)">④ Tread Design</button>
+  <button class="tb" onclick="switchDD('t4',this)">⑤ Bio-based</button>
+  <button class="tb" onclick="switchDD('t5',this)">⑥ Functionalized Polymers</button>
+</div>
+
+<!-- ── DD: OVERVIEW TAB ── -->
+<div class="dd-pane active" id="dd-ov">
+  <div class="cbox">
+    <div class="ct">Technology Theme Comparison — All 6 Themes</div>
+    <div class="cs">Patents per theme · Trend direction · Primary conflict-resolution strategy</div>
+    <table class="tbl" style="margin-top:10px">
+      <thead><tr><th>#</th><th>Theme</th><th>Patents</th><th>Share</th><th>Trend</th><th>Primary Strategy to Resolve RR–Wear Conflict</th></tr></thead>
+      <tbody>
+        <tr><td>①</td><td><strong>Silica &amp; Silane Coupling</strong></td><td>233</td><td>52%</td><td><span class="tup">↑ Rising (2023 surge)</span></td><td>Frequency-domain decoupling — silica shifts tan&nbsp;δ peak; dual rubber matrix (NR+BR) separates functions by phase</td></tr>
+        <tr><td>②</td><td><strong>Carbon Black &amp; Hybrid Filler</strong></td><td>50</td><td>11%</td><td><span class="tfl">→ Stable</span></td><td>CB+silica hybrid — CB provides reinforcement (wear), silica disrupts CB network to reduce Payne effect (RR)</td></tr>
+        <tr><td>③</td><td><strong>Belt &amp; Structural Engineering</strong></td><td>48</td><td>11%</td><td><span class="tfl">→ Stable</span></td><td>Deformation amplitude reduction — stiffer belt geometry lowers flexure (→ RR) and flattens footprint (→ even wear)</td></tr>
+        <tr><td>④</td><td><strong>Tread Design &amp; Pattern</strong></td><td>28</td><td>6%</td><td><span class="tup">↑↑ Fastest growing</span></td><td>3D interlocking sipes maintain block stiffness (→ wear) while providing drainage; fine grooves reduce RR less than wide grooves</td></tr>
+        <tr><td>⑤</td><td><strong>Bio-based &amp; Sustainable</strong></td><td>18</td><td>4%</td><td><span class="tdn">↓ Declining post-2017</span></td><td>High-MW NR/BR entanglement network — strain crystallisation lowers RR; dense entanglement resists abrasion</td></tr>
+        <tr><td>⑥</td><td><strong>Functionalized Polymers &amp; SSBR</strong></td><td>10</td><td>2%</td><td><span class="tup">↑↑ Emerging (all post-2018)</span></td><td>Chain-end anchoring to filler surface — converts dangling chain ends from energy dissipators into network nodes</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="ins-row" style="margin-top:14px">
+    <div class="ins orange">
+      <div class="tag-lbl">Key Insight</div>
+      <h4>Only 3 Fundamentally Different Approaches</h4>
+      <p>All 6 themes reduce to three resolution principles: <strong>frequency decoupling</strong> (Silica, Functionalized Polymers), <strong>spatial separation</strong> (Belt/Structure, Tread Design with cap/base), and <strong>network architecture</strong> (CB/Hybrid, Bio-based). Most patents combine two of these.</p>
+    </div>
+    <div class="ins blue">
+      <div class="tag-lbl">Market Signal</div>
+      <h4>Sumitomo Holds 47% of All Dual Patents</h4>
+      <p>Across all 6 themes, Sumitomo Rubber accounts for ~210 of 448 dual patents. No other company is within 3× of that count. Yokohama is #2 (52 patents), Bridgestone #3 (35). Chinese makers are present but thin in dual claims.</p>
+    </div>
+    <div class="ins teal">
+      <div class="tag-lbl">White Space</div>
+      <h4>Functionalized Polymers — Open for Entry</h4>
+      <p>Only 10 dual patents, all post-2018, from only 6 assignees. No Chinese tire maker has filed here. It is the only theme where the root cause of the tradeoff is addressed at the molecular level — chain-end mobility decoupled from reinforcement efficiency.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── DD: THEME PANES (t0–t5) ── -->
+<!-- theme pane template — repeated 6x with different IDs/colors/content -->
+<div class="dd-pane" id="dd-t0">
+  <div style="background:linear-gradient(135deg,#e8641a,#c0392b);border-radius:10px;padding:16px 22px;margin-bottom:16px;color:#fff">
+    <div style="font-size:10px;opacity:.75;text-transform:uppercase;letter-spacing:1px">Theme ① · 233 Patents · 52% of combined set</div>
+    <div style="font-size:18px;font-weight:800;margin-top:3px">Silica &amp; Silane Coupling</div>
+    <div style="font-size:12px;opacity:.85;margin-top:4px">Frequency-domain decoupling: silica shifts tan&nbsp;δ peak so RR is low at 60°C while wear resistance remains at ambient temperature</div>
+  </div>
+  <div class="g2">
+    <div class="cbox"><div class="ct">Annual Filing Trend</div><div class="cw h220"><canvas id="dd_t0_trend"></canvas></div></div>
+    <div class="cbox"><div class="ct">Top Assignees</div><div class="cw h220"><canvas id="dd_t0_asgn"></canvas></div></div>
+  </div>
+  <div class="g2">
+    <div class="cbox">
+      <div class="ct">Research Strategy Distribution (n=233)</div>
+      <div id="dd_t0_strat" style="margin-top:10px"></div>
+    </div>
+    <div class="cbox">
+      <div class="ct">Scientific Measurement Terms in Abstracts</div>
+      <div class="cw h220"><canvas id="dd_t0_meas"></canvas></div>
+    </div>
+  </div>
+  <div class="ins-row">
+    <div class="ins orange">
+      <div class="tag-lbl">Core Mechanism</div>
+      <h4>Silica's Frequency-Dependent Viscoelasticity</h4>
+      <p>Silica-filled rubber has a steeper tan&nbsp;δ vs. temperature curve than carbon black. At 60°C (rolling frequency), tan&nbsp;δ drops sharply (→ low RR). At 0–25°C (contact zone), modulus remains high (→ wear resistance). Silane coupling agent (TESPT/Si-69) anchors silica to polymer, reducing Payne effect while creating a stiff interface.</p>
+    </div>
+    <div class="ins blue">
+      <div class="tag-lbl">Top Strategy (32%)</div>
+      <h4>Dual Rubber Matrix — NR + BR/SBR Blend</h4>
+      <p>NR phase provides tear and cut strength; BR/SBR phase delivers lower tan&nbsp;δ at 60°C. Silica partitions to the polar phase. Each polymer handles a different performance function — RR and wear requirements are separated by phase rather than by a single compound compromise.</p>
+    </div>
+    <div class="ins teal">
+      <div class="tag-lbl">2023 New Signal</div>
+      <h4>Cross-Domain Co-Optimization (Sumitomo)</h4>
+      <p>2023–24 Sumitomo patents combine silica compound specifications with tread geometry constraints in a single independent claim — e.g., "isoprene-based rubber + predetermined silica, groove depth &lt;16 mm." This cross-domain single-claim strategy was not seen before 2021.</p>
+    </div>
+  </div>
+  <div class="cbox" style="margin-top:14px">
+    <div class="ct">Country Activity Trend (2015–2024)</div>
+    <div class="cw h240"><canvas id="dd_t0_country"></canvas></div>
+  </div>
+</div>
+
+<div class="dd-pane" id="dd-t1">
+  <div style="background:linear-gradient(135deg,#d4a017,#a07810);border-radius:10px;padding:16px 22px;margin-bottom:16px;color:#fff">
+    <div style="font-size:10px;opacity:.75;text-transform:uppercase;letter-spacing:1px">Theme ② · 50 Patents · 11% of combined set</div>
+    <div style="font-size:18px;font-weight:800;margin-top:3px">Carbon Black &amp; Hybrid Filler Systems</div>
+    <div style="font-size:12px;opacity:.85;margin-top:4px">96% use CB+silica together — CB reinforces (wear), silica disrupts CB network to reduce Payne effect and rolling hysteresis</div>
+  </div>
+  <div class="g2">
+    <div class="cbox"><div class="ct">Annual Filing Trend</div><div class="cw h220"><canvas id="dd_t1_trend"></canvas></div></div>
+    <div class="cbox"><div class="ct">Top Assignees</div><div class="cw h220"><canvas id="dd_t1_asgn"></canvas></div></div>
+  </div>
+  <div class="g2">
+    <div class="cbox">
+      <div class="ct">Research Strategy Distribution (n=50)</div>
+      <div id="dd_t1_strat" style="margin-top:10px"></div>
+    </div>
+    <div class="cbox">
+      <div class="ct">Scientific Measurement Terms in Abstracts</div>
+      <div class="cw h220"><canvas id="dd_t1_meas"></canvas></div>
+    </div>
+  </div>
+  <div class="ins-row">
+    <div class="ins orange">
+      <div class="tag-lbl">Core Mechanism (96%)</div>
+      <h4>CB–Silica Hybrid: Access Benefits of Both Fillers</h4>
+      <p>CB provides primary load-bearing reinforcement (→ wear); silica disrupts CB–CB contacts, reducing Payne effect (→ lower RR). Yokohama's approach: medium-structure CB (N₂SA 100–150 m²/g) + quinone additive (0.1–20 phr) creates reactive filler–polymer crosslinks that recover wear without the RR penalty of high CB loading.</p>
+    </div>
+    <div class="ins blue">
+      <div class="tag-lbl">Emerging (12%)</div>
+      <h4>Nano-Carbon (CNT/Graphene) as Thermal Network</h4>
+      <p>CNTs and graphene at 1–5 phr form a percolating thermal network, rapidly dissipating heat from the contact zone. This reduces temperature-driven hysteresis amplification under TBR operating loads — targeting the heat build-up mechanism that worsens both RR and wear simultaneously.</p>
+    </div>
+    <div class="ins teal">
+      <div class="tag-lbl">Bridgestone (2018)</div>
+      <h4>Terpolymer Architecture — Intrinsic Decoupling</h4>
+      <p>"Multi-component copolymer: conjugated diene + non-conjugated olefin + aromatic vinyl + carbon black 30–60 phr… excellent balance of wear resistance, fuel economy." The terpolymer's chemical heterogeneity provides inherent frequency-response decoupling that CB alone cannot achieve — no silica needed.</p>
+    </div>
+  </div>
+  <div class="cbox" style="margin-top:14px">
+    <div class="ct">Country Activity Trend (2015–2024)</div>
+    <div class="cw h240"><canvas id="dd_t1_country"></canvas></div>
+  </div>
+</div>
+
+<div class="dd-pane" id="dd-t2">
+  <div style="background:linear-gradient(135deg,#1a4a7a,#2c6fad);border-radius:10px;padding:16px 22px;margin-bottom:16px;color:#fff">
+    <div style="font-size:10px;opacity:.75;text-transform:uppercase;letter-spacing:1px">Theme ③ · 48 Patents · 11% of combined set</div>
+    <div style="font-size:18px;font-weight:800;margin-top:3px">Belt &amp; Structural Engineering</div>
+    <div style="font-size:12px;opacity:.85;margin-top:4px">Spatial separation: belt geometry + undertread compound place RR and wear management in different structural zones</div>
+  </div>
+  <div class="g2">
+    <div class="cbox"><div class="ct">Annual Filing Trend</div><div class="cw h220"><canvas id="dd_t2_trend"></canvas></div></div>
+    <div class="cbox"><div class="ct">Top Assignees</div><div class="cw h220"><canvas id="dd_t2_asgn"></canvas></div></div>
+  </div>
+  <div class="g2">
+    <div class="cbox">
+      <div class="ct">Research Strategy Distribution (n=48)</div>
+      <div id="dd_t2_strat" style="margin-top:10px"></div>
+    </div>
+    <div class="cbox">
+      <div class="ct">Scientific Measurement Terms in Abstracts</div>
+      <div class="cw h220"><canvas id="dd_t2_meas"></canvas></div>
+    </div>
+  </div>
+  <div class="ins-row">
+    <div class="ins blue">
+      <div class="tag-lbl">Core Mechanism</div>
+      <h4>Deformation Energy Partitioning</h4>
+      <p>Reducing belt deflection amplitude per revolution simultaneously lowers energy dissipation (→ RR) and distributes contact pressure more uniformly (→ even wear). Both benefits share a common structural root: less deformation = less hysteresis AND less differential wear. This is the unique dual-lever advantage of structural patents.</p>
+    </div>
+    <div class="ins orange">
+      <div class="tag-lbl">Top Strategy (10%)</div>
+      <h4>Undertread / Sub-tread Layer</h4>
+      <p>A low-hysteresis base rubber beneath the cap tread absorbs bulk bending energy (→ RR), while the cap handles road contact (→ wear). Structural analog of the dual-matrix approach in Theme ① — spatial separation of material functions by layer rather than by polymer phase.</p>
+    </div>
+    <div class="ins teal">
+      <div class="tag-lbl">Michelin + Continental</div>
+      <h4>Cord Material Upgrade (HT/UHT Steel)</h4>
+      <p>High-tensile cord allows thinner belt cross-sections at same load capacity. Thinner belts flex less → lower bending hysteresis (→ RR) and reduce stress concentration at belt edges that triggers irregular wear and delamination. Fleet-level benefit: longer retread candidacy life.</p>
+    </div>
+  </div>
+  <div class="cbox" style="margin-top:14px">
+    <div class="ct">Country Activity Trend (2015–2024)</div>
+    <div class="cw h240"><canvas id="dd_t2_country"></canvas></div>
+  </div>
+</div>
+
+<div class="dd-pane" id="dd-t3">
+  <div style="background:linear-gradient(135deg,#2a9d8f,#1a7a6e);border-radius:10px;padding:16px 22px;margin-bottom:16px;color:#fff">
+    <div style="font-size:10px;opacity:.75;text-transform:uppercase;letter-spacing:1px">Theme ④ · 28 Patents · 6% of combined set · Fastest growing</div>
+    <div style="font-size:18px;font-weight:800;margin-top:3px">Tread Design &amp; Pattern</div>
+    <div style="font-size:12px;opacity:.85;margin-top:4px">Geometry as system lever: 3D sipes, fine groove architecture, and multi-compound tread layers — Chinese OEMs entering strongly since 2020</div>
+  </div>
+  <div class="g2">
+    <div class="cbox"><div class="ct">Annual Filing Trend (4× growth since 2019)</div><div class="cw h220"><canvas id="dd_t3_trend"></canvas></div></div>
+    <div class="cbox"><div class="ct">Top Assignees</div><div class="cw h220"><canvas id="dd_t3_asgn"></canvas></div></div>
+  </div>
+  <div class="g2">
+    <div class="cbox">
+      <div class="ct">Research Strategy Distribution (n=28)</div>
+      <div id="dd_t3_strat" style="margin-top:10px"></div>
+    </div>
+    <div class="cbox">
+      <div class="ct">Scientific Measurement Terms in Abstracts</div>
+      <div class="cw h220"><canvas id="dd_t3_meas"></canvas></div>
+    </div>
+  </div>
+  <div class="ins-row">
+    <div class="ins teal">
+      <div class="tag-lbl">Core Innovation (89%)</div>
+      <h4>3D Interlocking Sipes — Stiffness Paradox Resolved</h4>
+      <p>Traditional sipes increase edge count (→ traction/wear) but reduce block stiffness (→ more deformation → higher RR). 3D/wave sipes interlock when compressed in the contact zone, maintaining block rigidity. The block is stiff under load (→ wear and RR ✓) but flexible when unloaded for sipe function. A geometrically elegant paradox resolution.</p>
+    </div>
+    <div class="ins orange">
+      <div class="tag-lbl">Non-Obvious Insight</div>
+      <h4>Fine Grooves Cost Less RR Than Wide Grooves</h4>
+      <p>Wide circumferential grooves reduce contact area significantly — a large net-to-gross ratio change costs more in wear resistance AND in contact patch stability (→ irregular wear). Narrow fine-grooves provide equivalent drainage but maintain more land area. The discovery: drainage function can be decoupled from contact area loss through groove geometry, not just groove count.</p>
+    </div>
+    <div class="ins blue">
+      <div class="tag-lbl">Strategic Note</div>
+      <h4>Geometry Patents Are Harder to Design Around</h4>
+      <p>A geometric claim blocks competitors regardless of compound choice. Chinese makers (Qingdao Yellowsea, Sailun, Aeolus) are filing tread design patents as an IP strategy — they can protect geometric innovations even while Japanese OEMs hold the compound chemistry IP. Post-2020 acceleration reflects both FEA tool availability and IP strategy maturation.</p>
+    </div>
+  </div>
+  <div class="cbox" style="margin-top:14px">
+    <div class="ct">Country Activity Trend (2015–2024)</div>
+    <div class="cw h240"><canvas id="dd_t3_country"></canvas></div>
+  </div>
+</div>
+
+<div class="dd-pane" id="dd-t4">
+  <div style="background:linear-gradient(135deg,#27ae60,#1a7a44);border-radius:10px;padding:16px 22px;margin-bottom:16px;color:#fff">
+    <div style="font-size:10px;opacity:.75;text-transform:uppercase;letter-spacing:1px">Theme ⑤ · 18 Patents · 4% of combined set · Declining post-2017</div>
+    <div style="font-size:18px;font-weight:800;margin-top:3px">Bio-based &amp; Sustainable Materials</div>
+    <div style="font-size:12px;opacity:.85;margin-top:4px">Natural rubber's strain crystallisation gives intrinsic low hysteresis; high-MW NR/BR architecture provides dense entanglement for wear — no silica chemistry needed</div>
+  </div>
+  <div class="g2">
+    <div class="cbox"><div class="ct">Annual Filing Trend (peaked 2015–2017)</div><div class="cw h220"><canvas id="dd_t4_trend"></canvas></div></div>
+    <div class="cbox"><div class="ct">Top Assignees (Sumitomo 33%)</div><div class="cw h220"><canvas id="dd_t4_asgn"></canvas></div></div>
+  </div>
+  <div class="g2">
+    <div class="cbox">
+      <div class="ct">Research Strategy Distribution (n=18)</div>
+      <div id="dd_t4_strat" style="margin-top:10px"></div>
+    </div>
+    <div class="cbox">
+      <div class="ct">Scientific Measurement Terms in Abstracts</div>
+      <div class="cw h220"><canvas id="dd_t4_meas"></canvas></div>
+    </div>
+  </div>
+  <div class="ins-row">
+    <div class="ins green">
+      <div class="tag-lbl">Core Mechanism</div>
+      <h4>Strain Crystallisation + Dense Entanglement</h4>
+      <p>Natural rubber strain-crystallises under elongation — the network stiffens during deformation, reducing heat generation per cycle (→ low RR). High-MW NR (Mw &gt;5M, Rz &gt;130 nm from dandelion/guayule) forms a denser entanglement network than commodity NR, simultaneously improving wear life. Two benefits from one molecular weight parameter.</p>
+    </div>
+    <div class="ins blue">
+      <div class="tag-lbl">BR Architecture (33%)</div>
+      <h4>Tcp/ML Ratio — The Key Structural Descriptor</h4>
+      <p>Polybutadiene with Tcp/ML ≥2.5, Mw ≥60×10⁴ (Sumitomo 2018) — the Tcp/ML ratio (solution viscosity / Mooney viscosity) describes chain branching architecture. Higher ratio = more long-chain branching = better low-temperature rebound (→ RR) AND higher effective entanglement density (→ wear). A single polymer parameter addressing both.</p>
+    </div>
+    <div class="ins orange">
+      <div class="tag-lbl">White Space Alert</div>
+      <h4>Bio-based + New Silica — Unclaimed after 2020</h4>
+      <p>Dandelion/guayule NR combined with ultra-fine HDS silica — essentially no patent activity post-2020. The combination would bring silica's frequency-domain decoupling advantage to bio-NR's intrinsic low-hysteresis base. Sumitomo dominates individual approaches but has not combined them in a dual-goal claim. This intersection is open.</p>
+    </div>
+  </div>
+  <div class="cbox" style="margin-top:14px">
+    <div class="ct">Country Activity Trend (2015–2024)</div>
+    <div class="cw h240"><canvas id="dd_t4_country"></canvas></div>
+  </div>
+</div>
+
+<div class="dd-pane" id="dd-t5">
+  <div style="background:linear-gradient(135deg,#8e44ad,#6c3483);border-radius:10px;padding:16px 22px;margin-bottom:16px;color:#fff">
+    <div style="font-size:10px;opacity:.75;text-transform:uppercase;letter-spacing:1px">Theme ⑥ · 10 Patents · 2% — Emerging Frontier · All post-2018</div>
+    <div style="font-size:18px;font-weight:800;margin-top:3px">Functionalized Polymers &amp; SSBR</div>
+    <div style="font-size:12px;opacity:.85;margin-top:4px">The only approach that addresses the root cause — chain-end anchoring to filler converts energy dissipators into network nodes, decoupling mobility from reinforcement at the molecular level</div>
+  </div>
+  <div class="g2">
+    <div class="cbox"><div class="ct">Annual Filing Trend (accelerating 2021–2024)</div><div class="cw h220"><canvas id="dd_t5_trend"></canvas></div></div>
+    <div class="cbox"><div class="ct">Top Assignees (6 companies, geographically diverse)</div><div class="cw h220"><canvas id="dd_t5_asgn"></canvas></div></div>
+  </div>
+  <div class="g2">
+    <div class="cbox">
+      <div class="ct">Research Strategy Distribution (n=10)</div>
+      <div id="dd_t5_strat" style="margin-top:10px"></div>
+    </div>
+    <div class="cbox">
+      <div class="ct">Scientific Measurement Terms in Abstracts</div>
+      <div class="cw h220"><canvas id="dd_t5_meas"></canvas></div>
+    </div>
+  </div>
+  <div class="ins-row">
+    <div class="ins purple">
+      <div class="tag-lbl">Root Cause Approach</div>
+      <h4>Chain-End Functionalization — The Molecular Fix</h4>
+      <p>In high-MW rubber, free dangling chain ends undergo unrestricted motion — they are pure energy dissipators (→ higher tan&nbsp;δ at all frequencies → RR). Functional groups (alkoxysilyl, amine, epoxide) at chain ends anchor them to filler surfaces, simultaneously: reducing free-chain mobility (→ lower tan&nbsp;δ @ 60°C → RR), increasing effective crosslink density (→ higher modulus → wear), and improving filler dispersion (→ lower Payne effect → RR).</p>
+    </div>
+    <div class="ins blue">
+      <div class="tag-lbl">TBR-Specific Challenge</div>
+      <h4>NR Compatibility Remains the Open Question</h4>
+      <p>SSBR functionalization was pioneered for PCR tires. TBR requires higher NR content for cut/tear resistance under heavy loads — NR cannot be synthesised with controlled chain-end groups. Active research question: can functionalized SBR/BR blend into an NR-dominant matrix while retaining its filler-anchoring advantage at the NR–BR interface boundary?</p>
+    </div>
+    <div class="ins teal">
+      <div class="tag-lbl">Entry Opportunity</div>
+      <h4>No Chinese Tire Maker Has Filed Here</h4>
+      <p>Bridgestone, Goodyear, Sinopec (chemical), and Korean academic–industry teams are the only players. Zero filings from Linglong, Doublestar, Sailun, Aeolus, or Giti — despite these companies actively upgrading their compound IP elsewhere. A clear white space for producers willing to invest in synthesis infrastructure or academic partnerships.</p>
+    </div>
+  </div>
+  <div class="cbox" style="margin-top:14px">
+    <div class="ct">Country Activity Trend (2015–2024)</div>
+    <div class="cw h240"><canvas id="dd_t5_country"></canvas></div>
+  </div>
+</div>
+
+</div><!-- /deepdive -->
+
+<div class="footer">
+  <div>Prepared by: Sreeharsha HR &nbsp;·&nbsp; R&D Patent Intelligence &nbsp;·&nbsp; June 2026</div>
+  <div>Confidential — Internal Use Only &nbsp;·&nbsp; 14,063 TBR patents, 2015–2024 · Comprehensive Keyword Framework</div>
+</div>
+
+<script>
+// ── DATA ────────────────────────────────────────────────────────────────
+const years = [2015,2016,2017,2018,2019,2020,2021,2022,2023,2024];
+const rr  = [102,74,105,122,146,119,124,92,141,125];
+const mil = [166,136,177,188,221,156,176,160,219,161];
+const both= [56,29,45,48,62,43,46,43,86,41];
+const tot = [669,732,776,822,968,767,879,721,782,721];
+
+const rrHeat   = [32,13,18,31,39,34,43,40,66,44];
+const rrFuel   = [17,25,42,51,46,40,31,17,37,42];
+const rrDirect = [42,27,35,37,69,46,50,33,37,38];
+const rrBelt   = [8,12,10,13,31,11,21,9,29,27];
+const rrGreen  = [9,6,9,8,6,5,7,5,2,7];
+
+const milWear  = [74,58,81,105,121,71,86,82,109,79];
+const milDur   = [56,78,94,80,96,75,86,82,113,74];
+const milRet   = [14,9,3,3,9,6,8,11,10,15];
+const milPat   = [4,6,1,4,6,10,8,16,11,18];
+
+const cn_rr = [12,14,18,19,47,35,46,37,60,43];
+const jp_rr = [53,36,47,62,49,44,35,29,42,32];
+const kr_rr = [5,1,6,9,9,8,12,6,2,8];
+const de_rr = [2,2,7,8,1,6,1,5,6,12];
+const cn_mil = [28,27,42,32,71,65,88,73,97,84];
+const jp_mil = [89,70,85,94,88,53,33,43,66,22];
+
+const P = {o:'#e8641a',b:'#1a4a7a',t:'#2a9d8f',y:'#e9c46a',r:'#c0392b',g:'#27ae60',p:'#8e44ad',gr:'#7f8c8d'};
+const DEF = {responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{font:{size:11},padding:9,boxWidth:11}}}};
+
+// helper: resize all charts in a panel
+function resizeInPanel(panelId){
+  var panel = document.getElementById(panelId);
+  if(!panel) return;
+  panel.querySelectorAll('canvas').forEach(function(c){
+    var ch = Chart.getChart(c);
+    if(ch){ ch.resize(); }
+  });
+}
+
+// ── TAB SWITCH ───────────────────────────────────────────────────────────
+function switchTab(group, id, btn){
+  document.querySelectorAll('#'+group+' .tb').forEach(function(b){ b.classList.remove('active'); });
+  document.querySelectorAll('#'+group+' > .tab-pane, #'+group+'-tabs ~ .tab-pane').forEach(function(p){ p.classList.remove('active'); });
+  if(btn) btn.classList.add('active');
+  var panel = document.getElementById(group+'-'+id);
+  if(panel){
+    panel.classList.add('active');
+    setTimeout(function(){ resizeInPanel(group+'-'+id); }, 50);
+  }
+}
+
+// ── CHART: MAIN TREND ────────────────────────────────────────────────────
+new Chart(document.getElementById('mainChart'),{
+  type:'bar',data:{labels:years,datasets:[
+    {label:'Mileage / Wear',data:mil,backgroundColor:'rgba(26,74,122,0.75)',stack:'a',borderRadius:2},
+    {label:'Rolling Resistance',data:rr,backgroundColor:'rgba(232,100,26,0.85)',stack:'a',borderRadius:2},
+    {label:'Both RR+Mileage',data:both,backgroundColor:'rgba(42,157,143,0.9)',stack:'a',borderRadius:2},
+    {label:'All TBR (right axis)',data:tot,type:'line',borderColor:'#bbb',backgroundColor:'transparent',
+     borderDash:[4,3],borderWidth:1.5,pointRadius:3,yAxisID:'y2'}
+  ]},
+  options:{...DEF,scales:{
+    x:{stacked:true,grid:{display:false},ticks:{font:{size:11}}},
+    y:{stacked:true,grid:{color:'#eee'},ticks:{font:{size:11}},title:{display:true,text:'RR + Mileage Patents',font:{size:11}}},
+    y2:{position:'right',grid:{display:false},ticks:{font:{size:11}},title:{display:true,text:'All TBR Patents',font:{size:11}}}
+  },plugins:{...DEF.plugins,annotation:{annotations:{
+    p19:{type:'line',xMin:4,xMax:4,borderColor:'rgba(232,100,26,0.4)',borderWidth:1.5,borderDash:[4,3],label:{content:'2019 Peak',display:true,position:'start',font:{size:10},color:P.o}},
+    p23:{type:'line',xMin:8,xMax:8,borderColor:'rgba(26,74,122,0.35)',borderWidth:1.5,borderDash:[4,3],label:{content:'2023 Resurgence',display:true,position:'end',font:{size:10},color:P.b}}
+  }}}}
+});
+
+// ── CHART: SHARE ─────────────────────────────────────────────────────────
+new Chart(document.getElementById('shareChart'),{
+  type:'line',data:{labels:years,datasets:[
+    {label:'RR %',data:rr.map(function(v,i){return +(v/tot[i]*100).toFixed(1);}),borderColor:P.o,backgroundColor:'rgba(232,100,26,0.07)',fill:true,tension:0.35,pointRadius:4},
+    {label:'Mileage %',data:mil.map(function(v,i){return +(v/tot[i]*100).toFixed(1);}),borderColor:P.b,backgroundColor:'rgba(26,74,122,0.07)',fill:true,tension:0.35,pointRadius:4},
+    {label:'Both %',data:both.map(function(v,i){return +(v/tot[i]*100).toFixed(1);}),borderColor:P.t,backgroundColor:'transparent',tension:0.35,pointRadius:3,borderDash:[4,3]}
+  ]},
+  options:{...DEF,scales:{x:{grid:{display:false},ticks:{font:{size:11}}},
+    y:{grid:{color:'#eee'},ticks:{font:{size:11},callback:function(v){return v+'%';}},min:0}}}
+});
+
+// ── CHART: GEO RR donut ──────────────────────────────────────────────────
+new Chart(document.getElementById('geoRRChart'),{
+  type:'doughnut',data:{
+    labels:['Japan','China','PCT (WO)','Korea','Europe (EP)','Germany','USA','Others'],
+    datasets:[{data:[429,331,150,66,68,50,32,24],
+      backgroundColor:[P.b,P.r,P.t,P.o,P.p,'#c27803',P.g,P.gr],
+      borderWidth:2,borderColor:'#fff',hoverOffset:5}]},
+  options:{...DEF,cutout:'58%',plugins:{...DEF.plugins,legend:{position:'right',labels:{font:{size:11},padding:7,boxWidth:10}}}}
+});
+
+// ── CHART: RR GROUP TREND ────────────────────────────────────────────────
+new Chart(document.getElementById('rrGroupTrend'),{
+  type:'line',data:{labels:years,datasets:[
+    {label:'Heat / Hysteresis / Loss Tangent',data:rrHeat,borderColor:P.r,backgroundColor:'rgba(192,57,43,0.06)',fill:true,tension:0.35,pointRadius:4,borderWidth:2.5},
+    {label:'Fuel Consumption / Economy',data:rrFuel,borderColor:P.o,backgroundColor:'rgba(232,100,26,0.06)',fill:true,tension:0.35,pointRadius:4,borderWidth:2.5},
+    {label:'Direct RR Terms',data:rrDirect,borderColor:P.b,backgroundColor:'transparent',tension:0.35,pointRadius:4,borderDash:[5,3]},
+    {label:'Belt / Cord Structure',data:rrBelt,borderColor:P.t,backgroundColor:'transparent',tension:0.35,pointRadius:3,borderDash:[4,3]},
+    {label:'Green / Eco / EV Range',data:rrGreen,borderColor:P.p,backgroundColor:'transparent',tension:0.35,pointRadius:3,borderDash:[3,4]}
+  ]},
+  options:{...DEF,scales:{x:{grid:{display:false},ticks:{font:{size:11}}},
+    y:{grid:{color:'#eee'},ticks:{font:{size:11}},title:{display:true,text:'Patent Count',font:{size:11}}}}}
+});
+
+// shared sub-theme data
+var rrSubLabels=['Heat/Hysteresis','Fuel Consumption','Silica','Carbon Black','Belt/Cord','Bio-based','Silane','Green/EV','Funct.Polymer','Tread Pattern','Graphene','AI/Sim'];
+var rrSubData=[360,348,283,231,171,153,115,72,30,27,18,2];
+var rrSubColors=[P.r,P.o,'#e67e22',P.gr,P.b,P.g,P.t,P.p,'#c27803',P.y,'#2c3e50','#aaa'];
+
+// ── CHART: RR SUB (section 2 tab) ───────────────────────────────────────
+new Chart(document.getElementById('rrSubChart'),{
+  type:'bar',data:{labels:rrSubLabels,datasets:[{data:rrSubData,backgroundColor:rrSubColors,borderRadius:4,borderSkipped:false}]},
+  options:{...DEF,indexAxis:'y',plugins:{...DEF.plugins,legend:{display:false}},
+    scales:{x:{grid:{color:'#eee'},ticks:{font:{size:10}}},y:{grid:{display:false},ticks:{font:{size:10}}}}}
+});
+
+// ── CHART: RR SHIFT ──────────────────────────────────────────────────────
+new Chart(document.getElementById('rrShiftChart'),{
+  type:'bar',data:{
+    labels:['Heat/Hysteresis','Fuel Consumption','Silica','Carbon Blk','Belt/Cord','Bio-based','Tread Patt.'],
+    datasets:[
+      {label:'2015–18 avg/yr',data:[23.5,33.8,26.5,23,10.75,15,1.5],backgroundColor:'rgba(107,127,150,0.55)',borderRadius:3},
+      {label:'2021–24 avg/yr',data:[48.25,28.5,28.75,21.5,21.5,14.25,11.5],backgroundColor:'rgba(232,100,26,0.85)',borderRadius:3}
+    ]},
+  options:{...DEF,scales:{x:{grid:{display:false},ticks:{font:{size:10}}},
+    y:{grid:{color:'#eee'},ticks:{font:{size:11}}}}}
+});
+
+// ── CHART: RR GEO TREND ──────────────────────────────────────────────────
+new Chart(document.getElementById('rrGeoTrend'),{
+  type:'line',data:{labels:years,datasets:[
+    {label:'China',data:cn_rr,borderColor:P.r,backgroundColor:'rgba(192,57,43,0.07)',fill:true,tension:0.35,pointRadius:4,borderWidth:2.5},
+    {label:'Japan',data:jp_rr,borderColor:P.b,backgroundColor:'rgba(26,74,122,0.07)',fill:true,tension:0.35,pointRadius:4,borderWidth:2.5},
+    {label:'Korea',data:kr_rr,borderColor:P.t,backgroundColor:'transparent',tension:0.35,pointRadius:3,borderDash:[4,3]},
+    {label:'Germany',data:de_rr,borderColor:'#c27803',backgroundColor:'transparent',tension:0.35,pointRadius:3,borderDash:[4,3]}
+  ]},
+  options:{...DEF,scales:{x:{grid:{display:false},ticks:{font:{size:11}}},
+    y:{grid:{color:'#eee'},ticks:{font:{size:11}}}}}
+});
+
+// ── CHART: MILEAGE GROUP TREND ───────────────────────────────────────────
+new Chart(document.getElementById('milGroupTrend'),{
+  type:'line',data:{labels:years,datasets:[
+    {label:'Direct Wear / Abrasion',data:milWear,borderColor:P.r,backgroundColor:'rgba(192,57,43,0.07)',fill:true,tension:0.35,pointRadius:4,borderWidth:2.5},
+    {label:'Durability / Life Terms',data:milDur,borderColor:P.b,backgroundColor:'rgba(26,74,122,0.07)',fill:true,tension:0.35,pointRadius:4,borderWidth:2.5},
+    {label:'Retread / Multi-life',data:milRet,borderColor:P.t,backgroundColor:'transparent',tension:0.35,pointRadius:4,borderDash:[4,3]},
+    {label:'Tread Pattern / Depth',data:milPat,borderColor:P.o,backgroundColor:'transparent',tension:0.35,pointRadius:4,borderDash:[4,3]}
+  ]},
+  options:{...DEF,scales:{x:{grid:{display:false},ticks:{font:{size:11}}},
+    y:{grid:{color:'#eee'},ticks:{font:{size:11}}}}}
+});
+
+// ── CHART: MILEAGE SUB ───────────────────────────────────────────────────
+new Chart(document.getElementById('milSubChart'),{
+  type:'bar',data:{
+    labels:['Abrasion / Wear Compound','Belt/Cord Structure','Carbon Black','Silica','Bio-based / NR','Heat Mgmt','Retread / Multi-life','Silane Coupling','Tread Pattern','Cut/Chip/Chunk','AI/Sim'],
+    datasets:[{data:[847,330,261,251,171,151,88,93,87,45,9],
+      backgroundColor:[P.r,P.b,P.gr,'#e67e22',P.g,P.o,P.t,P.p,P.y,'#c27803','#aaa'],
+      borderRadius:4,borderSkipped:false}]},
+  options:{...DEF,indexAxis:'y',plugins:{...DEF.plugins,legend:{display:false}},
+    scales:{x:{grid:{color:'#eee'},ticks:{font:{size:10}}},y:{grid:{display:false},ticks:{font:{size:10}}}}}
+});
+
+// ── CHART: RADAR ─────────────────────────────────────────────────────────
+new Chart(document.getElementById('radarChart'),{
+  type:'radar',data:{
+    labels:['Silica','Heat/\nHysteresis','Carbon\nBlack','Belt/Cord','Bio-based','Tread\nPattern','Silane','AI/Sim'],
+    datasets:[
+      {label:'Rolling Resistance',data:[24.6,31.3,20.1,14.9,13.3,2.3,10,0.2],borderColor:P.o,backgroundColor:'rgba(232,100,26,0.12)',pointBackgroundColor:P.o,pointRadius:4},
+      {label:'Mileage / Wear',data:[14.3,8.6,14.8,18.8,9.7,4.9,5.3,0.5],borderColor:P.b,backgroundColor:'rgba(26,74,122,0.12)',pointBackgroundColor:P.b,pointRadius:4}
+    ]},
+  options:{...DEF,scales:{r:{ticks:{font:{size:9},stepSize:5},pointLabels:{font:{size:10}},min:0,max:35}}}
+});
+
+// ── CHART: MILEAGE GEO TREND ─────────────────────────────────────────────
+new Chart(document.getElementById('milGeoTrend'),{
+  type:'line',data:{labels:years,datasets:[
+    {label:'China',data:cn_mil,borderColor:P.r,backgroundColor:'rgba(192,57,43,0.07)',fill:true,tension:0.35,pointRadius:4,borderWidth:2.5},
+    {label:'Japan',data:jp_mil,borderColor:P.b,backgroundColor:'rgba(26,74,122,0.07)',fill:true,tension:0.35,pointRadius:4,borderWidth:2.5}
+  ]},
+  options:{...DEF,scales:{x:{grid:{display:false},ticks:{font:{size:11}}},
+    y:{grid:{color:'#eee'},ticks:{font:{size:11}}}}}
+});
+
+// ── CHART: TECHNOLOGY OVERVIEW sub (duplicate of rrSub for tech tab) ─────
+new Chart(document.getElementById('rrSubChart2'),{
+  type:'bar',data:{labels:rrSubLabels,datasets:[{data:rrSubData,backgroundColor:rrSubColors,borderRadius:4,borderSkipped:false}]},
+  options:{...DEF,indexAxis:'y',plugins:{...DEF.plugins,legend:{display:false}},
+    scales:{x:{grid:{color:'#eee'},ticks:{font:{size:10}}},y:{grid:{display:false},ticks:{font:{size:10}}}}}
+});
+
+// ── CHART: BUBBLE ────────────────────────────────────────────────────────
+new Chart(document.getElementById('bubbleChart'),{
+  type:'bubble',data:{datasets:[
+    {label:'Heat/Hysteresis',data:[{x:0.88,y:9,r:18}],backgroundColor:'rgba(192,57,43,0.75)'},
+    {label:'Fuel Consumption',data:[{x:0.72,y:7.5,r:17}],backgroundColor:'rgba(232,100,26,0.75)'},
+    {label:'Silica Compound',data:[{x:0.65,y:7,r:16}],backgroundColor:'rgba(230,126,34,0.7)'},
+    {label:'Carbon Black',data:[{x:0.45,y:5.5,r:15}],backgroundColor:'rgba(127,140,141,0.7)'},
+    {label:'Belt/Cord',data:[{x:0.68,y:5,r:13}],backgroundColor:'rgba(26,74,122,0.7)'},
+    {label:'AI/ML Design',data:[{x:0.97,y:9.8,r:7}],backgroundColor:'rgba(142,68,173,0.85)'},
+    {label:'Tread Pattern',data:[{x:0.78,y:6.5,r:8}],backgroundColor:'rgba(233,196,106,0.9)'},
+    {label:'Retread/Multi-life',data:[{x:0.82,y:8,r:8}],backgroundColor:'rgba(42,157,143,0.75)'},
+    {label:'Bio-based/Lignin',data:[{x:0.4,y:5,r:11}],backgroundColor:'rgba(39,174,96,0.7)'},
+    {label:'Graphene (synergist)',data:[{x:0.7,y:7,r:6}],backgroundColor:'rgba(44,62,80,0.65)'},
+  ]},
+  options:{...DEF,scales:{
+    x:{min:0,max:1.1,grid:{color:'#eee'},title:{display:true,text:'Filing Momentum  (left=stalled, right=accelerating)',font:{size:10}},
+      ticks:{font:{size:10},callback:function(v){var m={0:'Stalled',0.5:'Growing',1:'V.Fast'};return m[v]||'';}}},
+    y:{min:0,max:11,grid:{color:'#eee'},title:{display:true,text:'Relevance to Both RR + Mileage',font:{size:10}},
+      ticks:{font:{size:10},callback:function(v){var m={2:'Low',5:'Medium',8:'High',10:'V.High'};return m[v]||'';}}}
+  },plugins:{...DEF.plugins,tooltip:{callbacks:{label:function(ctx){return ' '+ctx.dataset.label;}}}}}
+});
+
+// ── CHART: BOTH SUB ──────────────────────────────────────────────────────
+new Chart(document.getElementById('bothSubChart'),{
+  type:'bar',data:{
+    labels:['Fuel Consumption','Heat/Hysteresis','Silica','Carbon Black','Bio-based','Belt/Cord','Silane','Funct.Polymer','Graphene','Tread Pattern','Retread','AI/Sim'],
+    datasets:[{data:[179,167,158,143,92,83,67,17,11,12,8,0],
+      backgroundColor:[P.o,P.r,'#e67e22',P.gr,P.g,P.b,P.t,P.p,'#2c3e50',P.y,P.t,'#aaa'],
+      borderRadius:4,borderSkipped:false}]},
+  options:{...DEF,indexAxis:'y',plugins:{...DEF.plugins,legend:{display:false}},
+    scales:{x:{grid:{color:'#eee'},ticks:{font:{size:10}}},y:{grid:{display:false},ticks:{font:{size:10}}}}}
+});
+
+// ── CHART: BOTH TREND ────────────────────────────────────────────────────
+new Chart(document.getElementById('bothTrendChart'),{
+  type:'bar',data:{labels:years,
+    datasets:[{label:'Dual RR+Mileage Patents',data:both,
+      backgroundColor:both.map(function(v,i){return years[i]===2023?P.o:'rgba(42,157,143,0.65)';}),
+      borderRadius:4}]},
+  options:{...DEF,plugins:{...DEF.plugins,legend:{display:false}},
+    scales:{x:{grid:{display:false},ticks:{font:{size:11}}},
+      y:{grid:{color:'#eee'},ticks:{font:{size:11}},title:{display:true,text:'Patent Count',font:{size:11}}}}}
+});
+
+// ── CHART: COMP RR ───────────────────────────────────────────────────────
+var compLabels=['Sumitomo Rubber','Yokohama Rubber','Bridgestone','Toyo Tire','Michelin','Hankook','Continental','Qingdao Doublestar','Zhongce Rubber','Sailun Group'];
+var compRR=[350,106,85,64,48,40,30,31,26,15];
+var compMil=[467,188,168,76,41,61,40,63,34,27];
+var compBoth=[174,52,35,11,17,17,4,24,12,8];
+
+new Chart(document.getElementById('compRRChart'),{
+  type:'bar',data:{labels:compLabels,
+    datasets:[{data:compRR,
+      backgroundColor:compLabels.map(function(l,i){return i===0?P.o:i<3?P.b:P.t;}),
+      borderRadius:4,borderSkipped:false}]},
+  options:{...DEF,indexAxis:'y',plugins:{...DEF.plugins,legend:{display:false}},
+    scales:{x:{grid:{color:'#eee'},ticks:{font:{size:11}}},y:{grid:{display:false},ticks:{font:{size:10}}}}}
+});
+
+// ── CHART: CN vs JP RR ───────────────────────────────────────────────────
+new Chart(document.getElementById('cnJpRR'),{
+  type:'line',data:{labels:years,datasets:[
+    {label:'China',data:cn_rr,borderColor:P.r,backgroundColor:'rgba(192,57,43,0.07)',fill:true,tension:0.35,pointRadius:4,borderWidth:2.5},
+    {label:'Japan',data:jp_rr,borderColor:P.b,backgroundColor:'rgba(26,74,122,0.07)',fill:true,tension:0.35,pointRadius:4,borderWidth:2.5},
+    {label:'Korea',data:kr_rr,borderColor:P.t,backgroundColor:'transparent',tension:0.35,pointRadius:3,borderDash:[4,3]},
+    {label:'Germany',data:de_rr,borderColor:'#c27803',backgroundColor:'transparent',tension:0.35,pointRadius:3,borderDash:[4,3]}
+  ]},
+  options:{...DEF,scales:{x:{grid:{display:false},ticks:{font:{size:11}}},
+    y:{grid:{color:'#eee'},ticks:{font:{size:11}}}}}
+});
+
+// ── CHART: COMP MILEAGE ──────────────────────────────────────────────────
+new Chart(document.getElementById('compMilChart'),{
+  type:'bar',data:{labels:compLabels,
+    datasets:[{data:compMil,
+      backgroundColor:compLabels.map(function(l,i){return i===0?P.o:i<3?P.b:P.t;}),
+      borderRadius:4,borderSkipped:false}]},
+  options:{...DEF,indexAxis:'y',plugins:{...DEF.plugins,legend:{display:false}},
+    scales:{x:{grid:{color:'#eee'},ticks:{font:{size:11}}},y:{grid:{display:false},ticks:{font:{size:10}}}}}
+});
+
+// ── CHART: CN vs JP MILEAGE ──────────────────────────────────────────────
+new Chart(document.getElementById('cnJpMil'),{
+  type:'line',data:{labels:years,datasets:[
+    {label:'China',data:cn_mil,borderColor:P.r,backgroundColor:'rgba(192,57,43,0.07)',fill:true,tension:0.35,pointRadius:4,borderWidth:2.5},
+    {label:'Japan',data:jp_mil,borderColor:P.b,backgroundColor:'rgba(26,74,122,0.07)',fill:true,tension:0.35,pointRadius:4,borderWidth:2.5}
+  ]},
+  options:{...DEF,scales:{x:{grid:{display:false},ticks:{font:{size:11}}},
+    y:{grid:{color:'#eee'},ticks:{font:{size:11}}}}}
+});
+
+// ── CHART: COMP BOTH ─────────────────────────────────────────────────────
+new Chart(document.getElementById('compBothChart'),{
+  type:'bar',data:{labels:compLabels,
+    datasets:[{data:compBoth,
+      backgroundColor:compLabels.map(function(l,i){return i===0?P.o:i<3?P.b:P.t;}),
+      borderRadius:4,borderSkipped:false}]},
+  options:{...DEF,indexAxis:'y',plugins:{...DEF.plugins,legend:{display:false}},
+    scales:{x:{grid:{color:'#eee'},ticks:{font:{size:11}}},y:{grid:{display:false},ticks:{font:{size:10}}}}}
+});
+
+// ── CHART: SCATTER ───────────────────────────────────────────────────────
+new Chart(document.getElementById('scatterChart'),{
+  type:'bubble',data:{datasets:[
+    {label:'Sumitomo Rubber',data:[{x:350,y:467,r:16}],backgroundColor:P.o},
+    {label:'Yokohama Rubber',data:[{x:106,y:188,r:9}],backgroundColor:P.b},
+    {label:'Bridgestone',data:[{x:85,y:168,r:8}],backgroundColor:'#2980b9'},
+    {label:'Toyo Tire',data:[{x:64,y:76,r:5}],backgroundColor:P.gr},
+    {label:'Michelin',data:[{x:48,y:41,r:6}],backgroundColor:P.p},
+    {label:'Hankook',data:[{x:40,y:61,r:6}],backgroundColor:'#c27803'},
+    {label:'Continental',data:[{x:30,y:40,r:4}],backgroundColor:P.t},
+    {label:'Qingdao Doublestar',data:[{x:31,y:63,r:7}],backgroundColor:P.r},
+    {label:'Shandong Linglong',data:[{x:13,y:47,r:5}],backgroundColor:'#e74c3c'},
+  ]},
+  options:{...DEF,scales:{
+    x:{grid:{color:'#eee'},title:{display:true,text:'RR Patents',font:{size:11}},ticks:{font:{size:11}}},
+    y:{grid:{color:'#eee'},title:{display:true,text:'Mileage Patents',font:{size:11}},ticks:{font:{size:11}}}
+  },plugins:{...DEF.plugins,tooltip:{callbacks:{label:function(ctx){return ' '+ctx.dataset.label+' (RR:'+ctx.raw.x+', Mil:'+ctx.raw.y+')';}}}}}
+});
+
+// ── CHART: OPPORTUNITY MAP ───────────────────────────────────────────────
+new Chart(document.getElementById('oppChart'),{
+  type:'bubble',data:{datasets:[
+    {label:'Thermal System Optimisation',data:[{x:9.5,y:9.5,r:18}],backgroundColor:'rgba(192,57,43,0.78)'},
+    {label:'EV-Specific TBR Design',data:[{x:9.8,y:9.2,r:16}],backgroundColor:'rgba(232,100,26,0.78)'},
+    {label:'AI/ML Compound Design',data:[{x:9.6,y:8.5,r:14}],backgroundColor:'rgba(142,68,173,0.78)'},
+    {label:'Retread-Optimised Compound',data:[{x:8.5,y:8,r:14}],backgroundColor:'rgba(42,157,143,0.78)'},
+    {label:'Contact Patch / Tread RR',data:[{x:8,y:7,r:11}],backgroundColor:'rgba(233,196,106,0.9)'},
+    {label:'Graphene as CB Synergist',data:[{x:7.5,y:6.5,r:9}],backgroundColor:'rgba(44,62,80,0.68)'},
+    {label:'Low-VOC + Low-RR Tread',data:[{x:9,y:7.5,r:11}],backgroundColor:'rgba(39,174,96,0.78)'},
+    {label:'Belt Cord RR+Durability',data:[{x:7,y:6,r:10}],backgroundColor:'rgba(26,74,122,0.68)'},
+    {label:'Silica Compound (Mature)',data:[{x:2.5,y:6,r:20}],backgroundColor:'rgba(180,180,180,0.28)'},
+    {label:'Carbon Black (Mature)',data:[{x:2.8,y:5,r:18}],backgroundColor:'rgba(180,180,180,0.28)'},
+    {label:'Heat/Hysteresis (Active)',data:[{x:4,y:7,r:17}],backgroundColor:'rgba(180,180,180,0.28)'},
+  ]},
+  options:{...DEF,scales:{
+    x:{min:0,max:11,grid:{color:'#eee'},
+       title:{display:true,text:'Existing IP Density  (right = white space)',font:{size:11}},
+       ticks:{font:{size:11},callback:function(v){var m={1:'Dense IP',5:'Moderate',9:'White Space'};return m[v]||'';}}},
+    y:{min:0,max:11,grid:{color:'#eee'},
+       title:{display:true,text:'Commercial & Strategic Urgency',font:{size:11}},
+       ticks:{font:{size:11},callback:function(v){var m={2:'Low',5:'Medium',8:'High',10:'Critical'};return m[v]||'';}}}
+  },plugins:{...DEF.plugins,legend:{position:'bottom',labels:{font:{size:11},padding:8,boxWidth:10}},
+    tooltip:{callbacks:{label:function(ctx){return ' '+ctx.dataset.label;}}}}}
+});
+
+// ── NAV HIGHLIGHT ─────────────────────────────────────────────────────────
+var navSecs=['overview','rr','mileage','technology','competitors','whitespace'];
+window.addEventListener('scroll',function(){
+  var cur=navSecs[0];
+  navSecs.forEach(function(id){
+    var el=document.getElementById(id);
+    if(el&&el.getBoundingClientRect().top<=90) cur=id;
+  });
+  document.querySelectorAll('.nav a').forEach(function(a){
+    a.classList.toggle('active',a.getAttribute('data-sec')===cur);
+  });
+});
+
+
+
+// ══════════════════════════════════════════════════════
+// DEEP DIVE — Section 07 Data & Charts
+// ══════════════════════════════════════════════════════
+var DD_YEARS = [2015,2016,2017,2018,2019,2020,2021,2022,2023,2024];
+var DD_OVERALL = [38,31,47,51,45,47,42,36,70,41];
+var DD_THEME_NAMES = ['Silica & Silane','Carbon & Hybrid','Belt & Structure','Tread Design','Bio-based','Funct. Polymers'];
+var DD_THEME_COLORS = ['#e8641a','#d4a017','#1a4a7a','#2a9d8f','#27ae60','#8e44ad'];
+var DD_THEME_COUNTS = [233,50,48,28,18,10];
+
+var DD_TRENDS = [
+  [20,11,29,30,24,20,23,19,42,15],
+  [9,2,3,8,6,5,0,7,7,3],
+  [2,4,4,9,4,7,8,4,1,5],
+  [3,1,0,0,3,7,5,1,4,4],
+  [4,2,3,0,2,2,1,3,1,0],
+  [0,0,0,1,1,1,2,0,2,3]
+];
+
+var DD_ASGN = [
+  {labels:['Sumitomo Rubber','Yokohama Rubber','Bridgestone','Toyo Tire','Hankook','Sumitomo Elec','Tokuyama Corp'],data:[111,23,14,11,10,8,6]},
+  {labels:['Yokohama Rubber','Sumitomo Rubber','Bridgestone','Zhongce (CN)','Shikoku Chem','Sinopec'],data:[13,8,7,3,2,2]},
+  {labels:['Sumitomo Rubber','Michelin','Hankook','Kuraray','Bridgestone','Aeolus (CN)'],data:[16,5,3,2,2,2]},
+  {labels:['Sumitomo Rubber','Qingdao Yellowsea','Sailun (CN)','Continental','Aeolus (CN)','Bridgestone'],data:[15,2,2,2,2,2]},
+  {labels:['Sumitomo Rubber','Bridgestone','Yokohama Rubber','Sinopec','Toyo Tire','Continental'],data:[6,4,3,1,1,1]},
+  {labels:['Bridgestone','Sinopec','Goodyear','Pusan Univ (KR)','Korean Mat. Inst.','Hankook'],data:[3,2,2,1,1,1]}
+];
+
+var DD_STRATEGIES = [
+  {labels:['Dual rubber matrix (NR+BR/SBR)','Silica particle size / morphology','Wet process / in-situ','Modified silica surface','Optimised silane dose'],data:[75,62,8,3,1],total:233},
+  {labels:['CB + Silica hybrid','Nano-carbon (CNT / graphene)','Surface-functionalized CB','Filler network control'],data:[48,6,4,3],total:50},
+  {labels:['Belt layer count / geometry','Undertread optimisation','Belt tension / pretension','Cord material upgrade','Contact patch uniformity'],data:[11,5,2,2,2],total:48},
+  {labels:['Sipe / kerf geometry','Multi-compound tread','Footprint pressure control'],data:[25,2,1],total:28},
+  {labels:['High-MW NR / BR architecture','Modified / grafted NR','Dandelion / guayule NR'],data:[6,2,2],total:18},
+  {labels:['Chain-end functionalization','In-chain modification','Tin / Si coupling (star)','Wet masterbatch process'],data:[3,3,1,1],total:10}
+];
+
+var DD_MEAS = [
+  {labels:['RR goal (direct)','Wear goal (direct)','Loss tangent / tan δ','Heat build-up','Simultaneous claim'],data:[108,215,16,29,12]},
+  {labels:['RR goal (direct)','Wear goal (direct)','Loss tangent / tan δ','Heat build-up','Simultaneous claim'],data:[35,44,8,19,7]},
+  {labels:['RR goal (direct)','Wear goal (direct)','Loss tangent / tan δ','Heat build-up','Simultaneous claim'],data:[36,41,9,5,5]},
+  {labels:['RR goal (direct)','Wear goal (direct)','Loss tangent / tan δ','Storage modulus','Simultaneous claim'],data:[22,12,5,2,5]},
+  {labels:['RR goal (direct)','Wear goal (direct)','Heat build-up','Simultaneous claim'],data:[9,13,6,2]},
+  {labels:['RR goal (direct)','Wear goal (direct)','Heat build-up','Simultaneous claim'],data:[8,7,2,1]}
+];
+
+var DD_COUNTRY = [
+  {JP:[17,8,24,25,16,14,14,10,32,8],CN:[2,1,1,1,2,1,3,3,5,2],KR:[0,1,1,1,2,1,2,2,1,2],FR:[0,0,2,0,0,0,0,0,0,0]},
+  {JP:[9,1,2,8,2,3,0,0,5,2],CN:[0,0,0,0,3,1,0,3,1,1],KR:[0,0,0,0,1,1,0,0,1,0],FR:[0,0,0,0,0,0,0,0,0,0]},
+  {JP:[1,2,1,3,3,3,4,0,0,2],CN:[1,0,0,0,0,1,3,2,0,2],KR:[0,1,1,2,1,0,0,0,0,1],FR:[0,1,2,3,0,3,1,1,1,0]},
+  {JP:[1,1,0,0,3,5,4,0,2,2],CN:[2,0,0,0,0,2,0,0,0,2],KR:[0,0,0,0,0,0,0,1,0,1],FR:[0,0,0,0,0,0,0,0,0,0]},
+  {JP:[4,2,3,0,2,1,0,1,1,0],CN:[0,0,0,0,0,1,1,1,0,0],KR:[0,0,0,0,0,0,0,0,0,0],FR:[0,0,0,0,0,0,0,0,0,0]},
+  {JP:[0,0,0,0,0,0,0,0,1,2],CN:[0,0,0,0,0,0,1,0,1,0],KR:[0,0,0,1,1,0,1,0,0,1],FR:[0,0,0,0,0,0,0,0,0,0]}
+];
+
+// Build overview charts (always shown)
+(function(){
+  var ctx1 = document.getElementById('dd_ovTrend');
+  if(ctx1) new Chart(ctx1,{type:'line',data:{labels:DD_YEARS,datasets:[{
+    label:'Combined (RR+Wear) Patents',data:DD_OVERALL,
+    borderColor:'#e8641a',backgroundColor:'rgba(232,100,26,0.1)',fill:true,tension:.35,borderWidth:2.5,pointRadius:4
+  }]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{font:{size:11},boxWidth:11}}},
+    scales:{x:{grid:{display:false},ticks:{font:{size:11}}},y:{grid:{color:'#eee'},beginAtZero:true,ticks:{font:{size:11}}}}}});
+
+  var ctx2 = document.getElementById('dd_donut');
+  if(ctx2) new Chart(ctx2,{type:'doughnut',data:{
+    labels:DD_THEME_NAMES,
+    datasets:[{data:DD_THEME_COUNTS,backgroundColor:DD_THEME_COLORS,borderWidth:2,borderColor:'#fff',hoverOffset:5}]
+  },options:{responsive:true,maintainAspectRatio:false,cutout:'55%',
+    plugins:{legend:{position:'right',labels:{font:{size:11},boxWidth:12,padding:8}}}}});
+})();
+
+// Lazy-build per theme
+var ddBuilt = {};
+function buildDDTheme(i) {
+  if(ddBuilt[i]) return;
+  ddBuilt[i] = true;
+  var c = DD_THEME_COLORS[i];
+  var pfx = 'dd_t'+i;
+  var DEF2 = {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}};
+  var cColors = {JP:'#e8641a',CN:'#c0392b',KR:'#2a9d8f',FR:'#8e44ad'};
+
+  // Trend
+  var tCtx = document.getElementById(pfx+'_trend');
+  if(tCtx) new Chart(tCtx,{type:'line',data:{labels:DD_YEARS,datasets:[{
+    label:'Patents',data:DD_TRENDS[i],borderColor:c,backgroundColor:c+'22',fill:true,tension:.35,borderWidth:2.5,pointRadius:4
+  }]},options:{...DEF2,plugins:{legend:{labels:{font:{size:11},boxWidth:11}}},
+    scales:{x:{grid:{display:false},ticks:{font:{size:10}}},y:{grid:{color:'#eee'},beginAtZero:true,ticks:{font:{size:10}}}}}});
+
+  // Assignees
+  var aCtx = document.getElementById(pfx+'_asgn');
+  if(aCtx) new Chart(aCtx,{type:'bar',data:{
+    labels:DD_ASGN[i].labels,datasets:[{data:DD_ASGN[i].data,backgroundColor:c+'cc',borderRadius:3}]
+  },options:{...DEF2,indexAxis:'y',scales:{x:{grid:{color:'#eee'},ticks:{font:{size:10}}},y:{grid:{display:false},ticks:{font:{size:10}}}}}});
+
+  // Measurements
+  var mCtx = document.getElementById(pfx+'_meas');
+  if(mCtx) new Chart(mCtx,{type:'bar',data:{
+    labels:DD_MEAS[i].labels,datasets:[{data:DD_MEAS[i].data,backgroundColor:c+'99',borderColor:c,borderWidth:1.5,borderRadius:3}]
+  },options:{...DEF2,indexAxis:'y',scales:{x:{grid:{color:'#eee'},ticks:{font:{size:10}}},y:{grid:{display:false},ticks:{font:{size:10}}}}}});
+
+  // Strategy bars (HTML)
+  var sEl = document.getElementById(pfx+'_strat');
+  if(sEl){
+    var s = DD_STRATEGIES[i];
+    var maxVal = Math.max.apply(null,s.data);
+    var html = '';
+    for(var j=0;j<s.labels.length;j++){
+      var pct = Math.round(100*s.data[j]/s.total);
+      var bw = Math.round(100*s.data[j]/maxVal);
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
+        '<span style="font-size:11px;color:#4a5568;width:210px;flex-shrink:0">'+s.labels[j]+'</span>'+
+        '<div style="flex:1;background:#edf2f7;border-radius:3px;height:18px;overflow:hidden">'+
+        '<div style="width:'+bw+'%;height:100%;background:'+c+';border-radius:3px;display:flex;align-items:center;padding-left:6px;font-size:10px;color:#fff;font-weight:700">'+pct+'%</div>'+
+        '</div><span style="font-size:11px;color:#718096;width:28px;text-align:right">'+s.data[j]+'</span></div>';
+    }
+    sEl.innerHTML = html;
+  }
+
+  // Country trend
+  var coCtx = document.getElementById(pfx+'_country');
+  if(coCtx){
+    var ct = DD_COUNTRY[i];
+    var coDatasets = ['JP','CN','KR','FR'].map(function(cc){
+      return{label:cc,data:ct[cc],borderColor:cColors[cc],backgroundColor:cColors[cc]+'22',
+        fill:false,tension:.3,borderWidth:2,pointRadius:3};
+    });
+    new Chart(coCtx,{type:'line',data:{labels:DD_YEARS,datasets:coDatasets},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{position:'bottom',labels:{font:{size:11},boxWidth:11,padding:8}}},
+        scales:{x:{grid:{display:false},ticks:{font:{size:10}}},y:{grid:{color:'#eee'},beginAtZero:true,ticks:{font:{size:10}}}}}});
+  }
+}
+
+// Deep dive tab switcher
+function switchDD(id, btn) {
+  document.querySelectorAll('#dd-tabrow .tb').forEach(function(b){ b.classList.remove('active'); });
+  document.querySelectorAll('.dd-pane').forEach(function(p){ p.classList.remove('active'); });
+  btn.classList.add('active');
+  var pane = document.getElementById('dd-'+id);
+  if(pane){ pane.classList.add('active'); }
+  var m = id.match(/^t(\d)$/);
+  if(m) setTimeout(function(){ buildDDTheme(parseInt(m[1])); }, 60);
+}
+
+
+// Extend nav scroll tracking
+navSecs.push('deepdive');
+
+</script>
+</body>
+</html>
