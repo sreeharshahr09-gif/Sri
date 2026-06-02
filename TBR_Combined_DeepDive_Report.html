@@ -3,193 +3,161 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TBR Tire – RR & Mileage Combined Patents: Deep Dive Analysis</title>
+<title>TBR Tire – RR & Mileage Combined Patents: Deep Dive</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',Arial,sans-serif;background:#f4f6f9;color:#1a2535;font-size:14px}
-/* ── Top Header ── */
 .top-header{background:linear-gradient(135deg,#1a3a5c 0%,#2a6096 100%);color:#fff;padding:28px 40px 22px}
-.top-header h1{font-size:22px;font-weight:700;letter-spacing:.3px}
+.top-header h1{font-size:22px;font-weight:700}
 .top-header .sub{font-size:13px;opacity:.8;margin-top:5px}
-.badge-row{display:flex;gap:12px;margin-top:14px;flex-wrap:wrap}
+.badge-row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
 .badge{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);border-radius:20px;padding:4px 14px;font-size:12px;font-weight:600}
-/* ── Nav ── */
+.badge.warn{background:rgba(255,180,0,.25);border-color:rgba(255,180,0,.5)}
 .main-nav{background:#1a2535;display:flex;overflow-x:auto;padding:0 20px}
 .main-nav a{color:#a8bbd4;text-decoration:none;padding:13px 18px;font-size:13px;font-weight:600;white-space:nowrap;border-bottom:3px solid transparent;cursor:pointer}
 .main-nav a.active,.main-nav a:hover{color:#fff;border-bottom-color:#e8641a}
-/* ── Section ── */
 .section{display:none;padding:28px 32px;max-width:1400px;margin:0 auto}
 .section.active{display:block}
-/* ── Theme nav ── */
-.theme-nav{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px}
-.theme-btn{padding:8px 18px;border:2px solid #cbd5e0;border-radius:22px;background:#fff;font-size:12px;font-weight:700;cursor:pointer;color:#4a5568;transition:all .2s}
-.theme-btn.active{color:#fff;border-color:transparent}
-.theme-btn[data-theme="0"].active{background:#e8641a}
-.theme-btn[data-theme="1"].active{background:#1a4a7a}
-.theme-btn[data-theme="2"].active{background:#2a9d8f}
-.theme-btn[data-theme="3"].active{background:#e9c46a;color:#1a2535}
-.theme-btn[data-theme="4"].active{background:#27ae60}
-.theme-btn[data-theme="5"].active{background:#8e44ad}
-/* ── Theme panel ── */
-.theme-panel{display:none}
-.theme-panel.active{display:block}
-/* ── Cards ── */
 .card{background:#fff;border-radius:10px;padding:22px;box-shadow:0 2px 8px rgba(0,0,0,.07);margin-bottom:20px}
 .card h3{font-size:15px;font-weight:700;color:#1a2535;margin-bottom:14px;display:flex;align-items:center;gap:8px}
-.card h3 .dot{width:12px;height:12px;border-radius:50%;display:inline-block;flex-shrink:0}
-/* ── Grid ── */
+.card h3 .dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
 .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px}
 @media(max-width:900px){.grid-2,.grid-3{grid-template-columns:1fr}}
-/* ── Insight blocks ── */
 .insight-block{background:#f8fafc;border-left:4px solid #e8641a;border-radius:0 8px 8px 0;padding:14px 18px;margin-bottom:14px}
 .insight-block.blue{border-left-color:#1a4a7a}
 .insight-block.green{border-left-color:#27ae60}
 .insight-block.teal{border-left-color:#2a9d8f}
 .insight-block.purple{border-left-color:#8e44ad}
-.insight-block h4{font-size:13px;font-weight:700;margin-bottom:6px;color:#1a2535}
+.insight-block.amber{border-left-color:#d4a017}
+.insight-block h4{font-size:13px;font-weight:700;margin-bottom:6px}
 .insight-block p{font-size:12.5px;line-height:1.65;color:#4a5568}
-/* ── Strategy bar ── */
+.insight-block ul{font-size:12.5px;line-height:1.8;color:#4a5568;padding-left:18px;margin-top:4px}
 .strat-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
-.strat-label{font-size:12px;color:#4a5568;width:240px;flex-shrink:0}
-.strat-bar-wrap{flex:1;background:#edf2f7;border-radius:4px;height:18px;overflow:hidden}
-.strat-bar{height:100%;border-radius:4px;display:flex;align-items:center;padding-left:6px;font-size:11px;color:#fff;font-weight:600}
-.strat-count{font-size:11px;color:#718096;width:40px;text-align:right;flex-shrink:0}
-/* ── Conflict resolution table ── */
-.conflict-table{width:100%;border-collapse:collapse;font-size:12.5px}
-.conflict-table th{background:#1a2535;color:#fff;padding:9px 12px;text-align:left;font-weight:600}
-.conflict-table td{padding:9px 12px;border-bottom:1px solid #edf2f7;vertical-align:top}
-.conflict-table tr:hover td{background:#f8fafc}
-/* ── Abstract quote ── */
+.strat-label{font-size:12px;color:#4a5568;width:230px;flex-shrink:0}
+.strat-bar-wrap{flex:1;background:#edf2f7;border-radius:4px;height:20px;overflow:hidden}
+.strat-bar{height:100%;border-radius:4px;display:flex;align-items:center;padding-left:8px;font-size:11px;color:#fff;font-weight:700;min-width:30px}
+.strat-count{font-size:11px;color:#718096;width:36px;text-align:right;flex-shrink:0}
 .quote-box{background:#fffbf5;border:1px solid #fcd29a;border-radius:8px;padding:14px 16px;margin-top:10px;font-size:12px;line-height:1.7;color:#5a4000}
 .quote-box .src{font-size:11px;color:#999;margin-top:6px;font-style:italic}
-/* ── Metric pills ── */
-.metric-pill{display:inline-block;padding:4px 12px;border-radius:14px;font-size:11px;font-weight:700;margin:3px}
-/* ── Header strip ── */
 .theme-header{border-radius:10px;padding:18px 24px;margin-bottom:20px;color:#fff}
-/* ── Overview table ── */
 .overview-table{width:100%;border-collapse:collapse;font-size:13px}
 .overview-table th{background:#1a3a5c;color:#fff;padding:10px 14px;text-align:left}
 .overview-table td{padding:9px 14px;border-bottom:1px solid #e2e8f0;vertical-align:top}
 .overview-table tr:nth-child(even) td{background:#f8fafc}
-/* ── Chart containers ── */
 .chart-wrap{position:relative;width:100%}
 .chart-wrap canvas{max-height:280px}
 .chart-wrap-tall canvas{max-height:360px}
-/* ── Section title ── */
 .sec-title{font-size:18px;font-weight:700;color:#1a3a5c;margin-bottom:6px}
 .sec-sub{font-size:13px;color:#718096;margin-bottom:22px}
-/* ── Divider ── */
-.divider{border:none;border-top:1px solid #e2e8f0;margin:22px 0}
-/* ── Tag ── */
-.tag{display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:600;margin:2px}
+.method-note{background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:12px 16px;font-size:12px;color:#5d4037;margin-bottom:20px;line-height:1.6}
+.method-note strong{color:#e65100}
 </style>
 </head>
 <body>
 
-<!-- Header -->
 <div class="top-header">
-  <h1>TBR Tire Patents — Rolling Resistance & Mileage: Deep Dive Analysis</h1>
-  <div class="sub">How researchers scientifically handle the RR–Wear tradeoff | 736 Combined Patents (2015–2024) | 6 Technology Themes</div>
+  <h1>TBR Tire Patents — Rolling Resistance &amp; Mileage: Deep Dive Analysis</h1>
+  <div class="sub">How researchers scientifically handle the RR–Wear tradeoff | 448 Combined Patents (2015–2024) | 6 Technology Themes</div>
   <div class="badge-row">
-    <span class="badge">736 Dual-Goal Patents</span>
-    <span class="badge">2015–2024 Trend</span>
+    <span class="badge">448 Dual-Goal Patents</span>
+    <span class="badge">2015–2024</span>
     <span class="badge">6 Technology Themes</span>
     <span class="badge">Scientific Approach Analysis</span>
-    <span class="badge">Top Innovators</span>
+    <span class="badge warn">Corrected keyword set — no false positives from 'groove'/'durability'</span>
   </div>
 </div>
 
-<!-- Nav -->
 <nav class="main-nav" id="mainNav">
   <a onclick="showSection('overview',this)" class="active">Overview</a>
   <a onclick="showSection('theme0',this)">① Silica &amp; Silane</a>
-  <a onclick="showSection('theme1',this)">② Belt &amp; Structure</a>
-  <a onclick="showSection('theme2',this)">③ Tread Design</a>
-  <a onclick="showSection('theme3',this)">④ Carbon &amp; Hybrid Filler</a>
+  <a onclick="showSection('theme1',this)">② Carbon &amp; Hybrid Filler</a>
+  <a onclick="showSection('theme2',this)">③ Belt &amp; Structure</a>
+  <a onclick="showSection('theme3',this)">④ Tread Design</a>
   <a onclick="showSection('theme4',this)">⑤ Bio-based Materials</a>
   <a onclick="showSection('theme5',this)">⑥ Functionalized Polymers</a>
 </nav>
 
 <!-- ===================== OVERVIEW ===================== -->
 <div id="overview" class="section active">
-  <div class="sec-title">The RR–Mileage Tradeoff: Why It Is So Hard</div>
-  <div class="sec-sub">Rolling resistance and tread wear are governed by competing material requirements — low hysteresis for RR vs. high reinforcement/modulus for wear. This analysis covers 736 patents that explicitly address both simultaneously.</div>
+  <div class="sec-title">The RR–Mileage Tradeoff: Why It Is So Hard to Solve Simultaneously</div>
+  <div class="sec-sub">Both parameters are governed by the same rubber viscoelastic properties — but in opposing directions. 448 patents (2015–2024) explicitly address both goals in the same invention.</div>
+
+  <div class="method-note">
+    <strong>Methodology note:</strong> This report uses a corrected keyword set that identifies patents explicitly addressing both rolling resistance and tread wear/mileage. Keywords like <em>'groove'</em> (present in ~1,600 tire patents irrespective of wear claims) and <em>'durability'</em> (often means belt/bead durability, not tread wear) were excluded after validation. This gives 448 patents — the highest-confidence combined set. An earlier draft used 736 patents which overcounted by ~65%.
+  </div>
 
   <div class="grid-2" style="margin-bottom:20px">
     <div class="card">
       <h3><span class="dot" style="background:#e8641a"></span>The Fundamental Conflict</h3>
       <div class="insight-block">
-        <h4>Rolling Resistance Goal</h4>
-        <p>Needs <strong>low hysteresis rubber</strong> — high rebound, low tan δ at 60°C, minimal energy dissipation per deformation cycle. Typically achieved by reducing filler loading, using low-structure carbon black, or switching to silica + silane coupling.</p>
+        <h4>Rolling Resistance Requires</h4>
+        <p><strong>Low hysteresis rubber</strong> — high rebound resilience, low tan&nbsp;δ at 60°C, minimal energy dissipation per deformation cycle. Achieved via: reduced filler loading, low-structure carbon black, or silica + silane (which shifts the tan&nbsp;δ peak to lower temperatures).</p>
       </div>
       <div class="insight-block blue">
-        <h4>Wear / Mileage Goal</h4>
-        <p>Needs <strong>high reinforcement</strong> — dense filler network, high modulus, good filler-polymer interface, high abrasion resistance (DIN index). This often requires higher tan δ at room temperature and stiffer compound.</p>
+        <h4>Tread Wear / Mileage Requires</h4>
+        <p><strong>High reinforcement</strong> — dense filler–polymer network, high modulus, good interface bonding, strong crack resistance. This typically demands higher filler loading and higher tan&nbsp;δ at ambient temperature — directly opposing the RR goal.</p>
       </div>
       <div class="insight-block green">
-        <h4>The Resolution Space</h4>
-        <p>Researchers must engineer materials, structures, or geometries that shift the <em>operating window</em> of tan δ — high at low temp (grip/wear) but low at 60°C (RR). Silica achieves this naturally through its frequency-dependent viscoelastic profile.</p>
+        <h4>The Resolution Principle</h4>
+        <p>Every successful approach in this dataset works by <em>separating the operating conditions</em> of the two properties — either through frequency-domain engineering (viscoelastic peak shifting), spatial separation (cap vs. base compound), or structural deformation management (belt geometry, sipe architecture).</p>
       </div>
     </div>
     <div class="card">
-      <h3><span class="dot" style="background:#1a4a7a"></span>Combined Patent Volume by Year</h3>
-      <div class="chart-wrap">
-        <canvas id="overviewTrend"></canvas>
-      </div>
+      <h3><span class="dot" style="background:#1a4a7a"></span>Combined Patent Volume — 2015 to 2024</h3>
+      <div class="chart-wrap"><canvas id="overviewTrend"></canvas></div>
     </div>
   </div>
 
   <div class="card" style="margin-bottom:20px">
-    <h3><span class="dot" style="background:#2a9d8f"></span>Top 6 Technology Themes — Distribution &amp; Share</h3>
+    <h3><span class="dot" style="background:#2a9d8f"></span>6 Technology Themes — Distribution &amp; Characteristics</h3>
     <div class="grid-2">
-      <div class="chart-wrap">
-        <canvas id="themeDonut"></canvas>
-      </div>
+      <div class="chart-wrap"><canvas id="themeDonut"></canvas></div>
       <div>
         <table class="overview-table">
-          <thead><tr><th>#</th><th>Technology Theme</th><th>Patents</th><th>Share</th><th>Peak Year</th><th>Primary Conflict Strategy</th></tr></thead>
+          <thead><tr><th>#</th><th>Theme</th><th>n</th><th>%</th><th>Trend</th><th>Primary Conflict Strategy</th></tr></thead>
           <tbody>
-            <tr><td>①</td><td>Silica &amp; Silane Coupling</td><td>270</td><td>36.7%</td><td>2023</td><td>Filler morphology + rubber blend matrix</td></tr>
-            <tr><td>②</td><td>Belt &amp; Structural Engineering</td><td>162</td><td>22.0%</td><td>2023</td><td>Belt geometry + contact pressure distribution</td></tr>
-            <tr><td>③</td><td>Tread Design &amp; Pattern</td><td>160</td><td>21.7%</td><td>2024</td><td>Groove architecture + sipe tuning</td></tr>
-            <tr><td>④</td><td>Carbon Black &amp; Hybrid Filler</td><td>58</td><td>7.9%</td><td>2015</td><td>CB–silica hybrid + quinone additives</td></tr>
-            <tr><td>⑤</td><td>Bio-based &amp; Sustainable</td><td>48</td><td>6.5%</td><td>2017</td><td>Modified NR + high-molecular-weight BR</td></tr>
-            <tr><td>⑥</td><td>Functionalized Polymers &amp; SSBR</td><td>14</td><td>1.9%</td><td>2023–24</td><td>Chain-end affinity for filler surface</td></tr>
+            <tr><td>①</td><td>Silica &amp; Silane Coupling</td><td>233</td><td>52%</td><td>Rising (2023 surge)</td><td>Frequency-domain decoupling via filler morphology</td></tr>
+            <tr><td>②</td><td>Carbon Black &amp; Hybrid Filler</td><td>50</td><td>11%</td><td>Stable</td><td>CB–silica hybrid to access benefits of both fillers</td></tr>
+            <tr><td>③</td><td>Belt &amp; Structural Engineering</td><td>48</td><td>11%</td><td>Stable</td><td>Deformation amplitude reduction + spatial separation</td></tr>
+            <tr><td>④</td><td>Tread Design &amp; Pattern</td><td>28</td><td>6%</td><td>Growing</td><td>Sipe geometry + multi-compound tread</td></tr>
+            <tr><td>⑤</td><td>Bio-based &amp; Sustainable</td><td>18</td><td>4%</td><td>Declining</td><td>High-MW NR entanglement network</td></tr>
+            <tr><td>⑥</td><td>Functionalized Polymers</td><td>10</td><td>2%</td><td>Emerging (post-2020)</td><td>Molecular-scale filler–polymer interface control</td></tr>
           </tbody>
         </table>
+        <div style="margin-top:12px;font-size:12px;color:#718096">+ 61 unclassified (multi-theme or niche approach)</div>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <h3><span class="dot" style="background:#8e44ad"></span>Scientific Measurement Framework — How Researchers Quantify Both Goals</h3>
+    <h3><span class="dot" style="background:#8e44ad"></span>How Researchers Measure Both Goals Simultaneously</h3>
     <div class="grid-3">
       <div class="insight-block purple">
-        <h4>Rolling Resistance Proxies</h4>
-        <p><strong>Tan δ @ 60°C</strong> — primary low-frequency hysteresis indicator<br>
-        <strong>Rebound resilience</strong> — inverse of energy loss per bounce<br>
-        <strong>Loss tangent @ 70°C</strong> — RR proxy for TBR operating temp<br>
-        <strong>Heat build-up</strong> — Goodrich flexometer test<br>
-        <strong>E'' / G'' @ 60°C</strong> — loss modulus component</p>
+        <h4>RR Measurement Tools</h4>
+        <p><strong>Tan&nbsp;δ @ 60°C</strong> — primary in-lab RR proxy<br>
+        <strong>Rebound resilience</strong> — inverse energy loss per bounce<br>
+        <strong>Loss tangent @ 70°C</strong> — TBR operating temperature<br>
+        <strong>Heat build-up (Goodrich)</strong> — bulk hysteresis under flex<br>
+        <strong>E'' @ 60°C</strong> — loss modulus component</p>
       </div>
-      <div class="insight-block">
-        <h4>Wear / Mileage Proxies</h4>
-        <p><strong>DIN abrasion index</strong> — volume loss mm³<br>
-        <strong>Pico abrasion</strong> — relative wear number<br>
-        <strong>Abrasion resistance index (ARI)</strong> — vs. standard compound<br>
-        <strong>Tan δ @ 0°C / 23°C</strong> — room temp damping (grip + wear)<br>
-        <strong>Storage modulus E'</strong> — stiffness, load bearing</p>
+      <div class="insight-block amber">
+        <h4>Wear Measurement Tools</h4>
+        <p><strong>DIN abrasion index</strong> — volume loss in mm³<br>
+        <strong>Pico abrasion number</strong> — relative wear scale<br>
+        <strong>Abrasion resistance index (ARI)</strong> — vs. reference compound<br>
+        <strong>Tan&nbsp;δ @ 0°C / 23°C</strong> — grip and wear proxy<br>
+        <strong>Storage modulus E'</strong> — stiffness under contact load</p>
       </div>
       <div class="insight-block teal">
-        <h4>Conflict Resolution Metrics</h4>
-        <p><strong>Magic Triangle</strong> — RR / wet grip / wear plotted simultaneously<br>
-        <strong>Compound index</strong> — weighted composite score<br>
-        <strong>Footprint pressure distribution</strong> — structural approach<br>
-        <strong>Groove area ratio</strong> — geometry compromise<br>
-        <strong>Wear-RR correlation scatter</strong> — design space map</p>
+        <h4>Conflict Resolution Language</h4>
+        <p>In abstracts, the dual goal appears as:<br>
+        <strong>"without sacrificing…"</strong> — tradeoff preserved<br>
+        <strong>"while maintaining…"</strong> — one goal anchored, other improved<br>
+        <strong>"simultaneous improvement…"</strong> — both claimed<br>
+        <strong>"excellent in overall balance…"</strong> — system-level claim<br>
+        <strong>"improved both…"</strong> — direct dual claim</p>
       </div>
     </div>
   </div>
@@ -198,9 +166,9 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#f4f6f9;color:#1a2535;fo
 <!-- ===================== THEME 0: SILICA & SILANE ===================== -->
 <div id="theme0" class="section">
   <div class="theme-header" style="background:linear-gradient(135deg,#e8641a,#c0392b)">
-    <div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:1px">Theme ① — 270 Patents (36.7%)</div>
+    <div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:1px">Theme ① — 233 Patents (52% of combined set)</div>
     <div style="font-size:20px;font-weight:800;margin-top:4px">Silica &amp; Silane Coupling</div>
-    <div style="font-size:13px;opacity:.85;margin-top:6px">Material chemistry approach: engineering the filler–polymer interface to decouple the RR–wear tradeoff through selective viscoelastic frequency response</div>
+    <div style="font-size:13px;opacity:.85;margin-top:6px">Material chemistry approach: engineering filler morphology and filler–polymer interface to decouple the RR–wear tradeoff through selective viscoelastic frequency response</div>
   </div>
 
   <div class="grid-2">
@@ -215,280 +183,284 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#f4f6f9;color:#1a2535;fo
   </div>
 
   <div class="card">
-    <h3><span class="dot" style="background:#e8641a"></span>The Scientific Rationale — Why Silica Solves the Tradeoff</h3>
+    <h3><span class="dot" style="background:#e8641a"></span>Scientific Rationale — Why Silica Unlocks the Tradeoff</h3>
     <div class="grid-2">
       <div>
         <div class="insight-block">
           <h4>Frequency-Dependent Viscoelasticity</h4>
-          <p>Silica-filled rubber shows a <strong>steep tan δ vs. temperature curve</strong> compared to carbon black. At 60°C (rolling deformation frequency), tan δ drops sharply — reducing RR. At 0–25°C (tread surface abrasion), modulus and toughness remain high — sustaining wear resistance. This frequency-domain separation is the core mechanism.</p>
+          <p>Silica-filled rubber has a <strong>steep tan&nbsp;δ vs. temperature curve</strong> compared to carbon black compounds. At 60°C (rolling deformation frequency), tan&nbsp;δ drops sharply — reducing RR. At 0–25°C (tread surface contact), modulus and toughness remain high — sustaining wear resistance. This thermally-separated response is the core mechanism the entire theme exploits.</p>
         </div>
         <div class="insight-block blue">
           <h4>Silane Coupling Agent Role</h4>
-          <p>Bi-functional silanes (e.g., TESPT/Si-69, TESPD/Si-75) covalently bond silica –OH surface to polymer backbone. This <strong>reduces filler–filler networking (Payne effect)</strong> — the main RR contribution — while simultaneously creating a stiff, well-bonded interface that resists wear. The coupling efficiency is the central design variable.</p>
+          <p>Bi-functional silanes (TESPT/Si-69, TESPD/Si-75) covalently bond silica –OH surface to polymer backbone. This <strong>reduces filler–filler networking (Payne effect)</strong> — the primary RR contributor — while creating a stiff, well-bonded interface that resists abrasive wear. Silane efficiency and dose are the principal design variables in this cluster.</p>
         </div>
       </div>
       <div>
         <div class="insight-block teal">
-          <h4>How Researchers Resolve the Conflict</h4>
-          <p><strong>Strategy 1 (31%):</strong> Dual rubber matrix — NR/BR or NR/SBR blend where each phase hosts different functions. NR provides tear and wear strength; BR/SBR provides lower tan δ for RR. Silica migrates preferentially to the polar phase.</p>
-          <p style="margin-top:8px"><strong>Strategy 2 (26%):</strong> Silica particle size/surface area engineering — ultra-fine HDS silica (high CTAB surface area, 180–300 m²/g) improves dispersion, which reduces both hysteresis loops AND increases filler–polymer contact area for wear.</p>
+          <h4>How Researchers Resolve the Conflict (Top Strategies)</h4>
+          <p><strong>Dual rubber matrix (32%):</strong> NR/BR or NR/SBR blend where each phase hosts different performance functions. NR provides tear and cut strength; BR/SBR provides lower tan&nbsp;δ at 60°C for RR. Silica partitions preferentially to the polar phase.</p>
+          <p style="margin-top:8px"><strong>Silica particle size/morphology (27%):</strong> Ultra-fine HDS silica (CTAB surface area 180–300 m²/g) improves dispersion and raises the filler–polymer interface area. Higher interface area simultaneously reduces Payne effect (→ lower RR) and increases bound rubber fraction (→ higher wear resistance).</p>
         </div>
         <div class="insight-block green">
-          <h4>Emergent Innovation (2022–2024)</h4>
-          <p>Sumitomo's 2024 patents introduce <strong>groove depth constraints linked to compound optimization</strong> — combining tread architecture with silica compound specification in a single claim. This cross-domain co-optimization is a new patent strategy not seen before 2021.</p>
+          <h4>2023 Surge — New Patent Strategy</h4>
+          <p>Sumitomo's 2023–24 filings introduce <strong>cross-domain claims</strong> linking silica compound specifications to tread geometry constraints in a single independent claim. This co-optimization strategy (compound + architecture jointly claimed) was not present before 2021 and signals a shift from incremental chemistry to system-level IP.</p>
         </div>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <h3><span class="dot" style="background:#e8641a"></span>Research Strategy Distribution (% of 270 patents)</h3>
+    <h3><span class="dot" style="background:#e8641a"></span>Research Strategy Distribution (n = 233)</h3>
     <div id="t0_strat_bars"></div>
   </div>
 
   <div class="grid-2">
     <div class="card">
-      <h3><span class="dot" style="background:#e8641a"></span>Scientific Measurement Terms Used</h3>
+      <h3><span class="dot" style="background:#e8641a"></span>Measurement Terms in Abstracts</h3>
       <div class="chart-wrap"><canvas id="t0_meas"></canvas></div>
     </div>
     <div class="card">
       <h3><span class="dot" style="background:#e8641a"></span>Representative Patent Examples</h3>
       <div class="quote-box">
-        <strong>Yokohama (2017):</strong> "To provide a rubber composition for a heavy-load tire that has improved abrasion resistance and low rolling resistance... 40–60 pts silica (CTAB 180–300 m²/g) and 3–10 pts carbon black (N₂SA 110–150 m²/g) blended into 100 pts rubber with 55–70% NR and 30–45% BR."
-        <div class="src">→ Strategy: hybrid filler + dual rubber matrix to decouple frequency response</div>
+        <strong>Yokohama (2017):</strong> "Improved abrasion resistance and low rolling resistance… 40–60 pts silica (CTAB 180–300 m²/g) + 3–10 pts carbon black (N₂SA 110–150 m²/g) in 100 pts rubber: 55–70% NR + 30–45% BR."
+        <div class="src">→ Hybrid filler + dual rubber matrix — decouples frequency response by exploiting NR/BR phase separation</div>
       </div>
       <div class="quote-box">
-        <strong>Sumitomo (2024):</strong> "Heavy-duty tire excellent in overall performance of fuel efficiency and abrasion resistance... isoprene-based rubber + predetermined silica, where groove depth of deepest part is less than 16 mm [combined structural-material claim]."
-        <div class="src">→ Strategy: cross-domain co-optimization (compound + tread geometry in single claim)</div>
+        <strong>Sumitomo (2024):</strong> "Heavy-duty tire excellent in overall performance of fuel efficiency and abrasion resistance… isoprene-based rubber + predetermined silica, groove depth of deepest part less than 16 mm [compound + geometry co-claimed]."
+        <div class="src">→ Cross-domain co-optimization — first-of-kind single claim covering both material and tread architecture</div>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <h3><span class="dot" style="background:#e8641a"></span>Country Activity Trend</h3>
+    <h3><span class="dot" style="background:#e8641a"></span>Country Activity Trend (2015–2024)</h3>
     <div class="chart-wrap-tall"><canvas id="t0_country"></canvas></div>
   </div>
 </div>
 
-<!-- ===================== THEME 1: BELT & STRUCTURE ===================== -->
+<!-- ===================== THEME 1: CARBON BLACK & HYBRID ===================== -->
 <div id="theme1" class="section">
-  <div class="theme-header" style="background:linear-gradient(135deg,#1a4a7a,#2c6fad)">
-    <div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:1px">Theme ② — 162 Patents (22.0%)</div>
-    <div style="font-size:20px;font-weight:800;margin-top:4px">Belt &amp; Structural Engineering</div>
-    <div style="font-size:13px;opacity:.85;margin-top:6px">Mechanical engineering approach: managing deformation energy distribution through belt geometry, cord properties, and contact patch architecture</div>
-  </div>
-
-  <div class="grid-2">
-    <div class="card">
-      <h3><span class="dot" style="background:#1a4a7a"></span>Patent Volume Trend</h3>
-      <div class="chart-wrap"><canvas id="t1_trend"></canvas></div>
-    </div>
-    <div class="card">
-      <h3><span class="dot" style="background:#1a4a7a"></span>Top Assignees</h3>
-      <div class="chart-wrap"><canvas id="t1_asgn"></canvas></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h3><span class="dot" style="background:#1a4a7a"></span>The Scientific Rationale — Structural Control of Energy Flow</h3>
-    <div class="grid-2">
-      <div>
-        <div class="insight-block blue">
-          <h4>Deformation Energy Partitioning</h4>
-          <p>In a rolling tire, energy is dissipated through cyclic bending of the belt structure and shear at the tread–belt interface. By <strong>controlling belt stiffness, angle, and width</strong>, engineers can reduce the amplitude of deformation cycles (→ less RR) while maintaining ground contact area (→ even wear). The key insight: <em>less deformation per revolution = both less energy loss AND more uniform wear distribution.</em></p>
-        </div>
-        <div class="insight-block">
-          <h4>Belt Angle Effect</h4>
-          <p>Flatter belt angles (18–24°) create a stiffer circumferential structure that resists flattening under load — reducing belt deflection amplitude. This simultaneously reduces rolling energy and improves wear uniformity by maintaining a more rectangular contact patch. Steep angles (28–32°) trade RR for lateral stiffness needed in steering tires.</p>
-        </div>
-      </div>
-      <div>
-        <div class="insight-block teal">
-          <h4>Undertread / Sub-tread Engineering</h4>
-          <p><strong>Strategy (6%):</strong> A low-hysteresis base rubber layer beneath the cap tread acts as a <strong>viscoelastic buffer</strong> — it absorbs bulk deformation energy (RR contribution) while the high-wear-resistant cap handles road contact. This separates the material requirements spatially rather than trying to achieve both in one compound.</p>
-        </div>
-        <div class="insight-block green">
-          <h4>Cord Material Upgrade (17%)</h4>
-          <p>High-tensile (HT) and ultra-high-tensile (UHT) steel cords with higher strength per cross-section allow thinner cord layers — <strong>reducing belt mass and deflection</strong> without sacrificing load capacity. Michelin and Continental lead here; this approach targets fleet TCO by coupling lower RR with longer structural life (retread candidacy).</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h3><span class="dot" style="background:#1a4a7a"></span>Research Strategy Distribution (% of 162 patents)</h3>
-    <div id="t1_strat_bars"></div>
-  </div>
-
-  <div class="grid-2">
-    <div class="card">
-      <h3><span class="dot" style="background:#1a4a7a"></span>Scientific Measurement Terms Used</h3>
-      <div class="chart-wrap"><canvas id="t1_meas"></canvas></div>
-    </div>
-    <div class="card">
-      <h3><span class="dot" style="background:#1a4a7a"></span>Representative Patent Examples</h3>
-      <div class="quote-box">
-        <strong>Sumitomo (2021):</strong> "Heavy load pneumatic tire, flat rate ≤65%, improved uneven wear resistance performance without sacrificing rolling resistance and wet performance... crown circumferential groove is a narrow groove and shoulder grooves [geometry constrained]."
-        <div class="src">→ Strategy: belt geometry + groove architecture co-defined to maintain contact patch</div>
-      </div>
-      <div class="quote-box">
-        <strong>Sumitomo (2020):</strong> "Improved fuel efficiency, wet grip performance, abrasion resistance, chipping resistance, and tear resistance with good balance... cap rubber layer + base rubber layer; cap comprises silica, base comprises low-hysteresis compound."
-        <div class="src">→ Strategy: spatial separation — base layer for RR, cap for wear (dual compound)</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h3><span class="dot" style="background:#1a4a7a"></span>Country Activity Trend</h3>
-    <div class="chart-wrap-tall"><canvas id="t1_country"></canvas></div>
-  </div>
-</div>
-
-<!-- ===================== THEME 2: TREAD DESIGN ===================== -->
-<div id="theme2" class="section">
-  <div class="theme-header" style="background:linear-gradient(135deg,#2a9d8f,#1a7a6e)">
-    <div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:1px">Theme ③ — 160 Patents (21.7%)</div>
-    <div style="font-size:20px;font-weight:800;margin-top:4px">Tread Design &amp; Pattern</div>
-    <div style="font-size:13px;opacity:.85;margin-top:6px">Geometric engineering approach: achieving both goals through groove architecture, void ratio, sipe geometry, and contact pressure distribution — the fastest-growing theme</div>
-  </div>
-
-  <div class="grid-2">
-    <div class="card">
-      <h3><span class="dot" style="background:#2a9d8f"></span>Patent Volume Trend (Fastest growing!)</h3>
-      <div class="chart-wrap"><canvas id="t2_trend"></canvas></div>
-    </div>
-    <div class="card">
-      <h3><span class="dot" style="background:#2a9d8f"></span>Top Assignees</h3>
-      <div class="chart-wrap"><canvas id="t2_asgn"></canvas></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h3><span class="dot" style="background:#2a9d8f"></span>The Scientific Rationale — Geometry as a System-Level Lever</h3>
-    <div class="grid-2">
-      <div>
-        <div class="insight-block teal">
-          <h4>Groove Architecture &amp; Rolling Resistance</h4>
-          <p>Circumferential grooves reduce the <strong>void ratio</strong> (net-to-gross ratio) — a lower void ratio means more rubber in contact, which increases both wear resistance and RR. The innovation here is using <strong>narrow circumferential fine-grooves</strong> instead of wide grooves: these provide drainage, reduce stone retention, but maintain high contact area. This is a non-obvious geometric insight — thin grooves cost less RR than wide grooves for the same drainage capacity.</p>
-        </div>
-        <div class="insight-block">
-          <h4>Sipe Geometry (23%)</h4>
-          <p>Traditional sipes increase edge count for grip but reduce block stiffness → more deformation → higher RR and irregular wear. Modern <strong>3D/wave sipes</strong> that interlock when the block compresses maintain stiffness in the contact zone while still providing micro-edge sharpening. This is a structural solution to the sipe-stiffness paradox.</p>
-        </div>
-      </div>
-      <div>
-        <div class="insight-block green">
-          <h4>Footprint Pressure Control (13%)</h4>
-          <p>Uneven contact pressure causes <strong>differential wear</strong> (heel-toe, shoulder) which shortens tread life without improving RR. Patents in this cluster engineer tread profiles (convex, offset) and block chamfers to create uniform ground contact. A flatter footprint pressure distribution improves both: less localized wear AND less stress concentration → less hysteresis loss.</p>
-        </div>
-        <div class="insight-block">
-          <h4>Multi-compound Tread (4%)</h4>
-          <p>Radially layered cap+base compounds or laterally graded compounds (harder shoulder, softer crown) address the fact that different tread zones have different RR and wear demands. Cap compound optimizes wear; base compound optimizes hysteresis. This decoupling approach is structurally similar to the belt theme but applied at tread compound level.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h3><span class="dot" style="background:#2a9d8f"></span>Research Strategy Distribution (% of 160 patents)</h3>
-    <div id="t2_strat_bars"></div>
-  </div>
-
-  <div class="grid-2">
-    <div class="card">
-      <h3><span class="dot" style="background:#2a9d8f"></span>Scientific Measurement Terms Used</h3>
-      <div class="chart-wrap"><canvas id="t2_meas"></canvas></div>
-    </div>
-    <div class="card">
-      <h3><span class="dot" style="background:#2a9d8f"></span>Representative Patent Examples</h3>
-      <div class="quote-box">
-        <strong>Sumitomo (2019):</strong> "Reduces rolling resistance while considering effect on abrasion resistance... base part (low hysteresis) + cap part located radially outside, with circumferential grooves. The base part compound properties [tan δ specified]."
-        <div class="src">→ Strategy: radial two-layer tread — compound functions separated by depth</div>
-      </div>
-      <div class="quote-box">
-        <strong>Sumitomo (2023):</strong> "Tread breakage upon deformation suppressed, decrease in wet properties due to abrasion suppressed, rolling resistance reduced... circumferential main grooves + circumferential fine grooves deeper than transverse sipes. Central land portion with transverse sipes."
-        <div class="src">→ Strategy: fine-groove + sipe co-design to preserve block stiffness</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h3><span class="dot" style="background:#2a9d8f"></span>Country Activity Trend</h3>
-    <div class="chart-wrap-tall"><canvas id="t2_country"></canvas></div>
-  </div>
-</div>
-
-<!-- ===================== THEME 3: CARBON BLACK & HYBRID ===================== -->
-<div id="theme3" class="section">
-  <div class="theme-header" style="background:linear-gradient(135deg,#d4a017,#b8860b)">
-    <div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:1px">Theme ④ — 58 Patents (7.9%)</div>
+  <div class="theme-header" style="background:linear-gradient(135deg,#d4a017,#a07810)">
+    <div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:1px">Theme ② — 50 Patents (11% of combined set)</div>
     <div style="font-size:20px;font-weight:800;margin-top:4px">Carbon Black &amp; Hybrid Filler Systems</div>
-    <div style="font-size:13px;opacity:.85;margin-top:6px">Filler engineering approach: using CB–silica blends, modified CB grades, and nano-carbons to access the benefits of both filler systems in one compound</div>
+    <div style="font-size:13px;opacity:.85;margin-top:6px">Filler engineering approach: combining CB and silica (or nano-carbons) in one compound to access reinforcement benefits of CB and hysteresis benefits of silica simultaneously</div>
   </div>
 
   <div class="grid-2">
     <div class="card">
       <h3><span class="dot" style="background:#d4a017"></span>Patent Volume Trend</h3>
-      <div class="chart-wrap"><canvas id="t3_trend"></canvas></div>
+      <div class="chart-wrap"><canvas id="t1_trend"></canvas></div>
     </div>
     <div class="card">
       <h3><span class="dot" style="background:#d4a017"></span>Top Assignees</h3>
+      <div class="chart-wrap"><canvas id="t1_asgn"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3><span class="dot" style="background:#d4a017"></span>Scientific Rationale — The Hybrid Filler Approach</h3>
+    <div class="grid-2">
+      <div>
+        <div class="insight-block amber">
+          <h4>CB–Silica Hybrid (96% of theme)</h4>
+          <p>Almost every patent combines both fillers rather than replacing one with the other. The logic: <strong>CB provides the primary load-bearing reinforcement network</strong> that resists abrasion; silica disrupts the CB–CB filler network, reducing Payne effect and rolling hysteresis. The ratio and the <em>surface area</em> of each filler are the design levers.</p>
+          <p style="margin-top:8px">Yokohama's approach: medium-structure CB (N₂SA 100–150 m²/g) + quinone additive (0.1–20 phr) compensates for lower CB loading by creating reactive filler–polymer crosslinks — recovering wear resistance without the RR penalty of high CB volume fraction.</p>
+        </div>
+        <div class="insight-block blue">
+          <h4>Nano-Carbon Additives (12%)</h4>
+          <p>CNTs and graphene at 1–5 phr act as a <strong>percolating thermal network</strong> that rapidly dissipates heat from the contact zone — reducing temperature build-up that would otherwise amplify hysteresis. Bridgestone and academic–industry teams in China lead this approach. No Chinese tire maker has fully commercialized this for TBR yet.</p>
+        </div>
+      </div>
+      <div>
+        <div class="insight-block teal">
+          <h4>Surface-Functionalized CB (8%)</h4>
+          <p>Oxidized or amine-modified CB surfaces introduce polar groups (–COOH, –NH₂, –OH) that bond to the rubber matrix analogously to silane-coupled silica. The goal: give CB compounds <strong>reduced Payne effect</strong> (→ lower RR) while maintaining CB's intrinsically higher modulus (→ wear). A direct molecular bridge between the two filler paradigms.</p>
+        </div>
+        <div class="insight-block green">
+          <h4>Filler Network Control (6%)</h4>
+          <p>Controlling the <strong>percolation threshold</strong> — the CB loading at which a continuous conductive network forms — is the key variable. Patents claim specific CB structure (DBP absorption, aggregate morphology) to push the threshold higher. Above threshold: high modulus (→ wear ✓) but high hysteresis (→ RR ✗). Engineering the threshold means you can load more CB before the RR penalty kicks in.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3><span class="dot" style="background:#d4a017"></span>Research Strategy Distribution (n = 50)</h3>
+    <div id="t1_strat_bars"></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h3><span class="dot" style="background:#d4a017"></span>Measurement Terms in Abstracts</h3>
+      <div class="chart-wrap"><canvas id="t1_meas"></canvas></div>
+    </div>
+    <div class="card">
+      <h3><span class="dot" style="background:#d4a017"></span>Representative Patent Examples</h3>
+      <div class="quote-box">
+        <strong>Yokohama (2015):</strong> "Techniques reducing CB amount or using large particle diameter CB reduce RR but deteriorate hardness and uneven wear resistance. SOLUTION: CB (N₂SA 100–150 m²/g) + quinone (0.1–20 phr) in NR ≥55% matrix."
+        <div class="src">→ Mid-structure CB + reactive quinone crosslinker recovers wear without the RR penalty of high-structure CB</div>
+      </div>
+      <div class="quote-box">
+        <strong>Bridgestone (2018):</strong> "Multi-component copolymer: conjugated diene + non-conjugated olefin + aromatic vinyl units + carbon black 30–60 phr… excellent balance of wear resistance, fuel economy, and workability."
+        <div class="src">→ Terpolymer architecture provides intrinsic frequency-domain decoupling that CB alone cannot achieve</div>
+      </div>
+      <div class="quote-box">
+        <strong>Shanghai JTU / Double Coin (2019):</strong> "Rubber composition for truck tire tread… carbon black 40–100 phr + peroxide + sulfur cure… balance of low dynamic heat generation, low rolling resistance and wet skid resistance."
+        <div class="src">→ Dual cure system (peroxide + sulfur) optimizes crosslink density for wear while controlling network mobility for RR</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3><span class="dot" style="background:#d4a017"></span>Country Activity Trend (2015–2024)</h3>
+    <div class="chart-wrap-tall"><canvas id="t1_country"></canvas></div>
+  </div>
+</div>
+
+<!-- ===================== THEME 2: BELT & STRUCTURE ===================== -->
+<div id="theme2" class="section">
+  <div class="theme-header" style="background:linear-gradient(135deg,#1a4a7a,#2c6fad)">
+    <div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:1px">Theme ③ — 48 Patents (11% of combined set)</div>
+    <div style="font-size:20px;font-weight:800;margin-top:4px">Belt &amp; Structural Engineering</div>
+    <div style="font-size:13px;opacity:.85;margin-top:6px">Mechanical engineering approach: managing deformation energy through belt geometry, cord properties, undertread design, and contact patch architecture — the spatial separation strategy</div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h3><span class="dot" style="background:#1a4a7a"></span>Patent Volume Trend</h3>
+      <div class="chart-wrap"><canvas id="t2_trend"></canvas></div>
+    </div>
+    <div class="card">
+      <h3><span class="dot" style="background:#1a4a7a"></span>Top Assignees</h3>
+      <div class="chart-wrap"><canvas id="t2_asgn"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3><span class="dot" style="background:#1a4a7a"></span>Scientific Rationale — Structural Control of Energy Flow</h3>
+    <div class="grid-2">
+      <div>
+        <div class="insight-block blue">
+          <h4>Deformation Energy Partitioning</h4>
+          <p>In a rolling tire, energy is dissipated through cyclic bending of the belt and shear at the tread–belt interface. By controlling belt stiffness, angle, and width, engineers reduce <strong>deformation amplitude per revolution</strong> — which simultaneously reduces energy dissipation (→ RR) and distributes contact pressure more uniformly (→ even wear). The two benefits share a common structural root cause.</p>
+        </div>
+        <div class="insight-block">
+          <h4>Belt Layer Count &amp; Geometry (23%)</h4>
+          <p>Adding or repositioning belt layers changes the effective bending rigidity of the tread assembly. A stiffer belt reduces crown deformation, which lowers hysteresis losses and simultaneously prevents irregular wear by maintaining a flatter footprint. The art is achieving this without increasing unsprung mass — which would worsen dynamic RR on uneven roads.</p>
+        </div>
+      </div>
+      <div>
+        <div class="insight-block teal">
+          <h4>Undertread / Sub-tread Engineering (10%)</h4>
+          <p>A <strong>low-hysteresis base rubber layer</strong> beneath the cap tread acts as a viscoelastic buffer: it absorbs bulk bending energy (RR contribution) while the cap compound handles road contact (wear contribution). This is the structural analog of the dual rubber matrix in Theme ①, but implemented as a geometric layer rather than a blended phase.</p>
+        </div>
+        <div class="insight-block green">
+          <h4>Cord Material Upgrade (4%)</h4>
+          <p>High-tensile (HT) and ultra-high-tensile (UHT) steel cords allow <strong>thinner cross-section belt layers</strong> at the same load capacity. Thinner belts flex less, reducing both bending hysteresis (→ RR) and the stress concentration at belt edges that triggers irregular wear and delamination. Michelin leads this approach in the dataset.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3><span class="dot" style="background:#1a4a7a"></span>Research Strategy Distribution (n = 48)</h3>
+    <div id="t2_strat_bars"></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h3><span class="dot" style="background:#1a4a7a"></span>Measurement Terms in Abstracts</h3>
+      <div class="chart-wrap"><canvas id="t2_meas"></canvas></div>
+    </div>
+    <div class="card">
+      <h3><span class="dot" style="background:#1a4a7a"></span>Representative Patent Examples</h3>
+      <div class="quote-box">
+        <strong>Sumitomo (2021):</strong> "Heavy load pneumatic tire, flat rate ≤65%, improved uneven wear resistance without sacrificing rolling resistance and wet performance… narrow crown circumferential groove + shoulder grooves constrained by geometry."
+        <div class="src">→ Belt flattening (aspect ratio) + groove constraints together maintain contact patch — dual benefit from one structural lever</div>
+      </div>
+      <div class="quote-box">
+        <strong>Sumitomo (2020):</strong> "Improved fuel efficiency, abrasion resistance, chipping/tear resistance with good balance… cap rubber (silica-filled) + base rubber (low-hysteresis compound). Belt layer inside tread."
+        <div class="src">→ Spatial separation: base layer handles RR (low tan δ), cap layer handles wear (hard, abrasion-resistant)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3><span class="dot" style="background:#1a4a7a"></span>Country Activity Trend (2015–2024)</h3>
+    <div class="chart-wrap-tall"><canvas id="t2_country"></canvas></div>
+  </div>
+</div>
+
+<!-- ===================== THEME 3: TREAD DESIGN ===================== -->
+<div id="theme3" class="section">
+  <div class="theme-header" style="background:linear-gradient(135deg,#2a9d8f,#1a7a6e)">
+    <div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:1px">Theme ④ — 28 Patents (6% of combined set) — Growing</div>
+    <div style="font-size:20px;font-weight:800;margin-top:4px">Tread Design &amp; Pattern</div>
+    <div style="font-size:13px;opacity:.85;margin-top:6px">Geometric engineering approach: achieving both goals through sipe geometry, tread compound layering, and contact pressure management — smallest theme but fastest growing in 2022–2024</div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h3><span class="dot" style="background:#2a9d8f"></span>Patent Volume Trend (Growing since 2019)</h3>
+      <div class="chart-wrap"><canvas id="t3_trend"></canvas></div>
+    </div>
+    <div class="card">
+      <h3><span class="dot" style="background:#2a9d8f"></span>Top Assignees</h3>
       <div class="chart-wrap"><canvas id="t3_asgn"></canvas></div>
     </div>
   </div>
 
   <div class="card">
-    <h3><span class="dot" style="background:#d4a017"></span>The Scientific Rationale — Hybrid Filler Systems</h3>
+    <h3><span class="dot" style="background:#2a9d8f"></span>Scientific Rationale — Geometry as a System-Level Lever</h3>
     <div class="grid-2">
       <div>
-        <div class="insight-block" style="border-left-color:#d4a017">
-          <h4>CB–Silica Hybrid (97% of theme)</h4>
-          <p>Nearly every patent in this theme uses a <strong>combination of carbon black + silica</strong> rather than replacing one with the other. The scientific logic: CB provides the load-bearing reinforcement network (wear resistance), while silica disrupts the CB network to reduce Payne effect (hysteresis → RR). The <em>ratio</em> and <em>type</em> of each filler is the design parameter.</p>
-          <p style="margin-top:8px">Yokohama's approach (2015): CB with N₂SA 100–150 m²/g (medium structure) + quinone additive to anchor filler–polymer bonds, compensating for the lower CB surface area that would normally reduce wear resistance.</p>
+        <div class="insight-block teal">
+          <h4>Sipe / Kerf Geometry (89% of theme)</h4>
+          <p>Traditional sipes increase micro-edge count for traction but <strong>reduce block stiffness</strong> — causing extra deformation, which increases both RR and irregular wear (heel-toe). The patent innovation: <strong>3D interlocking sipes</strong> (wave, zigzag, Z-profile) that mesh when the block compresses under load. These maintain block rigidity in the contact zone — preserving wear resistance — while still providing drainage and micro-edge sharpening. A geometrically elegant paradox resolution.</p>
         </div>
-        <div class="insight-block blue">
-          <h4>Nano-Carbon Additives (9%)</h4>
-          <p>Carbon nanotubes (CNTs) and graphene at 1–5 phr loading act as a <strong>percolating thermal network</strong> — rapidly dissipating heat from the contact zone. This reduces temperature-driven hysteresis (the heat build-up cycle that amplifies RR under TBR operating loads). Bridgestone and academic-industry collaborations in CN lead this sub-space.</p>
+        <div class="insight-block">
+          <h4>Multi-compound Tread (7%)</h4>
+          <p>Radially layered cap+base compounds separate material functions by depth: hard, abrasion-resistant cap compound at the contact surface; low-hysteresis base compound absorbs flexural energy below. As the tire wears, the compound profile changes, but the system is designed so intermediate wear stages still deliver acceptable RR and wear life simultaneously.</p>
         </div>
       </div>
       <div>
-        <div class="insight-block teal">
-          <h4>Surface-Functionalized CB (9%)</h4>
-          <p>Oxidized or amine-modified CB surfaces create <strong>polar groups</strong> that bond to the rubber matrix similarly to silane-coupled silica. This gives CB-based compounds reduced Payne effect (→ lower RR) while maintaining the higher modulus characteristic of CB (→ wear). A direct attempt to bring silica's chemical advantage to CB's mechanical advantage.</p>
-        </div>
         <div class="insight-block green">
-          <h4>Filler Network Architecture (5%)</h4>
-          <p>Controlling the <strong>percolation threshold</strong> — the CB loading at which a continuous filler network forms — is critical. Above threshold: high modulus + high hysteresis (wear ✓, RR ✗). Patents claim specific CB structure (DBP absorption, aggregate size) to push the threshold higher, allowing higher loading before hysteresis cost kicks in.</p>
+          <h4>Footprint Pressure Control (4%)</h4>
+          <p>Non-uniform contact pressure causes <strong>differential wear</strong> (shoulder heavy, center light — or vice versa) that shortens total tread life without any RR benefit. Tread profile engineering (convex crown, offset block pitch) creates uniform pressure distribution. Uniform pressure = less localized stress → less hysteresis concentration → lower effective RR. Both goals improve from the same pressure management.</p>
+        </div>
+        <div class="insight-block blue">
+          <h4>Why This Theme Is Growing</h4>
+          <p>Tread design patents are less compound-specific and therefore <strong>harder to design around</strong> — a geometric claim can block competitors regardless of their compound choice. Post-2020 acceleration reflects both IP strategy maturation and simulation tools (FEA, contact mechanics software) becoming widely accessible, enabling Chinese makers (Qingdao Yellowsea, Sailun) to enter this space.</p>
         </div>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <h3><span class="dot" style="background:#d4a017"></span>Research Strategy Distribution (% of 58 patents)</h3>
+    <h3><span class="dot" style="background:#2a9d8f"></span>Research Strategy Distribution (n = 28)</h3>
     <div id="t3_strat_bars"></div>
   </div>
 
   <div class="grid-2">
     <div class="card">
-      <h3><span class="dot" style="background:#d4a017"></span>Scientific Measurement Terms Used</h3>
+      <h3><span class="dot" style="background:#2a9d8f"></span>Measurement Terms in Abstracts</h3>
       <div class="chart-wrap"><canvas id="t3_meas"></canvas></div>
     </div>
     <div class="card">
-      <h3><span class="dot" style="background:#d4a017"></span>Representative Patent Examples</h3>
+      <h3><span class="dot" style="background:#2a9d8f"></span>Representative Patent Examples</h3>
       <div class="quote-box">
-        <strong>Yokohama (2015):</strong> "Techniques such as reducing CB blending amount or using large particle diameter CB reduce RR but deteriorate hardness and uneven wear resistance. SOLUTION: CB (N₂SA 100–150 m²/g) + quinone (0.1–20 phr) in NR ≥55% matrix."
-        <div class="src">→ Strategy: mid-structure CB + reactive quinone crosslinker to recover wear without RR penalty</div>
+        <strong>Sumitomo (2023):</strong> "Tread breakage upon deformation suppressed, decrease in wet properties due to abrasion suppressed, rolling resistance reduced… circumferential main grooves + circumferential fine grooves deeper than transverse sipes. Central land portion with transverse sipes."
+        <div class="src">→ Fine-groove + sipe hierarchy: fine grooves for drainage (less RR cost than wide grooves), sipes for wear edge — separate geometric functions in same tread</div>
       </div>
       <div class="quote-box">
-        <strong>Bridgestone (2018):</strong> "Multi-component copolymer containing conjugated diene + non-conjugated olefin + aromatic vinyl units + carbon black 30–60 phr... excellent balance of wear resistance, fuel economy, and workability."
-        <div class="src">→ Strategy: terpolymer architecture provides intrinsic frequency response decoupling</div>
+        <strong>Sumitomo (2019):</strong> "Reduces rolling resistance while considering effect on abrasion resistance… base part (low hysteresis compound) + cap part radially outside. At least three circumferential grooves. Base part tan&nbsp;δ specified."
+        <div class="src">→ Radial two-layer tread with compound specification — material and geometry co-designed in single claim</div>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <h3><span class="dot" style="background:#d4a017"></span>Country Activity Trend</h3>
+    <h3><span class="dot" style="background:#2a9d8f"></span>Country Activity Trend (2015–2024)</h3>
     <div class="chart-wrap-tall"><canvas id="t3_country"></canvas></div>
   </div>
 </div>
@@ -496,73 +468,70 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#f4f6f9;color:#1a2535;fo
 <!-- ===================== THEME 4: BIO-BASED ===================== -->
 <div id="theme4" class="section">
   <div class="theme-header" style="background:linear-gradient(135deg,#27ae60,#1a7a44)">
-    <div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:1px">Theme ⑤ — 48 Patents (6.5%)</div>
+    <div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:1px">Theme ⑤ — 18 Patents (4% of combined set) — Declining</div>
     <div style="font-size:20px;font-weight:800;margin-top:4px">Bio-based &amp; Sustainable Materials</div>
-    <div style="font-size:13px;opacity:.85;margin-top:6px">Sustainability-driven approach: leveraging natural rubber chemistry, high-MW bio-polymers, and modified NR to simultaneously satisfy RR and wear demands — a promising but maturing space</div>
+    <div style="font-size:13px;opacity:.85;margin-top:6px">Polymer architecture approach: leveraging natural rubber's intrinsic viscoelastic properties and high molecular weight to simultaneously satisfy RR and wear demands without silica chemistry</div>
   </div>
 
   <div class="grid-2">
     <div class="card">
-      <h3><span class="dot" style="background:#27ae60"></span>Patent Volume Trend</h3>
+      <h3><span class="dot" style="background:#27ae60"></span>Patent Volume Trend (Peaked 2015–2017, declining)</h3>
       <div class="chart-wrap"><canvas id="t4_trend"></canvas></div>
     </div>
     <div class="card">
-      <h3><span class="dot" style="background:#27ae60"></span>Top Assignees</h3>
+      <h3><span class="dot" style="background:#27ae60"></span>Top Assignees (Sumitomo dominates)</h3>
       <div class="chart-wrap"><canvas id="t4_asgn"></canvas></div>
     </div>
   </div>
 
   <div class="card">
-    <h3><span class="dot" style="background:#27ae60"></span>The Scientific Rationale — Natural Rubber Architecture</h3>
+    <h3><span class="dot" style="background:#27ae60"></span>Scientific Rationale — Natural Rubber Chain Architecture</h3>
     <div class="grid-2">
       <div>
         <div class="insight-block green">
-          <h4>High-MW Natural Rubber (BR/NR blends)</h4>
-          <p>Natural rubber (cis-1,4-polyisoprene) has intrinsically <strong>low hysteresis</strong> due to its strain-crystallization behavior — the polymer network stiffens under deformation, reducing heat generation per cycle. This gives NR-rich compounds an inherent RR advantage. The challenge is that NR also has limited abrasion resistance at high temperatures. High-MW NR (Mw >5M from dandelion/guayule) with Rz >130 nm forms a <strong>denser entanglement network</strong> — improving wear without the heat penalty.</p>
-        </div>
-        <div class="insight-block blue">
-          <h4>Polybutadiene (BR) Architecture</h4>
-          <p>High-cis BR (Tcp/ML ≥ 2.5, Mw ≥ 60×10⁴) in combination with NR provides a dual-phase matrix: NR handles tear and fatigue; BR provides <strong>cold rebound and low tan δ</strong> for RR. The innovation is controlling BR branching structure (Tcp/ML ratio) to simultaneously improve cold-temperature rebound and wear — a parameter not optimized in commodity BR.</p>
+          <h4>High-Molecular-Weight NR/BR Architecture (33%)</h4>
+          <p>Natural rubber (cis-1,4-polyisoprene) has intrinsically <strong>low hysteresis</strong> due to strain-crystallization: the polymer network stiffens under elongation, reducing heat generation per deformation cycle. High-MW NR (Mw &gt;5 million, Rz &gt;130 nm from dandelion/guayule) forms a <strong>denser entanglement network</strong> than commodity NR — improving wear without the temperature penalty.</p>
+          <p style="margin-top:8px">Polybutadiene (BR) with controlled branching structure (Tcp/ML ≥2.5, Mw ≥60×10⁴) in NR/BR blends provides low cold-temperature rebound (→ RR) while maintaining wear resistance through high crosslink efficiency. The Tcp/ML ratio — the ratio of solution viscosity to Mooney viscosity — is the key architectural descriptor.</p>
         </div>
       </div>
       <div>
-        <div class="insight-block">
-          <h4>Modified NR (8% of theme)</h4>
-          <p>Epoxidized NR (ENR-25, ENR-50) introduces polar epoxide groups into the NR chain. These groups <strong>interact with silica</strong> without coupling agents, providing inherent silane-like coupling efficiency. ENR also shows improved oil resistance. However, the epoxide groups slightly increase tan δ — so the RR benefit requires careful degree-of-epoxidation optimization.</p>
+        <div class="insight-block blue">
+          <h4>Modified NR (11%)</h4>
+          <p>Epoxidized NR (ENR-25, ENR-50) introduces polar epoxide groups that <strong>interact directly with silica</strong> without added coupling agent. This provides silane-like coupling efficiency in a bio-derived polymer — appealing for sustainability targets. However, epoxide groups slightly increase tan&nbsp;δ, so degree of epoxidation must be optimized to balance RR cost against processing and wear gains.</p>
         </div>
         <div class="insight-block teal">
           <h4>Strategic Observation</h4>
-          <p>This theme peaked in 2016–2017 and has been declining. Most activity is <strong>Sumitomo-dominated (46%)</strong>. The plateau suggests that while bio-based materials satisfy RR+wear targets, they face scale-up and cost barriers for TBR. A potential white space: combining bio-based polymers with new silica grades — no clear patent leader here after 2020.</p>
+          <p>Peak activity 2015–2017 with clear decline after. Sumitomo holds 33% of patents in this theme. The decline likely reflects the gap between bio-based material performance and the silica/functionalized polymer approaches — bio-based materials achieve the dual goal but without the precision control that silane chemistry provides. A potential opportunity: <strong>combining dandelion-NR with new silica grades</strong> — essentially no patent activity in this intersection post-2020.</p>
         </div>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <h3><span class="dot" style="background:#27ae60"></span>Research Strategy Distribution (% of 48 patents)</h3>
+    <h3><span class="dot" style="background:#27ae60"></span>Research Strategy Distribution (n = 18)</h3>
     <div id="t4_strat_bars"></div>
   </div>
 
   <div class="grid-2">
     <div class="card">
-      <h3><span class="dot" style="background:#27ae60"></span>Scientific Measurement Terms Used</h3>
+      <h3><span class="dot" style="background:#27ae60"></span>Measurement Terms in Abstracts</h3>
       <div class="chart-wrap"><canvas id="t4_meas"></canvas></div>
     </div>
     <div class="card">
       <h3><span class="dot" style="background:#27ae60"></span>Representative Patent Examples</h3>
       <div class="quote-box">
-        <strong>Sumitomo (2018):</strong> "Cap tread with improved wear resistance and fuel economy while maintaining workability... polybutadiene (A) with Tcp/ML ≥2.5 and Mw ≥60×10⁴ + polybutadiene (B) with specific MW distribution. NR/BR blend optimized."
-        <div class="src">→ Strategy: MW-architecture control of BR to get low tan δ (RR) + high entanglement (wear)</div>
+        <strong>Sumitomo (2018):</strong> "Cap tread — improved wear resistance and fuel economy while maintaining workability… polybutadiene (A): Tcp/ML ≥2.5, Mw ≥60×10⁴ + polybutadiene (B) with specific MW distribution. NR/BR blend."
+        <div class="src">→ MW-architecture control of BR — branching structure separately tunes cold rebound (RR) and wear without changing formulation volume</div>
       </div>
       <div class="quote-box">
-        <strong>Sumitomo (2019):</strong> "Russian dandelion-derived NR with Mw ≥5M and polymer radius Rz ≥130 nm + carbon black... low fuel consumption, wear resistance, wet grip performance, snow/ice performance, fracture resistance."
-        <div class="src">→ Strategy: ultra-high-MW bio-NR creates dense entanglement network that achieves both goals</div>
+        <strong>Sumitomo (2019):</strong> "Russian dandelion-derived NR with Mw ≥5M, polymer radius Rz ≥130 nm + carbon black… low fuel consumption, wear resistance, wet grip, snow/ice, fracture resistance."
+        <div class="src">→ Ultra-high-MW bio-NR: dense entanglement network delivers both goals plus bonus performance — but supply chain limitations constrain commercialization</div>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <h3><span class="dot" style="background:#27ae60"></span>Country Activity Trend</h3>
+    <h3><span class="dot" style="background:#27ae60"></span>Country Activity Trend (2015–2024)</h3>
     <div class="chart-wrap-tall"><canvas id="t4_country"></canvas></div>
   </div>
 </div>
@@ -570,264 +539,233 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#f4f6f9;color:#1a2535;fo
 <!-- ===================== THEME 5: FUNCTIONALIZED POLYMERS ===================== -->
 <div id="theme5" class="section">
   <div class="theme-header" style="background:linear-gradient(135deg,#8e44ad,#6c3483)">
-    <div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:1px">Theme ⑥ — 14 Patents (1.9%) — Emerging</div>
+    <div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:1px">Theme ⑥ — 10 Patents (2%) — Emerging Frontier</div>
     <div style="font-size:20px;font-weight:800;margin-top:4px">Functionalized Polymers &amp; SSBR</div>
-    <div style="font-size:13px;opacity:.85;margin-top:6px">Molecular engineering approach: chemically modifying polymer chain ends or backbone to control filler–polymer interactions at the molecular scale — the frontier of RR–wear co-optimization</div>
+    <div style="font-size:13px;opacity:.85;margin-top:6px">Molecular engineering approach: chemically modifying polymer chain ends or backbone to control filler–polymer interaction at the molecular scale — the only approach that addresses the root cause of the tradeoff</div>
   </div>
 
   <div class="grid-2">
     <div class="card">
-      <h3><span class="dot" style="background:#8e44ad"></span>Patent Volume Trend (Emerging — accelerating since 2020)</h3>
+      <h3><span class="dot" style="background:#8e44ad"></span>Patent Volume Trend (All post-2018, accelerating)</h3>
       <div class="chart-wrap"><canvas id="t5_trend"></canvas></div>
     </div>
     <div class="card">
-      <h3><span class="dot" style="background:#8e44ad"></span>Top Assignees</h3>
+      <h3><span class="dot" style="background:#8e44ad"></span>Top Assignees (Geographically diverse — signal)</h3>
       <div class="chart-wrap"><canvas id="t5_asgn"></canvas></div>
     </div>
   </div>
 
   <div class="card">
-    <h3><span class="dot" style="background:#8e44ad"></span>The Scientific Rationale — Molecular-Scale Filler Interaction</h3>
+    <h3><span class="dot" style="background:#8e44ad"></span>Scientific Rationale — Molecular-Scale Interface Engineering</h3>
     <div class="grid-2">
       <div>
         <div class="insight-block purple">
-          <h4>Chain-End Functionalization (29%)</h4>
-          <p>In high-MW rubber, most chain ends dangle freely without contributing to the network — they are pure energy dissipators (increasing tan δ and RR). <strong>Functional groups at chain ends</strong> (alkoxysilyl, amine, epoxide) anchor these ends to filler surfaces, converting them from dissipators into network contributors. This simultaneously:</p>
-          <ul style="font-size:12px;color:#4a5568;margin-top:6px;padding-left:18px;line-height:1.8">
-            <li>Reduces bound rubber free-chain-end mobility → <strong>lower tan δ @ 60°C (→ RR)</strong></li>
+          <h4>Chain-End Functionalization (30%)</h4>
+          <p>In high-MW rubber, free chain ends dangling between filler particles are pure energy dissipators — they undergo unrestricted motion during each deformation cycle, increasing tan&nbsp;δ at all frequencies. <strong>Functional groups at chain ends</strong> (alkoxysilyl, primary amine, epoxide) anchor these ends to filler surfaces. This simultaneously:</p>
+          <ul>
+            <li>Reduces dangling chain mobility → <strong>lower tan&nbsp;δ at 60°C (→ RR)</strong></li>
             <li>Increases effective crosslink density → <strong>higher modulus (→ wear)</strong></li>
+            <li>Improves filler dispersion → <strong>lower Payne effect (→ RR)</strong></li>
           </ul>
         </div>
         <div class="insight-block blue">
-          <h4>In-Chain Modification (21%)</h4>
-          <p>Copolymerizing with polar monomers (acrylonitrile, vinyl pyridine, maleic anhydride) introduces <strong>polar segments along the backbone</strong> that interact with silica or CB surfaces. Unlike chain-end functionalization, in-chain modification affects the entire polymer, creating a more uniform filler dispersion — key to achieving both low Payne effect (→RR) and high reinforcement efficiency (→wear) throughout the compound.</p>
+          <h4>In-Chain Modification (30%)</h4>
+          <p>Copolymerizing with polar monomers (acrylonitrile, vinyl pyridine, maleic anhydride) distributes <strong>filler-interactive groups throughout the polymer backbone</strong> rather than only at chain ends. More uniform interaction with silica or CB creates a more homogeneous reinforcement network — simultaneously reducing hysteresis hotspots (→ RR) and wear-initiating stress concentrations (→ wear life).</p>
         </div>
       </div>
       <div>
         <div class="insight-block teal">
-          <h4>Why This Is the Frontier</h4>
-          <p>Functionalized polymers represent the <strong>only approach that addresses the root cause</strong> of the tradeoff rather than managing its symptoms. By engineering the polymer–filler interface at the molecular level, researchers can independently tune:</p>
-          <ul style="font-size:12px;color:#4a5568;margin-top:6px;padding-left:18px;line-height:1.8">
-            <li>tan δ frequency response curve shape</li>
-            <li>Bound rubber fraction and mobility</li>
-            <li>Filler network percolation threshold</li>
-            <li>Chain mobility at operating temperature</li>
-          </ul>
-          <p style="margin-top:8px">Low patent count (14) reflects the high synthesis complexity and long commercialization cycle — this is pre-commercial research.</p>
+          <h4>Why This Is the Fundamental Approach</h4>
+          <p>All other themes manage the <em>symptoms</em> of the RR–wear conflict. Functionalized polymers address the <em>root cause</em>: the fact that the same polymer chain motions that generate hysteresis (energy loss → RR) also indicate low chain–filler binding (poor reinforcement → wear). By making chain ends bifunctional — anchored to filler while chemically compatible with the matrix — researchers <strong>decouple chain mobility from reinforcement efficiency</strong> at the molecular level.</p>
         </div>
         <div class="insight-block green">
-          <h4>Wet Masterbatch Process (7%)</h4>
-          <p>The Korean Research Institute patent (2024) introduces a wet masterbatch method for TBR treads — filler is dispersed in latex before coagulation, ensuring molecular-level distribution. This <strong>process innovation</strong> enables functionalized polymer advantages to be realized in production without custom synthesis infrastructure.</p>
+          <h4>Wet Masterbatch Process (10%)</h4>
+          <p>Korean Materials Convergence Institute (2024): wet masterbatch for TBR treads — filler dispersed in latex at the molecular level before coagulation, eliminating the agglomeration that occurs during dry mixing. This process innovation enables functionalized polymer advantages without custom synthesis infrastructure. A key enabler for emerging-market producers.</p>
         </div>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <h3><span class="dot" style="background:#8e44ad"></span>Research Strategy Distribution (% of 14 patents)</h3>
+    <h3><span class="dot" style="background:#8e44ad"></span>Research Strategy Distribution (n = 10)</h3>
     <div id="t5_strat_bars"></div>
   </div>
 
   <div class="grid-2">
     <div class="card">
-      <h3><span class="dot" style="background:#8e44ad"></span>Innovation Trajectory &amp; Opportunity</h3>
+      <h3><span class="dot" style="background:#8e44ad"></span>Innovation Signals &amp; White Space</h3>
       <div class="insight-block purple">
-        <h4>Signal Strength: Strong but Early</h4>
-        <p>Patent count is low but acceleration is clear — 0 patents pre-2020 addressing both RR and mileage in this theme, vs. 6 in 2023–2024. Bridgestone, Goodyear, and Korean academic-industry teams are filing. Chinese players have not entered yet — white space for Asian producers.</p>
+        <h4>Patent Signal: Weak but Accelerating</h4>
+        <p>Zero dual-goal filings in this theme before 2018. Six patents in 2023–2024 alone. Bridgestone, Goodyear, Sinopec, and two Korean institutions are the only players. No Chinese tire manufacturer (Linglong, Doublestar, Sailun, Aeolus) has filed here — strong white space for Asian producers willing to invest in synthesis capability.</p>
       </div>
-      <div class="insight-block">
-        <h4>The SSBR Advantage for TBR</h4>
-        <p>Solution-polymerized SBR with controlled microstructure (high/low vinyl, styrene content) and terminal functionalization was pioneered for PCR tires. Its adaptation to TBR — which requires higher NR content for tear resistance — is the active innovation frontier. Key question: can SSBR functional groups survive the high-temperature NR blending process?</p>
+      <div class="insight-block blue">
+        <h4>The TBR-Specific Challenge</h4>
+        <p>SSBR functionalization was pioneered for PCR (passenger car radial) tires which use higher SBR content. TBR requires higher NR content for cut and tear resistance under heavy loads — and NR cannot be synthesized with controlled chain-end groups. The open research question: can functionalized SBR/BR blend into an NR-dominant matrix while retaining its filler-anchoring advantage at the NR–BR interface?</p>
       </div>
     </div>
     <div class="card">
       <h3><span class="dot" style="background:#8e44ad"></span>Representative Patent Examples</h3>
       <div class="quote-box">
-        <strong>Pusan National Univ (2021):</strong> "Compound functionalized at both ends incorporating carbon black-friendly amine functional group... tires with excellent migration resistance, dispersibility, wear resistance, and mechanical properties."
-        <div class="src">→ Strategy: dual chain-end amine groups anchor to CB — simultaneously improving wear and filler dispersion (→RR)</div>
+        <strong>Pusan National Univ, KR (2021):</strong> "Compound functionalized at both ends — amine functional group (CB-friendly)… tires with excellent migration resistance, dispersibility, wear resistance, and mechanical properties."
+        <div class="src">→ Dual chain-end amine groups anchor polymer to CB surface — simultaneously improving wear (reinforcement) and CB dispersion (→ lower Payne effect → RR)</div>
       </div>
       <div class="quote-box">
-        <strong>Bridgestone (2024):</strong> "Tire rubber composition — suppress crack occurrence while achieving better fuel efficiency and wear resistance... copolymer (A1) of cyclopentene + norbornene-based compound [novel monomer] + modified polymer (A2) + triphenylamine anti-aging agent."
-        <div class="src">→ Strategy: terpolymer with bicyclic monomers for inherent frequency decoupling + anti-aging for wear</div>
+        <strong>Bridgestone (2024):</strong> "Copolymer (A1) of cyclopentene + norbornene-based compound [novel bicyclic monomer] + modified polymer (A2) + triphenylamine anti-aging agent… suppress crack occurrence while achieving better fuel efficiency and wear resistance."
+        <div class="src">→ Bicyclic monomer introduces inherent steric rigidity to suppress high-frequency chain motion (→ RR) while anti-aging agent preserves network integrity (→ wear)</div>
       </div>
       <div class="quote-box">
-        <strong>Korean Materials Convergence Inst. (2024):</strong> "Wet masterbatch for truck/bus tire treads — effects on wear resistance, fuel efficiency depending on coagulant type and vulcanization temperature. Silica dispersion achieved."
-        <div class="src">→ Strategy: process innovation enabling fine silica dispersion + controlled cure for both properties</div>
+        <strong>Korean Materials Inst. (2024):</strong> "Wet masterbatch for TBR treads — silica dispersed in latex, coagulant type and vulcanization temperature optimized for wear resistance + fuel efficiency characteristics."
+        <div class="src">→ Process innovation: molecular-level filler dispersion without custom synthesis — lowers barrier to entry for this approach</div>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <h3><span class="dot" style="background:#8e44ad"></span>Country Activity Trend</h3>
+    <h3><span class="dot" style="background:#8e44ad"></span>Country Activity Trend (2015–2024)</h3>
     <div class="chart-wrap-tall"><canvas id="t5_country"></canvas></div>
   </div>
 </div>
 
 <script>
-Chart.register(ChartAnnotation);
-
 /* ── Palette ── */
 var P={o:'#e8641a',b:'#1a4a7a',t:'#2a9d8f',y:'#d4a017',g:'#27ae60',p:'#8e44ad',gr:'#7f8c8d',r:'#c0392b'};
 var YEARS=[2015,2016,2017,2018,2019,2020,2021,2022,2023,2024];
 
-/* ── DATA ── */
-var THEME_NAMES=['Silica & Silane Coupling','Belt & Structural Engineering','Tread Design & Pattern',
-  'Carbon Black & Hybrid Filler','Bio-based & Sustainable','Functionalized Polymers & SSBR'];
+/* ── DATA (verified, corrected keyword set, 448 patents) ── */
+var OVERALL_TREND=[38,31,47,51,45,47,42,36,70,41];
+var THEME_COUNTS=[233,50,48,28,18,10];
+var THEME_NAMES=['Silica & Silane Coupling','Carbon Black & Hybrid Filler',
+  'Belt & Structural Engineering','Tread Design & Pattern',
+  'Bio-based & Sustainable Materials','Functionalized Polymers & SSBR'];
+var THEME_COLORS=[P.o,P.y,P.b,P.t,P.g,P.p];
 
-var YEAR_TRENDS={
-  0:[24,13,31,33,28,27,28,24,50,12],
-  1:[11,13,9,18,23,12,20,12,31,13],
-  2:[9,7,7,7,13,22,21,16,27,31],
-  3:[11,2,3,9,9,6,0,6,8,4],
-  4:[4,8,10,4,5,2,4,5,4,2],
-  5:[1,1,0,1,1,2,2,0,3,3]
-};
+var YEAR_TRENDS=[
+  [20,11,29,30,24,20,23,19,42,15],
+  [9,2,3,8,6,5,0,7,7,3],
+  [2,4,4,9,4,7,8,4,1,5],
+  [3,1,0,0,3,7,5,1,4,4],
+  [4,2,3,0,2,2,1,3,1,0],
+  [0,0,0,1,1,1,2,0,2,3]
+];
 
-var ASSIGNEES={
-  0:{labels:['Sumitomo Rubber','Yokohama Rubber','Bridgestone','Hankook','Continental','Toyo Tire','Sumitomo Elec'],data:[127,27,14,11,7,7,7]},
-  1:{labels:['Sumitomo Rubber','Bridgestone','Doublestar(CN)','Yokohama','Michelin','Continental','Linglong(CN)'],data:[60,12,12,8,7,5,4]},
-  2:{labels:['Sumitomo Rubber','Yokohama Rubber','Bridgestone','Doublestar(CN)','Aeolus(CN)','Continental','Sailun(CN)'],data:[52,33,12,11,5,4,3]},
-  3:{labels:['Yokohama Rubber','Sumitomo Rubber','Bridgestone','Jiangsu General','Shikoku Chem','Zhongce(CN)'],data:[18,10,7,2,2,2]},
-  4:{labels:['Sumitomo Rubber','Bridgestone','Yokohama','Toyo Tire','Sumitomo Elec','Michelin'],data:[22,4,3,3,2,2]},
-  5:{labels:['Bridgestone','Goodyear','Sinopec','Sumitomo Rubber','Continental','Pusan Univ(KR)'],data:[3,2,2,2,1,1]}
-};
+var ASSIGNEES=[
+  {labels:['Sumitomo Rubber','Yokohama Rubber','Bridgestone','Toyo Tire','Hankook','Sumitomo Elec','Tokuyama Corp'],data:[111,23,14,11,10,8,6]},
+  {labels:['Yokohama Rubber','Sumitomo Rubber','Bridgestone','Zhongce (CN)','Shikoku Chem','Sinopec','Shanghai JTU'],data:[13,8,7,3,2,2,1]},
+  {labels:['Sumitomo Rubber','Michelin','Hankook','Kuraray','Bridgestone','Aeolus (CN)','Toyo Tire'],data:[16,5,3,2,2,2,1]},
+  {labels:['Sumitomo Rubber','Qingdao Yellowsea','Sailun (CN)','Continental','Aeolus (CN)','Bridgestone','Hankook'],data:[15,2,2,2,2,2,1]},
+  {labels:['Sumitomo Rubber','Bridgestone','Yokohama Rubber','Sinopec','Toyo Tire','Continental'],data:[6,4,3,1,1,1]},
+  {labels:['Bridgestone','Sinopec','Goodyear','Pusan Univ (KR)','Korean Mat. Inst.','Hankook'],data:[3,2,2,1,1,1]}
+];
 
-var STRATEGIES={
-  0:{data:[85,70,9,3,1,1],labels:['Dual rubber matrix (NR+BR/SBR)','Silica particle size/morphology','Wet process / in-situ','Modified silica surface','Optimized silane dose','Silica dispersion control'],total:270},
-  1:{data:[51,44,28,10,8,3,1],labels:['Belt layer count/geometry','Belt tension/pretension','Cord material upgrade','Undertread optimization','Contact patch uniformity','Belt angle optimization','Simulation/FEA'],total:162},
-  2:{data:[159,37,21,7,3,1,1],labels:['Groove design','Sipe/kerf geometry','Footprint pressure control','Multi-compound tread','Block stiffness tuning','Void ratio optimization','Pattern simulation/CAE'],total:160},
-  3:{data:[56,5,5,3,1],labels:['CB+Silica hybrid','Nano-carbon (CNT/graphene)','Surface functionalized CB','Filler network control','CB grade selection'],total:58},
-  4:{data:[4,3,1,1,1],labels:['Modified/grafted NR','Plant-based polymer','Bio-based silica','Recycled/devulcanized','Lignin/natural filler'],total:48},
-  5:{data:[4,3,1,1],labels:['Chain-end functionalization','In-chain modification','Tin/Si coupling (star)','Wet masterbatch process'],total:14}
-};
+var STRATEGIES=[
+  {data:[75,62,8,3,1],labels:['Dual rubber matrix (NR+BR/SBR)','Silica particle size/morphology','Wet process / in-situ','Modified silica surface','Optimized silane dose'],total:233},
+  {data:[48,6,4,3],labels:['CB+Silica hybrid','Nano-carbon (CNT/graphene)','Surface functionalized CB','Filler network control'],total:50},
+  {data:[11,5,2,2,2],labels:['Belt layer count/geometry','Undertread optimization','Belt tension/pretension','Cord material upgrade','Contact patch uniformity'],total:48},
+  {data:[25,2,1],labels:['Sipe/kerf geometry','Multi-compound tread','Footprint pressure control'],total:28},
+  {data:[6,2,2],labels:['High-MW NR/BR architecture','Modified/grafted NR','Dandelion/guayule NR'],total:18},
+  {data:[3,3,1,1],labels:['Chain-end functionalization','In-chain modification','Tin/Si coupling (star)','Wet masterbatch process'],total:10}
+];
 
-var MEASUREMENTS={
-  0:{rolling_resistance:270,abrasion_wear:110,loss_tangent:3,heat_buildup:5,rebound:1,hardness:0,din_abrasion:1,deformation:7},
-  1:{rolling_resistance:162,abrasion_wear:27,loss_tangent:30,heat_buildup:3,rebound:0,hardness:0,din_abrasion:0,deformation:23},
-  2:{rolling_resistance:160,abrasion_wear:47,loss_tangent:7,heat_buildup:2,rebound:0,hardness:0,din_abrasion:0,deformation:9},
-  3:{rolling_resistance:58,abrasion_wear:33,loss_tangent:1,heat_buildup:4,rebound:1,hardness:0,din_abrasion:0,deformation:2},
-  4:{rolling_resistance:48,abrasion_wear:28,loss_tangent:1,heat_buildup:1,rebound:0,hardness:0,din_abrasion:0,deformation:0},
-  5:{rolling_resistance:14,abrasion_wear:6,loss_tangent:0,heat_buildup:0,rebound:0,hardness:0,din_abrasion:0,deformation:0}
-};
+var MEASUREMENTS=[
+  {labels:['RR goal (direct)','Wear goal (direct)','Loss tangent/tan δ','Heat build-up','Simultaneous claim'],data:[108,215,16,29,12]},
+  {labels:['RR goal (direct)','Wear goal (direct)','Loss tangent/tan δ','Heat build-up','Simultaneous claim'],data:[35,44,8,19,7]},
+  {labels:['RR goal (direct)','Wear goal (direct)','Loss tangent/tan δ','Heat build-up','Simultaneous claim'],data:[36,41,9,5,5]},
+  {labels:['RR goal (direct)','Wear goal (direct)','Loss tangent/tan δ','Storage modulus','Simultaneous claim'],data:[22,12,5,2,5]},
+  {labels:['RR goal (direct)','Wear goal (direct)','Heat build-up','Simultaneous claim'],data:[9,13,6,2]},
+  {labels:['RR goal (direct)','Wear goal (direct)','Heat build-up','Simultaneous claim'],data:[8,7,2,1]}
+];
 
-var COUNTRY_TRENDS={
-  0:{JP:[22,12,27,28,25,25,25,20,44,11],CN:[1,0,2,3,2,1,2,3,5,1],DE:[1,1,2,2,1,1,1,1,1,0],KR:[0,0,0,0,0,0,0,0,0,0],US:[0,0,0,0,0,0,0,0,0,0],FR:[0,0,0,0,0,0,0,0,0,0]},
-  1:{JP:[9,10,7,13,18,10,17,9,22,11],CN:[1,2,1,3,4,1,2,2,8,1],DE:[1,1,1,2,1,1,1,1,1,1],KR:[0,0,0,0,0,0,0,0,0,0],US:[0,0,0,0,0,0,0,0,0,0],FR:[0,0,0,0,0,1,0,0,0,0]},
-  2:{JP:[7,5,6,5,9,16,16,11,18,22],CN:[1,1,1,1,3,5,4,4,8,8],DE:[1,1,0,1,1,1,1,1,1,1],KR:[0,0,0,0,0,0,0,0,0,0],US:[0,0,0,0,0,0,0,0,0,0],FR:[0,0,0,0,0,0,0,0,0,0]},
-  3:{JP:[8,2,2,6,7,4,0,4,5,2],CN:[2,0,1,2,2,1,0,1,3,2],DE:[1,0,0,1,0,1,0,1,0,0],KR:[0,0,0,0,0,0,0,0,0,0],US:[0,0,0,0,0,0,0,0,0,0],FR:[0,0,0,0,0,0,0,0,0,0]},
-  4:{JP:[4,7,9,4,5,2,4,4,4,2],CN:[0,1,1,0,0,0,0,1,0,0],DE:[0,0,0,0,0,0,0,0,0,0],KR:[0,0,0,0,0,0,0,0,0,0],US:[0,0,0,0,0,0,0,0,0,0],FR:[0,0,0,0,0,0,0,0,0,0]},
-  5:{JP:[0,1,0,1,1,1,1,0,1,1],CN:[0,0,0,0,0,1,0,0,1,1],DE:[0,0,0,0,0,0,0,0,0,1],KR:[1,0,0,0,0,0,1,0,1,1],US:[0,0,0,0,0,0,0,0,0,0],FR:[0,0,0,0,0,0,0,0,0,0]}
-};
+var COUNTRY_TRENDS=[
+  {JP:[17,8,24,25,16,14,14,10,32,8],CN:[2,1,1,1,2,1,3,3,5,2],KR:[0,1,1,1,2,1,2,2,1,2],DE:[0,0,0,0,0,0,0,0,0,0],FR:[0,0,2,0,0,0,0,0,0,0],US:[0,0,0,0,0,1,0,0,1,0]},
+  {JP:[9,1,2,8,2,3,0,0,5,2],CN:[0,0,0,0,3,1,0,3,1,1],KR:[0,0,0,0,1,1,0,0,1,0],DE:[0,0,0,0,0,0,0,0,0,0],FR:[0,0,0,0,0,0,0,0,0,0],US:[0,0,0,0,0,0,0,0,0,0]},
+  {JP:[1,2,1,3,3,3,4,0,0,2],CN:[1,0,0,0,0,1,3,2,0,2],KR:[0,1,1,2,1,0,0,0,0,1],DE:[0,0,0,0,0,0,0,0,0,0],FR:[0,1,2,3,0,3,1,1,1,0],US:[0,0,0,0,0,0,0,0,0,0]},
+  {JP:[1,1,0,0,3,5,4,0,2,2],CN:[2,0,0,0,0,2,0,0,0,2],KR:[0,0,0,0,0,0,0,1,0,1],DE:[0,0,0,0,0,0,1,0,2,0],FR:[0,0,0,0,0,0,0,0,0,0],US:[0,0,0,0,0,0,0,0,0,0]},
+  {JP:[4,2,3,0,2,1,0,1,1,0],CN:[0,0,0,0,0,1,1,1,0,0],KR:[0,0,0,0,0,0,0,0,0,0],DE:[0,0,0,0,0,0,0,1,0,1],FR:[0,0,0,0,0,0,0,0,0,0],US:[0,0,0,0,0,0,0,0,0,0]},
+  {JP:[0,0,0,0,0,0,0,0,1,2],CN:[0,0,0,0,0,0,1,0,1,0],KR:[0,0,0,1,1,0,1,0,0,1],DE:[0,0,0,0,0,0,0,0,0,1],FR:[0,0,0,0,0,0,0,0,0,0],US:[0,0,0,0,0,1,0,0,0,0]}
+];
 
-var THEME_COLORS=[P.o,P.b,P.t,P.y,P.g,P.p];
-
-/* ── Chart factory helpers ── */
-function lineChart(id, datasets, title){
-  var ctx=document.getElementById(id);
-  if(!ctx)return;
+/* ── Chart helpers ── */
+function lineChart(id,datasets){
+  var ctx=document.getElementById(id); if(!ctx)return;
   return new Chart(ctx,{type:'line',data:{labels:YEARS,datasets:datasets},options:{
     responsive:true,maintainAspectRatio:true,
-    plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}},title:{display:!!title,text:title,font:{size:12}}},
+    plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}},
     scales:{x:{ticks:{font:{size:10}}},y:{beginAtZero:true,ticks:{font:{size:10}}}}
   }});
 }
-function barChart(id, labels, data, color, title){
-  var ctx=document.getElementById(id);
-  if(!ctx)return;
-  return new Chart(ctx,{type:'bar',data:{labels:labels,datasets:[{data:data,backgroundColor:color,borderRadius:4}]},options:{
-    responsive:true,maintainAspectRatio:true,indexAxis:'y',
-    plugins:{legend:{display:false},title:{display:!!title,text:title,font:{size:11}}},
-    scales:{x:{beginAtZero:true,ticks:{font:{size:10}}},y:{ticks:{font:{size:10}}}}
-  }});
-}
-function radarMeasChart(id, data, color){
-  var ctx=document.getElementById(id);
-  if(!ctx)return;
-  var mkeys=['rolling_resistance','abrasion_wear','loss_tangent','heat_buildup','rebound','din_abrasion','deformation'];
-  var mlabels=['RR Goal','Wear Goal','Loss Tangent','Heat Build-up','Rebound','DIN Abrasion','Deformation'];
-  var vals=mkeys.map(function(k){return data[k]||0});
-  return new Chart(ctx,{type:'bar',data:{labels:mlabels,datasets:[{data:vals,backgroundColor:color+'88',borderColor:color,borderWidth:2,borderRadius:3}]},options:{
+function barH(id,labels,data,color){
+  var ctx=document.getElementById(id); if(!ctx)return;
+  return new Chart(ctx,{type:'bar',data:{labels:labels,datasets:[{data:data,backgroundColor:color,borderRadius:3}]},options:{
     responsive:true,maintainAspectRatio:true,indexAxis:'y',
     plugins:{legend:{display:false}},
     scales:{x:{beginAtZero:true,ticks:{font:{size:10}}},y:{ticks:{font:{size:10}}}}
   }});
 }
-
-/* ── Strategy bars HTML ── */
-function renderStratBars(containerId, idx, color){
-  var el=document.getElementById(containerId);
-  if(!el)return;
-  var s=STRATEGIES[idx];
-  var max=Math.max.apply(null,s.data);
-  var html='';
-  for(var i=0;i<s.labels.length;i++){
-    var pct=Math.round(100*s.data[i]/s.total);
-    var barW=Math.round(100*s.data[i]/max);
-    html+='<div class="strat-row"><span class="strat-label">'+s.labels[i]+'</span>'+
-      '<div class="strat-bar-wrap"><div class="strat-bar" style="width:'+barW+'%;background:'+color+'">'+pct+'%</div></div>'+
-      '<span class="strat-count">'+s.data[i]+'</span></div>';
-  }
-  el.innerHTML=html;
+function measChart(id,meas,color){
+  var ctx=document.getElementById(id); if(!ctx)return;
+  return new Chart(ctx,{type:'bar',data:{labels:meas.labels,datasets:[{data:meas.data,backgroundColor:color+'99',borderColor:color,borderWidth:1.5,borderRadius:3}]},options:{
+    responsive:true,maintainAspectRatio:true,indexAxis:'y',
+    plugins:{legend:{display:false}},
+    scales:{x:{beginAtZero:true,ticks:{font:{size:10}}},y:{ticks:{font:{size:10}}}}
+  }});
 }
-
-/* ── Country line chart ── */
-function countryChart(id, idx){
-  var ct=COUNTRY_TRENDS[idx];
-  var countries=['JP','CN','DE','KR','FR'];
-  var cColors={JP:P.o,CN:P.r,DE:P.b,KR:P.t,FR:P.g};
-  var datasets=countries.map(function(c){
+function countryChart(id,ct){
+  var clist=['JP','CN','KR','DE','FR'];
+  var cColors={JP:P.o,CN:P.r,KR:P.t,DE:P.b,FR:P.g};
+  var datasets=clist.map(function(c){
     return{label:c,data:ct[c],borderColor:cColors[c],backgroundColor:cColors[c]+'33',
       borderWidth:2,fill:false,tension:.3,pointRadius:3};
   });
   lineChart(id,datasets);
 }
+function stratBars(containerId,idx,color){
+  var el=document.getElementById(containerId); if(!el)return;
+  var s=STRATEGIES[idx];
+  var max=Math.max.apply(null,s.data);
+  var html='';
+  for(var i=0;i<s.labels.length;i++){
+    var pct=Math.round(100*s.data[i]/s.total);
+    var bw=Math.round(100*s.data[i]/max);
+    html+='<div class="strat-row"><span class="strat-label">'+s.labels[i]+'</span>'+
+      '<div class="strat-bar-wrap"><div class="strat-bar" style="width:'+bw+'%;background:'+color+'">'+pct+'%</div></div>'+
+      '<span class="strat-count">'+s.data[i]+'</span></div>';
+  }
+  el.innerHTML=html;
+}
 
-/* ── Overview charts ── */
+/* ── Overview charts (build immediately) ── */
 (function(){
-  // Trend
-  var total=YEARS.map(function(y,i){return YEAR_TRENDS[0][i]+YEAR_TRENDS[1][i]+YEAR_TRENDS[2][i]+YEAR_TRENDS[3][i]+YEAR_TRENDS[4][i]+YEAR_TRENDS[5][i];});
-  lineChart('overviewTrend',[{label:'Combined (RR+Wear) Patents',data:total,borderColor:P.o,backgroundColor:P.o+'33',fill:true,tension:.35,borderWidth:2.5,pointRadius:4}],'Total Combined Patents per Year');
-
-  // Donut
+  lineChart('overviewTrend',[{label:'Combined (RR+Wear) Patents',data:OVERALL_TREND,
+    borderColor:P.o,backgroundColor:P.o+'33',fill:true,tension:.35,borderWidth:2.5,pointRadius:4}]);
   var dCtx=document.getElementById('themeDonut');
-  if(dCtx) new Chart(dCtx,{type:'doughnut',data:{
-    labels:THEME_NAMES,
-    datasets:[{data:[270,162,160,58,48,14],backgroundColor:[P.o,P.b,P.t,P.y,P.g,P.p],borderWidth:2}]
-  },options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'right',labels:{boxWidth:14,font:{size:11}}}}}});
+  if(dCtx) new Chart(dCtx,{type:'doughnut',data:{labels:THEME_NAMES,
+    datasets:[{data:THEME_COUNTS,backgroundColor:THEME_COLORS,borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:true,
+      plugins:{legend:{position:'right',labels:{boxWidth:14,font:{size:11}}}}}});
 })();
 
-/* ── Per-theme charts (lazy) ── */
-var chartBuilt={};
-function buildThemeCharts(idx){
-  if(chartBuilt[idx])return;
-  chartBuilt[idx]=true;
-  var c=THEME_COLORS[idx];
-
-  lineChart('t'+idx+'_trend',[{label:'Patents',data:YEAR_TRENDS[idx],borderColor:c,backgroundColor:c+'33',fill:true,tension:.35,borderWidth:2.5,pointRadius:4}]);
-  barChart('t'+idx+'_asgn',ASSIGNEES[idx].labels,ASSIGNEES[idx].data,c);
-  radarMeasChart('t'+idx+'_meas',MEASUREMENTS[idx],c);
-  renderStratBars('t'+idx+'_strat_bars',idx,c);
-  countryChart('t'+idx+'_country',idx);
+/* ── Lazy build per-theme charts ── */
+var built={};
+function buildTheme(i){
+  if(built[i])return; built[i]=true;
+  var c=THEME_COLORS[i];
+  lineChart('t'+i+'_trend',[{label:'Patents',data:YEAR_TRENDS[i],
+    borderColor:c,backgroundColor:c+'33',fill:true,tension:.35,borderWidth:2.5,pointRadius:4}]);
+  barH('t'+i+'_asgn',ASSIGNEES[i].labels,ASSIGNEES[i].data,c);
+  measChart('t'+i+'_meas',MEASUREMENTS[i],c);
+  stratBars('t'+i+'_strat_bars',i,c);
+  countryChart('t'+i+'_country',COUNTRY_TRENDS[i]);
 }
 
 /* ── Section switching ── */
-var sections=['overview','theme0','theme1','theme2','theme3','theme4','theme5'];
+var SECTIONS=['overview','theme0','theme1','theme2','theme3','theme4','theme5'];
 function showSection(id,el){
-  sections.forEach(function(s){
-    var p=document.getElementById(s);
-    if(p)p.classList.remove('active');
-  });
-  var panel=document.getElementById(id);
-  if(panel)panel.classList.add('active');
-
+  SECTIONS.forEach(function(s){var p=document.getElementById(s);if(p)p.classList.remove('active');});
+  var panel=document.getElementById(id); if(panel)panel.classList.add('active');
   document.querySelectorAll('.main-nav a').forEach(function(a){a.classList.remove('active');});
   if(el)el.classList.add('active');
-
-  // build charts for theme sections
   var m=id.match(/^theme(\d)$/);
-  if(m){
-    setTimeout(function(){buildThemeCharts(parseInt(m[1]));},60);
-  }
+  if(m) setTimeout(function(){buildTheme(parseInt(m[1]));},60);
 }
 </script>
 </body>
