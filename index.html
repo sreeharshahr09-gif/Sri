@@ -300,6 +300,20 @@ input[type="color"] {
 .submode-group .btn { flex: 1; font-size: var(--text-xs); padding: 5px 4px; border: none; background: transparent; }
 .submode-group .btn.active { background: var(--color-primary); color: #fff; }
 
+.autodetect-block {
+  border: 1px solid var(--color-border); border-radius: var(--radius-md);
+  padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3);
+  background: var(--color-surface-2);
+}
+.autodetect-head {
+  display: flex; align-items: center; gap: var(--space-2);
+  font-size: var(--text-xs); font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-secondary);
+}
+.autodetect-head svg { width: 15px; height: 15px; }
+.autodetect-hint { font-size: var(--text-xs); color: var(--color-text-muted); line-height: 1.4; }
+.btn.detecting { background: var(--color-secondary); border-color: var(--color-secondary); color: #fff; }
+
 /* ---------- Canvas area ---------- */
 #canvas-area {
   grid-area: canvas;
@@ -553,6 +567,28 @@ kbd {
           <div class="range-row"><input type="range" id="sample-interval" min="1" max="50" value="10" /><span id="sample-interval-val">10</span></div>
         </label>
         <button class="btn" id="add-curve-btn" style="width:100%"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add New Curve</button>
+
+        <div class="autodetect-block">
+          <div class="autodetect-head">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="3.5"/></svg>
+            <span>Auto-Detect Lines</span>
+          </div>
+          <label class="field">Color tolerance
+            <div class="range-row"><input type="range" id="detect-tol" min="10" max="140" value="55" /><span id="detect-tol-val">55</span></div>
+          </label>
+          <label class="field">Sampling step (px)
+            <div class="range-row"><input type="range" id="detect-step" min="1" max="20" value="3" /><span id="detect-step-val">3</span></div>
+          </label>
+          <label class="field">Max lines
+            <div class="range-row"><input type="range" id="detect-max" min="1" max="10" value="4" /><span id="detect-max-val">4</span></div>
+          </label>
+          <div class="mini-btn-row">
+            <button class="btn" id="auto-detect-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 11-3-3m0 0-3 3m3-3v12M3 13l3 3m0 0 3-3m-3 3V4"/></svg> Detect All</button>
+            <button class="btn" id="pick-detect-btn" title="Click a line on the graph to detect just that color"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 11V9a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/><circle cx="12" cy="13" r="2"/><path d="m22 22-3-3"/></svg> Pick Line</button>
+          </div>
+          <p class="autodetect-hint">Detects colored curves automatically, then converts them to editable points. Refine by dragging, deleting, or adding points anytime.</p>
+        </div>
+
         <div class="curve-list" id="curve-list"></div>
       </div>
     </div>
@@ -709,7 +745,7 @@ const state = {
   calibrateStep: null,
   history: [],
   future: [],
-  ui: { showZoomWindow: true, showGrid: false, showSpline: false, showCrosshair: true, gridSpacing: 1, pointSize: 5, sampleInterval: 10 },
+  ui: { showZoomWindow: true, showGrid: false, showSpline: false, showCrosshair: true, gridSpacing: 1, pointSize: 5, sampleInterval: 10, detectTol: 55, detectStep: 3, detectMax: 4 },
 };
 
 // transient interaction state
@@ -725,6 +761,7 @@ const interaction = {
   autoTracing: false,
   autoPath: [],                  // image-space path while drawing
   pendingCal: null,              // { key, px, py } awaiting value input
+  pickColorMode: false,          // click samples a line color and auto-detects it
 };
 
 /* ============================================================
@@ -1050,6 +1087,10 @@ canvasArea.addEventListener('mousedown', e => {
   }
 
   if (state.mode === 'trace') {
+    if (interaction.pickColorMode) {
+      pickColorAndDetect(imgPt.x, imgPt.y);
+      return;
+    }
     if (state.traceSubMode === 'auto') {
       interaction.autoTracing = true;
       interaction.autoPath = [{ x: imgPt.x, y: imgPt.y }];
@@ -1208,6 +1249,234 @@ function finishAutoTrace() {
   }
   renderOverlay(); renderDataTable(); renderStats(); updateStatusBar();
   toast(`Auto-trace added ${c.points.length} points`, 'success');
+}
+
+/* ============================================================
+   AUTO LINE DETECTION
+   ------------------------------------------------------------
+   Scans the image pixels, clusters non-background colors into
+   distinct curves, then walks each column to extract a point per
+   colored run. Detected points are normal editable points, so the
+   user can drag/delete/add to refine them at any time.
+   ============================================================ */
+const BG_TOL = 42; // distance from background a pixel must exceed to count as "ink"
+
+function colorDist(r1, g1, b1, r2, g2, b2) {
+  const dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
+  return Math.sqrt(dr * dr + dg * dg + db * db);
+}
+function rgbToHex(c) {
+  const h = v => clamp(Math.round(v), 0, 255).toString(16).padStart(2, '0');
+  return '#' + h(c[0]) + h(c[1]) + h(c[2]);
+}
+
+function getImageData() {
+  return imgCtx.getImageData(0, 0, imgCanvas.width, imgCanvas.height);
+}
+
+// Region to scan = inside the calibration bounding box (with a small inset
+// so axis lines/labels are excluded). Falls back to the full image.
+function detectionBounds(w, h) {
+  if (calibrationReady()) {
+    const p = state.calibration.points;
+    let x0 = Math.min(p.x1.px, p.x2.px), x1 = Math.max(p.x1.px, p.x2.px);
+    let y0 = Math.min(p.y1.py, p.y2.py), y1 = Math.max(p.y1.py, p.y2.py);
+    const mx = (x1 - x0) * 0.01, my = (y1 - y0) * 0.01;
+    x0 = clamp(Math.floor(x0 + mx), 0, w - 1); x1 = clamp(Math.ceil(x1 - mx), 0, w - 1);
+    y0 = clamp(Math.floor(y0 + my), 0, h - 1); y1 = clamp(Math.ceil(y1 - my), 0, h - 1);
+    if (x1 > x0 && y1 > y0) return { x0, y0, x1, y1 };
+  }
+  return { x0: 0, y0: 0, x1: w - 1, y1: h - 1 };
+}
+
+function estimateBackground(data, w, h) {
+  // Most common color along the image border, quantised to 16-levels.
+  const counts = new Map();
+  const add = (x, y) => {
+    const i = (y * w + x) * 4;
+    if (data[i + 3] < 128) return;
+    const k = (data[i] >> 4) + ',' + (data[i + 1] >> 4) + ',' + (data[i + 2] >> 4);
+    counts.set(k, (counts.get(k) || 0) + 1);
+  };
+  const sx = Math.max(1, (w / 250) | 0), sy = Math.max(1, (h / 250) | 0);
+  for (let x = 0; x < w; x += sx) { add(x, 0); add(x, h - 1); }
+  for (let y = 0; y < h; y += sy) { add(0, y); add(w - 1, y); }
+  let best = '15,15,15', bestN = -1;
+  for (const [k, n] of counts) if (n > bestN) { bestN = n; best = k; }
+  const p = best.split(',').map(Number);
+  return [p[0] * 16 + 8, p[1] * 16 + 8, p[2] * 16 + 8];
+}
+
+// Find the dominant foreground colors (candidate curve colors).
+function detectColorClusters(data, w, h, bg, bounds, mergeTol, maxLines) {
+  const step = Math.max(1, Math.round(Math.sqrt(w * h) / 500));
+  const buckets = new Map();
+  for (let y = bounds.y0; y <= bounds.y1; y += step) {
+    for (let x = bounds.x0; x <= bounds.x1; x += step) {
+      const i = (y * w + x) * 4;
+      if (data[i + 3] < 128) continue;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      if (colorDist(r, g, b, bg[0], bg[1], bg[2]) < BG_TOL) continue;
+      const k = (r >> 5) + '|' + (g >> 5) + '|' + (b >> 5);
+      let e = buckets.get(k);
+      if (!e) { e = { n: 0, r: 0, g: 0, b: 0 }; buckets.set(k, e); }
+      e.n++; e.r += r; e.g += g; e.b += b;
+    }
+  }
+  let arr = [...buckets.values()].map(e => ({ n: e.n, r: e.r / e.n, g: e.g / e.n, b: e.b / e.n }));
+  arr.sort((a, b) => b.n - a.n);
+  // greedily merge buckets that are close in color
+  const merged = [];
+  for (const c of arr) {
+    const m = merged.find(x => colorDist(x.r, x.g, x.b, c.r, c.g, c.b) < mergeTol);
+    if (m) {
+      const tot = m.n + c.n;
+      m.r = (m.r * m.n + c.r * c.n) / tot;
+      m.g = (m.g * m.n + c.g * c.n) / tot;
+      m.b = (m.b * m.n + c.b * c.n) / tot;
+      m.n = tot;
+    } else merged.push({ ...c });
+  }
+  if (!merged.length) return [];
+  const minN = Math.max(6, merged[0].n * 0.04);
+  return merged.filter(c => c.n >= minN).slice(0, maxLines);
+}
+
+// Build editable points from a per-column list of matching y-pixels.
+function pointsFromColumns(cols, bounds, step) {
+  const pts = [];
+  for (let x = bounds.x0; x <= bounds.x1; x += step) {
+    const ys = cols[x];
+    if (!ys || !ys.length) continue;
+    ys.sort((a, b) => a - b);
+    // group contiguous runs (gap > 2px starts a new run), emit centroid each
+    let sum = ys[0], cnt = 1, prev = ys[0];
+    for (let k = 1; k < ys.length; k++) {
+      if (ys[k] - prev <= 2) { sum += ys[k]; cnt++; }
+      else { pts.push({ x, y: sum / cnt }); sum = ys[k]; cnt = 1; }
+      prev = ys[k];
+    }
+    pts.push({ x, y: sum / cnt });
+  }
+  return pts;
+}
+
+function rawToCurvePoints(raw) {
+  return raw.map(p => {
+    const r = pixelToReal(p.x, p.y);
+    return { pixelX: p.x, pixelY: p.y, realX: r.x, realY: r.y };
+  }).sort((a, b) => a.pixelX - b.pixelX);
+}
+
+function addDetectedCurve(colorRgb, raw, name) {
+  if (state.curves.length >= 10) return null;
+  const id = state.nextCurveId++;
+  const curve = { id, name, color: rgbToHex(colorRgb), points: rawToCurvePoints(raw), visible: true };
+  state.curves.push(curve);
+  return curve;
+}
+
+function autoDetectLines() {
+  if (!state.image.element) { toast('Please upload an image first', 'warning'); return; }
+  if (!calibrationReady()) { toast('Complete all 4 calibration points before detecting', 'warning'); flashMissingCalibration(); return; }
+  if (state.curves.length >= 10) { toast('Maximum 10 curves reached', 'warning'); return; }
+
+  setMode('trace');
+  const btn = $('auto-detect-btn');
+  btn.classList.add('detecting'); btn.textContent = 'Detecting…';
+  // defer so the button repaint shows before the (synchronous) heavy work
+  setTimeout(() => {
+    try {
+      const img = getImageData();
+      const data = img.data, w = img.width, h = img.height;
+      const bg = estimateBackground(data, w, h);
+      const bounds = detectionBounds(w, h);
+      const tol = state.ui.detectTol;
+      const step = state.ui.detectStep;
+      const slots = 10 - state.curves.length;
+      const maxLines = Math.min(state.ui.detectMax, slots);
+      const clusters = detectColorClusters(data, w, h, bg, Math.max(40, tol * 0.9), maxLines);
+      if (!clusters.length) { toast('No distinct colored lines found — try raising tolerance', 'warning'); return; }
+
+      // single pass: assign each ink pixel to its nearest cluster within tolerance
+      const cols = clusters.map(() => []);
+      for (let y = bounds.y0; y <= bounds.y1; y++) {
+        const row = y * w;
+        for (let x = bounds.x0; x <= bounds.x1; x++) {
+          const i = (row + x) * 4;
+          if (data[i + 3] < 128) continue;
+          const r = data[i], g = data[i + 1], b = data[i + 2];
+          if (colorDist(r, g, b, bg[0], bg[1], bg[2]) < BG_TOL) continue;
+          let best = -1, bd = tol;
+          for (let c = 0; c < clusters.length; c++) {
+            const d = colorDist(r, g, b, clusters[c].r, clusters[c].g, clusters[c].b);
+            if (d <= bd) { bd = d; best = c; }
+          }
+          if (best >= 0) (cols[best][x] || (cols[best][x] = [])).push(y);
+        }
+      }
+
+      pushHistory();
+      let added = 0, total = 0, n = 1;
+      clusters.forEach(cl => {
+        const raw = pointsFromColumns(cols[clusters.indexOf(cl)], bounds, step);
+        if (raw.length < 2) return;
+        const curve = addDetectedCurve([cl.r, cl.g, cl.b], raw, 'Detected ' + (n++));
+        if (curve) { added++; total += curve.points.length; if (added === 1) state.activeCurveId = curve.id; }
+      });
+
+      if (!added) { state.history.pop(); toast('No usable lines detected — try lowering the sampling step', 'warning'); return; }
+      syncControls(); renderAll();
+      toast(`Detected ${added} line${added > 1 ? 's' : ''} · ${total} points — drag points to refine`, 'success', 4500);
+    } catch (err) {
+      toast('Detection failed: ' + err.message, 'error');
+    } finally {
+      btn.classList.remove('detecting');
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 11-3-3m0 0-3 3m3-3v12M3 13l3 3m0 0 3-3m-3 3V4"/></svg> Detect All';
+    }
+  }, 30);
+}
+
+function setPickColorMode(on) {
+  interaction.pickColorMode = on;
+  $('pick-detect-btn').classList.toggle('detecting', on);
+  if (on) { setMode('trace'); toast('Click a line on the graph to detect that color', 4000); }
+  updateCursor();
+}
+
+function pickColorAndDetect(ix, iy) {
+  if (!calibrationReady()) { toast('Complete calibration first', 'warning'); setPickColorMode(false); return; }
+  if (state.curves.length >= 10) { toast('Maximum 10 curves reached', 'warning'); setPickColorMode(false); return; }
+  const img = getImageData();
+  const data = img.data, w = img.width, h = img.height;
+  const x = clamp(Math.round(ix), 0, w - 1), y = clamp(Math.round(iy), 0, h - 1);
+  const i = (y * w + x) * 4;
+  const target = [data[i], data[i + 1], data[i + 2]];
+  const bg = estimateBackground(data, w, h);
+  if (colorDist(target[0], target[1], target[2], bg[0], bg[1], bg[2]) < BG_TOL) {
+    toast('That looks like background — click directly on a line', 'warning');
+    return;
+  }
+  const bounds = detectionBounds(w, h);
+  const tol = state.ui.detectTol, step = state.ui.detectStep;
+  const cols = [];
+  for (let yy = bounds.y0; yy <= bounds.y1; yy++) {
+    const row = yy * w;
+    for (let xx = bounds.x0; xx <= bounds.x1; xx++) {
+      const j = (row + xx) * 4;
+      if (data[j + 3] < 128) continue;
+      if (colorDist(data[j], data[j + 1], data[j + 2], target[0], target[1], target[2]) <= tol) {
+        (cols[xx] || (cols[xx] = [])).push(yy);
+      }
+    }
+  }
+  const raw = pointsFromColumns(cols, bounds, step);
+  if (raw.length < 2) { toast('Could not trace a line there — try raising tolerance', 'warning'); return; }
+  pushHistory();
+  const curve = addDetectedCurve(target, raw, 'Picked line');
+  setPickColorMode(false);
+  syncControls(); renderAll();
+  toast(`Traced ${curve.points.length} points — drag to refine`, 'success', 4500);
 }
 
 /* ============================================================
@@ -1703,6 +1972,9 @@ function syncControls() {
   $('point-size-val').textContent = state.ui.pointSize;
   $('sample-interval').value = state.ui.sampleInterval;
   $('sample-interval-val').textContent = state.ui.sampleInterval;
+  $('detect-tol').value = state.ui.detectTol; $('detect-tol-val').textContent = state.ui.detectTol;
+  $('detect-step').value = state.ui.detectStep; $('detect-step-val').textContent = state.ui.detectStep;
+  $('detect-max').value = state.ui.detectMax; $('detect-max-val').textContent = state.ui.detectMax;
 }
 
 /* ============================================================
@@ -1918,6 +2190,13 @@ $('sample-interval').addEventListener('input', e => { state.ui.sampleInterval = 
 $('add-curve-btn').addEventListener('click', addCurve);
 $('sort-x-btn').addEventListener('click', sortByX);
 
+// Auto-detect controls
+$('detect-tol').addEventListener('input', e => { state.ui.detectTol = +e.target.value; $('detect-tol-val').textContent = e.target.value; });
+$('detect-step').addEventListener('input', e => { state.ui.detectStep = +e.target.value; $('detect-step-val').textContent = e.target.value; });
+$('detect-max').addEventListener('input', e => { state.ui.detectMax = +e.target.value; $('detect-max-val').textContent = e.target.value; });
+$('auto-detect-btn').addEventListener('click', autoDetectLines);
+$('pick-detect-btn').addEventListener('click', () => setPickColorMode(!interaction.pickColorMode));
+
 // Scale dropdowns
 $('x-scale').addEventListener('change', e => {
   const old = state.calibration.xScale;
@@ -1997,6 +2276,7 @@ window.addEventListener('keydown', e => {
     }
     case 'Escape':
       if (interaction.pendingCal) closeCalDialog();
+      else if (interaction.pickColorMode) setPickColorMode(false);
       else if (interaction.autoTracing) { interaction.autoTracing = false; interaction.autoPath = []; renderOverlay(); }
       else if ($('shortcuts-modal').classList.contains('open')) $('shortcuts-modal').classList.remove('open');
       else if ($('export-menu').classList.contains('open')) $('export-menu').classList.remove('open');
