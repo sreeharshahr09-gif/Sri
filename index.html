@@ -1,0 +1,2332 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GraphDigitizer Pro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --font-body: 'Inter', 'Helvetica Neue', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Surfaces */
+  --color-bg:             #0f1117;
+  --color-surface:        #161b22;
+  --color-surface-2:      #1c2128;
+  --color-surface-offset: #21262d;
+  --color-border:         #30363d;
+  --color-divider:        #21262d;
+
+  /* Text */
+  --color-text:           #e6edf3;
+  --color-text-muted:     #8b949e;
+  --color-text-faint:     #484f58;
+
+  /* Accents */
+  --color-primary:        #2ea043;
+  --color-primary-hover:  #3fb950;
+  --color-secondary:      #388bfd;
+  --color-warning:        #d29922;
+  --color-error:          #f85149;
+
+  /* Calibration marker colors */
+  --color-cal-x1: #ff6b6b;
+  --color-cal-x2: #ffa94d;
+  --color-cal-y1: #69db7c;
+  --color-cal-y2: #74c0fc;
+
+  /* Spacing */
+  --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem;
+  --space-4: 1rem;    --space-6: 1.5rem; --space-8: 2rem;
+
+  /* Radii */
+  --radius-sm: 4px; --radius-md: 6px; --radius-lg: 10px; --radius-full: 9999px;
+
+  /* Type scale */
+  --text-xs:   0.75rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.125rem;
+
+  /* Transitions */
+  --transition: 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-theme="light"] {
+  --color-bg: #f6f8fa; --color-surface: #ffffff; --color-surface-2: #f6f8fa;
+  --color-surface-offset: #eaeef2; --color-border: #d0d7de; --color-divider: #eaeef2;
+  --color-text: #1f2328; --color-text-muted: #636c76; --color-text-faint: #b4bbc4;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-body);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font-family: inherit; cursor: pointer; color: inherit; }
+input, select { font-family: inherit; color: inherit; }
+
+/* ---------- Scrollbars ---------- */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-surface-offset); border-radius: var(--radius-full); }
+::-webkit-scrollbar-thumb:hover { background: var(--color-border); }
+
+/* ---------- App grid ---------- */
+#app {
+  display: grid;
+  grid-template-rows: 48px 1fr 24px;
+  grid-template-columns: 280px 1fr;
+  grid-template-areas:
+    "toolbar toolbar"
+    "sidebar canvas"
+    "status status";
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ---------- Toolbar ---------- */
+#toolbar {
+  grid-area: toolbar;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  user-select: none;
+}
+.logo {
+  display: flex; align-items: center; gap: var(--space-2);
+  font-weight: 700; font-size: var(--text-base); white-space: nowrap;
+  padding-right: var(--space-3);
+}
+.logo svg { color: var(--color-primary); }
+.toolbar-sep { width: 1px; height: 24px; background: var(--color-border); margin: 0 var(--space-1); }
+.toolbar-spacer { flex: 1; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  background: var(--color-surface-offset);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  padding: 6px 10px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background var(--transition), border-color var(--transition);
+}
+.btn:hover { background: var(--color-surface-2); }
+.btn:active { transform: translateY(0.5px); }
+.btn.icon-only { padding: 6px; }
+.btn.active { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+.btn.active:hover { background: var(--color-primary-hover); }
+.btn.pill { border-radius: var(--radius-full); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn.danger:hover { border-color: var(--color-error); color: var(--color-error); }
+.btn svg { width: 16px; height: 16px; }
+
+.zoom-group { display: flex; align-items: center; gap: 2px; }
+.zoom-display {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  min-width: 52px; text-align: center;
+  padding: 0 var(--space-1);
+  color: var(--color-text-muted);
+}
+
+/* ---------- Dropdown ---------- */
+.dropdown { position: relative; }
+.dropdown-menu {
+  position: absolute; top: calc(100% + 4px); right: 0;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  min-width: 220px; padding: var(--space-1);
+  z-index: 200; display: none;
+}
+.dropdown-menu.open { display: block; }
+.dropdown-item {
+  display: flex; align-items: center; gap: var(--space-2);
+  width: 100%; text-align: left;
+  background: transparent; border: none;
+  padding: 8px 10px; border-radius: var(--radius-sm);
+  font-size: var(--text-sm); color: var(--color-text);
+}
+.dropdown-item:hover { background: var(--color-surface-offset); }
+.dropdown-item svg { width: 15px; height: 15px; color: var(--color-text-muted); }
+.dropdown-divider { height: 1px; background: var(--color-divider); margin: var(--space-1) 0; }
+.dropdown-section {
+  padding: 6px 10px 2px; font-size: var(--text-xs);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-faint); font-weight: 600;
+}
+.dropdown-row { display: flex; align-items: center; gap: var(--space-2); padding: 6px 10px; font-size: var(--text-sm); }
+.dropdown-row select, .dropdown-row input { flex: 1; }
+
+/* ---------- Sidebar ---------- */
+#sidebar {
+  grid-area: sidebar;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+.panel { border-bottom: 1px solid var(--color-divider); padding: var(--space-3) var(--space-4); }
+.panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: var(--text-sm); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-3);
+  cursor: pointer; user-select: none;
+}
+.panel-header .chev { transition: transform var(--transition); }
+.panel.collapsed .panel-header .chev { transform: rotate(-90deg); }
+.panel.collapsed .panel-body { display: none; }
+.panel-body { display: flex; flex-direction: column; gap: var(--space-3); }
+
+label.field { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-xs); color: var(--color-text-muted); }
+.field-row { display: flex; gap: var(--space-2); }
+.field-row > label.field { flex: 1; }
+
+input[type="text"], input[type="number"], select {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  padding: 6px 8px;
+  font-size: var(--text-sm);
+  width: 100%;
+  transition: border-color var(--transition);
+}
+input:focus, select:focus { outline: none; border-color: var(--color-secondary); }
+input[type="range"] { width: 100%; accent-color: var(--color-primary); }
+input[type="color"] {
+  width: 100%; height: 30px; padding: 2px; border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm); background: var(--color-surface-2); cursor: pointer;
+}
+.range-row { display: flex; align-items: center; gap: var(--space-2); }
+.range-row span { font-family: var(--font-mono); font-size: var(--text-xs); min-width: 34px; text-align: right; color: var(--color-text-muted); }
+
+/* ---------- Calibration table ---------- */
+.cal-table { width: 100%; border-collapse: collapse; font-size: var(--text-xs); }
+.cal-table th, .cal-table td { text-align: left; padding: 4px 6px; }
+.cal-table th { color: var(--color-text-faint); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.cal-table td.mono { font-family: var(--font-mono); }
+.cal-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.cal-row { cursor: pointer; border-radius: var(--radius-sm); }
+.cal-row:hover { background: var(--color-surface-offset); }
+.cal-row.active td { color: var(--color-primary); }
+.cal-row.missing td { color: var(--color-text-faint); }
+
+/* ---------- Progress ---------- */
+.cal-progress { display: flex; gap: var(--space-1); margin-bottom: var(--space-2); }
+.cal-step {
+  flex: 1; height: 26px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--text-xs); font-weight: 600;
+  background: var(--color-surface-2); border: 1px solid var(--color-border);
+  color: var(--color-text-faint); gap: 3px;
+}
+.cal-step.done { color: var(--color-text); border-color: var(--color-primary); }
+.cal-step.done .tick { color: var(--color-primary); }
+.cal-step.active { border-color: var(--color-secondary); color: var(--color-secondary); }
+.cal-step .tick { opacity: 0; }
+.cal-step.done .tick { opacity: 1; }
+
+/* ---------- Curves ---------- */
+.curve-list { display: flex; flex-direction: column; gap: var(--space-1); }
+.curve-item {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: 5px 6px; border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+}
+.curve-item:hover { background: var(--color-surface-offset); }
+.curve-item.active { border-color: var(--color-primary); background: var(--color-surface-2); }
+.curve-swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+.curve-name { flex: 1; font-size: var(--text-sm); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.curve-name input { padding: 2px 4px; font-size: var(--text-sm); }
+.curve-count { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-text-faint); }
+.icon-btn {
+  background: transparent; border: none; padding: 3px; border-radius: var(--radius-sm);
+  color: var(--color-text-muted); display: inline-flex; align-items: center;
+}
+.icon-btn:hover { background: var(--color-surface-offset); color: var(--color-text); }
+.icon-btn svg { width: 14px; height: 14px; }
+.icon-btn.off { color: var(--color-text-faint); }
+
+/* ---------- Data table ---------- */
+.data-table-wrap { max-height: 280px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+.data-table { width: 100%; border-collapse: collapse; font-size: var(--text-xs); }
+.data-table thead th {
+  position: sticky; top: 0; background: var(--color-surface-2);
+  text-align: right; padding: 5px 8px; font-weight: 600;
+  color: var(--color-text-muted); border-bottom: 1px solid var(--color-border);
+  z-index: 1;
+}
+.data-table thead th:first-child, .data-table thead th:last-child { text-align: center; }
+.data-table td { padding: 4px 8px; text-align: right; font-family: var(--font-mono); }
+.data-table td:first-child { text-align: center; color: var(--color-text-muted); }
+.data-table td:last-child { text-align: center; }
+.data-table tbody tr:nth-child(even) { background: var(--color-surface-2); }
+.data-table tbody tr { cursor: pointer; }
+.data-table tbody tr:hover { background: var(--color-surface-offset); }
+.data-table tbody tr.highlight { background: rgba(56,139,253,0.25); }
+.del-x { color: var(--color-text-faint); }
+.del-x:hover { color: var(--color-error); }
+.row-count { font-size: var(--text-xs); color: var(--color-text-muted); text-align: right; margin-top: var(--space-2); }
+
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: var(--text-xs); }
+.stats-grid .lbl { color: var(--color-text-muted); }
+.stats-grid .val { font-family: var(--font-mono); text-align: right; }
+
+.mini-btn-row { display: flex; gap: var(--space-2); }
+.mini-btn-row .btn { flex: 1; font-size: var(--text-xs); padding: 5px; }
+
+.submode-group { display: flex; gap: 2px; background: var(--color-surface-2); padding: 3px; border-radius: var(--radius-md); }
+.submode-group .btn { flex: 1; font-size: var(--text-xs); padding: 5px 4px; border: none; background: transparent; }
+.submode-group .btn.active { background: var(--color-primary); color: #fff; }
+
+.autodetect-block {
+  border: 1px solid var(--color-border); border-radius: var(--radius-md);
+  padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3);
+  background: var(--color-surface-2);
+}
+.autodetect-head {
+  display: flex; align-items: center; gap: var(--space-2);
+  font-size: var(--text-xs); font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-secondary);
+}
+.autodetect-head svg { width: 15px; height: 15px; }
+.autodetect-hint { font-size: var(--text-xs); color: var(--color-text-muted); line-height: 1.4; }
+.btn.detecting { background: var(--color-secondary); border-color: var(--color-secondary); color: #fff; }
+
+/* ---------- Canvas area ---------- */
+#canvas-area {
+  grid-area: canvas;
+  position: relative;
+  overflow: hidden;
+  background: var(--color-bg);
+  background-image:
+    linear-gradient(45deg, var(--color-surface) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--color-surface) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--color-surface) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--color-surface) 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+}
+#canvas-stage {
+  position: absolute; top: 0; left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+#canvas-stage canvas { position: absolute; top: 0; left: 0; display: block; }
+#image-canvas { pointer-events: none; }
+#overlay-canvas { pointer-events: none; }
+
+#zoom-window {
+  position: absolute; bottom: 16px; right: 16px;
+  width: 100px; height: 100px;
+  border: 2px solid var(--color-border); border-radius: var(--radius-md);
+  background: var(--color-surface); overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4); z-index: 30;
+  pointer-events: none;
+}
+#zoom-window canvas { display: block; }
+#zoom-window .zw-cross-h, #zoom-window .zw-cross-v { position: absolute; background: rgba(46,160,67,0.7); }
+#zoom-window .zw-cross-h { left: 0; right: 0; top: 50%; height: 1px; }
+#zoom-window .zw-cross-v { top: 0; bottom: 0; left: 50%; width: 1px; }
+
+/* ---------- Empty state ---------- */
+#empty-state {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 40; padding: var(--space-8);
+}
+.dropzone {
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-4);
+  border: 2px dashed var(--color-border); border-radius: var(--radius-lg);
+  padding: var(--space-8) calc(var(--space-8) * 2);
+  text-align: center; background: var(--color-surface);
+  animation: pulse 2.4s ease-in-out infinite;
+  transition: border-color var(--transition), background var(--transition);
+  max-width: 520px;
+}
+.dropzone.dragover { border-color: var(--color-primary); background: var(--color-surface-2); animation: none; }
+.dropzone svg { color: var(--color-text-faint); }
+.dropzone h2 { font-size: var(--text-lg); font-weight: 600; }
+.dropzone p { font-size: var(--text-sm); color: var(--color-text-muted); }
+@keyframes pulse {
+  0%, 100% { border-color: var(--color-border); }
+  50% { border-color: var(--color-text-faint); }
+}
+
+/* ---------- Status bar ---------- */
+#status-bar {
+  grid-area: status;
+  display: flex; align-items: center; gap: var(--space-4);
+  padding: 0 var(--space-3);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-xs); color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  user-select: none; white-space: nowrap; overflow: hidden;
+}
+#status-bar .sb-item { display: flex; align-items: center; gap: 5px; }
+#status-bar .sb-sep { width: 1px; height: 14px; background: var(--color-border); }
+#status-bar .sb-spacer { flex: 1; }
+#status-bar .mode-badge {
+  text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;
+  color: var(--color-primary);
+}
+#status-warning { color: var(--color-warning); }
+
+/* ---------- Cursor tooltip ---------- */
+#cursor-tooltip {
+  position: fixed; z-index: 120; pointer-events: none;
+  background: var(--color-surface-2); border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm); box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+  padding: 4px 7px; font-size: var(--text-xs); font-family: var(--font-mono);
+  color: var(--color-text); display: none; white-space: nowrap;
+}
+
+/* ---------- Inline calibration dialog ---------- */
+#cal-dialog {
+  position: fixed; z-index: 130;
+  background: var(--color-surface-2); border: 1px solid var(--color-border);
+  border-radius: var(--radius-md); box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+  padding: var(--space-3); width: 220px; display: none;
+}
+#cal-dialog h4 { font-size: var(--text-sm); margin-bottom: var(--space-2); }
+#cal-dialog .cal-err { color: var(--color-error); font-size: var(--text-xs); margin-top: 4px; display: none; }
+#cal-dialog .dlg-actions { display: flex; gap: var(--space-2); margin-top: var(--space-2); }
+#cal-dialog .dlg-actions .btn { flex: 1; }
+
+/* ---------- Toast ---------- */
+#toast-stack { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); z-index: 300; display: flex; flex-direction: column; gap: var(--space-2); align-items: center; }
+.toast {
+  background: var(--color-surface-2); border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-secondary);
+  border-radius: var(--radius-md); padding: 10px 14px;
+  font-size: var(--text-sm); box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+  animation: toastIn 200ms ease; max-width: 420px;
+}
+.toast.error { border-left-color: var(--color-error); }
+.toast.warning { border-left-color: var(--color-warning); }
+.toast.success { border-left-color: var(--color-primary); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ---------- Modal ---------- */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  display: none; align-items: center; justify-content: center; z-index: 400;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg); box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+  max-width: 640px; width: 90%; max-height: 80vh; overflow-y: auto;
+  padding: var(--space-6);
+}
+.modal h3 { font-size: var(--text-lg); margin-bottom: var(--space-4); display: flex; align-items: center; justify-content: space-between; }
+.shortcut-table { width: 100%; border-collapse: collapse; }
+.shortcut-table td { padding: 6px 8px; font-size: var(--text-sm); border-bottom: 1px solid var(--color-divider); }
+.shortcut-table td:first-child { width: 140px; }
+kbd {
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  background: var(--color-surface-2); border: 1px solid var(--color-border);
+  border-bottom-width: 2px; border-radius: var(--radius-sm);
+  padding: 2px 6px; color: var(--color-text);
+}
+.modal-cols { columns: 2; column-gap: var(--space-6); }
+@media (max-width: 600px) { .modal-cols { columns: 1; } }
+
+.confirm-actions { display: flex; gap: var(--space-2); justify-content: flex-end; margin-top: var(--space-4); }
+.confirm-msg { font-size: var(--text-sm); color: var(--color-text-muted); margin-bottom: var(--space-2); }
+
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ TOOLBAR ============ -->
+  <div id="toolbar">
+    <div class="logo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+      <span>GraphDigitizer&nbsp;Pro</span>
+    </div>
+    <div class="toolbar-sep"></div>
+
+    <button class="btn pill" id="mode-upload" data-mode="upload">Upload Image</button>
+    <button class="btn pill" id="mode-calibrate" data-mode="calibrate">Calibrate Axes</button>
+    <button class="btn pill" id="mode-trace" data-mode="trace">Trace Points</button>
+
+    <div class="toolbar-sep"></div>
+
+    <div class="zoom-group">
+      <button class="btn icon-only" id="zoom-out" title="Zoom out (-)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+      <span class="zoom-display" id="zoom-display">100%</span>
+      <button class="btn icon-only" id="zoom-in" title="Zoom in (+)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button class="btn icon-only" id="zoom-fit" title="Fit to window (F)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+      <button class="btn icon-only" id="zoom-100" title="Reset to 100%"><span style="font-size:11px;font-weight:600">1:1</span></button>
+    </div>
+
+    <div class="toolbar-sep"></div>
+
+    <button class="btn icon-only" id="undo-btn" title="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/></svg></button>
+    <button class="btn icon-only" id="redo-btn" title="Redo (Ctrl+Y)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5v0A5.5 5.5 0 0 0 9.5 20H13"/></svg></button>
+
+    <div class="toolbar-spacer"></div>
+
+    <button class="btn danger" id="clear-all-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Clear All</button>
+
+    <div class="dropdown">
+      <button class="btn active" id="export-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Export</button>
+      <div class="dropdown-menu" id="export-menu">
+        <div class="dropdown-section">Export Data</div>
+        <button class="dropdown-item" data-act="csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> Export CSV</button>
+        <button class="dropdown-item" data-act="json"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> Export JSON (session)</button>
+        <button class="dropdown-item" data-act="clipboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg> Copy to Clipboard (TSV)</button>
+        <button class="dropdown-item" data-act="image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg> Export Image (PNG)</button>
+        <div class="dropdown-divider"></div>
+        <div class="dropdown-section">Options</div>
+        <div class="dropdown-row"><span style="flex:1">Delimiter</span><select id="csv-delim"><option value=",">Comma</option><option value="\t">Tab</option></select></div>
+        <div class="dropdown-row"><span style="flex:1">Decimals</span><input type="number" id="csv-decimals" min="2" max="10" value="6" /></div>
+        <div class="dropdown-row"><span style="flex:1">Scope</span><select id="csv-scope"><option value="all">All curves</option><option value="active">Active curve</option></select></div>
+        <div class="dropdown-divider"></div>
+        <div class="dropdown-section">Restore</div>
+        <button class="dropdown-item" data-act="import"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 8l5-5 5 5M12 3v12"/></svg> Import JSON…</button>
+      </div>
+    </div>
+
+    <button class="btn icon-only" id="theme-toggle" title="Toggle theme">
+      <svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+      <svg id="icon-sun" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+    </button>
+    <button class="btn icon-only" id="help-btn" title="Keyboard shortcuts (?)"><span style="font-weight:700">?</span></button>
+  </div>
+
+  <!-- ============ SIDEBAR ============ -->
+  <div id="sidebar">
+    <!-- Calibration panel -->
+    <div class="panel" id="panel-cal">
+      <div class="panel-header" data-toggle="panel-cal"><span>Calibration</span><svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>
+      <div class="panel-body">
+        <div class="cal-progress" id="cal-progress"></div>
+        <table class="cal-table">
+          <thead><tr><th>Pt</th><th>Pixel</th><th>Value</th></tr></thead>
+          <tbody id="cal-tbody"></tbody>
+        </table>
+        <div class="field-row">
+          <label class="field">X scale
+            <select id="x-scale"><option value="linear">Linear</option><option value="log10">Log10</option><option value="ln">Ln</option></select>
+          </label>
+          <label class="field">Y scale
+            <select id="y-scale"><option value="linear">Linear</option><option value="log10">Log10</option><option value="ln">Ln</option></select>
+          </label>
+        </div>
+        <button class="btn" id="reset-cal-btn" style="width:100%">Reset Calibration</button>
+      </div>
+    </div>
+
+    <!-- Tracing panel -->
+    <div class="panel" id="panel-trace">
+      <div class="panel-header" data-toggle="panel-trace"><span>Tracing Options</span><svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>
+      <div class="panel-body">
+        <div class="submode-group">
+          <button class="btn" id="sub-click" data-sub="click">Manual</button>
+          <button class="btn" id="sub-auto" data-sub="auto">Auto-Trace</button>
+          <button class="btn" id="sub-snap" data-sub="snap">Grid Snap</button>
+        </div>
+        <label class="field">Active curve name
+          <input type="text" id="curve-name-input" value="Curve 1" />
+        </label>
+        <div class="field-row">
+          <label class="field" style="flex:0 0 90px">Color
+            <input type="color" id="curve-color-input" value="#388bfd" />
+          </label>
+          <label class="field" style="flex:1">Point size
+            <div class="range-row"><input type="range" id="point-size" min="2" max="10" value="5" /><span id="point-size-val">5</span></div>
+          </label>
+        </div>
+        <label class="field">Sampling interval (Auto-Trace)
+          <div class="range-row"><input type="range" id="sample-interval" min="1" max="50" value="10" /><span id="sample-interval-val">10</span></div>
+        </label>
+        <button class="btn" id="add-curve-btn" style="width:100%"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add New Curve</button>
+
+        <div class="autodetect-block">
+          <div class="autodetect-head">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="3.5"/></svg>
+            <span>Auto-Detect Lines</span>
+          </div>
+          <label class="field">Color tolerance
+            <div class="range-row"><input type="range" id="detect-tol" min="10" max="140" value="55" /><span id="detect-tol-val">55</span></div>
+          </label>
+          <label class="field">Sampling step (px)
+            <div class="range-row"><input type="range" id="detect-step" min="1" max="20" value="3" /><span id="detect-step-val">3</span></div>
+          </label>
+          <label class="field">Max lines
+            <div class="range-row"><input type="range" id="detect-max" min="1" max="10" value="4" /><span id="detect-max-val">4</span></div>
+          </label>
+          <div class="mini-btn-row">
+            <button class="btn" id="auto-detect-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 11-3-3m0 0-3 3m3-3v12M3 13l3 3m0 0 3-3m-3 3V4"/></svg> Detect All</button>
+            <button class="btn" id="pick-detect-btn" title="Click a line on the graph to detect just that color"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 11V9a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/><circle cx="12" cy="13" r="2"/><path d="m22 22-3-3"/></svg> Pick Line</button>
+          </div>
+          <p class="autodetect-hint">Detects colored curves automatically, then converts them to editable points. Refine by dragging, deleting, or adding points anytime.</p>
+        </div>
+
+        <div class="curve-list" id="curve-list"></div>
+      </div>
+    </div>
+
+    <!-- Data table panel -->
+    <div class="panel" id="panel-data">
+      <div class="panel-header" data-toggle="panel-data"><span>Data Table</span><svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>
+      <div class="panel-body">
+        <div class="mini-btn-row">
+          <button class="btn" id="sort-x-btn">Sort by X</button>
+        </div>
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead><tr><th>#</th><th>X</th><th>Y</th><th>×</th></tr></thead>
+            <tbody id="data-tbody"></tbody>
+          </table>
+        </div>
+        <div class="row-count" id="row-count">0 points</div>
+      </div>
+    </div>
+
+    <!-- Statistics panel -->
+    <div class="panel collapsed" id="panel-stats">
+      <div class="panel-header" data-toggle="panel-stats"><span>Statistics</span><svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>
+      <div class="panel-body">
+        <div class="stats-grid" id="stats-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ CANVAS AREA ============ -->
+  <div id="canvas-area">
+    <div id="canvas-stage">
+      <canvas id="image-canvas"></canvas>
+      <canvas id="overlay-canvas"></canvas>
+    </div>
+
+    <div id="zoom-window">
+      <canvas id="zoom-canvas" width="100" height="100"></canvas>
+      <div class="zw-cross-h"></div><div class="zw-cross-v"></div>
+    </div>
+
+    <div id="empty-state">
+      <div class="dropzone" id="dropzone">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+        <h2>Drop your graph image here</h2>
+        <p>Supports PNG, JPG, TIFF, BMP, WebP</p>
+        <button class="btn active" id="browse-btn">Browse File</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ STATUS BAR ============ -->
+  <div id="status-bar">
+    <div class="sb-item"><span class="mode-badge" id="sb-mode">UPLOAD</span></div>
+    <div class="sb-sep"></div>
+    <div class="sb-item" id="sb-pixel">px: —, —</div>
+    <div class="sb-sep"></div>
+    <div class="sb-item" id="sb-real">xy: —, —</div>
+    <div class="sb-sep"></div>
+    <div class="sb-item" id="sb-image">No image</div>
+    <div class="sb-spacer"></div>
+    <div class="sb-item" id="sb-warning"><span id="status-warning"></span></div>
+    <div class="sb-item" id="sb-points">0 pts</div>
+    <div class="sb-sep"></div>
+    <div class="sb-item" id="sb-curve">Curve 1</div>
+    <div class="sb-sep"></div>
+    <div class="sb-item" id="sb-zoom">100%</div>
+  </div>
+</div>
+
+<!-- Floating helpers -->
+<div id="cursor-tooltip"></div>
+
+<div id="cal-dialog">
+  <h4 id="cal-dialog-title">Enter X1 value</h4>
+  <input type="number" id="cal-dialog-input" step="any" placeholder="value" />
+  <div class="cal-err" id="cal-dialog-err"></div>
+  <div class="dlg-actions">
+    <button class="btn" id="cal-dialog-cancel">Cancel</button>
+    <button class="btn active" id="cal-dialog-ok">Set</button>
+  </div>
+</div>
+
+<div id="toast-stack"></div>
+
+<!-- Shortcuts modal -->
+<div class="modal-overlay" id="shortcuts-modal">
+  <div class="modal">
+    <h3>Keyboard Shortcuts <button class="icon-btn" id="shortcuts-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></h3>
+    <div class="modal-cols">
+      <table class="shortcut-table">
+        <tr><td><kbd>U</kbd></td><td>Upload mode</td></tr>
+        <tr><td><kbd>C</kbd></td><td>Calibrate mode</td></tr>
+        <tr><td><kbd>T</kbd></td><td>Trace mode</td></tr>
+        <tr><td><kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd></td><td>Set X1 / X2 / Y1</td></tr>
+        <tr><td><kbd>4</kbd></td><td>Set Y2</td></tr>
+        <tr><td><kbd>Z</kbd></td><td>Toggle zoom window</td></tr>
+        <tr><td><kbd>G</kbd></td><td>Toggle grid overlay</td></tr>
+        <tr><td><kbd>S</kbd></td><td>Toggle spline preview</td></tr>
+        <tr><td><kbd>X</kbd></td><td>Toggle crosshair</td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo</td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>Redo</td></tr>
+        <tr><td><kbd>Del</kbd></td><td>Delete last point</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Cancel operation</td></tr>
+        <tr><td><kbd>F</kbd></td><td>Fit to window</td></tr>
+        <tr><td><kbd>?</kbd></td><td>This shortcut list</td></tr>
+        <tr><td><kbd>+</kbd>/<kbd>-</kbd></td><td>Zoom in / out</td></tr>
+        <tr><td>Wheel</td><td>Zoom at cursor</td></tr>
+        <tr><td>Space+drag</td><td>Pan canvas</td></tr>
+        <tr><td>Middle-drag</td><td>Pan canvas</td></tr>
+        <tr><td>Right-click</td><td>Delete point</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm modal -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal" style="max-width:400px">
+    <h3 id="confirm-title">Confirm</h3>
+    <p class="confirm-msg" id="confirm-msg">Are you sure?</p>
+    <div class="confirm-actions">
+      <button class="btn" id="confirm-cancel">Cancel</button>
+      <button class="btn danger" id="confirm-ok" style="background:var(--color-error);border-color:var(--color-error);color:#fff">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="file-input" accept=".png,.jpg,.jpeg,.bmp,.tiff,.tif,.webp,image/*" class="hidden" />
+<input type="file" id="json-input" accept=".json,application/json" class="hidden" />
+
+<script>
+"use strict";
+
+/* ============================================================
+   STATE
+   ============================================================ */
+const CURVE_PALETTE = ['#388bfd','#f85149','#2ea043','#d29922','#a371f7','#f778ba','#56d4dd','#ff7b72','#7ee787','#ffa657'];
+
+const state = {
+  image: { element: null, width: 0, height: 0, filename: '', filesize: 0 },
+  viewTransform: { scale: 1, translateX: 0, translateY: 0 },
+  calibration: {
+    points: { x1: null, x2: null, y1: null, y2: null },
+    xScale: 'linear',
+    yScale: 'linear',
+  },
+  curves: [ { id: 0, name: 'Curve 1', color: '#388bfd', points: [], visible: true } ],
+  activeCurveId: 0,
+  nextCurveId: 1,
+  mode: 'upload',
+  traceSubMode: 'click',
+  calibrateStep: null,
+  history: [],
+  future: [],
+  ui: { showZoomWindow: true, showGrid: false, showSpline: false, showCrosshair: true, gridSpacing: 1, pointSize: 5, sampleInterval: 10, detectTol: 55, detectStep: 3, detectMax: 4 },
+};
+
+// transient interaction state
+const interaction = {
+  cursorImg: { x: 0, y: 0 },     // image-space cursor
+  cursorScreen: { x: 0, y: 0 },  // canvas-area-space cursor
+  inside: false,
+  panning: false,
+  panStart: null,
+  spaceDown: false,
+  draggingPoint: null,           // { curveId, index }
+  hoverPoint: null,              // { curveId, index }
+  autoTracing: false,
+  autoPath: [],                  // image-space path while drawing
+  pendingCal: null,              // { key, px, py } awaiting value input
+  pickColorMode: false,          // click samples a line color and auto-detects it
+};
+
+/* ============================================================
+   DOM REFS
+   ============================================================ */
+const $ = id => document.getElementById(id);
+const canvasArea = $('canvas-area');
+const stage = $('canvas-stage');
+const imgCanvas = $('image-canvas');
+const ovCanvas = $('overlay-canvas');
+const imgCtx = imgCanvas.getContext('2d');
+const ovCtx = ovCanvas.getContext('2d');
+const zoomCanvas = $('zoom-canvas');
+const zoomCtx = zoomCanvas.getContext('2d');
+
+/* ============================================================
+   UTIL
+   ============================================================ */
+function deepClone(o) { return JSON.parse(JSON.stringify(o)); }
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function activeCurve() { return state.curves.find(c => c.id === state.activeCurveId) || state.curves[0]; }
+
+function sigFig(v, n = 6) {
+  if (v === null || v === undefined || !isFinite(v)) return '—';
+  if (v === 0) return '0';
+  return Number(v.toPrecision(n)).toString();
+}
+
+function toast(msg, type = 'info', ms = 3000) {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  $('toast-stack').appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 250ms'; setTimeout(() => el.remove(), 260); }, ms);
+}
+
+/* ============================================================
+   HISTORY (undo / redo)
+   ============================================================ */
+function snapshot() {
+  return {
+    curves: deepClone(state.curves),
+    calibration: deepClone(state.calibration),
+    activeCurveId: state.activeCurveId,
+    nextCurveId: state.nextCurveId,
+  };
+}
+function pushHistory() {
+  state.history.push(snapshot());
+  state.future = [];
+  if (state.history.length > 100) state.history.shift();
+}
+function applySnapshot(s) {
+  state.curves = deepClone(s.curves);
+  state.calibration = deepClone(s.calibration);
+  state.activeCurveId = s.activeCurveId;
+  state.nextCurveId = s.nextCurveId;
+}
+function undo() {
+  if (!state.history.length) { toast('Nothing to undo'); return; }
+  state.future.push(snapshot());
+  applySnapshot(state.history.pop());
+  syncControls(); renderAll();
+}
+function redo() {
+  if (!state.future.length) { toast('Nothing to redo'); return; }
+  state.history.push(snapshot());
+  applySnapshot(state.future.pop());
+  syncControls(); renderAll();
+}
+
+/* ============================================================
+   COORDINATE TRANSFORMS
+   ============================================================ */
+function screenToImage(sx, sy) {
+  const { scale, translateX, translateY } = state.viewTransform;
+  return { x: (sx - translateX) / scale, y: (sy - translateY) / scale };
+}
+function imageToScreen(ix, iy) {
+  const { scale, translateX, translateY } = state.viewTransform;
+  return { x: ix * scale + translateX, y: iy * scale + translateY };
+}
+
+function scaleFwd(v, type) {
+  if (type === 'log10') return Math.log10(v);
+  if (type === 'ln') return Math.log(v);
+  return v;
+}
+function scaleInv(v, type) {
+  if (type === 'log10') return Math.pow(10, v);
+  if (type === 'ln') return Math.exp(v);
+  return v;
+}
+
+function calibrationReady() {
+  const p = state.calibration.points;
+  return p.x1 && p.x2 && p.y1 && p.y2;
+}
+
+function pixelToReal(px, py) {
+  const { x1, x2, y1, y2 } = state.calibration.points;
+  if (!x1 || !x2 || !y1 || !y2) return { x: null, y: null };
+  const xType = state.calibration.xScale, yType = state.calibration.yScale;
+  // X: interpolate along pixel X between x1.px and x2.px
+  let x = null, y = null;
+  const dpx = (x2.px - x1.px);
+  if (dpx !== 0) {
+    const t = (px - x1.px) / dpx;
+    const v1 = scaleFwd(x1.value, xType), v2 = scaleFwd(x2.value, xType);
+    x = scaleInv(v1 + t * (v2 - v1), xType);
+  }
+  const dpy = (y2.py - y1.py);
+  if (dpy !== 0) {
+    const t = (py - y1.py) / dpy;
+    const v1 = scaleFwd(y1.value, yType), v2 = scaleFwd(y2.value, yType);
+    y = scaleInv(v1 + t * (v2 - v1), yType);
+  }
+  return { x, y };
+}
+
+// inverse: real -> pixel (used for grid overlay & snap)
+function realToPixelX(rx) {
+  const { x1, x2 } = state.calibration.points;
+  const xType = state.calibration.xScale;
+  const v1 = scaleFwd(x1.value, xType), v2 = scaleFwd(x2.value, xType);
+  const t = (scaleFwd(rx, xType) - v1) / (v2 - v1);
+  return x1.px + t * (x2.px - x1.px);
+}
+function realToPixelY(ry) {
+  const { y1, y2 } = state.calibration.points;
+  const yType = state.calibration.yScale;
+  const v1 = scaleFwd(y1.value, yType), v2 = scaleFwd(y2.value, yType);
+  const t = (scaleFwd(ry, yType) - v1) / (v2 - v1);
+  return y1.py + t * (y2.py - y1.py);
+}
+
+/* ============================================================
+   IMAGE LOADING
+   ============================================================ */
+function handleFiles(files) {
+  const file = files && files[0];
+  if (!file) return;
+  if (!/^image\//.test(file.type) && !/\.(png|jpe?g|bmp|tiff?|webp)$/i.test(file.name)) {
+    toast('Unsupported file type', 'error'); return;
+  }
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      state.image.element = img;
+      state.image.width = img.naturalWidth;
+      state.image.height = img.naturalHeight;
+      state.image.filename = file.name;
+      state.image.filesize = file.size;
+      setupCanvasForImage();
+      fitToWindow();
+      $('empty-state').classList.add('hidden');
+      setMode('calibrate');
+      toast('Image loaded — calibrate the axes next', 'success');
+      updateStatusBar();
+    };
+    img.onerror = () => { showImageError(); };
+    img.src = e.target.result;
+  };
+  reader.onerror = () => showImageError();
+  reader.readAsDataURL(file);
+}
+
+function showImageError() {
+  $('empty-state').classList.remove('hidden');
+  $('dropzone').innerHTML = '<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--color-error)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg><h2>Failed to load image</h2><p>The file could not be read. Try another image.</p><button class="btn active" id="browse-btn-2">Browse File</button>';
+  $('browse-btn-2').addEventListener('click', () => $('file-input').click());
+}
+
+function setupCanvasForImage() {
+  const w = state.image.width, h = state.image.height;
+  [imgCanvas, ovCanvas].forEach(c => { c.width = w; c.height = h; });
+  stage.style.width = w + 'px';
+  stage.style.height = h + 'px';
+  drawImageLayer();
+}
+
+function drawImageLayer() {
+  if (!state.image.element) return;
+  imgCtx.clearRect(0, 0, imgCanvas.width, imgCanvas.height);
+  imgCtx.drawImage(state.image.element, 0, 0);
+}
+
+/* ============================================================
+   VIEW TRANSFORM (zoom / pan)
+   ============================================================ */
+function applyViewTransform() {
+  const { scale, translateX, translateY } = state.viewTransform;
+  stage.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+  $('zoom-display').textContent = Math.round(scale * 100) + '%';
+  $('sb-zoom').textContent = Math.round(scale * 100) + '%';
+  renderOverlay();
+}
+
+function zoomAt(screenX, screenY, factor) {
+  const old = state.viewTransform.scale;
+  let next = clamp(old * factor, 0.1, 16);
+  if (next === old) return;
+  // keep point under cursor fixed
+  const imgPt = screenToImage(screenX, screenY);
+  state.viewTransform.scale = next;
+  state.viewTransform.translateX = screenX - imgPt.x * next;
+  state.viewTransform.translateY = screenY - imgPt.y * next;
+  applyViewTransform();
+}
+
+function setZoom(scaleVal, centerOnView = true) {
+  const rect = canvasArea.getBoundingClientRect();
+  const cx = rect.width / 2, cy = rect.height / 2;
+  zoomAt(cx, cy, clamp(scaleVal, 0.1, 16) / state.viewTransform.scale);
+}
+
+function fitToWindow() {
+  if (!state.image.element) return;
+  const rect = canvasArea.getBoundingClientRect();
+  const pad = 40;
+  const sx = (rect.width - pad) / state.image.width;
+  const sy = (rect.height - pad) / state.image.height;
+  const scale = clamp(Math.min(sx, sy), 0.1, 16);
+  state.viewTransform.scale = scale;
+  state.viewTransform.translateX = (rect.width - state.image.width * scale) / 2;
+  state.viewTransform.translateY = (rect.height - state.image.height * scale) / 2;
+  applyViewTransform();
+}
+
+/* ============================================================
+   MODE MANAGEMENT
+   ============================================================ */
+function setMode(mode) {
+  if (mode === 'calibrate' && !state.image.element) { toast('Please upload an image first', 'warning'); return; }
+  if (mode === 'trace' && !state.image.element) { toast('Please upload an image first', 'warning'); return; }
+  if (mode === 'trace' && !calibrationReady()) {
+    toast('Complete all 4 calibration points before tracing', 'warning');
+    flashMissingCalibration();
+    setMode('calibrate');
+    return;
+  }
+  state.mode = mode;
+  if (mode === 'upload') { $('file-input').click(); }
+  if (mode === 'calibrate') {
+    // auto-advance to first undefined cal point
+    state.calibrateStep = nextCalStep();
+  } else {
+    state.calibrateStep = null;
+  }
+  document.querySelectorAll('#toolbar .btn.pill').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  updateCursor();
+  updateStatusBar();
+  renderSidebar();
+  renderOverlay();
+}
+
+function nextCalStep() {
+  const p = state.calibration.points;
+  for (const k of ['x1','x2','y1','y2']) if (!p[k]) return k;
+  return 'x1';
+}
+
+function flashMissingCalibration() {
+  // visual handled in renderOverlay via missing flag; just re-render
+  renderOverlay(); renderSidebar();
+}
+
+/* ============================================================
+   CURSOR
+   ============================================================ */
+function updateCursor() {
+  let cur = 'default';
+  if (interaction.panning || interaction.spaceDown) cur = interaction.panning ? 'grabbing' : 'grab';
+  else if (interaction.hoverPoint) cur = 'pointer';
+  else if (state.mode === 'calibrate' || state.mode === 'trace') cur = 'crosshair';
+  canvasArea.style.cursor = cur;
+}
+
+/* ============================================================
+   POINTER EVENTS (overlay canvas via canvas-area)
+   ============================================================ */
+function localCoords(e) {
+  const rect = canvasArea.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+canvasArea.addEventListener('mousedown', e => {
+  if (!state.image.element) return;
+  const loc = localCoords(e);
+
+  // Pan: middle mouse or space+left
+  if (e.button === 1 || (e.button === 0 && interaction.spaceDown)) {
+    interaction.panning = true;
+    interaction.panStart = { x: loc.x, y: loc.y, tx: state.viewTransform.translateX, ty: state.viewTransform.translateY };
+    updateCursor();
+    e.preventDefault();
+    return;
+  }
+
+  const imgPt = screenToImage(loc.x, loc.y);
+
+  if (e.button === 2) { // right click = delete point
+    const hit = hitTestPoint(imgPt.x, imgPt.y);
+    if (hit) { deletePoint(hit.curveId, hit.index); }
+    e.preventDefault();
+    return;
+  }
+
+  if (e.button !== 0) return;
+
+  // start dragging an existing point?
+  const hit = hitTestPoint(imgPt.x, imgPt.y);
+  if (hit && (state.mode === 'trace')) {
+    interaction.draggingPoint = hit;
+    pushHistory();
+    return;
+  }
+
+  if (state.mode === 'calibrate' && state.calibrateStep) {
+    openCalDialog(state.calibrateStep, imgPt.x, imgPt.y, loc);
+    return;
+  }
+
+  if (state.mode === 'trace') {
+    if (interaction.pickColorMode) {
+      pickColorAndDetect(imgPt.x, imgPt.y);
+      return;
+    }
+    if (state.traceSubMode === 'auto') {
+      interaction.autoTracing = true;
+      interaction.autoPath = [{ x: imgPt.x, y: imgPt.y }];
+      return;
+    }
+    // click & snap modes add a point
+    addPointAt(imgPt.x, imgPt.y);
+  }
+});
+
+window.addEventListener('mousemove', e => {
+  if (!state.image.element) return;
+  const loc = localCoords(e);
+  interaction.cursorScreen = loc;
+  const inArea = loc.x >= 0 && loc.y >= 0 && loc.x <= canvasArea.clientWidth && loc.y <= canvasArea.clientHeight;
+  interaction.inside = inArea;
+
+  if (interaction.panning && interaction.panStart) {
+    state.viewTransform.translateX = interaction.panStart.tx + (loc.x - interaction.panStart.x);
+    state.viewTransform.translateY = interaction.panStart.ty + (loc.y - interaction.panStart.y);
+    applyViewTransform();
+    return;
+  }
+
+  const imgPt = screenToImage(loc.x, loc.y);
+  interaction.cursorImg = imgPt;
+
+  if (interaction.draggingPoint) {
+    const c = state.curves.find(c => c.id === interaction.draggingPoint.curveId);
+    const pt = c.points[interaction.draggingPoint.index];
+    let ix = imgPt.x, iy = imgPt.y;
+    if (state.traceSubMode === 'snap') { const s = snapToGrid(ix, iy); ix = s.x; iy = s.y; }
+    pt.pixelX = ix; pt.pixelY = iy;
+    const real = pixelToReal(ix, iy);
+    pt.realX = real.x; pt.realY = real.y;
+    renderOverlay(); renderDataTable(); renderStats();
+  } else if (interaction.autoTracing) {
+    interaction.autoPath.push({ x: imgPt.x, y: imgPt.y });
+    renderOverlay();
+  } else {
+    // hover detection
+    const hit = hitTestPoint(imgPt.x, imgPt.y);
+    const changed = (hit && (!interaction.hoverPoint || hit.curveId !== interaction.hoverPoint.curveId || hit.index !== interaction.hoverPoint.index)) || (!hit && interaction.hoverPoint);
+    interaction.hoverPoint = hit;
+    if (changed) { updateCursor(); renderOverlay(); }
+  }
+
+  updateCursorTooltip(e.clientX, e.clientY, imgPt);
+  updateZoomWindow(loc);
+  updateStatusCursor(imgPt);
+  if (state.ui.showCrosshair && !interaction.draggingPoint) renderOverlay();
+});
+
+window.addEventListener('mouseup', e => {
+  if (interaction.panning) { interaction.panning = false; updateCursor(); return; }
+  if (interaction.draggingPoint) { interaction.draggingPoint = null; updateStatusBar(); return; }
+  if (interaction.autoTracing) {
+    finishAutoTrace();
+    interaction.autoTracing = false;
+    interaction.autoPath = [];
+    renderOverlay();
+  }
+});
+
+canvasArea.addEventListener('mouseleave', () => {
+  interaction.inside = false;
+  $('cursor-tooltip').style.display = 'none';
+  $('zoom-window').style.opacity = state.ui.showZoomWindow ? '1' : '0';
+  renderOverlay();
+});
+
+canvasArea.addEventListener('contextmenu', e => e.preventDefault());
+
+// Wheel zoom
+canvasArea.addEventListener('wheel', e => {
+  if (!state.image.element) return;
+  e.preventDefault();
+  const loc = localCoords(e);
+  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  zoomAt(loc.x, loc.y, factor);
+  updateZoomWindow(loc);
+}, { passive: false });
+
+/* ============================================================
+   POINT HIT TESTING
+   ============================================================ */
+function hitTestPoint(ix, iy) {
+  const r = (state.ui.pointSize + 4) / state.viewTransform.scale;
+  for (const c of state.curves) {
+    if (!c.visible) continue;
+    for (let i = c.points.length - 1; i >= 0; i--) {
+      const p = c.points[i];
+      const dx = p.pixelX - ix, dy = p.pixelY - iy;
+      if (dx * dx + dy * dy <= r * r) return { curveId: c.id, index: i };
+    }
+  }
+  return null;
+}
+
+/* ============================================================
+   ADD / DELETE / SNAP POINTS
+   ============================================================ */
+function snapToGrid(ix, iy) {
+  if (!calibrationReady()) return { x: ix, y: iy };
+  const real = pixelToReal(ix, iy);
+  if (real.x === null || real.y === null) return { x: ix, y: iy };
+  const step = state.ui.gridSpacing / 10;
+  const sx = Math.round(real.x / step) * step;
+  const sy = Math.round(real.y / step) * step;
+  return { x: realToPixelX(sx), y: realToPixelY(sy) };
+}
+
+function addPointAt(ix, iy) {
+  if (!calibrationReady()) { toast('Complete calibration first', 'warning'); return; }
+  let px = ix, py = iy;
+  if (state.traceSubMode === 'snap') { const s = snapToGrid(ix, iy); px = s.x; py = s.y; }
+  const real = pixelToReal(px, py);
+  pushHistory();
+  activeCurve().points.push({ pixelX: px, pixelY: py, realX: real.x, realY: real.y });
+  renderOverlay(); renderDataTable(); renderStats(); updateStatusBar();
+}
+
+function deletePoint(curveId, index) {
+  const c = state.curves.find(c => c.id === curveId);
+  if (!c) return;
+  pushHistory();
+  c.points.splice(index, 1);
+  interaction.hoverPoint = null;
+  renderOverlay(); renderDataTable(); renderStats(); updateStatusBar(); updateCursor();
+}
+
+function finishAutoTrace() {
+  if (interaction.autoPath.length < 2) {
+    // treat as single click
+    if (interaction.autoPath.length === 1) addPointAt(interaction.autoPath[0].x, interaction.autoPath[0].y);
+    return;
+  }
+  if (!calibrationReady()) { toast('Complete calibration first', 'warning'); return; }
+  const interval = state.ui.sampleInterval; // pixels in image space
+  const path = interaction.autoPath;
+  pushHistory();
+  const c = activeCurve();
+  let acc = 0;
+  let last = path[0];
+  const real0 = pixelToReal(last.x, last.y);
+  c.points.push({ pixelX: last.x, pixelY: last.y, realX: real0.x, realY: real0.y });
+  for (let i = 1; i < path.length; i++) {
+    const seg = Math.hypot(path[i].x - last.x, path[i].y - last.y);
+    acc += seg;
+    if (acc >= interval) {
+      acc = 0;
+      const real = pixelToReal(path[i].x, path[i].y);
+      c.points.push({ pixelX: path[i].x, pixelY: path[i].y, realX: real.x, realY: real.y });
+    }
+    last = path[i];
+  }
+  renderOverlay(); renderDataTable(); renderStats(); updateStatusBar();
+  toast(`Auto-trace added ${c.points.length} points`, 'success');
+}
+
+/* ============================================================
+   AUTO LINE DETECTION
+   ------------------------------------------------------------
+   Scans the image pixels, clusters non-background colors into
+   distinct curves, then walks each column to extract a point per
+   colored run. Detected points are normal editable points, so the
+   user can drag/delete/add to refine them at any time.
+   ============================================================ */
+const BG_TOL = 42; // distance from background a pixel must exceed to count as "ink"
+
+function colorDist(r1, g1, b1, r2, g2, b2) {
+  const dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
+  return Math.sqrt(dr * dr + dg * dg + db * db);
+}
+function rgbToHex(c) {
+  const h = v => clamp(Math.round(v), 0, 255).toString(16).padStart(2, '0');
+  return '#' + h(c[0]) + h(c[1]) + h(c[2]);
+}
+
+function getImageData() {
+  return imgCtx.getImageData(0, 0, imgCanvas.width, imgCanvas.height);
+}
+
+// Region to scan = inside the calibration bounding box (with a small inset
+// so axis lines/labels are excluded). Falls back to the full image.
+function detectionBounds(w, h) {
+  if (calibrationReady()) {
+    const p = state.calibration.points;
+    let x0 = Math.min(p.x1.px, p.x2.px), x1 = Math.max(p.x1.px, p.x2.px);
+    let y0 = Math.min(p.y1.py, p.y2.py), y1 = Math.max(p.y1.py, p.y2.py);
+    const mx = (x1 - x0) * 0.01, my = (y1 - y0) * 0.01;
+    x0 = clamp(Math.floor(x0 + mx), 0, w - 1); x1 = clamp(Math.ceil(x1 - mx), 0, w - 1);
+    y0 = clamp(Math.floor(y0 + my), 0, h - 1); y1 = clamp(Math.ceil(y1 - my), 0, h - 1);
+    if (x1 > x0 && y1 > y0) return { x0, y0, x1, y1 };
+  }
+  return { x0: 0, y0: 0, x1: w - 1, y1: h - 1 };
+}
+
+function estimateBackground(data, w, h) {
+  // Most common color along the image border, quantised to 16-levels.
+  const counts = new Map();
+  const add = (x, y) => {
+    const i = (y * w + x) * 4;
+    if (data[i + 3] < 128) return;
+    const k = (data[i] >> 4) + ',' + (data[i + 1] >> 4) + ',' + (data[i + 2] >> 4);
+    counts.set(k, (counts.get(k) || 0) + 1);
+  };
+  const sx = Math.max(1, (w / 250) | 0), sy = Math.max(1, (h / 250) | 0);
+  for (let x = 0; x < w; x += sx) { add(x, 0); add(x, h - 1); }
+  for (let y = 0; y < h; y += sy) { add(0, y); add(w - 1, y); }
+  let best = '15,15,15', bestN = -1;
+  for (const [k, n] of counts) if (n > bestN) { bestN = n; best = k; }
+  const p = best.split(',').map(Number);
+  return [p[0] * 16 + 8, p[1] * 16 + 8, p[2] * 16 + 8];
+}
+
+// Find the dominant foreground colors (candidate curve colors).
+function detectColorClusters(data, w, h, bg, bounds, mergeTol, maxLines) {
+  const step = Math.max(1, Math.round(Math.sqrt(w * h) / 500));
+  const buckets = new Map();
+  for (let y = bounds.y0; y <= bounds.y1; y += step) {
+    for (let x = bounds.x0; x <= bounds.x1; x += step) {
+      const i = (y * w + x) * 4;
+      if (data[i + 3] < 128) continue;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      if (colorDist(r, g, b, bg[0], bg[1], bg[2]) < BG_TOL) continue;
+      const k = (r >> 5) + '|' + (g >> 5) + '|' + (b >> 5);
+      let e = buckets.get(k);
+      if (!e) { e = { n: 0, r: 0, g: 0, b: 0 }; buckets.set(k, e); }
+      e.n++; e.r += r; e.g += g; e.b += b;
+    }
+  }
+  let arr = [...buckets.values()].map(e => ({ n: e.n, r: e.r / e.n, g: e.g / e.n, b: e.b / e.n }));
+  arr.sort((a, b) => b.n - a.n);
+  // greedily merge buckets that are close in color
+  const merged = [];
+  for (const c of arr) {
+    const m = merged.find(x => colorDist(x.r, x.g, x.b, c.r, c.g, c.b) < mergeTol);
+    if (m) {
+      const tot = m.n + c.n;
+      m.r = (m.r * m.n + c.r * c.n) / tot;
+      m.g = (m.g * m.n + c.g * c.n) / tot;
+      m.b = (m.b * m.n + c.b * c.n) / tot;
+      m.n = tot;
+    } else merged.push({ ...c });
+  }
+  if (!merged.length) return [];
+  const minN = Math.max(6, merged[0].n * 0.04);
+  return merged.filter(c => c.n >= minN).slice(0, maxLines);
+}
+
+// Build editable points from a per-column list of matching y-pixels.
+function pointsFromColumns(cols, bounds, step) {
+  const pts = [];
+  for (let x = bounds.x0; x <= bounds.x1; x += step) {
+    const ys = cols[x];
+    if (!ys || !ys.length) continue;
+    ys.sort((a, b) => a - b);
+    // group contiguous runs (gap > 2px starts a new run), emit centroid each
+    let sum = ys[0], cnt = 1, prev = ys[0];
+    for (let k = 1; k < ys.length; k++) {
+      if (ys[k] - prev <= 2) { sum += ys[k]; cnt++; }
+      else { pts.push({ x, y: sum / cnt }); sum = ys[k]; cnt = 1; }
+      prev = ys[k];
+    }
+    pts.push({ x, y: sum / cnt });
+  }
+  return pts;
+}
+
+function rawToCurvePoints(raw) {
+  return raw.map(p => {
+    const r = pixelToReal(p.x, p.y);
+    return { pixelX: p.x, pixelY: p.y, realX: r.x, realY: r.y };
+  }).sort((a, b) => a.pixelX - b.pixelX);
+}
+
+function addDetectedCurve(colorRgb, raw, name) {
+  if (state.curves.length >= 10) return null;
+  const id = state.nextCurveId++;
+  const curve = { id, name, color: rgbToHex(colorRgb), points: rawToCurvePoints(raw), visible: true };
+  state.curves.push(curve);
+  return curve;
+}
+
+function autoDetectLines() {
+  if (!state.image.element) { toast('Please upload an image first', 'warning'); return; }
+  if (!calibrationReady()) { toast('Complete all 4 calibration points before detecting', 'warning'); flashMissingCalibration(); return; }
+  if (state.curves.length >= 10) { toast('Maximum 10 curves reached', 'warning'); return; }
+
+  setMode('trace');
+  const btn = $('auto-detect-btn');
+  btn.classList.add('detecting'); btn.textContent = 'Detecting…';
+  // defer so the button repaint shows before the (synchronous) heavy work
+  setTimeout(() => {
+    try {
+      const img = getImageData();
+      const data = img.data, w = img.width, h = img.height;
+      const bg = estimateBackground(data, w, h);
+      const bounds = detectionBounds(w, h);
+      const tol = state.ui.detectTol;
+      const step = state.ui.detectStep;
+      const slots = 10 - state.curves.length;
+      const maxLines = Math.min(state.ui.detectMax, slots);
+      const clusters = detectColorClusters(data, w, h, bg, Math.max(40, tol * 0.9), maxLines);
+      if (!clusters.length) { toast('No distinct colored lines found — try raising tolerance', 'warning'); return; }
+
+      // single pass: assign each ink pixel to its nearest cluster within tolerance
+      const cols = clusters.map(() => []);
+      for (let y = bounds.y0; y <= bounds.y1; y++) {
+        const row = y * w;
+        for (let x = bounds.x0; x <= bounds.x1; x++) {
+          const i = (row + x) * 4;
+          if (data[i + 3] < 128) continue;
+          const r = data[i], g = data[i + 1], b = data[i + 2];
+          if (colorDist(r, g, b, bg[0], bg[1], bg[2]) < BG_TOL) continue;
+          let best = -1, bd = tol;
+          for (let c = 0; c < clusters.length; c++) {
+            const d = colorDist(r, g, b, clusters[c].r, clusters[c].g, clusters[c].b);
+            if (d <= bd) { bd = d; best = c; }
+          }
+          if (best >= 0) (cols[best][x] || (cols[best][x] = [])).push(y);
+        }
+      }
+
+      pushHistory();
+      let added = 0, total = 0, n = 1;
+      clusters.forEach(cl => {
+        const raw = pointsFromColumns(cols[clusters.indexOf(cl)], bounds, step);
+        if (raw.length < 2) return;
+        const curve = addDetectedCurve([cl.r, cl.g, cl.b], raw, 'Detected ' + (n++));
+        if (curve) { added++; total += curve.points.length; if (added === 1) state.activeCurveId = curve.id; }
+      });
+
+      if (!added) { state.history.pop(); toast('No usable lines detected — try lowering the sampling step', 'warning'); return; }
+      syncControls(); renderAll();
+      toast(`Detected ${added} line${added > 1 ? 's' : ''} · ${total} points — drag points to refine`, 'success', 4500);
+    } catch (err) {
+      toast('Detection failed: ' + err.message, 'error');
+    } finally {
+      btn.classList.remove('detecting');
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 11-3-3m0 0-3 3m3-3v12M3 13l3 3m0 0 3-3m-3 3V4"/></svg> Detect All';
+    }
+  }, 30);
+}
+
+function setPickColorMode(on) {
+  interaction.pickColorMode = on;
+  $('pick-detect-btn').classList.toggle('detecting', on);
+  if (on) { setMode('trace'); toast('Click a line on the graph to detect that color', 4000); }
+  updateCursor();
+}
+
+function pickColorAndDetect(ix, iy) {
+  if (!calibrationReady()) { toast('Complete calibration first', 'warning'); setPickColorMode(false); return; }
+  if (state.curves.length >= 10) { toast('Maximum 10 curves reached', 'warning'); setPickColorMode(false); return; }
+  const img = getImageData();
+  const data = img.data, w = img.width, h = img.height;
+  const x = clamp(Math.round(ix), 0, w - 1), y = clamp(Math.round(iy), 0, h - 1);
+  const i = (y * w + x) * 4;
+  const target = [data[i], data[i + 1], data[i + 2]];
+  const bg = estimateBackground(data, w, h);
+  if (colorDist(target[0], target[1], target[2], bg[0], bg[1], bg[2]) < BG_TOL) {
+    toast('That looks like background — click directly on a line', 'warning');
+    return;
+  }
+  const bounds = detectionBounds(w, h);
+  const tol = state.ui.detectTol, step = state.ui.detectStep;
+  const cols = [];
+  for (let yy = bounds.y0; yy <= bounds.y1; yy++) {
+    const row = yy * w;
+    for (let xx = bounds.x0; xx <= bounds.x1; xx++) {
+      const j = (row + xx) * 4;
+      if (data[j + 3] < 128) continue;
+      if (colorDist(data[j], data[j + 1], data[j + 2], target[0], target[1], target[2]) <= tol) {
+        (cols[xx] || (cols[xx] = [])).push(yy);
+      }
+    }
+  }
+  const raw = pointsFromColumns(cols, bounds, step);
+  if (raw.length < 2) { toast('Could not trace a line there — try raising tolerance', 'warning'); return; }
+  pushHistory();
+  const curve = addDetectedCurve(target, raw, 'Picked line');
+  setPickColorMode(false);
+  syncControls(); renderAll();
+  toast(`Traced ${curve.points.length} points — drag to refine`, 'success', 4500);
+}
+
+/* ============================================================
+   CALIBRATION DIALOG
+   ============================================================ */
+function openCalDialog(key, px, py, loc) {
+  interaction.pendingCal = { key, px, py };
+  const dlg = $('cal-dialog');
+  const labels = { x1: 'Enter X1 value (x-axis min)', x2: 'Enter X2 value (x-axis max)', y1: 'Enter Y1 value (y-axis min)', y2: 'Enter Y2 value (y-axis max)' };
+  $('cal-dialog-title').textContent = labels[key];
+  const existing = state.calibration.points[key];
+  $('cal-dialog-input').value = existing ? existing.value : '';
+  $('cal-dialog-err').style.display = 'none';
+  // position near click (in viewport coords)
+  const rect = canvasArea.getBoundingClientRect();
+  let left = rect.left + loc.x + 14;
+  let top = rect.top + loc.y + 14;
+  if (left + 230 > window.innerWidth) left = rect.left + loc.x - 234;
+  if (top + 150 > window.innerHeight) top = rect.top + loc.y - 154;
+  dlg.style.left = Math.max(8, left) + 'px';
+  dlg.style.top = Math.max(8, top) + 'px';
+  dlg.style.display = 'block';
+  // show provisional marker
+  renderOverlay();
+  setTimeout(() => { $('cal-dialog-input').focus(); $('cal-dialog-input').select(); }, 0);
+}
+
+function closeCalDialog() {
+  $('cal-dialog').style.display = 'none';
+  interaction.pendingCal = null;
+  renderOverlay();
+}
+
+function confirmCalDialog() {
+  const pc = interaction.pendingCal;
+  if (!pc) return;
+  const raw = $('cal-dialog-input').value.trim();
+  const val = parseFloat(raw);
+  if (raw === '' || isNaN(val)) { showCalErr('Please enter a numeric value'); return; }
+  const axisIsX = pc.key[0] === 'x';
+  const scaleType = axisIsX ? state.calibration.xScale : state.calibration.yScale;
+  if ((scaleType === 'log10' || scaleType === 'ln') && val <= 0) {
+    showCalErr('Log scale requires positive values'); return;
+  }
+  pushHistory();
+  state.calibration.points[pc.key] = { px: pc.px, py: pc.py, value: val };
+  closeCalDialog();
+  // advance step
+  state.calibrateStep = nextCalStepAfter(pc.key);
+  renderAll();
+  if (calibrationReady()) toast('Calibration complete — you can start tracing', 'success');
+}
+
+function nextCalStepAfter(key) {
+  const order = ['x1','x2','y1','y2'];
+  const p = state.calibration.points;
+  // prefer next undefined in order starting after current
+  const start = order.indexOf(key);
+  for (let i = 1; i <= order.length; i++) {
+    const k = order[(start + i) % order.length];
+    if (!p[k]) return k;
+  }
+  return null; // all defined
+}
+
+function showCalErr(msg) {
+  const e = $('cal-dialog-err');
+  e.textContent = msg; e.style.display = 'block';
+}
+
+$('cal-dialog-ok').addEventListener('click', confirmCalDialog);
+$('cal-dialog-cancel').addEventListener('click', closeCalDialog);
+$('cal-dialog-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); confirmCalDialog(); }
+  if (e.key === 'Escape') { e.preventDefault(); closeCalDialog(); }
+});
+
+/* ============================================================
+   RENDERING — OVERLAY
+   ============================================================ */
+function renderAll() { drawImageLayer(); renderOverlay(); renderSidebar(); renderDataTable(); renderStats(); updateStatusBar(); }
+
+function renderOverlay() {
+  const ctx = ovCtx;
+  ctx.clearRect(0, 0, ovCanvas.width, ovCanvas.height);
+  const invScale = 1 / state.viewTransform.scale;
+
+  // Grid overlay (real-unit grid)
+  if (state.ui.showGrid && calibrationReady()) drawGrid(ctx, invScale);
+
+  // Calibration markers
+  drawCalMarkers(ctx, invScale);
+
+  // Provisional pending calibration marker
+  if (interaction.pendingCal) {
+    drawCalDot(ctx, interaction.pendingCal.px, interaction.pendingCal.py, calColor(interaction.pendingCal.key), calLabel(interaction.pendingCal.key), invScale, true);
+  }
+
+  // Auto-trace path preview
+  if (interaction.autoTracing && interaction.autoPath.length > 1) {
+    ctx.save();
+    ctx.strokeStyle = activeCurve().color;
+    ctx.globalAlpha = 0.6;
+    ctx.lineWidth = 2 * invScale;
+    ctx.setLineDash([6 * invScale, 4 * invScale]);
+    ctx.beginPath();
+    ctx.moveTo(interaction.autoPath[0].x, interaction.autoPath[0].y);
+    for (const p of interaction.autoPath) ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Spline preview for active curve
+  if (state.ui.showSpline) {
+    state.curves.forEach(c => { if (c.visible && c.points.length >= 2) drawSpline(ctx, c, invScale); });
+  }
+
+  // Data points
+  state.curves.forEach(c => {
+    if (!c.visible) return;
+    c.points.forEach((p, i) => drawDataPoint(ctx, p, c.color, invScale, i, c.id));
+  });
+
+  // Crosshair
+  if (state.ui.showCrosshair && interaction.inside && !interaction.panning) drawCrosshair(ctx, invScale);
+}
+
+function calColor(key) { return { x1: '#ff6b6b', x2: '#ffa94d', y1: '#69db7c', y2: '#74c0fc' }[key]; }
+function calLabel(key) { return key.toUpperCase(); }
+
+function drawCalMarkers(ctx, invScale) {
+  const p = state.calibration.points;
+  const missing = (state.mode === 'trace' || state.mode === 'calibrate') && !calibrationReady();
+  ['x1','x2','y1','y2'].forEach(k => {
+    if (p[k]) drawCalDot(ctx, p[k].px, p[k].py, calColor(k), k.toUpperCase(), invScale, state.calibrateStep === k);
+  });
+}
+
+function drawCalDot(ctx, px, py, color, label, invScale, active) {
+  const r = 7 * invScale;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(px, py, r, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.85;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.lineWidth = (active ? 2.5 : 1.5) * invScale;
+  ctx.strokeStyle = active ? '#ffffff' : 'rgba(255,255,255,0.8)';
+  ctx.stroke();
+  // crosshair tick
+  ctx.beginPath();
+  ctx.moveTo(px - r * 1.6, py); ctx.lineTo(px + r * 1.6, py);
+  ctx.moveTo(px, py - r * 1.6); ctx.lineTo(px, py + r * 1.6);
+  ctx.lineWidth = 1 * invScale; ctx.strokeStyle = color;
+  ctx.stroke();
+  // label
+  ctx.font = `${11 * invScale}px ${getComputedStyle(document.body).getPropertyValue('--font-mono')}`;
+  ctx.fillStyle = color;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, px + r * 1.8, py - r * 1.8);
+  ctx.restore();
+}
+
+function drawDataPoint(ctx, p, color, invScale, index, curveId) {
+  const isHover = interaction.hoverPoint && interaction.hoverPoint.curveId === curveId && interaction.hoverPoint.index === index;
+  const isHL = highlightPoint && highlightPoint.curveId === curveId && highlightPoint.index === index;
+  const r = (state.ui.pointSize + (isHover || isHL ? 2 : 0)) * invScale;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(p.pixelX, p.pixelY, r, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.lineWidth = 1.5 * invScale;
+  ctx.strokeStyle = isHL ? '#ffffff' : 'rgba(255,255,255,0.9)';
+  ctx.stroke();
+  if (isHover) {
+    ctx.font = `${11 * invScale}px ${getComputedStyle(document.body).getPropertyValue('--font-mono')}`;
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+    ctx.lineWidth = 3 * invScale;
+    ctx.textBaseline = 'bottom';
+    const t = String(index + 1);
+    ctx.strokeText(t, p.pixelX + r + 2 * invScale, p.pixelY - r);
+    ctx.fillText(t, p.pixelX + r + 2 * invScale, p.pixelY - r);
+  }
+  ctx.restore();
+}
+
+function drawCrosshair(ctx, invScale) {
+  const { x, y } = interaction.cursorImg;
+  ctx.save();
+  ctx.strokeStyle = document.documentElement.getAttribute('data-theme') === 'light' ? 'rgba(31,35,40,0.4)' : 'rgba(230,237,243,0.4)';
+  ctx.lineWidth = 1 * invScale;
+  ctx.setLineDash([4 * invScale, 4 * invScale]);
+  ctx.beginPath();
+  ctx.moveTo(0, y); ctx.lineTo(ovCanvas.width, y);
+  ctx.moveTo(x, 0); ctx.lineTo(x, ovCanvas.height);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawGrid(ctx, invScale) {
+  const p = state.calibration.points;
+  const spacing = state.ui.gridSpacing;
+  if (spacing <= 0) return;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(56,139,253,0.25)';
+  ctx.lineWidth = 1 * invScale;
+  const xType = state.calibration.xScale, yType = state.calibration.yScale;
+  // X grid lines
+  const xmin = Math.min(p.x1.value, p.x2.value), xmax = Math.max(p.x1.value, p.x2.value);
+  const ymin = Math.min(p.y1.value, p.y2.value), ymax = Math.max(p.y1.value, p.y2.value);
+  if (xType === 'linear') {
+    const start = Math.ceil(xmin / spacing) * spacing;
+    for (let v = start; v <= xmax + 1e-9; v += spacing) {
+      const px = realToPixelX(v);
+      ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, ovCanvas.height); ctx.stroke();
+    }
+  }
+  if (yType === 'linear') {
+    const start = Math.ceil(ymin / spacing) * spacing;
+    for (let v = start; v <= ymax + 1e-9; v += spacing) {
+      const py = realToPixelY(v);
+      ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(ovCanvas.width, py); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+// Catmull-Rom spline through points
+function drawSpline(ctx, curve, invScale) {
+  const pts = curve.points;
+  if (pts.length < 2) return;
+  ctx.save();
+  ctx.strokeStyle = curve.color;
+  ctx.globalAlpha = 0.7;
+  ctx.lineWidth = 2 * invScale;
+  ctx.beginPath();
+  ctx.moveTo(pts[0].pixelX, pts[0].pixelY);
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] || p2;
+    for (let t = 0; t <= 1; t += 0.1) {
+      const t2 = t * t, t3 = t2 * t;
+      const x = 0.5 * ((2 * p1.pixelX) + (-p0.pixelX + p2.pixelX) * t + (2*p0.pixelX - 5*p1.pixelX + 4*p2.pixelX - p3.pixelX) * t2 + (-p0.pixelX + 3*p1.pixelX - 3*p2.pixelX + p3.pixelX) * t3);
+      const y = 0.5 * ((2 * p1.pixelY) + (-p0.pixelY + p2.pixelY) * t + (2*p0.pixelY - 5*p1.pixelY + 4*p2.pixelY - p3.pixelY) * t2 + (-p0.pixelY + 3*p1.pixelY - 3*p2.pixelY + p3.pixelY) * t3);
+      ctx.lineTo(x, y);
+    }
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* ============================================================
+   CURSOR TOOLTIP / ZOOM WINDOW / STATUS
+   ============================================================ */
+function updateCursorTooltip(clientX, clientY, imgPt) {
+  const tt = $('cursor-tooltip');
+  if (!interaction.inside || interaction.panning) { tt.style.display = 'none'; return; }
+  const real = pixelToReal(imgPt.x, imgPt.y);
+  if (real.x === null) { tt.style.display = 'none'; return; }
+  tt.textContent = `x: ${sigFig(real.x)}   y: ${sigFig(real.y)}`;
+  tt.style.display = 'block';
+  let lx = clientX + 16, ly = clientY + 16;
+  if (lx + tt.offsetWidth > window.innerWidth) lx = clientX - tt.offsetWidth - 12;
+  if (ly + tt.offsetHeight > window.innerHeight) ly = clientY - tt.offsetHeight - 12;
+  tt.style.left = lx + 'px'; tt.style.top = ly + 'px';
+}
+
+function updateZoomWindow(loc) {
+  const zw = $('zoom-window');
+  if (!state.ui.showZoomWindow || !state.image.element || !interaction.inside) { zw.style.opacity = state.ui.showZoomWindow ? '0.0' : '0'; if(!state.ui.showZoomWindow) zw.style.display='none'; return; }
+  zw.style.display = 'block';
+  zw.style.opacity = '1';
+  const imgPt = screenToImage(loc.x, loc.y);
+  const zoomFactor = 4;
+  const srcSize = 100 / zoomFactor; // image px shown
+  zoomCtx.imageSmoothingEnabled = false;
+  zoomCtx.clearRect(0, 0, 100, 100);
+  zoomCtx.fillStyle = getComputedStyle(document.body).getPropertyValue('--color-surface');
+  zoomCtx.fillRect(0, 0, 100, 100);
+  zoomCtx.drawImage(imgCanvas, imgPt.x - srcSize/2, imgPt.y - srcSize/2, srcSize, srcSize, 0, 0, 100, 100);
+  // also overlay points within view
+  zoomCtx.drawImage(ovCanvas, imgPt.x - srcSize/2, imgPt.y - srcSize/2, srcSize, srcSize, 0, 0, 100, 100);
+}
+
+function updateStatusCursor(imgPt) {
+  $('sb-pixel').textContent = `px: ${Math.round(imgPt.x)}, ${Math.round(imgPt.y)}`;
+  const real = pixelToReal(imgPt.x, imgPt.y);
+  $('sb-real').textContent = real.x === null ? 'xy: —, —' : `xy: ${sigFig(real.x,5)}, ${sigFig(real.y,5)}`;
+}
+
+function updateStatusBar() {
+  $('sb-mode').textContent = state.mode.toUpperCase() + (state.mode === 'trace' ? ' · ' + state.traceSubMode : '') + (state.mode === 'calibrate' && state.calibrateStep ? ' · ' + state.calibrateStep.toUpperCase() : '');
+  if (state.image.element) {
+    const kb = (state.image.filesize / 1024);
+    const sizeStr = kb > 1024 ? (kb/1024).toFixed(2) + ' MB' : kb.toFixed(0) + ' KB';
+    $('sb-image').textContent = `${state.image.filename} · ${state.image.width}×${state.image.height}px · ${sizeStr}`;
+  } else {
+    $('sb-image').textContent = 'No image';
+  }
+  const total = state.curves.reduce((s, c) => s + c.points.length, 0);
+  $('sb-points').textContent = total + ' pts';
+  $('sb-curve').textContent = activeCurve().name;
+  const warn = $('status-warning');
+  if (!state.image.element) warn.textContent = 'No image loaded';
+  else if (!calibrationReady()) warn.textContent = 'Calibration incomplete';
+  else warn.textContent = '';
+}
+
+/* ============================================================
+   SIDEBAR RENDERING
+   ============================================================ */
+function renderSidebar() {
+  renderCalProgress();
+  renderCalTable();
+  renderCurveList();
+  // submode buttons
+  document.querySelectorAll('.submode-group .btn').forEach(b => b.classList.toggle('active', b.dataset.sub === state.traceSubMode));
+}
+
+function renderCalProgress() {
+  const cont = $('cal-progress');
+  cont.innerHTML = '';
+  ['x1','x2','y1','y2'].forEach(k => {
+    const done = !!state.calibration.points[k];
+    const active = state.calibrateStep === k && state.mode === 'calibrate';
+    const div = document.createElement('div');
+    div.className = 'cal-step' + (done ? ' done' : '') + (active ? ' active' : '');
+    div.innerHTML = `<span class="tick">✓</span>${k.toUpperCase()}`;
+    cont.appendChild(div);
+  });
+}
+
+function renderCalTable() {
+  const tb = $('cal-tbody');
+  tb.innerHTML = '';
+  ['x1','x2','y1','y2'].forEach(k => {
+    const p = state.calibration.points[k];
+    const tr = document.createElement('tr');
+    tr.className = 'cal-row' + (state.calibrateStep === k ? ' active' : '') + (p ? '' : ' missing');
+    tr.innerHTML = `<td><span class="cal-dot" style="background:${calColor(k)}"></span>${k.toUpperCase()}</td>
+      <td class="mono">${p ? Math.round(p.px) + ',' + Math.round(p.py) : '—'}</td>
+      <td class="mono">${p ? sigFig(p.value) : '—'}</td>`;
+    tr.addEventListener('click', () => {
+      if (!state.image.element) { toast('Upload an image first', 'warning'); return; }
+      setMode('calibrate');
+      state.calibrateStep = k;
+      renderSidebar(); renderOverlay(); updateStatusBar();
+      toast(`Click on the graph to place ${k.toUpperCase()}`);
+    });
+    tb.appendChild(tr);
+  });
+}
+
+function renderCurveList() {
+  const list = $('curve-list');
+  list.innerHTML = '';
+  state.curves.forEach(c => {
+    const item = document.createElement('div');
+    item.className = 'curve-item' + (c.id === state.activeCurveId ? ' active' : '');
+    item.innerHTML = `
+      <button class="icon-btn vis ${c.visible ? '' : 'off'}" title="Toggle visibility">
+        ${c.visible
+          ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>'
+          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.5 13.5 0 0 0 2 12s3.5 7 10 7a9.12 9.12 0 0 0 5.39-1.61M14.12 14.12A3 3 0 1 1 9.88 9.88M2 2l20 20"/></svg>'}
+      </button>
+      <span class="curve-swatch" style="background:${c.color}"></span>
+      <span class="curve-name" title="Click to rename">${c.name}</span>
+      <span class="curve-count">${c.points.length}</span>
+      <button class="icon-btn del" title="Delete curve"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>`;
+    // select curve
+    item.querySelector('.curve-swatch').addEventListener('click', () => selectCurve(c.id));
+    // visibility
+    item.querySelector('.vis').addEventListener('click', e => { e.stopPropagation(); c.visible = !c.visible; renderCurveList(); renderOverlay(); });
+    // rename inline
+    const nameEl = item.querySelector('.curve-name');
+    nameEl.addEventListener('click', e => {
+      if (c.id !== state.activeCurveId) { selectCurve(c.id); return; }
+      const inp = document.createElement('input');
+      inp.type = 'text'; inp.value = c.name;
+      nameEl.replaceWith(inp); inp.focus(); inp.select();
+      const commit = () => { c.name = inp.value.trim() || c.name; renderCurveList(); syncControls(); updateStatusBar(); };
+      inp.addEventListener('blur', commit);
+      inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') inp.blur(); });
+    });
+    // delete
+    item.querySelector('.del').addEventListener('click', e => { e.stopPropagation(); deleteCurve(c.id); });
+    item.addEventListener('click', () => selectCurve(c.id));
+    list.appendChild(item);
+  });
+}
+
+function selectCurve(id) {
+  state.activeCurveId = id;
+  syncControls();
+  renderCurveList(); renderDataTable(); renderStats(); updateStatusBar(); renderOverlay();
+}
+
+function addCurve() {
+  if (state.curves.length >= 10) { toast('Maximum 10 curves', 'warning'); return; }
+  pushHistory();
+  const id = state.nextCurveId++;
+  const color = CURVE_PALETTE[state.curves.length % CURVE_PALETTE.length];
+  state.curves.push({ id, name: 'Curve ' + (state.curves.length + 1), color, points: [], visible: true });
+  state.activeCurveId = id;
+  syncControls(); renderSidebar(); renderDataTable(); renderStats(); updateStatusBar(); renderOverlay();
+}
+
+function deleteCurve(id) {
+  if (state.curves.length <= 1) { toast('At least one curve required', 'warning'); return; }
+  pushHistory();
+  state.curves = state.curves.filter(c => c.id !== id);
+  if (state.activeCurveId === id) state.activeCurveId = state.curves[0].id;
+  syncControls(); renderSidebar(); renderDataTable(); renderStats(); updateStatusBar(); renderOverlay();
+}
+
+/* ============================================================
+   DATA TABLE
+   ============================================================ */
+let highlightPoint = null;
+
+function renderDataTable() {
+  const tb = $('data-tbody');
+  tb.innerHTML = '';
+  const c = activeCurve();
+  c.points.forEach((p, i) => {
+    const tr = document.createElement('tr');
+    if (highlightPoint && highlightPoint.curveId === c.id && highlightPoint.index === i) tr.classList.add('highlight');
+    tr.innerHTML = `<td>${i + 1}</td><td>${sigFig(p.realX)}</td><td>${sigFig(p.realY)}</td><td><span class="del-x">×</span></td>`;
+    tr.addEventListener('mouseenter', () => { highlightPoint = { curveId: c.id, index: i }; renderOverlay(); });
+    tr.addEventListener('mouseleave', () => { highlightPoint = null; renderOverlay(); });
+    tr.addEventListener('click', e => {
+      if (e.target.classList.contains('del-x')) { deletePoint(c.id, i); return; }
+      // center view on point
+      centerOnImagePoint(p.pixelX, p.pixelY);
+    });
+    tb.appendChild(tr);
+  });
+  $('row-count').textContent = c.points.length + (c.points.length === 1 ? ' point' : ' points');
+}
+
+function centerOnImagePoint(ix, iy) {
+  const rect = canvasArea.getBoundingClientRect();
+  state.viewTransform.translateX = rect.width / 2 - ix * state.viewTransform.scale;
+  state.viewTransform.translateY = rect.height / 2 - iy * state.viewTransform.scale;
+  applyViewTransform();
+}
+
+function sortByX() {
+  const c = activeCurve();
+  if (c.points.length < 2) return;
+  pushHistory();
+  c.points.sort((a, b) => (a.realX ?? 0) - (b.realX ?? 0));
+  renderDataTable(); renderOverlay();
+  toast('Sorted by X', 'success');
+}
+
+/* ============================================================
+   STATISTICS
+   ============================================================ */
+function renderStats() {
+  const c = activeCurve();
+  const grid = $('stats-grid');
+  const xs = c.points.map(p => p.realX).filter(v => v !== null && isFinite(v));
+  const ys = c.points.map(p => p.realY).filter(v => v !== null && isFinite(v));
+  const mean = a => a.length ? a.reduce((s,v)=>s+v,0)/a.length : null;
+  const rows = [
+    ['Points', c.points.length],
+    ['Min X', xs.length ? sigFig(Math.min(...xs)) : '—'],
+    ['Max X', xs.length ? sigFig(Math.max(...xs)) : '—'],
+    ['Min Y', ys.length ? sigFig(Math.min(...ys)) : '—'],
+    ['Max Y', ys.length ? sigFig(Math.max(...ys)) : '—'],
+    ['Mean X', xs.length ? sigFig(mean(xs)) : '—'],
+    ['Mean Y', ys.length ? sigFig(mean(ys)) : '—'],
+  ];
+  grid.innerHTML = rows.map(r => `<div class="lbl">${r[0]}</div><div class="val">${r[1]}</div>`).join('');
+}
+
+/* ============================================================
+   CONTROL SYNC
+   ============================================================ */
+function syncControls() {
+  const c = activeCurve();
+  $('curve-name-input').value = c.name;
+  $('curve-color-input').value = c.color;
+  $('x-scale').value = state.calibration.xScale;
+  $('y-scale').value = state.calibration.yScale;
+  $('point-size').value = state.ui.pointSize;
+  $('point-size-val').textContent = state.ui.pointSize;
+  $('sample-interval').value = state.ui.sampleInterval;
+  $('sample-interval-val').textContent = state.ui.sampleInterval;
+  $('detect-tol').value = state.ui.detectTol; $('detect-tol-val').textContent = state.ui.detectTol;
+  $('detect-step').value = state.ui.detectStep; $('detect-step-val').textContent = state.ui.detectStep;
+  $('detect-max').value = state.ui.detectMax; $('detect-max-val').textContent = state.ui.detectMax;
+}
+
+/* ============================================================
+   EXPORT / IMPORT
+   ============================================================ */
+function downloadText(text, filename, mime) {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function getExportCurves() {
+  return $('csv-scope').value === 'active' ? [activeCurve()] : state.curves;
+}
+
+function exportCSV() {
+  const delim = $('csv-delim').value === '\\t' || $('csv-delim').value === '\t' ? '\t' : ',';
+  const dec = clamp(parseInt($('csv-decimals').value) || 6, 2, 10);
+  const curves = getExportCurves();
+  const multi = curves.length > 1;
+  const fmt = v => (v === null || !isFinite(v)) ? '' : v.toFixed(dec);
+  const rows = [];
+  rows.push(multi ? ['Curve','Index','X','Y'].join(delim) : ['Index','X','Y'].join(delim));
+  curves.forEach(c => {
+    c.points.forEach((p, i) => {
+      const base = [i+1, fmt(p.realX), fmt(p.realY)];
+      rows.push((multi ? [c.name, ...base] : base).join(delim));
+    });
+  });
+  downloadText(rows.join('\n'), 'digitized_data.csv', 'text/csv');
+  toast('CSV exported', 'success');
+}
+
+function exportJSON() {
+  const session = {
+    app: 'GraphDigitizer Pro', version: 1,
+    image: { filename: state.image.filename, width: state.image.width, height: state.image.height },
+    calibration: state.calibration,
+    curves: state.curves,
+    activeCurveId: state.activeCurveId,
+    nextCurveId: state.nextCurveId,
+    ui: state.ui,
+  };
+  downloadText(JSON.stringify(session, null, 2), 'digitizer_session.json', 'application/json');
+  toast('Session JSON exported', 'success');
+}
+
+function copyClipboard() {
+  const curves = getExportCurves();
+  const multi = curves.length > 1;
+  const rows = [multi ? 'Curve\tX\tY' : 'X\tY'];
+  curves.forEach(c => c.points.forEach(p => {
+    const base = `${sigFig(p.realX)}\t${sigFig(p.realY)}`;
+    rows.push(multi ? `${c.name}\t${base}` : base);
+  }));
+  const text = rows.join('\n');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => toast('Copied to clipboard (TSV)', 'success'), () => fallbackCopy(text));
+  } else fallbackCopy(text);
+}
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text; document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); toast('Copied to clipboard', 'success'); } catch(e) { toast('Copy failed', 'error'); }
+  ta.remove();
+}
+
+function exportImage() {
+  if (!state.image.element) { toast('No image to export', 'warning'); return; }
+  const out = document.createElement('canvas');
+  out.width = imgCanvas.width; out.height = imgCanvas.height;
+  const octx = out.getContext('2d');
+  octx.drawImage(imgCanvas, 0, 0);
+  octx.drawImage(ovCanvas, 0, 0);
+  out.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'digitized_overlay.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast('Image exported', 'success');
+  });
+}
+
+function importJSON(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.curves || !data.calibration) throw new Error('Invalid session file');
+      pushHistory();
+      state.calibration = data.calibration;
+      state.curves = data.curves;
+      state.activeCurveId = data.activeCurveId ?? data.curves[0].id;
+      state.nextCurveId = data.nextCurveId ?? (Math.max(...data.curves.map(c=>c.id)) + 1);
+      if (data.ui) Object.assign(state.ui, data.ui);
+      syncControls(); renderAll();
+      toast('Session restored' + (data.image && data.image.filename ? ' (re-upload "' + data.image.filename + '" to see the graph)' : ''), 'success', 5000);
+    } catch (err) {
+      toast('Failed to import: ' + err.message, 'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
+/* ============================================================
+   CONFIRM MODAL
+   ============================================================ */
+let confirmCallback = null;
+function showConfirm(title, msg, onOk) {
+  $('confirm-title').textContent = title;
+  $('confirm-msg').textContent = msg;
+  confirmCallback = onOk;
+  $('confirm-modal').classList.add('open');
+}
+$('confirm-ok').addEventListener('click', () => { $('confirm-modal').classList.remove('open'); if (confirmCallback) confirmCallback(); confirmCallback = null; });
+$('confirm-cancel').addEventListener('click', () => { $('confirm-modal').classList.remove('open'); confirmCallback = null; });
+
+function clearAll() {
+  showConfirm('Clear all data?', 'This removes all data points from every curve. Calibration is kept. This cannot be undone except via Undo.', () => {
+    pushHistory();
+    state.curves.forEach(c => c.points = []);
+    renderAll();
+    toast('All points cleared', 'success');
+  });
+}
+
+function resetCalibration() {
+  showConfirm('Reset calibration?', 'This clears all 4 axis calibration points.', () => {
+    pushHistory();
+    state.calibration.points = { x1: null, x2: null, y1: null, y2: null };
+    if (state.mode === 'trace') setMode('calibrate');
+    else { state.calibrateStep = nextCalStep(); }
+    renderAll();
+    toast('Calibration reset', 'success');
+  });
+}
+
+/* ============================================================
+   EVENT WIRING — TOOLBAR / PANELS
+   ============================================================ */
+$('mode-upload').addEventListener('click', () => setMode('upload'));
+$('mode-calibrate').addEventListener('click', () => setMode('calibrate'));
+$('mode-trace').addEventListener('click', () => setMode('trace'));
+
+$('zoom-in').addEventListener('click', () => setZoom(state.viewTransform.scale * 1.25));
+$('zoom-out').addEventListener('click', () => setZoom(state.viewTransform.scale / 1.25));
+$('zoom-fit').addEventListener('click', fitToWindow);
+$('zoom-100').addEventListener('click', () => setZoom(1));
+
+$('undo-btn').addEventListener('click', undo);
+$('redo-btn').addEventListener('click', redo);
+$('clear-all-btn').addEventListener('click', clearAll);
+$('reset-cal-btn').addEventListener('click', resetCalibration);
+
+$('browse-btn').addEventListener('click', () => $('file-input').click());
+$('file-input').addEventListener('change', e => { handleFiles(e.target.files); e.target.value = ''; });
+$('json-input').addEventListener('change', e => { if (e.target.files[0]) importJSON(e.target.files[0]); e.target.value = ''; });
+
+// Export dropdown
+$('export-btn').addEventListener('click', e => { e.stopPropagation(); $('export-menu').classList.toggle('open'); });
+$('export-menu').addEventListener('click', e => e.stopPropagation());
+document.querySelectorAll('#export-menu .dropdown-item').forEach(item => {
+  item.addEventListener('click', () => {
+    const act = item.dataset.act;
+    $('export-menu').classList.remove('open');
+    if (act === 'csv') exportCSV();
+    else if (act === 'json') exportJSON();
+    else if (act === 'clipboard') copyClipboard();
+    else if (act === 'image') exportImage();
+    else if (act === 'import') $('json-input').click();
+  });
+});
+document.addEventListener('click', () => $('export-menu').classList.remove('open'));
+
+// Theme
+$('theme-toggle').addEventListener('click', () => {
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  document.documentElement.setAttribute('data-theme', isLight ? 'dark' : 'light');
+  $('icon-moon').classList.toggle('hidden', !isLight);
+  $('icon-sun').classList.toggle('hidden', isLight);
+  renderOverlay();
+});
+
+// Help modal
+$('help-btn').addEventListener('click', () => $('shortcuts-modal').classList.toggle('open'));
+$('shortcuts-close').addEventListener('click', () => $('shortcuts-modal').classList.remove('open'));
+$('shortcuts-modal').addEventListener('click', e => { if (e.target === $('shortcuts-modal')) $('shortcuts-modal').classList.remove('open'); });
+$('confirm-modal').addEventListener('click', e => { if (e.target === $('confirm-modal')) { $('confirm-modal').classList.remove('open'); confirmCallback = null; } });
+
+// Panel collapse
+document.querySelectorAll('.panel-header').forEach(h => {
+  h.addEventListener('click', () => $(h.dataset.toggle).classList.toggle('collapsed'));
+});
+
+// Submodes
+document.querySelectorAll('.submode-group .btn').forEach(b => {
+  b.addEventListener('click', () => {
+    state.traceSubMode = b.dataset.sub;
+    if (state.mode !== 'trace') setMode('trace');
+    renderSidebar(); updateStatusBar();
+  });
+});
+
+// Tracing option inputs
+$('curve-name-input').addEventListener('input', e => { activeCurve().name = e.target.value; renderCurveList(); updateStatusBar(); });
+$('curve-color-input').addEventListener('input', e => { activeCurve().color = e.target.value; renderCurveList(); renderOverlay(); });
+$('point-size').addEventListener('input', e => { state.ui.pointSize = +e.target.value; $('point-size-val').textContent = e.target.value; renderOverlay(); });
+$('sample-interval').addEventListener('input', e => { state.ui.sampleInterval = +e.target.value; $('sample-interval-val').textContent = e.target.value; });
+$('add-curve-btn').addEventListener('click', addCurve);
+$('sort-x-btn').addEventListener('click', sortByX);
+
+// Auto-detect controls
+$('detect-tol').addEventListener('input', e => { state.ui.detectTol = +e.target.value; $('detect-tol-val').textContent = e.target.value; });
+$('detect-step').addEventListener('input', e => { state.ui.detectStep = +e.target.value; $('detect-step-val').textContent = e.target.value; });
+$('detect-max').addEventListener('input', e => { state.ui.detectMax = +e.target.value; $('detect-max-val').textContent = e.target.value; });
+$('auto-detect-btn').addEventListener('click', autoDetectLines);
+$('pick-detect-btn').addEventListener('click', () => setPickColorMode(!interaction.pickColorMode));
+
+// Scale dropdowns
+$('x-scale').addEventListener('change', e => {
+  const old = state.calibration.xScale;
+  const p = state.calibration.points;
+  if ((e.target.value === 'log10' || e.target.value === 'ln') && ((p.x1 && p.x1.value <= 0) || (p.x2 && p.x2.value <= 0))) {
+    toast('Log scale requires positive X calibration values', 'error');
+    e.target.value = old; return;
+  }
+  pushHistory();
+  state.calibration.xScale = e.target.value;
+  recomputeAllPoints(); renderAll();
+});
+$('y-scale').addEventListener('change', e => {
+  const old = state.calibration.yScale;
+  const p = state.calibration.points;
+  if ((e.target.value === 'log10' || e.target.value === 'ln') && ((p.y1 && p.y1.value <= 0) || (p.y2 && p.y2.value <= 0))) {
+    toast('Log scale requires positive Y calibration values', 'error');
+    e.target.value = old; return;
+  }
+  pushHistory();
+  state.calibration.yScale = e.target.value;
+  recomputeAllPoints(); renderAll();
+});
+
+function recomputeAllPoints() {
+  if (!calibrationReady()) return;
+  state.curves.forEach(c => c.points.forEach(p => {
+    const r = pixelToReal(p.pixelX, p.pixelY);
+    p.realX = r.x; p.realY = r.y;
+  }));
+}
+
+// Drag & drop
+const dz = $('dropzone');
+['dragenter','dragover'].forEach(ev => canvasArea.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('dragover'); }));
+['dragleave','drop'].forEach(ev => canvasArea.addEventListener(ev, e => { e.preventDefault(); if (ev !== 'drop' && e.target !== canvasArea && canvasArea.contains(e.relatedTarget)) return; dz.classList.remove('dragover'); }));
+canvasArea.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('dragover'); if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => e.preventDefault());
+
+/* ============================================================
+   KEYBOARD SHORTCUTS
+   ============================================================ */
+window.addEventListener('keydown', e => {
+  const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+  // Always-available
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
+  if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); redo(); return; }
+  if (e.key === ' ' && !typing) { interaction.spaceDown = true; updateCursor(); e.preventDefault(); return; }
+
+  if (typing) {
+    if (e.key === 'Escape') document.activeElement.blur();
+    return;
+  }
+
+  switch (e.key) {
+    case 'u': case 'U': setMode('upload'); break;
+    case 'c': case 'C': setMode('calibrate'); break;
+    case 't': case 'T': setMode('trace'); break;
+    case '1': enterCalStep('x1'); break;
+    case '2': enterCalStep('x2'); break;
+    case '3': enterCalStep('y1'); break;
+    case '4': enterCalStep('y2'); break;
+    case 'z': case 'Z': toggleUI('showZoomWindow', 'Zoom window'); break;
+    case 'g': case 'G': toggleUI('showGrid', 'Grid overlay'); break;
+    case 's': case 'S': toggleUI('showSpline', 'Spline preview'); break;
+    case 'x': case 'X': toggleUI('showCrosshair', 'Crosshair'); break;
+    case 'f': case 'F': fitToWindow(); break;
+    case '?': $('shortcuts-modal').classList.toggle('open'); break;
+    case '+': case '=': setZoom(state.viewTransform.scale * 1.25); break;
+    case '-': case '_': setZoom(state.viewTransform.scale / 1.25); break;
+    case 'Delete': case 'Backspace': {
+      const c = activeCurve();
+      if (c.points.length) deletePoint(c.id, c.points.length - 1);
+      e.preventDefault();
+      break;
+    }
+    case 'Escape':
+      if (interaction.pendingCal) closeCalDialog();
+      else if (interaction.pickColorMode) setPickColorMode(false);
+      else if (interaction.autoTracing) { interaction.autoTracing = false; interaction.autoPath = []; renderOverlay(); }
+      else if ($('shortcuts-modal').classList.contains('open')) $('shortcuts-modal').classList.remove('open');
+      else if ($('export-menu').classList.contains('open')) $('export-menu').classList.remove('open');
+      state.calibrateStep = state.mode === 'calibrate' ? null : state.calibrateStep;
+      renderSidebar(); updateStatusBar();
+      break;
+  }
+});
+window.addEventListener('keyup', e => {
+  if (e.key === ' ') { interaction.spaceDown = false; updateCursor(); }
+});
+
+function enterCalStep(k) {
+  if (!state.image.element) { toast('Upload an image first', 'warning'); return; }
+  setMode('calibrate');
+  state.calibrateStep = k;
+  renderSidebar(); renderOverlay(); updateStatusBar();
+  toast(`Click on graph to place ${k.toUpperCase()}`);
+}
+
+function toggleUI(key, label) {
+  state.ui[key] = !state.ui[key];
+  if (key === 'showZoomWindow') { $('zoom-window').style.display = state.ui[key] ? 'block' : 'none'; }
+  renderOverlay();
+  toast(`${label}: ${state.ui[key] ? 'on' : 'off'}`);
+}
+
+/* ============================================================
+   RESIZE
+   ============================================================ */
+let resizeRAF = null;
+window.addEventListener('resize', () => {
+  if (resizeRAF) cancelAnimationFrame(resizeRAF);
+  resizeRAF = requestAnimationFrame(() => { applyViewTransform(); });
+});
+
+/* ============================================================
+   INIT
+   ============================================================ */
+function initSafe() {
+  syncControls();
+  renderSidebar();
+  renderDataTable();
+  renderStats();
+  updateStatusBar();
+  state.mode = 'upload';
+  document.querySelectorAll('#toolbar .btn.pill').forEach(b => b.classList.toggle('active', b.dataset.mode === 'upload'));
+  $('zoom-window').style.display = state.ui.showZoomWindow ? 'block' : 'none';
+}
+initSafe();
+</script>
+</body>
+</html>
