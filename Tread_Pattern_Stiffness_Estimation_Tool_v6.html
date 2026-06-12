@@ -291,9 +291,17 @@ details.input-details .details-body{padding:12px}
               <input type="file" id="inp-file" accept=".xlsx,.xls,.csv" onchange="handleFileUpload(event)">
             </label>
             <label class="file-label" style="font-size:11px">
-              📐 DXF
+              📐 Import DXF
               <input type="file" id="inp-dxf-file" accept=".dxf" onchange="handleDxfUpload(event)">
             </label>
+            <div style="display:flex;align-items:center;gap:4px">
+              <select id="dxf-export-mode" style="padding:4px 7px;font-size:11px;background:var(--bg);border:1px solid var(--brd);border-radius:5px;color:var(--tx);height:28px">
+                <option value="current">Current block</option>
+                <option value="all">All blocks</option>
+                <option value="pitch">Pitch group…</option>
+              </select>
+              <button class="btn btn-sm" style="height:28px;white-space:nowrap" onclick="exportDXF()">⬇ Export DXF</button>
+            </div>
             <span id="file-status" style="font-size:10px;color:var(--tx3)"></span>
           </div>
         </div>
@@ -566,9 +574,9 @@ details.input-details .details-body{padding:12px}
           <button class="btn" onclick="previewDesign()">Preview</button>
         </div>
         <div class="input-actions">
-          <button class="btn btn-sm" onclick="saveProject()">💾 Save</button>
+          <button class="btn btn-sm" onclick="saveProject()">💾 Save JSON</button>
           <label class="file-label" style="justify-content:center;font-size:11px">
-            📁 Load
+            📁 Load JSON
             <input type="file" accept=".json" onchange="loadProject(event)">
           </label>
         </div>
@@ -1445,14 +1453,8 @@ details.input-details .details-body{padding:12px}
         <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="rep-sec-refs" checked> Methodology &amp; references</label>
       </div>
 
-      <div style="margin:14px 0 4px;font-size:11px;color:var(--tx2);font-weight:600">Export</div>
-      <div style="display:grid;grid-template-columns:repeat(3,auto) 1fr;gap:6px 18px;font-size:12px;align-items:center;margin-bottom:10px">
-        <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="rep-exp-pdf" checked> PDF Report</label>
-        <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="rep-exp-json"> Project JSON</label>
-        <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="rep-exp-dxf"> DXF (all designs)</label>
-      </div>
       <div style="margin-top:18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <button class="btn btn-acc" onclick="generateReportAndExports()" id="rep-generate-btn">⬇ Export Selected</button>
+        <button class="btn btn-acc" onclick="generateReport()" id="rep-generate-btn">⬇ Generate PDF Report</button>
         <span id="rep-status" style="font-size:11px;color:var(--tx3)"></span>
       </div>
     </div>
@@ -8076,27 +8078,74 @@ function _buildProjectDXF(){
   return dxfLines.join('\n');
 }
 
-// ── Orchestrator: generate whatever the user ticked ──────────────────────
-async function generateReportAndExports(){
-  const doPdf  = document.getElementById('rep-exp-pdf')?.checked;
-  const doJson = document.getElementById('rep-exp-json')?.checked;
-  const doDxf  = document.getElementById('rep-exp-dxf')?.checked;
-  if(!doPdf && !doJson && !doDxf){
-    alert('Please tick at least one export type.');
-    return;
+// ── DXF export triggered from the Input tab ──────────────────────────────
+async function exportDXF(){
+  const mode = document.getElementById('dxf-export-mode')?.value || 'current';
+  const gap = 5;
+  let dxfLines = ['0','SECTION','2','ENTITIES'];
+  let fname = 'tread_block.dxf';
+
+  const addPoly = (pts, layer, xOff=0, yOff=0) => {
+    if(!pts||pts.length<2) return;
+    for(let i=0;i<pts.length;i++){
+      const a=pts[i], b=pts[(i+1)%pts.length];
+      dxfLines.push('0','LINE','8',layer,
+        '10',(a[0]+xOff).toFixed(4),'20',(a[1]+yOff).toFixed(4),'30','0.0',
+        '11',(b[0]+xOff).toFixed(4),'21',(b[1]+yOff).toFixed(4),'31','0.0');
+    }
+  };
+
+  if(mode === 'current'){
+    const d = buildDesignObj();
+    if(!d||!d.vertices||d.vertices.length<3){ alert('No valid geometry in the current input.'); return; }
+    addPoly(d.vertices, d.name||'BLOCK');
+    fname = (d.name||'block').replace(/[^a-z0-9_-]+/gi,'_')+'.dxf';
+
+  } else if(mode === 'all'){
+    let xOff = 0;
+    designs.forEach(d=>{
+      if(!d||!d.vertices||d.vertices.length<3) return;
+      addPoly(d.vertices, d.name||'BLOCK', xOff, 0);
+      const xs=d.vertices.map(p=>p[0]);
+      xOff += (Math.max(...xs)-Math.min(...xs)) + gap;
+    });
+    fname = 'all_blocks.dxf';
+
+  } else if(mode === 'pitch'){
+    if(!_pitchGroupCache||!_pitchGroupCache.length){
+      alert('No pitch groups found.\n\nGo to the Pitch Analysis tab and run 📊 Analyze first, then come back and export.');
+      return;
+    }
+    // If only one pitch group, export it directly; otherwise ask the user to choose
+    let g;
+    if(_pitchGroupCache.length === 1){
+      g = _pitchGroupCache[0];
+    } else {
+      const names = _pitchGroupCache.map((x,i)=>`${i+1}. ${x.name}`).join('\n');
+      const ans = window.prompt(`Enter the number of the pitch group to export:\n\n${names}`,'1');
+      if(!ans) return;
+      const idx = parseInt(ans)-1;
+      g = _pitchGroupCache[idx];
+      if(!g){ alert('Invalid selection.'); return; }
+    }
+    // Lay blocks side-by-side along X (rolling direction offset) so the DXF shows the full pitch width
+    let yOff = 0;
+    g.blocks.forEach(b=>{
+      const d = b.design;
+      if(!d||!d.vertices||d.vertices.length<3) return;
+      const ys = d.vertices.map(p=>p[1]);
+      const blockW = Math.max(...ys)-Math.min(...ys);
+      const yCtr = (Math.max(...ys)+Math.min(...ys))/2;
+      const yMid = yOff + blockW/2;
+      addPoly(d.vertices, b.name||b.pitch, 0, yMid-yCtr);
+      yOff += blockW + gap;
+    });
+    fname = 'pitch_'+g.name.replace(/[^a-z0-9_-]+/gi,'_')+'.dxf';
   }
-  if(doJson){
-    // re-use saveProject logic — call it directly
-    saveProject();
-  }
-  if(doDxf){
-    const dxfStr=_buildProjectDXF();
-    const blob=new Blob([dxfStr],{type:'application/dxf'});
-    await _saveFileWithPicker(blob,'tread_pattern_export.dxf',[{description:'DXF Drawing',accept:{'application/dxf':['.dxf']}}]);
-  }
-  if(doPdf){
-    await generateReport();
-  }
+
+  dxfLines.push('0','ENDSEC','0','EOF');
+  const blob = new Blob([dxfLines.join('\n')],{type:'application/dxf'});
+  await _saveFileWithPicker(blob, fname, [{description:'DXF Drawing',accept:{'application/dxf':['.dxf']}}]);
 }
 
 function loadProject(e){
