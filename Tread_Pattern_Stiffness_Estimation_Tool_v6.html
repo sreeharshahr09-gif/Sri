@@ -987,6 +987,7 @@ details.input-details .details-body{padding:12px}
       <button class="btn btn-sm" onclick="plotly3DView('left')">Left</button>
       <span style="flex:1"></span>
       <button class="btn btn-sm" onclick="plotly3DDownload()">💾 Save PNG</button>
+      <button class="btn btn-sm" onclick="exportSTL()">💾 Save STL</button>
       <button class="btn btn-sm" onclick="renderPlotly3D()">Refresh</button>
     </div>
     <div id="viewer3d-summary" style="font-size:12px;color:var(--tx2);margin-bottom:10px;line-height:1.6"></div>
@@ -1399,9 +1400,6 @@ details.input-details .details-body{padding:12px}
             <div class="panel"><h3>Kx &amp; Ky vs NSD — Selected Blocks</h3><div class="chart-box" style="height:260px"><canvas id="ch-pbc-nsd-kxky"></canvas></div><div style="font-size:10px;color:var(--tx3);margin-top:5px">Solid line = Kx, dashed = Ky, per block (pitch colour).</div></div>
             <div class="panel"><h3>Kxy vs NSD — Selected Blocks</h3><div class="chart-box" style="height:260px"><canvas id="ch-pbc-nsd-kxy"></canvas></div></div>
           </div>
-          <div class="grid3" style="grid-template-columns:1fr;margin-top:12px">
-            <div class="panel"><h3>Kx &amp; Ky vs Block L/D Ratio — Selected Blocks</h3><div class="chart-box" style="height:260px"><canvas id="ch-pbc-ld"></canvas></div><div style="font-size:10px;color:var(--tx3);margin-top:5px">L/D = block height (NSD) ÷ equivalent contact diameter √(lx·wy). Higher L/D → more bending-dominated, lower stiffness. Circles = Kx, triangles = Ky.</div></div>
-          </div>
           <div class="panel" style="margin-top:12px">
             <h3>Selected Block Details</h3>
             <div style="overflow-x:auto"><table class="tbl" id="pbc-table"></table></div>
@@ -1447,8 +1445,14 @@ details.input-details .details-body{padding:12px}
         <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="rep-sec-refs" checked> Methodology &amp; references</label>
       </div>
 
-      <div style="margin-top:18px;display:flex;gap:10px;align-items:center">
-        <button class="btn btn-acc" onclick="generateReport()" id="rep-generate-btn">⬇ Generate PDF Report</button>
+      <div style="margin:14px 0 4px;font-size:11px;color:var(--tx2);font-weight:600">Export</div>
+      <div style="display:grid;grid-template-columns:repeat(3,auto) 1fr;gap:6px 18px;font-size:12px;align-items:center;margin-bottom:10px">
+        <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="rep-exp-pdf" checked> PDF Report</label>
+        <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="rep-exp-json"> Project JSON</label>
+        <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="rep-exp-dxf"> DXF (all designs)</label>
+      </div>
+      <div style="margin-top:18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-acc" onclick="generateReportAndExports()" id="rep-generate-btn">⬇ Export Selected</button>
         <span id="rep-status" style="font-size:11px;color:var(--tx3)"></span>
       </div>
     </div>
@@ -5611,7 +5615,7 @@ function drawEditor(verts,designObj){
 
   let vertexLabels = '';
   if(style.showVertexLabels){
-    vertexLabels = verts.map((v,i)=>{const d=dispXY(v[0],v[1]);return `<text x="${d[0]+style.labelDx}" y="${sy(d[1])-style.labelDy}" fill="var(--tx2)" font-size="${style.vertexFont}" font-family="'JetBrains Mono'">${i}: (${v[0].toFixed(1)}, ${v[1].toFixed(1)})</text>`;}).join('');
+    vertexLabels = verts.map((v,i)=>{const d=dispXY(v[0],v[1]);return `<text x="${d[0]+style.labelDx}" y="${sy(d[1])-style.labelDy}" fill="var(--tx2)" font-size="${style.vertexFont}" font-family="'JetBrains Mono'">${i}</text>`;}).join('');
   }
 
   // Constraint badge colours — also reflects area-lock status
@@ -8020,11 +8024,79 @@ function saveProject(){
     useShapeFactor:!!d.useShapeFactor,pitchGroup:d.pitchGroup||'',shapeAlpha:d.shapeAlpha||1.5,shapeAlphaCref:d.shapeCref||0.90,shapeAlphaQ:d.shapeAlphaQ||1.8,shapeAlphaE:d.shapeAlphaE||0.18,shapeAlphaD:d.shapeAlphaD||1.25,
     perfTyreType:d.perfTyreType||'pcr',perfLc:d.perfLc||150,perfMu:d.perfMu||0.8,perfFx:d.perfFx||0,perfFy:d.perfFy||0,perfRho:d.perfRho||1150,perfPitchLen:d.perfPitchLen||30,perfShore:d.perfShore||'60',perfKCustom:d.perfKCustom||0.64,targetArea:d.targetArea||null
   }))};
-  let blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-  let a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download='tread_stiffness_project.json';
-  a.click();URL.revokeObjectURL(a.href);
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  _saveFileWithPicker(blob,'tread_stiffness_project.json',[{description:'JSON Project',accept:{'application/json':['.json']}}]);
+}
+
+// ── Shared "save with folder picker" helper ──────────────────────────────
+// Uses showSaveFilePicker (Chrome/Edge 86+) when available;
+// silently falls back to <a download> in Firefox / Safari.
+async function _saveFileWithPicker(blob, suggestedName, types){
+  if(window.showSaveFilePicker){
+    try{
+      const fh = await window.showSaveFilePicker({suggestedName, types, excludeAcceptAllOption:false});
+      const ws = await fh.createWritable();
+      await ws.write(blob);
+      await ws.close();
+      return;
+    }catch(e){
+      if(e.name==='AbortError') return;   // user cancelled — not an error
+      // fall through to <a> fallback on unexpected errors
+    }
+  }
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=suggestedName;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// ── DXF export for all designs ───────────────────────────────────────────
+function _buildProjectDXF(){
+  const gap=5;
+  let xOffset=0;
+  let dxfLines=['0','SECTION','2','ENTITIES'];
+  const addPoly=(pts,layer)=>{
+    if(!pts||pts.length<2) return;
+    for(let i=0;i<pts.length;i++){
+      const a=pts[i], b=pts[(i+1)%pts.length];
+      dxfLines.push('0','LINE','8',layer,
+        '10',a[0].toFixed(4),'20',a[1].toFixed(4),'30','0.0',
+        '11',b[0].toFixed(4),'21',b[1].toFixed(4),'31','0.0');
+    }
+  };
+  designs.forEach(d=>{
+    if(!d||!d.vertices||d.vertices.length<3) return;
+    const shifted=d.vertices.map(p=>[p[0]+xOffset, p[1]]);
+    addPoly(shifted, d.name||'BLOCK');
+    const xs=d.vertices.map(p=>p[0]), ys=d.vertices.map(p=>p[1]);
+    const spanX=Math.max(...xs)-Math.min(...xs);
+    xOffset+=spanX+gap;
+  });
+  dxfLines.push('0','ENDSEC','0','EOF');
+  return dxfLines.join('\n');
+}
+
+// ── Orchestrator: generate whatever the user ticked ──────────────────────
+async function generateReportAndExports(){
+  const doPdf  = document.getElementById('rep-exp-pdf')?.checked;
+  const doJson = document.getElementById('rep-exp-json')?.checked;
+  const doDxf  = document.getElementById('rep-exp-dxf')?.checked;
+  if(!doPdf && !doJson && !doDxf){
+    alert('Please tick at least one export type.');
+    return;
+  }
+  if(doJson){
+    // re-use saveProject logic — call it directly
+    saveProject();
+  }
+  if(doDxf){
+    const dxfStr=_buildProjectDXF();
+    const blob=new Blob([dxfStr],{type:'application/dxf'});
+    await _saveFileWithPicker(blob,'tread_pattern_export.dxf',[{description:'DXF Drawing',accept:{'application/dxf':['.dxf']}}]);
+  }
+  if(doPdf){
+    await generateReport();
+  }
 }
 
 function loadProject(e){
@@ -8248,8 +8320,19 @@ function renderPlotly3D(){
   const plotDiv = document.getElementById('plot3d');
   if(!plotDiv || typeof Plotly === 'undefined') return;
 
-  let d;
   const sel = document.getElementById('view3d-select');
+  const selVal = sel ? sel.value : '__current__';
+
+  // ── Pitch-group view: arrange all blocks side-by-side along Y ──
+  if(selVal && selVal.startsWith('__pitch__')){
+    const gname = selVal.slice(9);
+    const g = _pitchGroupCache && _pitchGroupCache.find(x=>x.name===gname);
+    if(!g){ plotDiv.innerHTML='<div style="padding:18px;color:var(--tx3)">Pitch group not found. Run Analyze first.</div>'; return; }
+    _renderPitchGroup3D(plotDiv, g);
+    return;
+  }
+
+  let d;
   if(sel && sel.value !== '__current__' && designs[+sel.value]){
     d = designs[+sel.value];
   } else {
@@ -8325,13 +8408,161 @@ function renderPlotly3D(){
   });
 }
 
-// Design dropdown population
+// Design dropdown population (individual blocks + pitch groups)
 function refresh3DSelector(){
   const sel=document.getElementById('view3d-select');
   if(!sel) return;
   const prev=sel.value||'__current__';
-  sel.innerHTML='<option value="__current__">Current input (live)</option>' + designs.map((d,i)=>`<option value="${i}">${d.name}</option>`).join('');
+  let html='<option value="__current__">Current input (live)</option>';
+  if(designs.length) html+='<optgroup label="Individual Blocks">'+designs.map((d,i)=>`<option value="${i}">${d.name}</option>`).join('')+'</optgroup>';
+  if(_pitchGroupCache && _pitchGroupCache.length){
+    html+='<optgroup label="Pitch Groups">'+_pitchGroupCache.map(g=>`<option value="__pitch__${g.name}">⬛ Pitch: ${g.name}</option>`).join('')+'</optgroup>';
+  }
+  sel.innerHTML=html;
   if([...sel.options].some(o=>o.value===prev)) sel.value=prev;
+}
+
+// ── Pitch group 3D renderer ──────────────────────────────────────────────
+let _pitchGroupCache = null;  // set by analyzePitch()
+
+function _renderPitchGroup3D(plotDiv, g){
+  const isDark = document.body.classList.contains('dark');
+  const bg   = isDark ? '#111827' : '#f8fafc';
+  const grid = isDark ? '#334155' : '#cbd5e1';
+  const zero = isDark ? '#475569' : '#94a3b8';
+  const text = isDark ? '#e2e8f0' : '#1e293b';
+
+  // Lay blocks side by side along Y axis (lateral), spaced by their width + 2 mm gap
+  const GAP = 2;
+  let yOffset = 0;
+  const allTraces = [];
+  const COLORS_3D = ['#22d3ee','#a78bfa','#f59e0b','#34d399','#f87171','#818cf8','#fb923c','#2dd4bf'];
+
+  g.blocks.forEach((b, bi)=>{
+    const d = b.design;
+    if(!d || !d.vertices || d.vertices.length < 3) return;
+    const blockW = b.eqWy || 20;
+    const yMid = yOffset + blockW/2;
+    // Shift vertices so block is centred at yMid along Y
+    const verts_orig = d.vertices;
+    const yMin = Math.min(...verts_orig.map(v=>v[1]));
+    const yMax = Math.max(...verts_orig.map(v=>v[1]));
+    const yCtr = (yMin+yMax)/2;
+    const shifted = {...d, vertices: verts_orig.map(v=>[v[0], v[1]-yCtr+yMid])};
+    const trcs = _buildPlotly3DTraces(shifted);
+    if(!trcs) { yOffset += blockW+GAP; return; }
+    const col = COLORS_3D[bi % COLORS_3D.length];
+    trcs[0].color = col;
+    trcs[0].name = b.name;
+    trcs[0].hovertemplate = `<b>${b.name}</b><br>x=%{x:.2f} mm<br>y=%{y:.2f} mm<br>z=%{z:.2f} mm<extra></extra>`;
+    allTraces.push(...trcs);
+    yOffset += blockW + GAP;
+  });
+
+  if(!allTraces.length){
+    plotDiv.innerHTML='<div style="padding:18px;color:var(--err)">No valid block geometry in this pitch group.</div>';
+    return;
+  }
+
+  const allX=allTraces.flatMap(t=>t.x||[]).filter(Number.isFinite);
+  const allY=allTraces.flatMap(t=>t.y||[]).filter(Number.isFinite);
+  const allZ=allTraces.flatMap(t=>t.z||[]).filter(Number.isFinite);
+  const span=Math.max(Math.max(...allX)-Math.min(...allX), Math.max(...allY)-Math.min(...allY), Math.max(...allZ)-Math.min(...allZ), 1);
+  const pad=span*0.1;
+
+  const summary = document.getElementById('viewer3d-summary');
+  if(summary) summary.innerHTML=`<strong>Pitch: ${g.name}</strong> · ${g.blocks.length} blocks arranged laterally (Y-axis) · Total ΣKx: ${g.totKx.toFixed(2)} N/mm · ΣKy: ${g.totKy.toFixed(2)} N/mm`;
+
+  Plotly.react('plot3d', allTraces, {
+    paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+    margin:{l:0,r:0,t:10,b:0}, showlegend:true, font:{color:text},
+    legend:{x:0.01,y:0.99,bgcolor:'rgba(0,0,0,0.3)',font:{size:9,color:text}},
+    scene:{
+      aspectmode:'data', dragmode:'orbit', camera:plotly3DCamera,
+      xaxis:{title:'X — Rolling (mm)',range:[Math.min(...allX)-pad,Math.max(...allX)+pad],backgroundcolor:bg,gridcolor:grid,zerolinecolor:zero,color:text},
+      yaxis:{title:'Y — Lateral (mm)',range:[Math.min(...allY)-pad,Math.max(...allY)+pad],backgroundcolor:bg,gridcolor:grid,zerolinecolor:zero,color:text},
+      zaxis:{title:'Z — NSD (mm)',range:[-0.5,Math.max(...allZ)+pad],backgroundcolor:bg,gridcolor:grid,zerolinecolor:zero,color:text}
+    }
+  },{responsive:true,displaylogo:false,modeBarButtonsToRemove:['hoverClosest3d'],
+     toImageButtonOptions:{format:'png',filename:'pitch_'+g.name.replace(/[^a-z0-9_-]+/gi,'_')+'_3d',width:1600,height:1000,scale:2}});
+
+  plotDiv.removeAllListeners && plotDiv.removeAllListeners('plotly_relayout');
+  plotDiv.on && plotDiv.on('plotly_relayout',(ev)=>{ if(ev&&ev['scene.camera']) plotly3DCamera=ev['scene.camera']; });
+}
+
+// ── STL export ────────────────────────────────────────────────────────────
+function exportSTL(){
+  const sel = document.getElementById('view3d-select');
+  const selVal = sel ? sel.value : '__current__';
+  let designsToExport = [];
+
+  if(selVal && selVal.startsWith('__pitch__')){
+    const gname = selVal.slice(9);
+    const g = _pitchGroupCache && _pitchGroupCache.find(x=>x.name===gname);
+    if(g) designsToExport = g.blocks.map(b=>b.design).filter(Boolean);
+    else { alert('Run Analyze first to generate pitch geometry.'); return; }
+  } else if(selVal !== '__current__' && designs[+selVal]){
+    designsToExport = [designs[+selVal]];
+  } else {
+    const d = buildDesignObj();
+    if(d) designsToExport = [d];
+  }
+  if(!designsToExport.length){ alert('No valid geometry to export.'); return; }
+
+  // Build ASCII STL
+  const GAP = 2;
+  let yOff = 0;
+  let stl = 'solid tread_block\n';
+
+  const writeTri = (a,b,c)=>{
+    // Normal via cross product
+    const ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2];
+    const vx=c[0]-a[0],vy=c[1]-a[1],vz=c[2]-a[2];
+    const nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    const nl=Math.hypot(nx,ny,nz)||1;
+    stl+=`  facet normal ${(nx/nl).toFixed(6)} ${(ny/nl).toFixed(6)} ${(nz/nl).toFixed(6)}\n`;
+    stl+=`    outer loop\n`;
+    stl+=`      vertex ${a[0].toFixed(4)} ${a[1].toFixed(4)} ${a[2].toFixed(4)}\n`;
+    stl+=`      vertex ${b[0].toFixed(4)} ${b[1].toFixed(4)} ${b[2].toFixed(4)}\n`;
+    stl+=`      vertex ${c[0].toFixed(4)} ${c[1].toFixed(4)} ${c[2].toFixed(4)}\n`;
+    stl+=`    endloop\n  endfacet\n`;
+  };
+
+  designsToExport.forEach((d,di)=>{
+    if(!d||!d.vertices||d.vertices.length<3) return;
+    const verts_orig = d.vertices;
+    let verts = verts_orig;
+    if(designsToExport.length>1){
+      const yMin=Math.min(...verts_orig.map(v=>v[1]));
+      const yMax=Math.max(...verts_orig.map(v=>v[1]));
+      const blockW=yMax-yMin;
+      const yCtr=(yMin+yMax)/2;
+      const yMid=yOff+blockW/2;
+      verts=verts_orig.map(v=>[v[0],v[1]-yCtr+yMid]);
+      yOff+=blockW+GAP;
+    }
+    const nsd=d.nsd||0;
+    const top=verts;
+    const base=offsetPoly(verts,d.draft||0,nsd);
+    if(!base||base.length!==top.length) return;
+
+    // Side walls
+    for(let i=0;i<top.length;i++){
+      const j=(i+1)%top.length;
+      const b0=[base[i][0],base[i][1],0], b1=[base[j][0],base[j][1],0];
+      const t0=[top[i][0],top[i][1],nsd],  t1=[top[j][0],top[j][1],nsd];
+      writeTri(b0,b1,t0); writeTri(b1,t1,t0);
+    }
+    // Top and bottom caps
+    const topTris=_earClipTri(top);
+    topTris.forEach(t=>writeTri([top[t[0]][0],top[t[0]][1],nsd],[top[t[1]][0],top[t[1]][1],nsd],[top[t[2]][0],top[t[2]][1],nsd]));
+    const botTris=_earClipTri(base);
+    botTris.forEach(t=>writeTri([base[t[0]][0],base[t[0]][1],0],[base[t[2]][0],base[t[2]][1],0],[base[t[1]][0],base[t[1]][1],0]));
+  });
+
+  stl+='endsolid tread_block\n';
+  const fname = selVal.startsWith('__pitch__') ? 'pitch_'+selVal.slice(9).replace(/[^a-z0-9_-]+/gi,'_')+'.stl' : 'tread_block.stl';
+  _saveFileWithPicker(new Blob([stl],{type:'model/stl'}), fname, [{description:'STL File',accept:{'model/stl':['.stl']}}]);
 }
 
 // Compatibility stubs so callers elsewhere in the file don't crash
@@ -8721,6 +8952,8 @@ function analyzePitch(){
   const allBlocks = groups.flatMap(g=>g.blocks);
 
   pbcSetData(groups, allBlocks, nsdRange, pitchNsdAxisTitle); // feed Block Compare sub-tab (read-only)
+  _pitchGroupCache = groups;                                  // feed 3D pitch-group selector (read-only)
+  refresh3DSelector();                                        // add pitch entries to 3D dropdown
 
   const countEl = document.getElementById('pitch-group-count');
   if(countEl){
@@ -9014,7 +9247,7 @@ function pbcRenderCharts(){
   const sel=_pbcSelectedBlocks();
   if(sel.length<2){
     emptyEl.style.display=''; contentEl.style.display='none';
-    ['pbcKx','pbcKy','pbcKxy','pbcNsdKxKy','pbcNsdKxy','pbcLD'].forEach(destroyChart);
+    ['pbcKx','pbcKy','pbcKxy','pbcNsdKxKy','pbcNsdKxy'].forEach(destroyChart);
     return;
   }
   emptyEl.style.display='none'; contentEl.style.display='';
@@ -9063,41 +9296,18 @@ function pbcRenderCharts(){
         y:{ticks:{color:tc,font:{size:10}},grid:{color:gc},title:{display:true,text:'Kxy (N/mm)',color:tc,font:{size:10}}}}}
   });
 
-  // Kx & Ky vs L/D ratio: L = block height (NSD), D = sqrt(eqLx*eqWy)
-  const ldPts=sel.map((b,i)=>{
-    const D=Math.sqrt((b.eqLx||0)*(b.eqWy||0));
-    const ld=D>0?(b.design.nsd||0)/D:0;
-    return {b,ld:+ld.toFixed(3),i};
-  });
-  destroyChart('pbcLD');
-  charts.pbcLD=new Chart(document.getElementById('ch-pbc-ld'),{
-    type:'scatter',
-    data:{datasets:ldPts.flatMap(p=>[
-      {label:p.b.pitch+' | '+p.b.name+' Kx',data:[{x:p.ld,y:+p.b.Kx.toFixed(3)}],
-        backgroundColor:cols[p.i],borderColor:cols[p.i],pointRadius:6,pointStyle:'circle'},
-      {label:p.b.pitch+' | '+p.b.name+' Ky',data:[{x:p.ld,y:+p.b.Ky.toFixed(3)}],
-        backgroundColor:cols[p.i]+'66',borderColor:cols[p.i],pointRadius:6,pointStyle:'triangle',borderWidth:2}
-    ])},
-    options:{responsive:true,maintainAspectRatio:false,animation:false,
-      plugins:{legend:{labels:{color:tc,font:{size:8}}},
-        tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': L/D='+ctx.parsed.x.toFixed(3)+', K='+ctx.parsed.y.toFixed(3)+' N/mm'}}},
-      scales:{x:{ticks:{color:tc,font:{size:10}},grid:{color:gc},title:{display:true,text:'L/D ratio  (NSD ÷ √(lx·wy))',color:tc,font:{size:10}}},
-        y:{ticks:{color:tc,font:{size:10}},grid:{color:gc},title:{display:true,text:'Stiffness (N/mm)',color:tc,font:{size:10}}}}}
-  });
-
   // details table
   const tbl=document.getElementById('pbc-table');
   if(tbl){
-    let html='<thead><tr><th>Pitch</th><th>Block</th><th style="color:var(--acc)">Kx</th><th style="color:var(--acc2)">Ky</th><th style="color:var(--acc3)">Kxy</th><th style="color:var(--acc4)">Kz</th><th>Area (mm²)</th><th>Equiv lx×wy</th><th>NSD</th><th>L/D</th><th>Sipes</th></tr></thead><tbody>';
-    ldPts.forEach(p=>{
-      const b=p.b;
+    let html='<thead><tr><th>Pitch</th><th>Block</th><th style="color:var(--acc)">Kx</th><th style="color:var(--acc2)">Ky</th><th style="color:var(--acc3)">Kxy</th><th style="color:var(--acc4)">Kz</th><th>Area (mm²)</th><th>Equiv lx×wy</th><th>NSD</th><th>Sipes</th></tr></thead><tbody>';
+    sel.forEach(b=>{
       html+='<tr><td style="font-weight:700;color:'+colorOf(b)+'">'+b.pitch+'</td><td style="font-weight:500">'+b.name+'</td>'+
         '<td style="color:var(--acc);font-weight:600">'+b.Kx.toFixed(3)+'</td>'+
         '<td style="color:var(--acc2);font-weight:600">'+b.Ky.toFixed(3)+'</td>'+
         '<td style="color:var(--acc3)">'+b.Kxy.toFixed(3)+'</td>'+
         '<td style="color:var(--acc4)">'+b.Kz.toFixed(3)+'</td>'+
         '<td>'+b.area.toFixed(1)+'</td><td>'+b.eqLx.toFixed(1)+' × '+b.eqWy.toFixed(1)+'</td>'+
-        '<td>'+(b.design.nsd!=null?(+b.design.nsd).toFixed(1):'—')+'</td><td>'+p.ld.toFixed(3)+'</td><td>'+b.nSipes+'</td></tr>';
+        '<td>'+(b.design.nsd!=null?(+b.design.nsd).toFixed(1):'—')+'</td><td>'+b.nSipes+'</td></tr>';
     });
     html+='</tbody>';
     tbl.innerHTML=html;
@@ -9566,13 +9776,8 @@ async function generateReport(){
         addChart('ch-pbc-kxy','Kxy comparison (zoomed scale)');
         addChart('ch-pbc-nsd-kxky','Kx & Ky vs NSD — selected blocks');
         addChart('ch-pbc-nsd-kxy','Kxy vs NSD — selected blocks');
-        addChart('ch-pbc-ld','Kx & Ky vs block L/D ratio');
-        const cmpBody=_pbcSelectedBlocks().map(b=>{
-          const D=Math.sqrt((b.eqLx||0)*(b.eqWy||0));
-          const ld=D>0?(b.design.nsd||0)/D:0;
-          return [b.pitch, b.name, _repNum(b.Kx), _repNum(b.Ky), _repNum(b.Kxy), _repNum(b.Kz), _repNum(b.area,1), _repNum(ld,3)];
-        });
-        table(['Pitch','Block','Kx','Ky','Kxy','Kz','Area (mm²)','L/D'], cmpBody);
+        const cmpBody=_pbcSelectedBlocks().map(b=>[b.pitch, b.name, _repNum(b.Kx), _repNum(b.Ky), _repNum(b.Kxy), _repNum(b.Kz), _repNum(b.area,1)]);
+        table(['Pitch','Block','Kx','Ky','Kxy','Kz','Area (mm²)'], cmpBody);
         showPitchSub('all');              // restore default sub-tab
       }
     }
