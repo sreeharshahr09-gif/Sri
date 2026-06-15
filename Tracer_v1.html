@@ -1087,6 +1087,35 @@
                 </div>
 
                 <div class="control-group">
+                    <label class="control-label">Measure Direction</label>
+                    <div style="display: flex; gap: 6px;">
+                        <button class="btn active" onclick="setMeasureLock('free')" id="measFree" style="flex: 1; font-size: 10px; padding: 8px;">
+                            Free
+                        </button>
+                        <button class="btn" onclick="setMeasureLock('horizontal')" id="measHoriz" style="flex: 1; font-size: 10px; padding: 8px;">
+                            ↔️ Horiz
+                        </button>
+                        <button class="btn" onclick="setMeasureLock('vertical')" id="measVert" style="flex: 1; font-size: 10px; padding: 8px;">
+                            ↕️ Vert
+                        </button>
+                        <button class="btn" onclick="setMeasureLock('angle')" id="measAngle" style="flex: 1; font-size: 10px; padding: 8px;">
+                            ∠ Angle
+                        </button>
+                    </div>
+                    <div id="measAngleRow" style="display: none; margin-top: 10px;">
+                        <label class="control-label">Measure Angle (° from horizontal)</label>
+                        <div style="display: flex; gap: 6px; align-items: center;">
+                            <input type="number" class="control-input" id="measureAngleInput" value="0" step="0.5" style="flex: 1;" oninput="onMeasureAngleInput()">
+                            <button class="btn" onclick="setMeasureAnglePreset(0)" style="font-size: 10px; padding: 8px 10px;">0°</button>
+                            <button class="btn" onclick="setMeasureAnglePreset(90)" style="font-size: 10px; padding: 8px 10px;">90°</button>
+                        </div>
+                    </div>
+                    <div class="manual-trace-note">
+                        Lock the measurement to an exact direction — use <strong>↔️ Horiz</strong> for full tyre width or section width, <strong>↕️ Vert</strong> for heights, or <strong>∠ Angle</strong> for any lay angle. The second point snaps onto the locked direction so the reading is guaranteed straight.
+                    </div>
+                </div>
+
+                <div class="control-group">
                     <label style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-secondary); cursor: pointer;">
                         <input type="checkbox" id="measureSnapToggle" checked>
                         Snap clicks to nearby traced points
@@ -1710,6 +1739,7 @@
         let boxReduceEnd = null;
         let calibMode = 'free'; // 'free', 'horizontal', 'vertical', 'angle'
         let measureMode = false;     // free distance measurement between any two clicked points
+        let measureLock = 'free';    // 'free' | 'horizontal' | 'vertical' | 'angle' direction lock
         let measurePts = [];         // 0 or 1 in-progress measurement endpoints
         let measurements = [];       // committed measurements [{a:{x,y}, b:{x,y}}]
         let measureHover = null;     // live cursor position for the rubber-band line
@@ -2585,23 +2615,37 @@
             return isFinite(v) ? v : 0;
         }
 
-        // Project a freely placed point onto the active calibration constraint,
-        // measured relative to an anchor (the other calibration point). This is
-        // the single source of truth for horizontal / vertical / arbitrary-angle
-        // locking, so clicks, drags, and the live HUD all behave identically.
-        function applyCalibConstraint(anchor, pt) {
-            if (!anchor) return { x: pt.x, y: pt.y };
-            if (calibMode === 'horizontal') return { x: pt.x, y: anchor.y };
-            if (calibMode === 'vertical')   return { x: anchor.x, y: pt.y };
-            if (calibMode === 'angle') {
+        // Project a freely placed point onto a directional constraint relative to
+        // an anchor. Single source of truth for horizontal / vertical / arbitrary
+        // angle locking — shared by both calibration and free measurement so
+        // clicks, drags and the live preview all behave identically.
+        function constrainPointToAngle(anchor, pt, lockMode, angleDeg) {
+            if (!anchor || lockMode === 'free') return { x: pt.x, y: pt.y };
+            if (lockMode === 'horizontal') return { x: pt.x, y: anchor.y };
+            if (lockMode === 'vertical')   return { x: anchor.x, y: pt.y };
+            if (lockMode === 'angle') {
                 // Math convention: angle measured CCW from horizontal, Y up.
                 // Image space is Y-down, so the direction's y component is negated.
-                const r = calibAngleDeg() * Math.PI / 180;
+                const r = (isFinite(angleDeg) ? angleDeg : 0) * Math.PI / 180;
                 const dx = Math.cos(r), dy = -Math.sin(r);
                 const t = (pt.x - anchor.x) * dx + (pt.y - anchor.y) * dy;
                 return { x: anchor.x + t * dx, y: anchor.y + t * dy };
             }
             return { x: pt.x, y: pt.y };
+        }
+
+        function applyCalibConstraint(anchor, pt) {
+            return constrainPointToAngle(anchor, pt, calibMode, calibAngleDeg());
+        }
+
+        function measureAngleDeg() {
+            const el = document.getElementById('measureAngleInput');
+            const v = el ? parseFloat(el.value) : 0;
+            return isFinite(v) ? v : 0;
+        }
+
+        function applyMeasureConstraint(anchor, pt) {
+            return constrainPointToAngle(anchor, pt, measureLock, measureAngleDeg());
         }
 
         function relockCalibLine() {
@@ -2702,6 +2746,42 @@
             if (btn) btn.classList.remove('active');
         }
 
+        function setMeasureLock(m) {
+            measureLock = m;
+            const btnMap = { free: 'measFree', horizontal: 'measHoriz', vertical: 'measVert', angle: 'measAngle' };
+            Object.values(btnMap).forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove('active');
+            });
+            const activeBtn = document.getElementById(btnMap[m]);
+            if (activeBtn) activeBtn.classList.add('active');
+            const angleRow = document.getElementById('measAngleRow');
+            if (angleRow) angleRow.style.display = (m === 'angle') ? 'block' : 'none';
+            draw();
+            const label = m === 'angle' ? `${measureAngleDeg().toFixed(1)}°` : m;
+            updateStatus(`Measure direction: ${label}`);
+        }
+
+        function onMeasureAngleInput() {
+            if (measureLock === 'angle') draw();
+        }
+
+        function setMeasureAnglePreset(deg) {
+            const el = document.getElementById('measureAngleInput');
+            if (el) el.value = deg;
+            if (measureLock !== 'angle') setMeasureLock('angle');
+            else draw();
+        }
+
+        // Resolve the effective second endpoint given snapping + direction lock.
+        // The first point is the free anchor; the second is projected onto the
+        // locked direction so e.g. a horizontal width reading stays exactly level.
+        function resolveMeasurePoint(x, y) {
+            let p = measureSnapPoint(x, y);
+            if (measurePts.length === 1) p = applyMeasureConstraint(measurePts[0], p);
+            return p;
+        }
+
         function measureSnapPoint(x, y) {
             const snap = document.getElementById('measureSnapToggle');
             if (snap && !snap.checked) return { x, y };
@@ -2717,7 +2797,7 @@
         }
 
         function addMeasurePoint(x, y) {
-            measurePts.push(measureSnapPoint(x, y));
+            measurePts.push(resolveMeasurePoint(x, y));
             if (measurePts.length === 2) {
                 measurements.push({ a: measurePts[0], b: measurePts[1] });
                 measurePts = [];
@@ -2802,9 +2882,10 @@
         function drawMeasurements(ctx) {
             if (!measurements.length && !(measureMode && measurePts.length === 1)) return;
             const COL = '#a855f7'; // purple — distinct from amber calib and green trace
-            const vs = 1 / Math.max(zoomLevel, 0.05); // keep markers constant on-screen
+            const vs = 1 / Math.max(zoomLevel, 0.05);
+            const sz = (screenPx, minImg) => Math.max(screenPx * vs, minImg); // crisp at any zoom
             ctx.save();
-            ctx.font = `bold ${11 * vs}px JetBrains Mono, monospace`;
+            ctx.font = `bold ${sz(11, 7)}px JetBrains Mono, monospace`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
 
@@ -2814,24 +2895,24 @@
                 const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
                 const txt = `${mm.toFixed(2)} mm`;
                 ctx.strokeStyle = '#000';
-                ctx.lineWidth = 2.5 * vs;
-                ctx.strokeText(txt, mx, my - 10 * vs);
+                ctx.lineWidth = sz(2.5, 1.5);
+                ctx.strokeText(txt, mx, my - sz(10, 7));
                 ctx.fillStyle = COL;
-                ctx.fillText(txt, mx, my - 10 * vs);
+                ctx.fillText(txt, mx, my - sz(10, 7));
             };
             const endpoint = p => {
                 ctx.fillStyle = COL;
                 ctx.beginPath();
-                ctx.arc(p.x, p.y, 3 * vs, 0, 2 * Math.PI);
+                ctx.arc(p.x, p.y, sz(3, 1.8), 0, 2 * Math.PI);
                 ctx.fill();
                 ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 1.2 * vs;
+                ctx.lineWidth = sz(1.2, 0.7);
                 ctx.stroke();
             };
 
             measurements.forEach(m => {
                 ctx.strokeStyle = COL;
-                ctx.lineWidth = 1.6 * vs;
+                ctx.lineWidth = sz(1.6, 1);
                 ctx.setLineDash([]);
                 ctx.beginPath();
                 ctx.moveTo(m.a.x, m.a.y);
@@ -2846,8 +2927,8 @@
                 const a = measurePts[0];
                 const b = measureHover || a;
                 ctx.strokeStyle = COL;
-                ctx.lineWidth = 1.6 * vs;
-                ctx.setLineDash([6 * vs, 4 * vs]);
+                ctx.lineWidth = sz(1.6, 1);
+                ctx.setLineDash([sz(6, 3.5), sz(4, 2.5)]);
                 ctx.beginPath();
                 ctx.moveTo(a.x, a.y);
                 ctx.lineTo(b.x, b.y);
@@ -2928,7 +3009,7 @@
 
             // Live rubber-band line while placing a measurement.
             if (measureMode && measurePts.length === 1) {
-                measureHover = measureSnapPoint(mx, my);
+                measureHover = resolveMeasurePoint(mx, my);
                 draw();
                 return;
             }
@@ -4318,19 +4399,23 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(img, 0, 0);
 
-            // View scale: the canvas is CSS-scaled by zoomLevel, so sizes given in
-            // image pixels appear zoomLevel× bigger on screen. Dividing by zoomLevel
-            // keeps markers/lines a constant ON-SCREEN size, so points stay small and
-            // never mask the line being traced when zoomed in.
+            // Marker sizing. The canvas bitmap is at the image's native resolution
+            // and the browser CSS-scales it by zoomLevel, so anything drawn into it
+            // is rasterised then upscaled. To stop markers ballooning when zoomed in
+            // we shrink them with 1/zoom — but we CLAMP to a minimum image-pixel size
+            // so they never become sub-pixel (which looked fuzzy/degraded). Clamped
+            // markers degrade at the same rate as the image itself, so their on-screen
+            // quality stays consistent with what you zoomed in to see.
             const vs = 1 / Math.max(zoomLevel, 0.05);
+            const sz = (screenPx, minImg) => Math.max(screenPx * vs, minImg);
 
             // Calibration points
             ctx.fillStyle = '#f59e0b';
             ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 1.5 * vs;
+            ctx.lineWidth = sz(1.6, 1);
             calibPts.forEach(p => {
                 ctx.beginPath();
-                ctx.arc(p.x, p.y, 4 * vs, 0, 2 * Math.PI);
+                ctx.arc(p.x, p.y, sz(4.5, 2.4), 0, 2 * Math.PI);
                 ctx.fill();
                 ctx.stroke();
             });
@@ -4340,15 +4425,15 @@
                 ctx.moveTo(calibPts[0].x, calibPts[0].y);
                 ctx.lineTo(calibPts[1].x, calibPts[1].y);
                 ctx.strokeStyle = '#f59e0b';
-                ctx.lineWidth = 1.5 * vs;
+                ctx.lineWidth = sz(1.6, 1);
                 ctx.stroke();
             }
 
             // Rough / guided manual trace (dashed yellow/blue)
             if (roughPts.length > 0) {
                 ctx.strokeStyle = traceMode === 'manual' ? '#38bdf8' : '#f59e0b';
-                ctx.lineWidth = 1.5 * vs;
-                ctx.setLineDash([5 * vs, 5 * vs]);
+                ctx.lineWidth = sz(1.6, 1);
+                ctx.setLineDash([sz(5, 3), sz(5, 3)]);
                 ctx.beginPath();
                 ctx.moveTo(roughPts[0].x, roughPts[0].y);
                 for (let i = 1; i < roughPts.length; i++) {
@@ -4361,19 +4446,19 @@
                 ctx.fillStyle = traceMode === 'manual' ? '#38bdf8' : '#f59e0b';
                 roughPts.forEach(p => {
                     ctx.beginPath();
-                    ctx.arc(p.x, p.y, 2.6 * vs, 0, 2 * Math.PI);
+                    ctx.arc(p.x, p.y, sz(3, 1.8), 0, 2 * Math.PI);
                     ctx.fill();
                 });
             }
-            
+
             // Saved shapes overview (thin cyan/orange lines behind the active trace)
             if (savedShapes.length > 0) {
                 savedShapes.forEach((sh, si) => {
                     if (!sh.pts || sh.pts.length < 2) return;
                     ctx.save();
                     ctx.strokeStyle = sh.closed === false ? 'rgba(56, 189, 248, 0.85)' : 'rgba(245, 158, 11, 0.75)';
-                    ctx.lineWidth = 1.2 * vs;
-                    ctx.setLineDash([4 * vs, 4 * vs]);
+                    ctx.lineWidth = sz(1.3, 0.8);
+                    ctx.setLineDash([sz(4, 2.5), sz(4, 2.5)]);
                     ctx.beginPath();
                     ctx.moveTo(sh.pts[0].x, sh.pts[0].y);
                     for (let k = 1; k < sh.pts.length; k++) ctx.lineTo(sh.pts[k].x, sh.pts[k].y);
@@ -4381,8 +4466,8 @@
                     ctx.stroke();
                     ctx.setLineDash([]);
                     ctx.fillStyle = ctx.strokeStyle;
-                    ctx.font = `bold ${10 * vs}px JetBrains Mono`;
-                    ctx.fillText(String(si + 1), sh.pts[0].x + 8 * vs, sh.pts[0].y - 8 * vs);
+                    ctx.font = `bold ${sz(10, 6)}px JetBrains Mono`;
+                    ctx.fillText(String(si + 1), sh.pts[0].x + sz(8, 4), sh.pts[0].y - sz(8, 4));
                     ctx.restore();
                 });
             }
@@ -4391,7 +4476,7 @@
             if (finalPts.length > 0) {
                 // Draw the contour line
                 ctx.strokeStyle = '#10b981';
-                ctx.lineWidth = 1.4 * vs;
+                ctx.lineWidth = sz(1.5, 0.9);
                 ctx.beginPath();
                 ctx.moveTo(finalPts[0].x, finalPts[0].y);
                 for (let i = 1; i < finalPts.length; i++) {
@@ -4399,23 +4484,23 @@
                 }
                 if (shapeClosed && finalPts.length > 2) ctx.closePath();
                 ctx.stroke();
-                
+
                 // Fill only closed shapes with semi-transparent color
                 if (shapeClosed && finalPts.length > 2) {
                     ctx.fillStyle = 'rgba(16, 185, 129, 0.15)';
                     ctx.fill();
                 }
-                
+
                 // Draw points based on display mode.
                 // Selected / dragged point is drawn slightly larger for grabbability.
                 if (pointDisplay !== 'none') {
-                    const baseR = 2.8 * vs;
+                    const baseR = sz(3, 1.8);
                     finalPts.forEach((p, i) => {
                         const isActive = (i === selectedPtIdx) || (i === draggingPtIdx);
                         // Draw point
                         ctx.fillStyle = isActive ? '#f59e0b' : '#10b981';
                         ctx.strokeStyle = '#ffffff';
-                        ctx.lineWidth = 1 * vs;
+                        ctx.lineWidth = sz(1, 0.7);
                         ctx.beginPath();
                         ctx.arc(p.x, p.y, isActive ? baseR * 1.6 : baseR, 0, 2 * Math.PI);
                         ctx.fill();
@@ -4425,14 +4510,14 @@
                         if (pointDisplay === 'numbers') {
                             ctx.fillStyle = '#ffffff';
                             ctx.strokeStyle = '#000000';
-                            ctx.lineWidth = 2.5 * vs;
-                            ctx.font = `bold ${10 * vs}px JetBrains Mono`;
+                            ctx.lineWidth = sz(2.5, 1.5);
+                            ctx.font = `bold ${sz(10, 6)}px JetBrains Mono`;
                             ctx.textAlign = 'center';
                             ctx.textBaseline = 'middle';
 
                             // Draw text with outline for visibility
-                            ctx.strokeText(i.toString(), p.x, p.y - 11 * vs);
-                            ctx.fillText(i.toString(), p.x, p.y - 11 * vs);
+                            ctx.strokeText(i.toString(), p.x, p.y - sz(11, 7));
+                            ctx.fillText(i.toString(), p.x, p.y - sz(11, 7));
                         }
                     });
                 }
