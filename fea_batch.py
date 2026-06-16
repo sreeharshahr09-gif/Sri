@@ -41,19 +41,39 @@ SWEEPS = []
 
 
 def read_args():
+    # Abaqus 'noGUI' mode populates sys.argv with the CAE executable path
+    # and a 'noGUI=...' token, and may strip the '--' separator. So rather
+    # than trust argument positions, scan everything for the data file
+    # (the arg ending in .txt or .json) and treat the next remaining arg
+    # as the output directory.
     argv = sys.argv
     if '--' in argv:
         argv = argv[argv.index('--') + 1:]
-    else:
-        # Abaqus noGUI mode doesn't always include the '--' marker in
-        # sys.argv; drop the script's own filename if it leaked through.
-        argv = [a for a in argv if not a.lower().endswith('.py')]
-    if not argv:
+
+    input_path = None
+    for a in argv:
+        low = a.lower()
+        if low.endswith('.txt') or low.endswith('.json'):
+            input_path = a
+            break
+    if input_path is None:
         raise RuntimeError(
-            'No input file argument received (sys.argv=%r). '
-            'Run as: abaqus cae noGUI=fea_batch.py -- <file> [out_dir]' % (sys.argv,))
-    input_path = argv[0]
-    out_dir = argv[1] if len(argv) > 1 else os.path.dirname(input_path) or '.'
+            'No .txt or .json input file found in arguments (sys.argv=%r). '
+            'Run as: abaqus cae noGUI=fea_batch.py -- <file.txt> [out_dir]'
+            % (sys.argv,))
+
+    out_dir = None
+    for a in argv:
+        if a == input_path:
+            continue
+        low = a.lower()
+        if low.endswith('.py') or low.startswith('nogui') or 'cae' in low \
+                or low.endswith('.txt') or low.endswith('.json'):
+            continue  # skip executable/script/flags/the input file itself
+        out_dir = a
+        break
+    if not out_dir:
+        out_dir = os.path.dirname(input_path) or '.'
     return input_path, out_dir
 
 
