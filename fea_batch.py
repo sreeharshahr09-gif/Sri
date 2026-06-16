@@ -25,7 +25,17 @@ from abaqusConstants import *
 import regionToolset
 import mesh
 
-DELTA = 1.0          # mm, applied displacement for shear/normal cases
+# A fixed 1mm displacement is fine for a 10-15mm-tall plain square block, but
+# on real tread geometry (thin ribs/walls) it can be 7-10%+ local strain in a
+# single step -- enough to genuinely buckle/wrinkle thin features. Stiffness
+# Kx/Ky/Kxy/Kz is a small-deformation property anyway, so the applied
+# displacement is scaled to a small strain fraction of each design's own
+# height instead of a fixed absolute value. This is what was producing
+# "mesh distortion" that no amount of re-meshing could fix -- it was real
+# buckling driven by an oversized applied displacement, not a meshing issue.
+DELTA_STRAIN_FRAC = 0.02   # applied displacement = 2% of block height (nsd)
+DELTA_FLOOR = 0.02          # mm, never apply less than this (keeps RF signal
+                             # well above solver noise on very short blocks)
 E_DEFAULT = 6.0       # MPa, used only if a design omits E
 NU_DEFAULT = 0.49
 
@@ -285,11 +295,12 @@ def build_and_run(design, model_name, work_dir):
             cp.TangentialBehavior(formulation=PENALTY, table=((0.6,),))
             cp.NormalBehavior(pressureOverclosure=HARD, allowSeparation=ON)
 
+    delta = max(h * DELTA_STRAIN_FRAC, DELTA_FLOOR)
     cases = {
-        'Kx': (1, DELTA, 0, 0),
-        'Ky': (2, 0, DELTA, 0),
-        'Kxy': (3, DELTA * 0.7071, DELTA * 0.7071, 0),
-        'Kz': (4, 0, 0, DELTA),
+        'Kx': (1, delta, 0, 0),
+        'Ky': (2, 0, delta, 0),
+        'Kxy': (3, delta * 0.7071, delta * 0.7071, 0),
+        'Kz': (4, 0, 0, delta),
     }
     results = {}
 
@@ -335,17 +346,18 @@ def build_and_run(design, model_name, work_dir):
         odb.close()
 
         if label == 'Kx':
-            results['Kx'] = abs(comps[0]) / DELTA
+            results['Kx'] = abs(comps[0]) / delta
         elif label == 'Ky':
-            results['Ky'] = abs(comps[1]) / DELTA
+            results['Ky'] = abs(comps[1]) / delta
         elif label == 'Kxy':
-            results['Kxy'] = (abs(comps[0]) + abs(comps[1])) / 2.0 / (DELTA * 0.7071)
+            results['Kxy'] = (abs(comps[0]) + abs(comps[1])) / 2.0 / (delta * 0.7071)
         elif label == 'Kz':
-            results['Kz'] = abs(comps[2]) / DELTA
+            results['Kz'] = abs(comps[2]) / delta
 
     results['mesh_seed_used'] = used_seed
     results['contact_added'] = geo['needs_contact']
     results['min_gap'] = geo['min_gap']
+    results['delta_used'] = delta
     return results
 
 
@@ -462,6 +474,7 @@ def main():
         row['mesh_seed_used'] = fea.get('mesh_seed_used')
         row['contact_added'] = fea.get('contact_added')
         row['min_gap'] = fea.get('min_gap')
+        row['delta_used'] = fea.get('delta_used')
         rows.append(row)
 
     out_csv = os.path.join(out_dir, 'fea_comparison.csv')
@@ -470,7 +483,7 @@ def main():
                   'tool_Ky', 'fea_Ky', 'pct_diff_Ky',
                   'tool_Kxy', 'fea_Kxy', 'pct_diff_Kxy',
                   'tool_Kz', 'fea_Kz', 'pct_diff_Kz',
-                  'mesh_seed_used', 'contact_added', 'min_gap', 'error']
+                  'mesh_seed_used', 'contact_added', 'min_gap', 'delta_used', 'error']
     with open(out_csv, 'w') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
         writer.writeheader()
