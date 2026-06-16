@@ -9,8 +9,17 @@
 # the same 4-load-case test (Kx, Ky, Kxy via 45deg, Kz) used in manual
 # validation, solves, extracts reaction forces, and writes a CSV
 # comparing FEA stiffness against the tool's prediction.
+#
+# Material: Neo-Hookean hyperelastic (large-strain), run with nlgeom=ON.
+# Meshing: seed size is auto-capped to the smallest geometric feature in the
+# polygon, and the mesh is re-seeded progressively finer if the initial
+# attempt fails Abaqus's own quality check or fails to mesh/solve at all.
+# Contact: if any two non-adjacent polygon edges pass within CONTACT_GAP_MIN/
+# MAX of each other (sipe walls, narrow slots, etc.), a self-contact general
+# contact definition is added automatically so those surfaces interact
+# instead of being left free to interpenetrate.
 
-import sys, os, json, csv
+import sys, os, json, csv, math
 from abaqus import mdb, session
 from abaqusConstants import *
 import regionToolset
@@ -19,6 +28,32 @@ import mesh
 DELTA = 1.0          # mm, applied displacement for shear/normal cases
 E_DEFAULT = 6.0       # MPa, used only if a design omits E
 NU_DEFAULT = 0.49
+
+# ---------------------------------------------------------------------------
+# MESH QUALITY / AUTOMATION CONTROLS
+# ---------------------------------------------------------------------------
+MESH_SEED_DEFAULT = 1.0       # mm, starting seed size if a design omits 'mesh'
+MESH_MIN_PER_FEATURE = 3.0    # require >= this many elements across the
+                               # smallest edge/gap in the polygon
+MESH_SEED_FLOOR = 0.1         # mm, never auto-seed finer than this (keeps
+                               # element counts/runtime sane on thin slivers)
+MESH_REFINE_FACTOR = 0.6      # seed *= this on each retry
+MESH_MAX_ATTEMPTS = 4
+ASPECT_RATIO_LIMIT = 12.0     # elements above this are considered poor
+
+# Non-adjacent polygon edges closer than this are treated as a real surface
+# pair (sipe wall, narrow rib slot, etc.) that needs contact, not a coincident
+# point that's just noisy digitization.
+CONTACT_GAP_MIN = 0.1   # mm
+CONTACT_GAP_MAX = 1.5   # mm
+
+# Static step increment control (per request: replicate
+# initial/min/max increment behaviour, kept under nlgeom=ON).
+STEP_INITIAL_INC = 0.01
+STEP_MIN_INC = 1.0e-6
+STEP_MAX_INC = 0.1
+STEP_MAX_NUM_INC = 1000
+STEP_TIME_PERIOD = 1.0
 
 # ---------------------------------------------------------------------------
 # PARAMETER SWEEPS (optional)
@@ -71,11 +106,118 @@ def read_args():
     return input_path, out_dir
 
 
+def _seg_seg_distance(p1, p2, p3, p4):
+    """Min distance between segments p1-p2 and p3-p4 in 2D."""
+    def clamp(t):
+        return max(0.0, min(1.0, t))
+
+    def closest_pt(a, b, p):
+        ax, ay = a; bx, by = b; px, py = p
+        dx, dy = bx - ax, by - ay
+        l2 = dx * dx + dy * dy
+        if l2 < 1e-12:
+            return a
+        t = clamp(((px - ax) * dx + (py - ay) * dy) / l2)
+        return (ax + t * dx, ay + t * dy)
+
+    def dist(a, b):
+        return math.hypot(a[0] - b[0], a[1] - b[1])
+
+    candidates = [
+        dist(closest_pt(p1, p2, p3), p3),
+        dist(closest_pt(p1, p2, p4), p4),
+        dist(closest_pt(p3, p4, p1), p1),
+        dist(closest_pt(p3, p4, p2), p2),
+    ]
+    return min(candidates)
+
+
+def analyze_geometry(verts):
+    """Inspect the polygon for (a) the smallest feature size, used to cap
+    the mesh seed so thin walls/ribs get enough elements across them, and
+    (b) pairs of non-adjacent edges that pass close enough to each other
+    (CONTACT_GAP_MIN..CONTACT_GAP_MAX) to need an explicit contact
+    definition rather than being left as unconnected free surfaces."""
+    n = len(verts)
+    pts = [tuple(v) for v in verts]
+    edges = [(pts[i], pts[(i + 1) % n]) for i in range(n)]
+
+    min_edge_len = min(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in edges)
+    min_edge_len = max(min_edge_len, 1e-6)
+
+    needs_contact = False
+    min_gap = None
+    for i in range(n):
+        for j in range(i + 1, n):
+            if j == i or j == (i + 1) % n or i == (j + 1) % n:
+                continue  # skip shared-vertex (adjacent) edges
+            d = _seg_seg_distance(edges[i][0], edges[i][1], edges[j][0], edges[j][1])
+            if min_gap is None or d < min_gap:
+                min_gap = d
+            if CONTACT_GAP_MIN <= d <= CONTACT_GAP_MAX:
+                needs_contact = True
+
+    feature_size = min_edge_len if min_gap is None else min(min_edge_len, max(min_gap, 1e-6))
+    return {'min_feature': feature_size, 'needs_contact': needs_contact, 'min_gap': min_gap}
+
+
+def pick_seed_size(requested_seed, feature_size):
+    """Cap the requested seed so the smallest feature still gets several
+    elements across it; never go below MESH_SEED_FLOOR."""
+    cap = feature_size / MESH_MIN_PER_FEATURE
+    seed = min(requested_seed, cap) if cap > 0 else requested_seed
+    return max(seed, MESH_SEED_FLOOR)
+
+
+def mesh_quality_ok(part):
+    """Best-effort mesh quality check via Abaqus's own verifyMeshQuality.
+    Returns True if no elements fail the aspect-ratio criterion (or if the
+    check itself isn't available in this Abaqus version, in which case we
+    don't block the run on it)."""
+    try:
+        bad = part.verifyMeshQuality(criterion=ASPECT_RATIO,
+                                      threshold=ASPECT_RATIO_LIMIT,
+                                      thresholdType=ABOVE)
+        n_bad = len(bad) if bad is not None else 0
+        return n_bad == 0
+    except Exception:
+        return True
+
+
+def mesh_with_quality_control(part, requested_seed, feature_size):
+    """Seed + mesh, auto-refining (smaller seed) if the result fails the
+    quality check or generateMesh()/setElementType() raises. Returns the
+    seed size that was ultimately used."""
+    seed = pick_seed_size(requested_seed, feature_size)
+    last_err = None
+    for attempt in range(MESH_MAX_ATTEMPTS):
+        try:
+            part.deleteMesh()
+        except Exception:
+            pass
+        part.seedPart(size=seed, deviationFactor=0.1, minSizeFactor=0.1)
+        part.setElementType(regions=(part.cells,),
+            elemTypes=(mesh.ElemType(elemCode=C3D8H, elemLibrary=STANDARD,
+                                      distortionControl=DEFAULT),))
+        try:
+            part.generateMesh()
+            if mesh_quality_ok(part) or seed <= MESH_SEED_FLOOR:
+                return seed
+        except Exception as e:
+            last_err = e
+        seed = max(seed * MESH_REFINE_FACTOR, MESH_SEED_FLOOR)
+    if last_err is not None:
+        raise last_err
+    return seed
+
+
 def build_and_run(design, model_name, work_dir):
     verts = design['vertices']           # [[x,y], ...] closed polygon
     h = design.get('nsd') or 15.0
     E = design.get('E') or E_DEFAULT
     nu = design.get('nu') or NU_DEFAULT
+
+    geo = analyze_geometry(verts)
 
     mdb.Model(name=model_name)
     m = mdb.models[model_name]
@@ -88,8 +230,21 @@ def build_and_run(design, model_name, work_dir):
     part = m.Part(name='Block', dimensionality=THREE_D, type=DEFORMABLE_BODY)
     part.BaseSolidExtrude(sketch=s, depth=h)
 
-    m.Material(name='Rubber').Elastic(table=((E, nu),))
-    m.HomogeneousSolidSection(name='Sec', material='Rubber')
+    # Neo-Hookean hyperelastic material, calibrated to match the small-strain
+    # E/nu the tool already uses: mu0 = E/2(1+nu) = 2*C10, K0 = E/3(1-2nu) = 2/D1.
+    c10 = E / (4.0 * (1.0 + nu))
+    d1 = 6.0 * (1.0 - 2.0 * nu) / E
+    mat = m.Material(name='Rubber')
+    mat.Hyperelastic(materialType=ISOTROPIC, testData=OFF,
+                      type=NEO_HOOKE, volumetricResponse=VOLUMETRIC_DATA,
+                      table=((c10, d1),))
+
+    # Distortion control on the solid section directly targets the mesh-
+    # distortion failures seen under large shear deformation.
+    if 'EC-1' not in m.sectionControls:
+        m.SectionControls(name='EC-1', distortionControl=ON, lengthRatio=0.1,
+                           elemDeletion=OFF)
+    m.HomogeneousSolidSection(name='Sec', material='Rubber', controls='EC-1')
     part.SectionAssignment(region=(part.cells,), sectionName='Sec')
 
     a = m.rootAssembly
@@ -101,12 +256,22 @@ def build_and_run(design, model_name, work_dir):
     a.Set(faces=top, name='TOP')
     a.Set(faces=base, name='BASE')
 
-    part.seedPart(size=design.get('mesh') or 1.0)
-    part.setElementType(regions=(part.cells,),
-        elemTypes=(mesh.ElemType(elemCode=C3D8H, elemLibrary=STANDARD),))
-    part.generateMesh()
+    requested_seed = design.get('mesh') or MESH_SEED_DEFAULT
+    used_seed = mesh_with_quality_control(part, requested_seed, geo['min_feature'])
 
     a.regenerate()
+
+    # Self-contact: if the polygon has features (sipe walls, narrow ribs)
+    # whose surfaces pass within CONTACT_GAP_MIN/MAX of each other, those
+    # surfaces can fold into one another under load if left unconnected.
+    # General contact with self-contact (ALLSTAR) catches any such pair
+    # automatically without having to identify specific faces.
+    if geo['needs_contact']:
+        cp_name = 'IntProp-Contact'
+        if cp_name not in m.interactionProperties:
+            cp = m.ContactProperty(cp_name)
+            cp.TangentialBehavior(formulation=PENALTY, table=((0.6,),))
+            cp.NormalBehavior(pressureOverclosure=HARD, allowSeparation=ON)
 
     cases = {
         'Kx': (1, DELTA, 0, 0),
@@ -120,7 +285,16 @@ def build_and_run(design, model_name, work_dir):
         step_name = 'Step1'
         if step_name in m.steps:
             del m.steps[step_name]
-        m.StaticStep(name=step_name, previous='Initial', nlgeom=OFF)
+        m.StaticStep(name=step_name, previous='Initial', nlgeom=ON,
+                     initialInc=STEP_INITIAL_INC, minInc=STEP_MIN_INC,
+                     maxInc=STEP_MAX_INC, maxNumInc=STEP_MAX_NUM_INC,
+                     timePeriod=STEP_TIME_PERIOD)
+
+        if geo['needs_contact'] and 'Int-Contact' not in m.interactions:
+            gc = m.ContactStd(name='Int-Contact', createStepName=step_name)
+            gc.includedPairs.setValuesInStep(stepName=step_name, useAllstar=ON)
+            gc.contactPropertyAssignments.appendInStep(
+                stepName=step_name, assignments=((GLOBAL, SELF, cp_name),))
 
         for bc in list(m.boundaryConditions.keys()):
             del m.boundaryConditions[bc]
@@ -157,6 +331,9 @@ def build_and_run(design, model_name, work_dir):
         elif label == 'Kz':
             results['Kz'] = abs(comps[2]) / DELTA
 
+    results['mesh_seed_used'] = used_seed
+    results['contact_added'] = geo['needs_contact']
+    results['min_gap'] = geo['min_gap']
     return results
 
 
@@ -270,6 +447,9 @@ def main():
             row['fea_' + k] = fea_v
             if tool_v is not None and fea_v not in (None, 0):
                 row['pct_diff_' + k] = round(100.0 * (tool_v - fea_v) / fea_v, 1)
+        row['mesh_seed_used'] = fea.get('mesh_seed_used')
+        row['contact_added'] = fea.get('contact_added')
+        row['min_gap'] = fea.get('min_gap')
         rows.append(row)
 
     out_csv = os.path.join(out_dir, 'fea_comparison.csv')
@@ -277,7 +457,8 @@ def main():
                   'tool_Kx', 'fea_Kx', 'pct_diff_Kx',
                   'tool_Ky', 'fea_Ky', 'pct_diff_Ky',
                   'tool_Kxy', 'fea_Kxy', 'pct_diff_Kxy',
-                  'tool_Kz', 'fea_Kz', 'pct_diff_Kz', 'error']
+                  'tool_Kz', 'fea_Kz', 'pct_diff_Kz',
+                  'mesh_seed_used', 'contact_added', 'min_gap', 'error']
     with open(out_csv, 'w') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
         writer.writeheader()
