@@ -62,18 +62,11 @@ def read_args():
             'Run as: abaqus cae noGUI=fea_batch.py -- <file.txt> [out_dir]'
             % (sys.argv,))
 
-    out_dir = None
-    for a in argv:
-        if a == input_path:
-            continue
-        low = a.lower()
-        if a.startswith('-') or 'nogui' in low or 'cae' in low \
-                or low.endswith('.py') or low.endswith('.txt') or low.endswith('.json'):
-            continue  # skip flags/executable/script/the input file itself
-        out_dir = a
-        break
-    if not out_dir:
-        out_dir = os.path.dirname(input_path) or '.'
+    # Output goes in a 'fea_runs' folder NEXT TO the input file. We do NOT
+    # trust argv for this: Abaqus noGUI injects temp-dir paths into argv that
+    # are indistinguishable from a user-supplied output dir, so deriving the
+    # location from the input file is the only reliable choice.
+    out_dir = os.path.join(os.path.dirname(os.path.abspath(input_path)), 'fea_runs')
     return input_path, out_dir
 
 
