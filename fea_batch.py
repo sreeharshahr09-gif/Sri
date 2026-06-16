@@ -1,10 +1,14 @@
-# Run with: abaqus cae noGUI=fea_batch.py -- project.json [output_dir]
+# Run with: abaqus cae noGUI=fea_batch.py -- input_file [output_dir]
 #
-# Reads a project JSON exported by the Tread Pattern Stiffness tool
-# (Save JSON button). For every design it builds a 3D solid block from
-# the polygon, applies the same 4-load-case test (Kx, Ky, Kxy via 45deg,
-# Kz) used in manual validation, solves, extracts reaction forces, and
-# writes a CSV comparing FEA stiffness against the tool's prediction.
+# input_file may be either:
+#   - a project .json exported by the tool's "Save JSON" button, or
+#   - a plain-ASCII .txt exported by the tool's "Export FEA TXT" button.
+# The format is auto-detected from the file extension.
+#
+# For every design it builds a 3D solid block from the polygon, applies
+# the same 4-load-case test (Kx, Ky, Kxy via 45deg, Kz) used in manual
+# validation, solves, extracts reaction forces, and writes a CSV
+# comparing FEA stiffness against the tool's prediction.
 
 import sys, os, json, csv
 from abaqus import mdb, session
@@ -40,9 +44,9 @@ def read_args():
     argv = sys.argv
     if '--' in argv:
         argv = argv[argv.index('--') + 1:]
-    json_path = argv[0]
-    out_dir = argv[1] if len(argv) > 1 else os.path.dirname(json_path) or '.'
-    return json_path, out_dir
+    input_path = argv[0]
+    out_dir = argv[1] if len(argv) > 1 else os.path.dirname(input_path) or '.'
+    return input_path, out_dir
 
 
 def build_and_run(design, model_name, work_dir):
@@ -198,11 +202,11 @@ def parse_fea_txt(path):
 
 
 def main():
-    json_path, out_dir = read_args()
-    if json_path.lower().endswith('.txt'):
-        data = parse_fea_txt(json_path)
+    input_path, out_dir = read_args()
+    if input_path.lower().endswith('.txt'):
+        data = parse_fea_txt(input_path)
     else:
-        with open(json_path, 'r', encoding='utf-8') as f:
+        with open(input_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
     rows = []
