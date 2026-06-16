@@ -44,6 +44,14 @@ def read_args():
     argv = sys.argv
     if '--' in argv:
         argv = argv[argv.index('--') + 1:]
+    else:
+        # Abaqus noGUI mode doesn't always include the '--' marker in
+        # sys.argv; drop the script's own filename if it leaked through.
+        argv = [a for a in argv if not a.lower().endswith('.py')]
+    if not argv:
+        raise RuntimeError(
+            'No input file argument received (sys.argv=%r). '
+            'Run as: abaqus cae noGUI=fea_batch.py -- <file> [out_dir]' % (sys.argv,))
     input_path = argv[0]
     out_dir = argv[1] if len(argv) > 1 else os.path.dirname(input_path) or '.'
     return input_path, out_dir
@@ -203,6 +211,9 @@ def parse_fea_txt(path):
 
 def main():
     input_path, out_dir = read_args()
+    print('Reading input file: %s' % input_path)
+    if not os.path.isfile(input_path):
+        raise RuntimeError('Input file not found: %s' % input_path)
     if input_path.lower().endswith('.txt'):
         data = parse_fea_txt(input_path)
     else:
