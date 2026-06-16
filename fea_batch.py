@@ -42,14 +42,21 @@ NU_DEFAULT = 0.49
 # ---------------------------------------------------------------------------
 # MESH QUALITY / AUTOMATION CONTROLS
 # ---------------------------------------------------------------------------
-MESH_SEED_DEFAULT = 1.0       # mm, starting seed size if a design omits 'mesh'
-MESH_MIN_PER_FEATURE = 3.0    # require >= this many elements across the
-                               # smallest edge/gap in the polygon
-MESH_SEED_FLOOR = 0.1         # mm, never auto-seed finer than this (keeps
-                               # element counts/runtime sane on thin slivers)
-MESH_REFINE_FACTOR = 0.6      # seed *= this on each retry
-MESH_MAX_ATTEMPTS = 4
-ASPECT_RATIO_LIMIT = 12.0     # elements above this are considered poor
+# The global seed is sized from the block's OVERALL dimensions (target a
+# handful of elements across the smallest bounding extent), NOT from the
+# tiniest polygon feature. A single 0.1mm sipe gap must not drive a 0.1mm
+# seed across an entire 10-15mm block -- that produces millions of quadratic
+# tets and a run that never finishes. Tiny features are simply meshed a bit
+# coarsely; that's fine for a stiffness estimate. A hard element-count budget
+# coarsens the seed if a mesh still comes out too large.
+MESH_TARGET_ELEMS_ACROSS = 6.0   # aim for ~this many elements across the
+                                  # smallest in-plane / height dimension
+MESH_MAX_ELEMS = 40000           # element-count budget; coarsen if exceeded
+MESH_SEED_FLOOR = 0.3            # mm, absolute finest auto seed
+MESH_SEED_CEIL_FRAC = 0.5        # seed never coarser than this * char. dim
+MESH_REFINE_FACTOR = 0.7         # seed *= this when refining for quality
+MESH_MAX_ATTEMPTS = 5
+ASPECT_RATIO_LIMIT = 12.0        # elements above this are considered poor
 
 # Non-adjacent polygon edges closer than this are treated as a real surface
 # pair (sipe wall, narrow rib slot, etc.) that needs contact, not a coincident
@@ -152,6 +159,11 @@ def analyze_geometry(verts):
     pts = [tuple(v) for v in verts]
     edges = [(pts[i], pts[(i + 1) % n]) for i in range(n)]
 
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    bbox_w = max(xs) - min(xs)
+    bbox_h = max(ys) - min(ys)
+
     min_edge_len = min(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in edges)
     min_edge_len = max(min_edge_len, 1e-6)
 
@@ -168,14 +180,20 @@ def analyze_geometry(verts):
                 needs_contact = True
 
     feature_size = min_edge_len if min_gap is None else min(min_edge_len, max(min_gap, 1e-6))
-    return {'min_feature': feature_size, 'needs_contact': needs_contact, 'min_gap': min_gap}
+    return {'min_feature': feature_size, 'needs_contact': needs_contact,
+            'min_gap': min_gap, 'bbox_w': bbox_w, 'bbox_h': bbox_h}
 
 
-def pick_seed_size(requested_seed, feature_size):
-    """Cap the requested seed so the smallest feature still gets several
-    elements across it; never go below MESH_SEED_FLOOR."""
-    cap = feature_size / MESH_MIN_PER_FEATURE
-    seed = min(requested_seed, cap) if cap > 0 else requested_seed
+def pick_seed_size(requested_seed, geo, height):
+    """Choose the GLOBAL seed from the block's overall size, not the smallest
+    feature. Target ~MESH_TARGET_ELEMS_ACROSS elements across the smallest of
+    {bbox width, bbox height, block height}, clamped to a sane absolute range.
+    An explicit per-design 'mesh' value still wins (clamped to the floor)."""
+    char_dim = min(d for d in (geo['bbox_w'], geo['bbox_h'], height) if d > 1e-6)
+    if requested_seed is not None:
+        return max(requested_seed, MESH_SEED_FLOOR)
+    seed = char_dim / MESH_TARGET_ELEMS_ACROSS
+    seed = min(seed, char_dim * MESH_SEED_CEIL_FRAC)
     return max(seed, MESH_SEED_FLOOR)
 
 
@@ -194,9 +212,9 @@ def mesh_quality_ok(part):
         return True
 
 
-def mesh_with_quality_control(part, requested_seed, feature_size):
-    """Seed + mesh, auto-refining (smaller seed) if the result fails the
-    quality check or generateMesh()/setElementType() raises. Returns the
+def mesh_with_quality_control(part, requested_seed, geo, height):
+    """Seed + mesh with both an element-count budget (coarsen if too many
+    elements) and a quality gate (refine if elements are poor). Returns the
     seed size that was ultimately used.
 
     Uses quadratic tetrahedra (C3D10MH) with free meshing rather than linear
@@ -206,7 +224,7 @@ def mesh_with_quality_control(part, requested_seed, feature_size):
     full-integration hex elements show under bending of thin ribs -- which
     is what was showing up as "mesh distortion" on real tread geometry even
     after the applied displacement was scaled down."""
-    seed = pick_seed_size(requested_seed, feature_size)
+    seed = pick_seed_size(requested_seed, geo, height)
     last_err = None
     for attempt in range(MESH_MAX_ATTEMPTS):
         try:
@@ -219,11 +237,20 @@ def mesh_with_quality_control(part, requested_seed, feature_size):
             elemTypes=(mesh.ElemType(elemCode=C3D10MH, elemLibrary=STANDARD),))
         try:
             part.generateMesh()
+            n_el = len(part.elements)
+            print('      mesh attempt %d: seed=%.3f -> %d elements'
+                  % (attempt + 1, seed, n_el))
+            if n_el > MESH_MAX_ELEMS:
+                # Too many elements: coarsen by the cube-root of the overage
+                # so we land near the budget in one step instead of many.
+                seed = seed * (float(n_el) / MESH_MAX_ELEMS) ** (1.0 / 3.0)
+                continue
             if mesh_quality_ok(part) or seed <= MESH_SEED_FLOOR:
                 return seed
+            seed = max(seed * MESH_REFINE_FACTOR, MESH_SEED_FLOOR)
         except Exception as e:
             last_err = e
-        seed = max(seed * MESH_REFINE_FACTOR, MESH_SEED_FLOOR)
+            seed = max(seed * MESH_REFINE_FACTOR, MESH_SEED_FLOOR)
     if last_err is not None:
         raise last_err
     return seed
@@ -286,8 +313,8 @@ def build_and_run(design, model_name, work_dir):
     a.Set(faces=top, name='TOP')
     a.Set(faces=base, name='BASE')
 
-    requested_seed = design.get('mesh') or MESH_SEED_DEFAULT
-    used_seed = mesh_with_quality_control(part, requested_seed, geo['min_feature'])
+    requested_seed = design.get('mesh')   # None -> auto-size from block dims
+    used_seed = mesh_with_quality_control(part, requested_seed, geo, h)
 
     a.regenerate()
 
