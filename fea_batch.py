@@ -154,7 +154,7 @@ def expand_designs(designs):
 
 def main():
     json_path, out_dir = read_args()
-    with open(json_path, 'r') as f:
+    with open(json_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
     rows = []
