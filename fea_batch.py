@@ -15,6 +15,26 @@ DELTA = 1.0          # mm, applied displacement for shear/normal cases
 E_DEFAULT = 6.0       # MPa, used only if a design omits E
 NU_DEFAULT = 0.49
 
+# ---------------------------------------------------------------------------
+# PARAMETER SWEEPS (optional)
+# ---------------------------------------------------------------------------
+# Each entry sweeps ONE design field across a list of values (one-factor-at-
+# a-time: other fields stay at the design's base value). Every base design in
+# the JSON is expanded into one FEA run per sweep value. Leave SWEEPS empty
+# to run designs exactly as saved.
+#
+# 'param' must match a field consumed by build_and_run:
+#   'nsd' -> block height (mm)
+#   'E'   -> Young's modulus (MPa)
+#   'nu'  -> Poisson's ratio
+#   'mesh'-> seed size (mm)   (convergence studies)
+#
+# Examples:
+#   SWEEPS = [{'param':'nsd', 'values':[15, 12, 9, 6]}]
+#   SWEEPS = [{'param':'E',   'values':[4, 6, 8, 10]},
+#             {'param':'mesh','values':[1.0, 0.5, 0.25]}]
+SWEEPS = []
+
 
 def read_args():
     argv = sys.argv
@@ -55,7 +75,7 @@ def build_and_run(design, model_name, work_dir):
     a.Set(faces=top, name='TOP')
     a.Set(faces=base, name='BASE')
 
-    part.seedPart(size=1.0)
+    part.seedPart(size=design.get('mesh') or 1.0)
     part.setElementType(regions=(part.cells,),
         elemTypes=(mesh.ElemType(elemCode=C3D8H, elemLibrary=STANDARD),))
     part.generateMesh()
@@ -114,14 +134,32 @@ def build_and_run(design, model_name, work_dir):
     return results
 
 
+def expand_designs(designs):
+    """Yield (label, swept_param, swept_value, design_dict) for every run.
+    With no SWEEPS, each design runs once as saved. With sweeps, each design
+    is expanded one-factor-at-a-time across the listed values."""
+    for i, d in enumerate(designs):
+        base_name = d.get('name', 'design_%d' % i)
+        if not SWEEPS:
+            yield (base_name, None, None, d)
+            continue
+        for sweep in SWEEPS:
+            p = sweep['param']
+            for val in sweep['values']:
+                variant = dict(d)
+                variant[p] = val
+                label = '%s_%s=%s' % (base_name, p, val)
+                yield (label, p, val, variant)
+
+
 def main():
     json_path, out_dir = read_args()
     with open(json_path, 'r') as f:
         data = json.load(f)
 
     rows = []
-    for i, d in enumerate(data['designs']):
-        name = d.get('name', 'design_%d' % i)
+    swept = bool(SWEEPS)
+    for i, (name, sparam, sval, d) in enumerate(expand_designs(data['designs'])):
         model_name = 'M_%d' % i
         try:
             fea = build_and_run(d, model_name, out_dir)
@@ -129,8 +167,12 @@ def main():
             rows.append({'name': name, 'error': str(e)})
             continue
 
-        pred = d.get('predicted') or {}
+        # Tool prediction is only valid at the unswept base point.
+        pred = (d.get('predicted') or {}) if not swept else {}
         row = {'name': name}
+        if swept:
+            row['sweep_param'] = sparam
+            row['sweep_value'] = sval
         for k in ('Kx', 'Ky', 'Kxy', 'Kz'):
             tool_v = pred.get(k)
             fea_v = fea.get(k)
@@ -141,7 +183,8 @@ def main():
         rows.append(row)
 
     out_csv = os.path.join(out_dir, 'fea_comparison.csv')
-    fieldnames = ['name', 'tool_Kx', 'fea_Kx', 'pct_diff_Kx',
+    fieldnames = ['name', 'sweep_param', 'sweep_value',
+                  'tool_Kx', 'fea_Kx', 'pct_diff_Kx',
                   'tool_Ky', 'fea_Ky', 'pct_diff_Ky',
                   'tool_Kxy', 'fea_Kxy', 'pct_diff_Kxy',
                   'tool_Kz', 'fea_Kz', 'pct_diff_Kz', 'error']
