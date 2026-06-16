@@ -197,7 +197,15 @@ def mesh_quality_ok(part):
 def mesh_with_quality_control(part, requested_seed, feature_size):
     """Seed + mesh, auto-refining (smaller seed) if the result fails the
     quality check or generateMesh()/setElementType() raises. Returns the
-    seed size that was ultimately used."""
+    seed size that was ultimately used.
+
+    Uses quadratic tetrahedra (C3D10MH) with free meshing rather than linear
+    hex (C3D8H): free-tet meshing handles arbitrary/complex polygon topology
+    (sipes, concave corners, islands) without needing a sweepable extrusion,
+    and quadratic tets don't suffer the shear locking that linear
+    full-integration hex elements show under bending of thin ribs -- which
+    is what was showing up as "mesh distortion" on real tread geometry even
+    after the applied displacement was scaled down."""
     seed = pick_seed_size(requested_seed, feature_size)
     last_err = None
     for attempt in range(MESH_MAX_ATTEMPTS):
@@ -205,10 +213,10 @@ def mesh_with_quality_control(part, requested_seed, feature_size):
             part.deleteMesh()
         except Exception:
             pass
+        part.setMeshControls(regions=part.cells, elemShape=TET, technique=FREE)
         part.seedPart(size=seed, deviationFactor=0.1, minSizeFactor=0.1)
         part.setElementType(regions=(part.cells,),
-            elemTypes=(mesh.ElemType(elemCode=C3D8H, elemLibrary=STANDARD,
-                                      distortionControl=DEFAULT),))
+            elemTypes=(mesh.ElemType(elemCode=C3D10MH, elemLibrary=STANDARD),))
         try:
             part.generateMesh()
             if mesh_quality_ok(part) or seed <= MESH_SEED_FLOOR:
