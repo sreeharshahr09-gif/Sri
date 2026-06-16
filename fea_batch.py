@@ -14,6 +14,7 @@ import sys, os, json, csv
 from abaqus import mdb, session
 from abaqusConstants import *
 import regionToolset
+import mesh
 
 DELTA = 1.0          # mm, applied displacement for shear/normal cases
 E_DEFAULT = 6.0       # MPa, used only if a design omits E
