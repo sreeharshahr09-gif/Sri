@@ -67,9 +67,9 @@ def read_args():
         if a == input_path:
             continue
         low = a.lower()
-        if low.endswith('.py') or low.startswith('nogui') or 'cae' in low \
-                or low.endswith('.txt') or low.endswith('.json'):
-            continue  # skip executable/script/flags/the input file itself
+        if a.startswith('-') or 'nogui' in low or 'cae' in low \
+                or low.endswith('.py') or low.endswith('.txt') or low.endswith('.json'):
+            continue  # skip flags/executable/script/the input file itself
         out_dir = a
         break
     if not out_dir:
@@ -232,8 +232,11 @@ def parse_fea_txt(path):
 def main():
     input_path, out_dir = read_args()
     print('Reading input file: %s' % input_path)
+    print('Output directory:   %s' % out_dir)
     if not os.path.isfile(input_path):
         raise RuntimeError('Input file not found: %s' % input_path)
+    if not os.path.isdir(out_dir):
+        os.makedirs(out_dir)
     if input_path.lower().endswith('.txt'):
         data = parse_fea_txt(input_path)
     else:
