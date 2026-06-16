@@ -8024,7 +8024,8 @@ function saveProject(){
     scModel:d.scModel||'fixed',SC_fixed:d.SC_fixed||0.90,SC_c:d.SC_c||8.0,SC_min:d.SC_min||0.80,
     useWinkler:d.useWinkler!==false,EI_carcass:d.EI_carcass||0,
     useShapeFactor:!!d.useShapeFactor,pitchGroup:d.pitchGroup||'',shapeAlpha:d.shapeAlpha||1.5,shapeAlphaCref:d.shapeCref||0.90,shapeAlphaQ:d.shapeAlphaQ||1.8,shapeAlphaE:d.shapeAlphaE||0.18,shapeAlphaD:d.shapeAlphaD||1.25,
-    perfTyreType:d.perfTyreType||'pcr',perfLc:d.perfLc||150,perfMu:d.perfMu||0.8,perfFx:d.perfFx||0,perfFy:d.perfFy||0,perfRho:d.perfRho||1150,perfPitchLen:d.perfPitchLen||30,perfShore:d.perfShore||'60',perfKCustom:d.perfKCustom||0.64,targetArea:d.targetArea||null
+    perfTyreType:d.perfTyreType||'pcr',perfLc:d.perfLc||150,perfMu:d.perfMu||0.8,perfFx:d.perfFx||0,perfFy:d.perfFy||0,perfRho:d.perfRho||1150,perfPitchLen:d.perfPitchLen||30,perfShore:d.perfShore||'60',perfKCustom:d.perfKCustom||0.64,targetArea:d.targetArea||null,
+    predicted:(()=>{try{const r=effectiveK_loaded(d);return{Kx:r.Kx,Ky:r.Ky,Kxy:r.Kxy,Kz:r.Kz,A:r.A};}catch(e){return null;}})()
   }))};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   _saveFileWithPicker(blob,'tread_stiffness_project.json',[{description:'JSON Project',accept:{'application/json':['.json']}}]);

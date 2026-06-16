@@ -1,0 +1,158 @@
+# Run with: abaqus cae noGUI=fea_batch.py -- project.json [output_dir]
+#
+# Reads a project JSON exported by the Tread Pattern Stiffness tool
+# (Save JSON button). For every design it builds a 3D solid block from
+# the polygon, applies the same 4-load-case test (Kx, Ky, Kxy via 45deg,
+# Kz) used in manual validation, solves, extracts reaction forces, and
+# writes a CSV comparing FEA stiffness against the tool's prediction.
+
+import sys, os, json, csv
+from abaqus import mdb, session
+from abaqusConstants import *
+import regionToolset
+
+DELTA = 1.0          # mm, applied displacement for shear/normal cases
+E_DEFAULT = 6.0       # MPa, used only if a design omits E
+NU_DEFAULT = 0.49
+
+
+def read_args():
+    argv = sys.argv
+    if '--' in argv:
+        argv = argv[argv.index('--') + 1:]
+    json_path = argv[0]
+    out_dir = argv[1] if len(argv) > 1 else os.path.dirname(json_path) or '.'
+    return json_path, out_dir
+
+
+def build_and_run(design, model_name, work_dir):
+    verts = design['vertices']           # [[x,y], ...] closed polygon
+    h = design.get('nsd') or 15.0
+    E = design.get('E') or E_DEFAULT
+    nu = design.get('nu') or NU_DEFAULT
+
+    mdb.Model(name=model_name)
+    m = mdb.models[model_name]
+
+    s = m.ConstrainedSketch(name='profile', sheetSize=200.0)
+    pts = [tuple(v) for v in verts]
+    for i in range(len(pts)):
+        s.Line(point1=pts[i], point2=pts[(i + 1) % len(pts)])
+
+    part = m.Part(name='Block', dimensionality=THREE_D, type=DEFORMABLE_BODY)
+    part.BaseSolidExtrude(sketch=s, depth=h)
+
+    m.Material(name='Rubber').Elastic(table=((E, nu),))
+    m.HomogeneousSolidSection(name='Sec', material='Rubber')
+    part.SectionAssignment(region=(part.cells,), sectionName='Sec')
+
+    a = m.rootAssembly
+    inst = a.Instance(name='Block-1', part=part, dependent=ON)
+
+    faces = inst.faces
+    top = faces.getByBoundingBox(zMin=h - 1e-3, zMax=h + 1e-3)
+    base = faces.getByBoundingBox(zMin=-1e-3, zMax=1e-3)
+    a.Set(faces=top, name='TOP')
+    a.Set(faces=base, name='BASE')
+
+    part.seedPart(size=1.0)
+    part.setElementType(regions=(part.cells,),
+        elemTypes=(mesh.ElemType(elemCode=C3D8H, elemLibrary=STANDARD),))
+    part.generateMesh()
+
+    a.regenerate()
+
+    cases = {
+        'Kx': (1, DELTA, 0, 0),
+        'Ky': (2, 0, DELTA, 0),
+        'Kxy': (3, DELTA * 0.7071, DELTA * 0.7071, 0),
+        'Kz': (4, 0, 0, DELTA),
+    }
+    results = {}
+
+    for label, (idx, ux, uy, uz) in cases.items():
+        step_name = 'Step1'
+        if step_name in m.steps:
+            del m.steps[step_name]
+        m.StaticStep(name=step_name, previous='Initial', nlgeom=OFF)
+
+        for bc in list(m.boundaryConditions.keys()):
+            del m.boundaryConditions[bc]
+
+        m.DisplacementBC(name='Fix', createStepName='Initial',
+            region=a.sets['BASE'], u1=0, u2=0, u3=0)
+        m.DisplacementBC(name='Load', createStepName=step_name,
+            region=a.sets['TOP'], u1=ux, u2=uy, u3=uz)
+
+        job_name = '%s_%s' % (model_name, label)
+        job = mdb.Job(name=job_name, model=model_name)
+        job.submit()
+        job.waitForCompletion()
+
+        odb_path = os.path.join(work_dir, job_name + '.odb')
+        from odbAccess import openOdb
+        odb = openOdb(odb_path)
+        base_set = odb.rootAssembly.instances['BLOCK-1'].nodeSets['BASE']
+        frame = odb.steps[step_name].frames[-1]
+        rf = frame.fieldOutputs['RF'].getSubset(region=base_set)
+        comps = [0.0, 0.0, 0.0]
+        for v in rf.values:
+            comps[0] += v.data[0]
+            comps[1] += v.data[1]
+            comps[2] += v.data[2]
+        odb.close()
+
+        if label == 'Kx':
+            results['Kx'] = abs(comps[0]) / DELTA
+        elif label == 'Ky':
+            results['Ky'] = abs(comps[1]) / DELTA
+        elif label == 'Kxy':
+            results['Kxy'] = (abs(comps[0]) + abs(comps[1])) / 2.0 / (DELTA * 0.7071)
+        elif label == 'Kz':
+            results['Kz'] = abs(comps[2]) / DELTA
+
+    return results
+
+
+def main():
+    json_path, out_dir = read_args()
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+
+    rows = []
+    for i, d in enumerate(data['designs']):
+        name = d.get('name', 'design_%d' % i)
+        model_name = 'M_%d' % i
+        try:
+            fea = build_and_run(d, model_name, out_dir)
+        except Exception as e:
+            rows.append({'name': name, 'error': str(e)})
+            continue
+
+        pred = d.get('predicted') or {}
+        row = {'name': name}
+        for k in ('Kx', 'Ky', 'Kxy', 'Kz'):
+            tool_v = pred.get(k)
+            fea_v = fea.get(k)
+            row['tool_' + k] = tool_v
+            row['fea_' + k] = fea_v
+            if tool_v is not None and fea_v not in (None, 0):
+                row['pct_diff_' + k] = round(100.0 * (tool_v - fea_v) / fea_v, 1)
+        rows.append(row)
+
+    out_csv = os.path.join(out_dir, 'fea_comparison.csv')
+    fieldnames = ['name', 'tool_Kx', 'fea_Kx', 'pct_diff_Kx',
+                  'tool_Ky', 'fea_Ky', 'pct_diff_Ky',
+                  'tool_Kxy', 'fea_Kxy', 'pct_diff_Kxy',
+                  'tool_Kz', 'fea_Kz', 'pct_diff_Kz', 'error']
+    with open(out_csv, 'w') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
+        writer.writeheader()
+        for r in rows:
+            writer.writerow(r)
+
+    print('Wrote %s' % out_csv)
+
+
+if __name__ == '__main__':
+    main()
