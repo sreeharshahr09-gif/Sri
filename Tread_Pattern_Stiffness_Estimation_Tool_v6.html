@@ -580,6 +580,9 @@ details.input-details .details-body{padding:12px}
             <input type="file" accept=".json" onchange="loadProject(event)">
           </label>
         </div>
+        <div class="input-actions" style="margin-top:6px">
+          <button class="btn btn-sm" onclick="exportFeaTxt()" title="Plain ASCII export for the Abaqus FEA batch script">📄 Export FEA TXT</button>
+        </div>
       </div>
 
       <div class="panel">
@@ -8029,6 +8032,36 @@ function saveProject(){
   }))};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   _saveFileWithPicker(blob,'tread_stiffness_project.json',[{description:'JSON Project',accept:{'application/json':['.json']}}]);
+}
+
+// Plain-ASCII export for the Abaqus FEA batch script (fea_batch.py).
+// Avoids every JSON/encoding pitfall: pure 7-bit ASCII, one block per
+// section, vertices as plain "x y" lines. Parser lives in fea_batch.py.
+function exportFeaTxt(){
+  if(!designs.length){alert('No designs to export');return}
+  const ascii=s=>String(s==null?'':s).replace(/[^\x00-\x7F]/g,'-'); // strip non-ASCII (em-dash etc.)
+  const num=v=>(typeof v==='number'&&isFinite(v))?v:'';
+  let lines=['# Tread Stiffness FEA Export','# format=1','count='+designs.length,''];
+  designs.forEach((d,i)=>{
+    let pred={}; try{const r=effectiveK_loaded(d); pred={Kx:r.Kx,Ky:r.Ky,Kxy:r.Kxy,Kz:r.Kz,A:r.A};}catch(e){}
+    lines.push('BLOCK');
+    lines.push('name='+ascii(d.name||('design_'+i)));
+    lines.push('nsd='+num(d.nsd));
+    lines.push('E='+num(d.E));
+    lines.push('nu='+num(d.nu));
+    lines.push('draft='+num(d.draft||0));
+    lines.push('pred_Kx='+num(pred.Kx));
+    lines.push('pred_Ky='+num(pred.Ky));
+    lines.push('pred_Kxy='+num(pred.Kxy));
+    lines.push('pred_Kz='+num(pred.Kz));
+    lines.push('VERTICES');
+    (d.vertices||[]).forEach(v=>{ lines.push(v[0].toFixed(6)+' '+v[1].toFixed(6)); });
+    lines.push('END');
+    lines.push('');
+  });
+  // join with \n, pure ASCII; no BOM
+  const blob=new Blob([lines.join('\n')],{type:'text/plain'});
+  _saveFileWithPicker(blob,'tread_stiffness_fea.txt',[{description:'FEA Text',accept:{'text/plain':['.txt']}}]);
 }
 
 // ── Shared "save with folder picker" helper ──────────────────────────────

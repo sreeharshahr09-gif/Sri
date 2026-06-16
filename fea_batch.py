@@ -152,10 +152,58 @@ def expand_designs(designs):
                 yield (label, p, val, variant)
 
 
+def parse_fea_txt(path):
+    """Parse the plain-ASCII FEA export (Export FEA TXT button).
+    Returns {'designs': [ {name, vertices, nsd, E, nu, draft, predicted}, ... ]}."""
+    designs = []
+    cur = None
+    reading_verts = False
+    with open(path, 'r') as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith('#'):
+                continue
+            if line == 'BLOCK':
+                cur = {'vertices': [], 'predicted': {}}
+                reading_verts = False
+                continue
+            if line == 'VERTICES':
+                reading_verts = True
+                continue
+            if line == 'END':
+                if cur is not None:
+                    designs.append(cur)
+                cur = None
+                reading_verts = False
+                continue
+            if cur is None:
+                continue  # e.g. the leading "count=" line
+            if reading_verts:
+                parts = line.split()
+                if len(parts) >= 2:
+                    cur['vertices'].append([float(parts[0]), float(parts[1])])
+                continue
+            # key=value metadata
+            if '=' in line:
+                k, v = line.split('=', 1)
+                k = k.strip(); v = v.strip()
+                if k == 'name':
+                    cur['name'] = v
+                elif k in ('nsd', 'E', 'nu', 'draft'):
+                    cur[k] = float(v) if v != '' else None
+                elif k.startswith('pred_'):
+                    if v != '':
+                        cur['predicted'][k[5:]] = float(v)
+    return {'designs': designs}
+
+
 def main():
     json_path, out_dir = read_args()
-    with open(json_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+    if json_path.lower().endswith('.txt'):
+        data = parse_fea_txt(json_path)
+    else:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
 
     rows = []
     swept = bool(SWEEPS)
