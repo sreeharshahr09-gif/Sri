@@ -240,11 +240,23 @@ def build_and_run(design, model_name, work_dir):
                       table=((c10, d1),))
 
     # Distortion control on the solid section directly targets the mesh-
-    # distortion failures seen under large shear deformation.
-    if 'EC-1' not in m.sectionControls:
-        m.SectionControls(name='EC-1', distortionControl=ON, lengthRatio=0.1,
-                           elemDeletion=OFF)
-    m.HomogeneousSolidSection(name='Sec', material='Rubber', controls='EC-1')
+    # distortion failures seen under large shear deformation. The
+    # sectionControls repository / SectionControls method aren't exposed in
+    # every Abaqus build, so fall back to a plain section if unavailable.
+    use_controls = False
+    try:
+        existing = getattr(m, 'sectionControls', None)
+        if existing is None or 'EC-1' not in existing.keys():
+            m.SectionControls(name='EC-1', distortionControl=ON,
+                              lengthRatio=0.1, elemDeletion=OFF)
+        use_controls = True
+    except Exception:
+        use_controls = False
+
+    if use_controls:
+        m.HomogeneousSolidSection(name='Sec', material='Rubber', controls='EC-1')
+    else:
+        m.HomogeneousSolidSection(name='Sec', material='Rubber')
     part.SectionAssignment(region=(part.cells,), sectionName='Sec')
 
     a = m.rootAssembly
