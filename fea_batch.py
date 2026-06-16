@@ -231,22 +231,32 @@ def parse_fea_txt(path):
 
 def main():
     input_path, out_dir = read_args()
+    # Resolve to absolute paths NOW, before any chdir, so they stay valid.
+    input_path = os.path.abspath(input_path)
+    out_dir = os.path.abspath(out_dir)
+    print('=== fea_batch starting ===')
     print('Reading input file: %s' % input_path)
     print('Output directory:   %s' % out_dir)
     if not os.path.isfile(input_path):
         raise RuntimeError('Input file not found: %s' % input_path)
     if not os.path.isdir(out_dir):
         os.makedirs(out_dir)
+    # Abaqus writes job files (.odb etc.) to the current working directory,
+    # so run everything from inside out_dir to keep outputs together.
+    os.chdir(out_dir)
     if input_path.lower().endswith('.txt'):
         data = parse_fea_txt(input_path)
     else:
         with open(input_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
+    print('Parsed %d design(s)' % len(data['designs']))
+
     rows = []
     swept = bool(SWEEPS)
     for i, (name, sparam, sval, d) in enumerate(expand_designs(data['designs'])):
         model_name = 'M_%d' % i
+        print('--- [%d] %s : %d vertices ---' % (i, name, len(d.get('vertices', []))))
         try:
             fea = build_and_run(d, model_name, out_dir)
         except Exception as e:
@@ -281,7 +291,22 @@ def main():
             writer.writerow(r)
 
     print('Wrote %s' % out_csv)
+    print('=== fea_batch done ===')
 
 
-if __name__ == '__main__':
+# Abaqus 'noGUI' may execute this script under a module name other than
+# '__main__', so call main() unconditionally. Any crash is also written to
+# fea_batch_error.log next to the script so it can't vanish from the console.
+try:
     main()
+except Exception:
+    import traceback
+    tb = traceback.format_exc()
+    sys.stderr.write(tb)
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               'fea_batch_error.log'), 'w') as _f:
+            _f.write(tb)
+    except Exception:
+        pass
+    raise
