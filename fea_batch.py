@@ -459,6 +459,28 @@ def parse_fea_txt(path):
     return {'designs': designs}
 
 
+def archive_previous_run(out_dir):
+    """Move any files left over from a previous run (job files, lock files,
+    the old comparison CSV) into a timestamped archive subfolder, so every
+    run starts from a clean out_dir. This matters because job names are
+    index-based (M_0_Kx, M_1_Ky, ...) and get reused run to run -- a leftover
+    .lck file from a run that was Ctrl+C'd can block re-submission, and a
+    stale .odb can otherwise linger alongside the new results. Nothing is
+    deleted; old files are preserved under fea_runs/archive_<timestamp>/."""
+    import glob, shutil, time
+    leftovers = []
+    for pattern in ('M_*.*', 'fea_comparison.csv', 'fea_batch_error.log'):
+        leftovers.extend(glob.glob(os.path.join(out_dir, pattern)))
+    if not leftovers:
+        return
+    archive_dir = os.path.join(out_dir, 'archive_%s' % time.strftime('%Y%m%d_%H%M%S'))
+    os.makedirs(archive_dir)
+    for f in leftovers:
+        shutil.move(f, os.path.join(archive_dir, os.path.basename(f)))
+    print('Archived %d leftover file(s) from a previous run into %s'
+          % (len(leftovers), archive_dir))
+
+
 def main():
     input_path, out_dir = read_args()
     # Resolve to absolute paths NOW, before any chdir, so they stay valid.
@@ -471,6 +493,7 @@ def main():
         raise RuntimeError('Input file not found: %s' % input_path)
     if not os.path.isdir(out_dir):
         os.makedirs(out_dir)
+    archive_previous_run(out_dir)
     # Abaqus writes job files (.odb etc.) to the current working directory,
     # so run everything from inside out_dir to keep outputs together.
     os.chdir(out_dir)
