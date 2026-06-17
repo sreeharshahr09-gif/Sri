@@ -129,10 +129,20 @@ def read_args():
         if low.endswith('.txt') or low.endswith('.json'):
             input_path = a
             break
+        # Optional 'cpus=N' override: lets you change the solver core count
+        # per run from the command line without editing the file, e.g.
+        #   abaqus cae noGUI=fea_batch.py -- file.txt cpus=8
+        if low.startswith('cpus='):
+            try:
+                global JOB_NUM_CPUS
+                JOB_NUM_CPUS = max(1, int(a.split('=', 1)[1]))
+                print('JOB_NUM_CPUS overridden from command line: %d' % JOB_NUM_CPUS)
+            except Exception:
+                pass
     if input_path is None:
         raise RuntimeError(
             'No .txt or .json input file found in arguments (sys.argv=%r). '
-            'Run as: abaqus cae noGUI=fea_batch.py -- <file.txt> [out_dir]'
+            'Run as: abaqus cae noGUI=fea_batch.py -- <file.txt> [cpus=N]'
             % (sys.argv,))
 
     # Output goes in a 'fea_runs' folder NEXT TO the input file. We do NOT
