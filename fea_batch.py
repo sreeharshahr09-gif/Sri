@@ -381,54 +381,59 @@ def build_and_run(design, model_name, work_dir):
             cp.NormalBehavior(pressureOverclosure=HARD, allowSeparation=ON)
 
     delta = max(h * DELTA_STRAIN_FRAC, DELTA_FLOOR)
-    cases = {
-        'Kx': (1, delta, 0, 0),
-        'Ky': (2, 0, delta, 0),
-        'Kxy': (3, delta * 0.7071, delta * 0.7071, 0),
-        'Kz': (4, 0, 0, delta),
-    }
+    cases = [
+        ('Kx',  (delta, 0, 0)),
+        ('Ky',  (0, delta, 0)),
+        ('Kxy', (delta * 0.7071, delta * 0.7071, 0)),
+        ('Kz',  (0, 0, delta)),
+    ]
     results = {}
 
-    for label, (idx, ux, uy, uz) in cases.items():
-        step_name = 'Step1'
-        if step_name in m.steps:
-            del m.steps[step_name]
-        m.StaticStep(name=step_name, previous='Initial', nlgeom=ON,
-                     initialInc=STEP_INITIAL_INC, minInc=STEP_MIN_INC,
-                     maxInc=STEP_MAX_INC, maxNumInc=STEP_MAX_NUM_INC,
-                     timePeriod=STEP_TIME_PERIOD)
+    # The step, field output, contact and boundary conditions are built ONCE,
+    # OUTSIDE the per-case loop. Each case is then just a re-aiming of the
+    # single 'Load' displacement BC followed by a fresh job submission (each
+    # Abaqus job solves independently from the undeformed reference state).
+    # The previous design tore the step down and rebuilt everything every
+    # case; on some Abaqus builds deleting/recreating the step orphaned the
+    # field-output/contact definitions and crashed on the 2nd case -- which is
+    # why only Kx ever ran. Building once removes that whole failure mode.
+    step_name = 'Step1'
+    m.StaticStep(name=step_name, previous='Initial', nlgeom=ON,
+                 initialInc=STEP_INITIAL_INC, minInc=STEP_MIN_INC,
+                 maxInc=STEP_MAX_INC, maxNumInc=STEP_MAX_NUM_INC,
+                 timePeriod=STEP_TIME_PERIOD)
 
-        # By default we only need the LAST frame's U/RF, so we restrict field
-        # output to U/RF at the last increment -- the full variable set every
-        # increment is the biggest time cost on a many-increment run. When
-        # WRITE_LOAD_HISTORY is on we instead request U/RF at EVERY increment
-        # so the per-step load-displacement history can be extracted below.
-        # Some Abaqus builds don't expose fieldOutputRequests as a model
-        # attribute; if so, just leave Abaqus's own default 'F-Output-1'
-        # request in place -- it uses PRESELECT, which already includes U
-        # and RF every increment, so history extraction still works.
-        try:
-            for fo in list(m.fieldOutputRequests.keys()):
-                del m.fieldOutputRequests[fo]
-            out_freq = 1 if WRITE_LOAD_HISTORY else LAST_INCREMENT
-            m.FieldOutputRequest(name='F-Min', createStepName=step_name,
-                                  variables=('U', 'RF'), frequency=out_freq)
-        except AttributeError:
-            pass
+    # When WRITE_LOAD_HISTORY is on, request U/RF at EVERY increment so the
+    # per-step load-displacement history can be extracted; otherwise restrict
+    # to the last increment for speed. Some Abaqus builds don't expose
+    # fieldOutputRequests as a model attribute; if so, leave Abaqus's own
+    # default request in place -- it uses PRESELECT (includes U and RF every
+    # increment), so history extraction still works.
+    try:
+        for fo in list(m.fieldOutputRequests.keys()):
+            del m.fieldOutputRequests[fo]
+        out_freq = 1 if WRITE_LOAD_HISTORY else LAST_INCREMENT
+        m.FieldOutputRequest(name='F-Min', createStepName=step_name,
+                              variables=('U', 'RF'), frequency=out_freq)
+    except AttributeError:
+        pass
 
-        if geo['needs_contact'] and 'Int-Contact' not in m.interactions:
-            gc = m.ContactStd(name='Int-Contact', createStepName=step_name)
-            gc.includedPairs.setValuesInStep(stepName=step_name, useAllstar=ON)
-            gc.contactPropertyAssignments.appendInStep(
-                stepName=step_name, assignments=((GLOBAL, SELF, cp_name),))
+    if geo['needs_contact'] and 'Int-Contact' not in m.interactions:
+        gc = m.ContactStd(name='Int-Contact', createStepName=step_name)
+        gc.includedPairs.setValuesInStep(stepName=step_name, useAllstar=ON)
+        gc.contactPropertyAssignments.appendInStep(
+            stepName=step_name, assignments=((GLOBAL, SELF, cp_name),))
 
-        for bc in list(m.boundaryConditions.keys()):
-            del m.boundaryConditions[bc]
+    m.DisplacementBC(name='Fix', createStepName='Initial',
+        region=a.sets['BASE'], u1=0, u2=0, u3=0)
+    # 'Load' is created once with the Kx direction; re-aimed per case below.
+    m.DisplacementBC(name='Load', createStepName=step_name,
+        region=a.sets['TOP'], u1=delta, u2=0, u3=0)
 
-        m.DisplacementBC(name='Fix', createStepName='Initial',
-            region=a.sets['BASE'], u1=0, u2=0, u3=0)
-        m.DisplacementBC(name='Load', createStepName=step_name,
-            region=a.sets['TOP'], u1=ux, u2=uy, u3=uz)
+    for label, (ux, uy, uz) in cases:
+        # Re-aim the single Load BC for this case (no step/BC teardown).
+        m.boundaryConditions['Load'].setValuesInStep(
+            stepName=step_name, u1=ux, u2=uy, u3=uz)
 
         job_name = '%s_%s' % (model_name, label)
         if JOB_NUM_CPUS > 1:
