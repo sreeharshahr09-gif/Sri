@@ -403,11 +403,18 @@ def build_and_run(design, model_name, work_dir):
         # increment is the biggest time cost on a many-increment run. When
         # WRITE_LOAD_HISTORY is on we instead request U/RF at EVERY increment
         # so the per-step load-displacement history can be extracted below.
-        for fo in list(m.fieldOutputRequests.keys()):
-            del m.fieldOutputRequests[fo]
-        out_freq = 1 if WRITE_LOAD_HISTORY else LAST_INCREMENT
-        m.FieldOutputRequest(name='F-Min', createStepName=step_name,
-                              variables=('U', 'RF'), frequency=out_freq)
+        # Some Abaqus builds don't expose fieldOutputRequests as a model
+        # attribute; if so, just leave Abaqus's own default 'F-Output-1'
+        # request in place -- it uses PRESELECT, which already includes U
+        # and RF every increment, so history extraction still works.
+        try:
+            for fo in list(m.fieldOutputRequests.keys()):
+                del m.fieldOutputRequests[fo]
+            out_freq = 1 if WRITE_LOAD_HISTORY else LAST_INCREMENT
+            m.FieldOutputRequest(name='F-Min', createStepName=step_name,
+                                  variables=('U', 'RF'), frequency=out_freq)
+        except AttributeError:
+            pass
 
         if geo['needs_contact'] and 'Int-Contact' not in m.interactions:
             gc = m.ContactStd(name='Int-Contact', createStepName=step_name)
