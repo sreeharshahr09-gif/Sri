@@ -377,7 +377,8 @@ def build_and_run(design, model_name, work_dir):
         cp_name = 'IntProp-Contact'
         if cp_name not in m.interactionProperties:
             cp = m.ContactProperty(cp_name)
-            cp.TangentialBehavior(formulation=PENALTY, table=((0.6,),))
+            cp.TangentialBehavior(formulation=PENALTY, table=((0.6,),),
+                                  maximumElasticSlip=FRACTION, fraction=0.005)
             cp.NormalBehavior(pressureOverclosure=HARD, allowSeparation=ON)
 
     delta = max(h * DELTA_STRAIN_FRAC, DELTA_FLOOR)
