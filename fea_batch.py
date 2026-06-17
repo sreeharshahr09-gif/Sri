@@ -90,7 +90,16 @@ STEP_TIME_PERIOD = 1.0
 #   SWEEPS = [{'param':'nsd', 'values':[15, 12, 9, 6]}]
 #   SWEEPS = [{'param':'E',   'values':[4, 6, 8, 10]},
 #             {'param':'mesh','values':[1.0, 0.5, 0.25]}]
-SWEEPS = []
+#
+# MESH CONVERGENCE STUDY (active below): seed = block_thickness / N_elements.
+# For an ~8mm-NSD block, these seeds give roughly 4 / 6 / 8 / 10 elements
+# across the thickness. Run this on ONE block (a single-block .txt/.json) and
+# watch fea_Kx/fea_Ky in the CSV: pick the coarsest seed where K has stopped
+# changing (typ. <1-2% between successive rows). Then set that as the routine
+# density (via MESH_TARGET_ELEMS_ACROSS) and clear SWEEPS back to [] for
+# production runs. Explicit sweep seeds bypass the element-count budget, so
+# the fine meshes won't be auto-coarsened.
+SWEEPS = [{'param': 'mesh', 'values': [2.0, 1.33, 1.0, 0.8]}]
 
 
 def read_args():
@@ -224,6 +233,11 @@ def mesh_with_quality_control(part, requested_seed, geo, height):
     full-integration hex elements show under bending of thin ribs -- which
     is what was showing up as "mesh distortion" on real tread geometry even
     after the applied displacement was scaled down."""
+    # An explicitly-requested seed (per-design 'mesh' value, or a mesh sweep
+    # for a convergence study) is honored EXACTLY: the element-count budget
+    # and quality auto-refine are skipped, otherwise the auto-coarsen would
+    # silently undo the fine meshes a convergence study depends on.
+    honor_seed = requested_seed is not None
     seed = pick_seed_size(requested_seed, geo, height)
     last_err = None
     for attempt in range(MESH_MAX_ATTEMPTS):
@@ -240,6 +254,8 @@ def mesh_with_quality_control(part, requested_seed, geo, height):
             n_el = len(part.elements)
             print('      mesh attempt %d: seed=%.3f -> %d elements'
                   % (attempt + 1, seed, n_el))
+            if honor_seed:
+                return seed
             if n_el > MESH_MAX_ELEMS:
                 # Too many elements: coarsen by the cube-root of the overage
                 # so we land near the budget in one step instead of many.
