@@ -242,13 +242,9 @@ def build_model(design, model_name):
 
     a.regenerate()
 
-    if geo['needs_contact']:
-        cp_name = 'IntProp-Contact'
-        if cp_name not in m.interactionProperties:
-            cp = m.ContactProperty(cp_name)
-            cp.TangentialBehavior(formulation=PENALTY, table=((0.6,),),
-                                  maximumElasticSlip=FRACTION, fraction=0.005)
-            cp.NormalBehavior(pressureOverclosure=HARD, allowSeparation=ON)
+    # Self-contact removed: 'needs_contact'/'min_gap' are still computed for
+    # the manifest/CSV as diagnostic-only fields, but no ContactProperty/
+    # ContactStd is created in the model.
 
     delta = max(h * DELTA_STRAIN_FRAC, DELTA_FLOOR)
     return m, a, delta, geo, used_seed
@@ -273,12 +269,6 @@ def write_case_inp(m, a, geo, delta, model_name, label, ux, uy, uz, out_dir):
                               variables=('U', 'RF'), frequency=out_freq)
     except AttributeError:
         pass
-
-    if geo['needs_contact'] and 'Int-Contact' not in m.interactions:
-        gc = m.ContactStd(name='Int-Contact', createStepName=step_name)
-        gc.includedPairs.setValuesInStep(stepName=step_name, useAllstar=ON)
-        gc.contactPropertyAssignments.appendInStep(
-            stepName=step_name, assignments=((GLOBAL, SELF, 'IntProp-Contact'),))
 
     for bc in list(m.boundaryConditions.keys()):
         del m.boundaryConditions[bc]

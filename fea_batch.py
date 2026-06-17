@@ -373,13 +373,9 @@ def build_and_run(design, model_name, work_dir):
     # surfaces can fold into one another under load if left unconnected.
     # General contact with self-contact (ALLSTAR) catches any such pair
     # automatically without having to identify specific faces.
-    if geo['needs_contact']:
-        cp_name = 'IntProp-Contact'
-        if cp_name not in m.interactionProperties:
-            cp = m.ContactProperty(cp_name)
-            cp.TangentialBehavior(formulation=PENALTY, table=((0.6,),),
-                                  maximumElasticSlip=FRACTION, fraction=0.005)
-            cp.NormalBehavior(pressureOverclosure=HARD, allowSeparation=ON)
+    # Self-contact removed: 'needs_contact'/'min_gap' are still computed for
+    # the CSV as diagnostic-only fields, but no ContactProperty/ContactStd
+    # is created in the model.
 
     delta = max(h * DELTA_STRAIN_FRAC, DELTA_FLOOR)
     cases = [
@@ -440,12 +436,6 @@ def build_and_run(design, model_name, work_dir):
                               variables=('U', 'RF'), frequency=out_freq)
     except AttributeError:
         pass
-
-    if geo['needs_contact'] and 'Int-Contact' not in m.interactions:
-        gc = m.ContactStd(name='Int-Contact', createStepName=first_step)
-        gc.includedPairs.setValuesInStep(stepName=first_step, useAllstar=ON)
-        gc.contactPropertyAssignments.appendInStep(
-            stepName=first_step, assignments=((GLOBAL, SELF, cp_name),))
 
     # Fixed base for the whole analysis; one Load BC re-aimed per step.
     m.DisplacementBC(name='Fix', createStepName='Initial',
