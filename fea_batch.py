@@ -123,7 +123,7 @@ WRITE_LOAD_HISTORY = True
 # density (via MESH_TARGET_ELEMS_ACROSS) and clear SWEEPS back to [] for
 # production runs. Explicit sweep seeds bypass the element-count budget, so
 # the fine meshes won't be auto-coarsened.
-SWEEPS = [{'param': 'mesh', 'values': [2.0, 1.33, 1.0, 0.8]}]
+SWEEPS = []
 
 
 def read_args():
