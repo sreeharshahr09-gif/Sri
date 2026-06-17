@@ -470,9 +470,18 @@ def build_and_run(design, model_name, work_dir):
     odb_path = os.path.join(work_dir, job_name + '.odb')
     from odbAccess import openOdb
     odb = openOdb(odb_path)
-    inst_sets = odb.rootAssembly.instances['BLOCK-1'].nodeSets
-    base_set = inst_sets['BASE']
-    top_set = inst_sets['TOP']
+    # Sets are defined at the ASSEMBLY level (a.Set(...)), so in the ODB they
+    # live under rootAssembly.nodeSets, NOT instance.nodeSets. Look there
+    # first, fall back to the instance for builds that promote them there.
+    ra = odb.rootAssembly
+
+    def _nset(name):
+        if name in ra.nodeSets.keys():
+            return ra.nodeSets[name]
+        return ra.instances['BLOCK-1'].nodeSets[name]
+
+    base_set = _nset('BASE')
+    top_set = _nset('TOP')
 
     def _sum_rf(frame):
         rf = frame.fieldOutputs['RF'].getSubset(region=base_set)
