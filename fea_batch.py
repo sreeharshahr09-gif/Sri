@@ -389,94 +389,114 @@ def build_and_run(design, model_name, work_dir):
     ]
     results = {}
 
-    # The step, field output, contact and boundary conditions are built ONCE,
-    # OUTSIDE the per-case loop. Each case is then just a re-aiming of the
-    # single 'Load' displacement BC followed by a fresh job submission (each
-    # Abaqus job solves independently from the undeformed reference state).
-    # The previous design tore the step down and rebuilt everything every
-    # case; on some Abaqus builds deleting/recreating the step orphaned the
-    # field-output/contact definitions and crashed on the 2nd case -- which is
-    # why only Kx ever ran. Building once removes that whole failure mode.
-    step_name = 'Step1'
-    m.StaticStep(name=step_name, previous='Initial', nlgeom=ON,
-                 initialInc=STEP_INITIAL_INC, minInc=STEP_MIN_INC,
-                 maxInc=STEP_MAX_INC, maxNumInc=STEP_MAX_NUM_INC,
-                 timePeriod=STEP_TIME_PERIOD)
+    # ----------------------------------------------------------------------
+    # SINGLE JOB, MULTIPLE STEPS (one .inp / one .odb for all four cases).
+    # ----------------------------------------------------------------------
+    # The previous design submitted four separate jobs and mutated the CAE
+    # model between each. On Abaqus 2024 that repeatedly died after the first
+    # case ("only Kx ran"). Here every load case is a step in ONE job, so
+    # there is no per-case model mutation to break.
+    #
+    # Because the material is hyperelastic (fully elastic -- no plasticity,
+    # no rate dependence), the equilibrium state at a given prescribed
+    # displacement is PATH-INDEPENDENT: the end of each load step depends only
+    # on that step's BC. We still insert an unload-to-zero step between load
+    # cases so each case starts from the undeformed state -- this keeps the
+    # per-step RF-vs-U history clean (not contaminated by the previous case's
+    # displacement), while the final frame of each load step gives the correct
+    # independent stiffness.
+    #
+    # Step order: Kx, relax, Ky, relax, Kxy, relax, Kz   (single job).
+    def _mk_step(name, previous):
+        m.StaticStep(name=name, previous=previous, nlgeom=ON,
+                     initialInc=STEP_INITIAL_INC, minInc=STEP_MIN_INC,
+                     maxInc=STEP_MAX_INC, maxNumInc=STEP_MAX_NUM_INC,
+                     timePeriod=STEP_TIME_PERIOD)
 
-    # When WRITE_LOAD_HISTORY is on, request U/RF at EVERY increment so the
-    # per-step load-displacement history can be extracted; otherwise restrict
-    # to the last increment for speed. Some Abaqus builds don't expose
-    # fieldOutputRequests as a model attribute; if so, leave Abaqus's own
-    # default request in place -- it uses PRESELECT (includes U and RF every
-    # increment), so history extraction still works.
+    # bc_schedule: ordered list of (step_name, displacement_vector) telling the
+    # single 'Load' BC what the TOP face displacement is in each step.
+    bc_schedule = []
+    prev = 'Initial'
+    first_step = cases[0][0]
+    for ci, (label, vec) in enumerate(cases):
+        _mk_step(label, prev)
+        bc_schedule.append((label, vec))
+        prev = label
+        if ci != len(cases) - 1:
+            relax_name = 'relax_%s' % label
+            _mk_step(relax_name, prev)
+            bc_schedule.append((relax_name, (0, 0, 0)))
+            prev = relax_name
+
+    # Field output (U/RF). Created on the first step -> propagates to all
+    # subsequent steps. Some Abaqus builds don't expose fieldOutputRequests;
+    # if so, leave Abaqus's default (PRESELECT) request in place.
     try:
         for fo in list(m.fieldOutputRequests.keys()):
             del m.fieldOutputRequests[fo]
         out_freq = 1 if WRITE_LOAD_HISTORY else LAST_INCREMENT
-        m.FieldOutputRequest(name='F-Min', createStepName=step_name,
+        m.FieldOutputRequest(name='F-Min', createStepName=first_step,
                               variables=('U', 'RF'), frequency=out_freq)
     except AttributeError:
         pass
 
     if geo['needs_contact'] and 'Int-Contact' not in m.interactions:
-        gc = m.ContactStd(name='Int-Contact', createStepName=step_name)
-        gc.includedPairs.setValuesInStep(stepName=step_name, useAllstar=ON)
+        gc = m.ContactStd(name='Int-Contact', createStepName=first_step)
+        gc.includedPairs.setValuesInStep(stepName=first_step, useAllstar=ON)
         gc.contactPropertyAssignments.appendInStep(
-            stepName=step_name, assignments=((GLOBAL, SELF, cp_name),))
+            stepName=first_step, assignments=((GLOBAL, SELF, cp_name),))
 
+    # Fixed base for the whole analysis; one Load BC re-aimed per step.
     m.DisplacementBC(name='Fix', createStepName='Initial',
         region=a.sets['BASE'], u1=0, u2=0, u3=0)
-    # 'Load' is created once with the Kx direction; re-aimed per case below.
-    m.DisplacementBC(name='Load', createStepName=step_name,
-        region=a.sets['TOP'], u1=delta, u2=0, u3=0)
-
-    for label, (ux, uy, uz) in cases:
-        # Re-aim the single Load BC for this case (no step/BC teardown).
+    fx, fy, fz = bc_schedule[0][1]
+    m.DisplacementBC(name='Load', createStepName=first_step,
+        region=a.sets['TOP'], u1=fx, u2=fy, u3=fz)
+    for sname, (ux, uy, uz) in bc_schedule[1:]:
         m.boundaryConditions['Load'].setValuesInStep(
-            stepName=step_name, u1=ux, u2=uy, u3=uz)
+            stepName=sname, u1=ux, u2=uy, u3=uz)
 
-        job_name = '%s_%s' % (model_name, label)
-        if JOB_NUM_CPUS > 1:
-            job = mdb.Job(name=job_name, model=model_name,
-                          numCpus=JOB_NUM_CPUS, numDomains=JOB_NUM_CPUS,
-                          multiprocessingMode=DEFAULT)
-        else:
-            job = mdb.Job(name=job_name, model=model_name)
-        job.submit()
-        job.waitForCompletion()
+    # One job for all cases.
+    job_name = model_name
+    if JOB_NUM_CPUS > 1:
+        job = mdb.Job(name=job_name, model=model_name,
+                      numCpus=JOB_NUM_CPUS, numDomains=JOB_NUM_CPUS,
+                      multiprocessingMode=DEFAULT)
+    else:
+        job = mdb.Job(name=job_name, model=model_name)
+    job.submit()
+    job.waitForCompletion()
 
-        odb_path = os.path.join(work_dir, job_name + '.odb')
-        from odbAccess import openOdb
-        odb = openOdb(odb_path)
-        inst_sets = odb.rootAssembly.instances['BLOCK-1'].nodeSets
-        base_set = inst_sets['BASE']
-        top_set = inst_sets['TOP']
-        odb_frames = odb.steps[step_name].frames
+    odb_path = os.path.join(work_dir, job_name + '.odb')
+    from odbAccess import openOdb
+    odb = openOdb(odb_path)
+    inst_sets = odb.rootAssembly.instances['BLOCK-1'].nodeSets
+    base_set = inst_sets['BASE']
+    top_set = inst_sets['TOP']
 
-        # Which reaction/displacement component drives this load case
-        # (0=x, 1=y, 2=z). Kxy is the in-plane 45deg resultant, flagged None.
+    def _sum_rf(frame):
+        rf = frame.fieldOutputs['RF'].getSubset(region=base_set)
+        s = [0.0, 0.0, 0.0]
+        for v in rf.values:
+            s[0] += v.data[0]; s[1] += v.data[1]; s[2] += v.data[2]
+        return s
+
+    def _avg_u(frame):
+        u = frame.fieldOutputs['U'].getSubset(region=top_set)
+        s = [0.0, 0.0, 0.0]; n = 0
+        for v in u.values:
+            s[0] += v.data[0]; s[1] += v.data[1]; s[2] += v.data[2]; n += 1
+        return [c / n for c in s] if n else s
+
+    # Each load case is its own step in the single ODB. Read the step's frames
+    # for the (clean) history and its final frame for the reported stiffness.
+    for label, vec in cases:
+        odb_frames = odb.steps[label].frames
+        # 0=x, 1=y, 2=z; Kxy is the 45deg in-plane resultant (None).
         comp_idx = {'Kx': 0, 'Ky': 1, 'Kz': 2, 'Kxy': None}[label]
 
-        def _sum_rf(frame):
-            rf = frame.fieldOutputs['RF'].getSubset(region=base_set)
-            s = [0.0, 0.0, 0.0]
-            for v in rf.values:
-                s[0] += v.data[0]; s[1] += v.data[1]; s[2] += v.data[2]
-            return s
-
-        def _avg_u(frame):
-            u = frame.fieldOutputs['U'].getSubset(region=top_set)
-            s = [0.0, 0.0, 0.0]; n = 0
-            for v in u.values:
-                s[0] += v.data[0]; s[1] += v.data[1]; s[2] += v.data[2]; n += 1
-            return [c / n for c in s] if n else s
-
-        # Per-increment load-displacement history. The TOP face is driven
-        # uniformly so its averaged U is the prescribed displacement; the
-        # reaction is summed over the fixed BASE. U_driven/RF_reaction are
-        # the components along the load direction (in-plane resultant for Kxy).
         if WRITE_LOAD_HISTORY:
-            hist_path = os.path.join(work_dir, '%s_history.csv' % job_name)
+            hist_path = os.path.join(work_dir, '%s_%s_history.csv' % (job_name, label))
             hf = open(hist_path, 'w')
             hf.write('frame_time,U_driven_mm,RF_reaction_N,'
                      'U1,U2,U3,RF1,RF2,RF3\n')
@@ -494,10 +514,7 @@ def build_and_run(design, model_name, work_dir):
             print('      wrote load history: %s (%d frames)'
                   % (os.path.basename(hist_path), len(odb_frames)))
 
-        # Final-frame reaction drives the reported (secant) stiffness.
         comps = _sum_rf(odb_frames[-1])
-        odb.close()
-
         if label == 'Kx':
             results['Kx'] = abs(comps[0]) / delta
         elif label == 'Ky':
@@ -506,6 +523,8 @@ def build_and_run(design, model_name, work_dir):
             results['Kxy'] = (abs(comps[0]) + abs(comps[1])) / 2.0 / (delta * 0.7071)
         elif label == 'Kz':
             results['Kz'] = abs(comps[2]) / delta
+
+    odb.close()
 
     results['mesh_seed_used'] = used_seed
     results['contact_added'] = geo['needs_contact']
