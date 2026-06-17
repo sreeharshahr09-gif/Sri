@@ -25,6 +25,12 @@ from abaqusConstants import *
 import regionToolset
 import mesh
 
+# Number of CPU cores each individual solve uses (Abaqus/Standard domain
+# decomposition). Set to 1 to disable parallelism (e.g. on a machine with a
+# single-CPU-token license). Safe to raise once you know how many cores
+# your server/license allows per job.
+JOB_NUM_CPUS = 4
+
 # A fixed 1mm displacement is fine for a 10-15mm-tall plain square block, but
 # on real tread geometry (thin ribs/walls) it can be 7-10%+ local strain in a
 # single step -- enough to genuinely buckle/wrinkle thin features. Stiffness
@@ -379,7 +385,12 @@ def build_and_run(design, model_name, work_dir):
             region=a.sets['TOP'], u1=ux, u2=uy, u3=uz)
 
         job_name = '%s_%s' % (model_name, label)
-        job = mdb.Job(name=job_name, model=model_name)
+        if JOB_NUM_CPUS > 1:
+            job = mdb.Job(name=job_name, model=model_name,
+                          numCpus=JOB_NUM_CPUS, numDomains=JOB_NUM_CPUS,
+                          multiprocessingMode=DEFAULT)
+        else:
+            job = mdb.Job(name=job_name, model=model_name)
         job.submit()
         job.waitForCompletion()
 
