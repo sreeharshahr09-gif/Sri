@@ -84,6 +84,19 @@ STEP_MAX_NUM_INC = 1000
 STEP_TIME_PERIOD = 1.0
 
 # ---------------------------------------------------------------------------
+# LOAD-DISPLACEMENT HISTORY (RF vs U per increment)
+# ---------------------------------------------------------------------------
+# The stiffness number itself only needs the final frame, so by default field
+# output is written at LAST_INCREMENT for speed. Turn this ON to instead write
+# U/RF at EVERY increment and dump a per-(design, load case) load-displacement
+# history CSV (frame_time, U_driven, RF_reaction, plus all three components).
+# This is what lets you plot RF vs U across the whole step and read off the
+# tangent (small-strain) stiffness near the origin rather than just the secant
+# at the final displacement. It costs extra solve+I/O time on runs with many
+# increments, hence the flag.
+WRITE_LOAD_HISTORY = True
+
+# ---------------------------------------------------------------------------
 # PARAMETER SWEEPS (optional)
 # ---------------------------------------------------------------------------
 # Each entry sweeps ONE design field across a list of values (one-factor-at-
@@ -385,15 +398,16 @@ def build_and_run(design, model_name, work_dir):
                      maxInc=STEP_MAX_INC, maxNumInc=STEP_MAX_NUM_INC,
                      timePeriod=STEP_TIME_PERIOD)
 
-        # We only ever read the LAST frame's U/RF (build_and_run below).
-        # The default field output writes the full variable set (S, E, U,
-        # RF, CF, ...) every increment, which is by far the biggest time
-        # cost on a run with many small increments. Restricting to just
-        # U/RF at the last increment cuts solve+I/O time substantially.
+        # By default we only need the LAST frame's U/RF, so we restrict field
+        # output to U/RF at the last increment -- the full variable set every
+        # increment is the biggest time cost on a many-increment run. When
+        # WRITE_LOAD_HISTORY is on we instead request U/RF at EVERY increment
+        # so the per-step load-displacement history can be extracted below.
         for fo in list(m.fieldOutputRequests.keys()):
             del m.fieldOutputRequests[fo]
+        out_freq = 1 if WRITE_LOAD_HISTORY else LAST_INCREMENT
         m.FieldOutputRequest(name='F-Min', createStepName=step_name,
-                              variables=('U', 'RF'), frequency=LAST_INCREMENT)
+                              variables=('U', 'RF'), frequency=out_freq)
 
         if geo['needs_contact'] and 'Int-Contact' not in m.interactions:
             gc = m.ContactStd(name='Int-Contact', createStepName=step_name)
@@ -422,14 +436,54 @@ def build_and_run(design, model_name, work_dir):
         odb_path = os.path.join(work_dir, job_name + '.odb')
         from odbAccess import openOdb
         odb = openOdb(odb_path)
-        base_set = odb.rootAssembly.instances['BLOCK-1'].nodeSets['BASE']
-        frame = odb.steps[step_name].frames[-1]
-        rf = frame.fieldOutputs['RF'].getSubset(region=base_set)
-        comps = [0.0, 0.0, 0.0]
-        for v in rf.values:
-            comps[0] += v.data[0]
-            comps[1] += v.data[1]
-            comps[2] += v.data[2]
+        inst_sets = odb.rootAssembly.instances['BLOCK-1'].nodeSets
+        base_set = inst_sets['BASE']
+        top_set = inst_sets['TOP']
+        odb_frames = odb.steps[step_name].frames
+
+        # Which reaction/displacement component drives this load case
+        # (0=x, 1=y, 2=z). Kxy is the in-plane 45deg resultant, flagged None.
+        comp_idx = {'Kx': 0, 'Ky': 1, 'Kz': 2, 'Kxy': None}[label]
+
+        def _sum_rf(frame):
+            rf = frame.fieldOutputs['RF'].getSubset(region=base_set)
+            s = [0.0, 0.0, 0.0]
+            for v in rf.values:
+                s[0] += v.data[0]; s[1] += v.data[1]; s[2] += v.data[2]
+            return s
+
+        def _avg_u(frame):
+            u = frame.fieldOutputs['U'].getSubset(region=top_set)
+            s = [0.0, 0.0, 0.0]; n = 0
+            for v in u.values:
+                s[0] += v.data[0]; s[1] += v.data[1]; s[2] += v.data[2]; n += 1
+            return [c / n for c in s] if n else s
+
+        # Per-increment load-displacement history. The TOP face is driven
+        # uniformly so its averaged U is the prescribed displacement; the
+        # reaction is summed over the fixed BASE. U_driven/RF_reaction are
+        # the components along the load direction (in-plane resultant for Kxy).
+        if WRITE_LOAD_HISTORY:
+            hist_path = os.path.join(work_dir, '%s_history.csv' % job_name)
+            hf = open(hist_path, 'w')
+            hf.write('frame_time,U_driven_mm,RF_reaction_N,'
+                     'U1,U2,U3,RF1,RF2,RF3\n')
+            for fr in odb_frames:
+                rs = _sum_rf(fr); ua = _avg_u(fr)
+                if comp_idx is None:
+                    u_drv = math.hypot(ua[0], ua[1])
+                    rf_rct = math.hypot(rs[0], rs[1])
+                else:
+                    u_drv = ua[comp_idx]; rf_rct = rs[comp_idx]
+                hf.write('%g,%g,%g,%g,%g,%g,%g,%g,%g\n' % (
+                    fr.frameValue, u_drv, rf_rct,
+                    ua[0], ua[1], ua[2], rs[0], rs[1], rs[2]))
+            hf.close()
+            print('      wrote load history: %s (%d frames)'
+                  % (os.path.basename(hist_path), len(odb_frames)))
+
+        # Final-frame reaction drives the reported (secant) stiffness.
+        comps = _sum_rf(odb_frames[-1])
         odb.close()
 
         if label == 'Kx':
