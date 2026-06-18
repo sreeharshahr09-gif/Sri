@@ -32,8 +32,12 @@ CANONICAL_FIELDS = [
     "abstract",
     "claims",        # concatenated claim text (may be empty)
     "description",   # detailed description full text (may be empty)
+    "ai_advantages", # PatSeer "Advantages (AI Sum.)" if present
+    "ai_method",     # PatSeer "Method Used (AI Sum.)" if present
+    "ai_problem",    # PatSeer "Problem Being Solved (AI Sum.)" if present
     "assignee",
     "year",          # int priority or publication year
     "cpc",           # semicolon-joined CPC codes
+    "legal_status",  # ALIVE / DEAD if present
     "source_file",   # provenance
 ]

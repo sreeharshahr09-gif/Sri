@@ -33,13 +33,28 @@ def _split_text(text: str, max_chars: int) -> list[str]:
     return chunks
 
 
+# Per-section chunk caps. High-signal sections (abstract, claims, the PatSeer
+# AI summaries) are kept in full; the verbose full description is capped so a few
+# huge patents cannot dominate the corpus or blow up runtime.
+_SECTION_CAPS = {
+    "abstract": None,
+    "claims": 4,
+    "ai_advantages": None,
+    "ai_method": None,
+    "ai_problem": None,
+    "description": 3,
+}
+
+
 def to_passages(df: pd.DataFrame, max_chars: int = 1200) -> pd.DataFrame:
     """Explode the corpus into one row per passage, carrying provenance."""
     rows = []
     for _, r in df.iterrows():
-        # Abstract + claims + description carry the substance; title is short.
-        for section in ("abstract", "claims", "description"):
-            for chunk in _split_text(r.get(section, ""), max_chars):
+        for section, cap in _SECTION_CAPS.items():
+            chunks = _split_text(r.get(section, ""), max_chars)
+            if cap is not None:
+                chunks = chunks[:cap]
+            for chunk in chunks:
                 if len(chunk) < 40:  # drop boilerplate fragments
                     continue
                 rows.append({
@@ -51,5 +66,13 @@ def to_passages(df: pd.DataFrame, max_chars: int = 1200) -> pd.DataFrame:
                     "passage": chunk,
                 })
     passages = pd.DataFrame(rows)
-    print(f"  produced {len(passages)} passages from {len(df)} patents")
+    # Drop near-identical text repeated across sections of the same patent
+    # (abstract/claims/description often restate each other).
+    before = len(passages)
+    passages["_key"] = (passages["doc_id"].astype(str) + "|"
+                        + passages["passage"].str.slice(0, 200).str.lower())
+    passages = passages.drop_duplicates("_key").drop(columns="_key").reset_index(drop=True)
+    by_sec = passages["section"].value_counts().to_dict()
+    print(f"  produced {len(passages)} passages ({before - len(passages)} dup "
+          f"removed) from {len(df)} patents  {by_sec}")
     return passages

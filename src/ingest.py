@@ -22,7 +22,7 @@ COLUMN_ALIASES = {
     "doc_id": [
         "publication number", "publication_number", "pub number", "lens id",
         "document number", "patent number", "id", "publication", "pubno",
-        "display_key", "patent_id",
+        "display_key", "patent_id", "record number", "record no", "record_number",
     ],
     "title": ["title", "invention title", "patent title", "title (en)"],
     "abstract": ["abstract", "abstract (en)", "abstract_text"],
@@ -40,7 +40,17 @@ COLUMN_ALIASES = {
         "priority date", "earliest priority date", "date_publ", "filing date",
     ],
     "cpc": ["cpc", "cpc classifications", "cpc codes", "ipcr", "ipc", "classifications"],
+    "ai_advantages": ["advantages (ai sum.)", "advantages (ai sum)", "advantages"],
+    "ai_method": ["method used (ai sum.)", "method used (ai sum)", "method used", "method"],
+    "ai_problem": [
+        "problem being solved (ai sum.)", "problem being solved (ai sum)",
+        "problem being solved", "problem",
+    ],
+    "legal_status": ["legal status (dead/alive)", "legal status", "status"],
 }
+
+# Tokens that mean "empty" in patent exports and should become blank strings.
+_NULL_TOKENS = {"nan", "none", "null", "n/a", "na", ""}
 
 
 def _build_reverse_alias() -> dict:
@@ -80,7 +90,10 @@ def _normalize_frame(df: pd.DataFrame, source_file: str) -> pd.DataFrame:
             col = df[field]
             if isinstance(col, pd.DataFrame):
                 col = col.iloc[:, 0]
-            out[field] = col.astype(str).replace("nan", "")
+            cleaned = col.astype(str).str.strip()
+            # Blank out null-like tokens (PatSeer writes literal "None").
+            cleaned = cleaned.where(~cleaned.str.lower().isin(_NULL_TOKENS), "")
+            out[field] = cleaned
         else:
             out[field] = ""
 

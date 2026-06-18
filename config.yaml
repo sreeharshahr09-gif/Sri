@@ -19,11 +19,13 @@ paths:
 filtering:
   # Take the full export as-is — do NOT trim by year inside the program.
   apply_year_filter: false
-  # A patent is kept only if it looks like it concerns a circumferential
-  # (zero-degree) belt/overlay AND a passenger-car radial (PCR) tire.
-  require_zero_degree_signal: true
+  # PatSeer already guaranteed every record concerns a zero-degree tire belt,
+  # so we do NOT re-gate on the zero-degree lexicon (that only discards records
+  # phrased differently than our terms). Left here for non-PatSeer corpora.
+  require_zero_degree_signal: false
+  # Keep the PCR focus: drop only patents with a clear truck/off-road/aircraft
+  # signal and NO passenger signal at all (see filter_pcr._winning_segment).
   require_pcr_signal: true
-  # Hard-exclude clearly off-segment patents (truck/bus, off-road, aircraft).
   exclude_segments: ["TBR", "OTR", "AIRCRAFT"]
 
 embedding:
@@ -39,6 +41,6 @@ discovery:
   n_clusters_fallback: 15      # used only by the kmeans fallback
 
 report:
-  title: "Hybrid Zero-Degree Cords for PCR Tires — Patent Landscape (2015–2025)"
+  title: "Hybrid Zero-Degree Cords for PCR Tires — Patent Landscape"
   top_assignees: 15
   top_terms_per_cluster: 12

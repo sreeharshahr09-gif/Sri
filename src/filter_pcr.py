@@ -41,13 +41,16 @@ def annotate(df: pd.DataFrame) -> pd.DataFrame:
 
     def _winning_segment(r):
         scores = {s: r[f"seg_{s}"] for s in domain.SEGMENT_LEXICON}
-        best = max(scores.values())
-        if best == 0:
-            return "UNKNOWN"
-        # If PCR ties for the top score, treat as PCR (passenger is the default).
-        if scores["PCR"] == best:
+        # Any passenger signal -> PCR. Tire patents routinely list several
+        # vehicle types; an incidental "truck" mention must not exclude a
+        # patent that also speaks to passenger cars. Only patents with NO
+        # passenger signal at all can fall to an off-segment label.
+        if scores.get("PCR", 0) > 0:
             return "PCR"
-        return max(scores, key=scores.get)
+        off = {s: scores[s] for s in domain.SEGMENT_LEXICON if s != "PCR"}
+        if max(off.values(), default=0) == 0:
+            return "UNKNOWN"
+        return max(off, key=off.get)
 
     df["segment"] = df.apply(_winning_segment, axis=1)
     return df

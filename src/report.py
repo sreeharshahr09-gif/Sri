@@ -11,6 +11,7 @@ so the analyst can drill from any statement to the source patent.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -19,27 +20,43 @@ from . import domain
 from .classify import category_columns
 
 
+def _normalize_assignee(name: str) -> str:
+    """Collapse country tags and multi-assignee strings to one primary name.
+
+    "MICHELIN & CIE (FR); MICHELIN RESEARCH..." -> "MICHELIN & CIE"
+    so the same company is not counted several times.
+    """
+    s = str(name).split(";")[0]               # primary assignee
+    s = re.sub(r"\([A-Z]{2}\)", "", s)         # drop "(JP)", "(FR)", ...
+    s = re.sub(r"\s+", " ", s).strip(" .,")
+    return s.upper()
+
+
 def _top_assignees(patents: pd.DataFrame, n: int) -> pd.DataFrame:
     a = patents.copy()
-    a["assignee"] = a["assignee"].fillna("").str.strip()
+    a["assignee"] = a["assignee"].fillna("").map(_normalize_assignee)
     a = a[a["assignee"] != ""]
     counts = a["assignee"].value_counts().head(n).reset_index()
     counts.columns = ["assignee", "patents"]
     return counts
 
 
-def _yearly_trend(patents: pd.DataFrame) -> pd.DataFrame:
+def _yearly_trend(patents: pd.DataFrame, floor: int = 1995) -> pd.DataFrame:
     t = patents.dropna(subset=["year"]).copy()
     if t.empty:
         return pd.DataFrame(columns=["year", "patents"])
     t["year"] = t["year"].astype(int)
+    # Drop garbage priority years from malformed date parsing.
+    t = t[t["year"] >= floor]
     out = t.groupby("year").size().reset_index(name="patents").sort_values("year")
     return out
 
 
 def _category_examples(passages: pd.DataFrame, cat: str, k: int = 6) -> list[dict]:
     col = f"cat_{cat}"
-    sub = passages[passages[col] > 0].sort_values(col, ascending=False).head(k)
+    sub = passages[passages[col] > 0].sort_values(col, ascending=False)
+    # One example per patent so a single verbose patent cannot fill the list.
+    sub = sub.drop_duplicates("doc_id").head(k)
     out = []
     for _, r in sub.iterrows():
         snippet = r["passage"]
@@ -92,6 +109,16 @@ def build_report(
     w(f"- **Relevant patents in scope:** {len(patents)}")
     hybrid_n = int((patents.get("hybrid_hits", pd.Series(dtype=int)) > 0).sum())
     w(f"- **Explicitly hybrid-cord patents:** {hybrid_n}")
+    if "legal_status" in patents.columns:
+        ls = patents["legal_status"].astype(str).str.upper().str.strip()
+        alive, dead = int((ls == "ALIVE").sum()), int((ls == "DEAD").sum())
+        if alive or dead:
+            w(f"- **Legal status:** {alive} alive · {dead} dead")
+    yrs = patents["year"].dropna()
+    if not yrs.empty:
+        recent = int((yrs.astype(int) >= 2015).sum())
+        w(f"- **Priority year ≥2015:** {recent} · **<2015:** {len(yrs) - recent} "
+          f"(records without a year: {int(patents['year'].isna().sum())})")
     if not trend.empty:
         peak = trend.loc[trend["patents"].idxmax()]
         w(f"- **Peak filing year:** {int(peak['year'])} ({int(peak['patents'])} patents)")
