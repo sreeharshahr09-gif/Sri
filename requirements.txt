@@ -1,0 +1,18 @@
+# Core
+pandas>=2.0
+numpy>=1.24
+pyyaml>=6.0
+tqdm>=4.65
+
+# File parsing
+lxml>=4.9            # XML patent exports (Espacenet/Lens)
+pdfplumber>=0.10    # PDF full-text extraction
+openpyxl>=3.1       # .xlsx exports
+
+# Embeddings & topic discovery (optional but recommended)
+# If these are not installed the pipeline falls back to TF-IDF + KMeans.
+sentence-transformers>=2.2
+scikit-learn>=1.3
+bertopic>=0.16
+umap-learn>=0.5
+hdbscan>=0.8

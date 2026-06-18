@@ -216,3 +216,16 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- project data & outputs (do not commit patent exports or generated reports)
+data/raw/*
+!data/raw/.gitkeep
+data/interim/*
+!data/interim/.gitkeep
+output/
+output_demo/
+
+# --- models / caches
+.cache/
+*.pt
+*.bin
