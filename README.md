@@ -83,6 +83,21 @@ lexicons, relevance terms, and the category framework. Edit those (no code
 changes) to refine precision/recall. Pipeline behavior (year window, models,
 cluster count) is in **`config.yaml`**.
 
+## Semantic (PatentSBERTa) upgrade
+
+The default run uses TF-IDF + KMeans so it works anywhere. For sharper
+clusters, run with real semantic embeddings + BERTopic where you have internet:
+
+```bash
+bash scripts/run_semantic.sh      # installs the stack, downloads PatentSBERTa, runs
+```
+
+## Deliverables
+
+- `reports/hybrid_zero_degree_PCR_report.md` — the **boss-ready narrative**
+  (exec summary + each question answered with cited patents).
+- `output/analysis_report.md` — the machine evidence base behind it.
+
 ## Notes & caveats
 
 - Without `sentence-transformers`/`bertopic` installed, the pipeline still runs
