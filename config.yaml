@@ -29,9 +29,12 @@ filtering:
   exclude_segments: ["TBR", "OTR", "AIRCRAFT"]
 
 embedding:
-  # Preferred model. Falls back to TF-IDF automatically if unavailable.
-  model: "AI-Growth-Lab/PatentSBERTa"
-  fallback_model: "sentence-transformers/all-mpnet-base-v2"
+  # PatentBERT (Google "BERT for Patents"). Token embeddings are mean-pooled
+  # into sentence vectors. Requires `transformers` + reachable HuggingFace.
+  model: "anferico/bert-for-patents"
+  use_mean_pooling: true          # treat `model` as a raw BERT and mean-pool
+  # If PatentBERT can't load, try this sentence-transformer, then TF-IDF.
+  fallback_model: "AI-Growth-Lab/PatentSBERTa"
   batch_size: 32
   passage_max_chars: 1200      # passages longer than this are split
 

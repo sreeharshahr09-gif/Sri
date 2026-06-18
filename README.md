@@ -83,14 +83,23 @@ lexicons, relevance terms, and the category framework. Edit those (no code
 changes) to refine precision/recall. Pipeline behavior (year window, models,
 cluster count) is in **`config.yaml`**.
 
-## Semantic (PatentSBERTa) upgrade
+## Semantic (PatentBERT) upgrade
 
-The default run uses TF-IDF + KMeans so it works anywhere. For sharper
-clusters, run with real semantic embeddings + BERTopic where you have internet:
+The default run uses TF-IDF + KMeans so it works anywhere. For PatentBERT-quality
+clusters, run where you have internet **and** HuggingFace access:
 
 ```bash
-bash scripts/run_semantic.sh      # installs the stack, downloads PatentSBERTa, runs
+bash scripts/run_semantic.sh      # installs PyTorch+transformers, pulls PatentBERT, runs
 ```
+
+`config.yaml` is preset to **`anferico/bert-for-patents`** (Google "BERT for
+Patents"), mean-pooled into sentence vectors, with PatentSBERTa and TF-IDF as
+automatic fallbacks. Point `embedding.model` at any patent BERT checkpoint you
+prefer.
+
+**If HuggingFace is blocked** (e.g. this web sandbox returns 403): download the
+model on a machine that can reach HF, copy the folder into the repo, set
+`export HF_HUB_OFFLINE=1`, and set `embedding.model` to that local path.
 
 ## Deliverables
 

@@ -30,7 +30,9 @@ def run(config_path: str = "config.yaml") -> Path:
 
     print("[4/6] Embedding passages …")
     emb_cfg = cfg["embedding"]
-    embedder = Embedder(emb_cfg["model"], emb_cfg["fallback_model"], emb_cfg["batch_size"])
+    embedder = Embedder(emb_cfg["model"], emb_cfg["fallback_model"],
+                        emb_cfg["batch_size"],
+                        use_mean_pooling=emb_cfg.get("use_mean_pooling", True))
     embeddings = embedder.fit_transform(passages["passage"].tolist())
     print(f"  embedding backend: {embedder.backend}")
 
