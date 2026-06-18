@@ -86,16 +86,35 @@ ax.set_xticks(x); ax.set_xticklabels(names); ax.legend(); ax.set_ylabel("patents
 ax.set_title("Cohort size & wear/mileage share", fontweight="bold")
 save(fig, "output/deck_cohorts.png")
 
-# chart 2: themes
-fig, ax = plt.subplots(figsize=(8.5, 4.6))
-themes = ["benefit_only", "both", "defensive_only"]
-tl = ["benefit only", "both", "uneven-wear\n(defensive) only"]
-x = np.arange(3); w = 0.38
-for i, (n, c) in enumerate(zip(names, [BLUE, RED])):
-    bb = ax.bar(x + (i-0.5)*w, [S[n][t] for t in themes], w, label=n, color=c)
-    ax.bar_label(bb, fontsize=10)
-ax.set_xticks(x); ax.set_xticklabels(tl); ax.legend(); ax.set_ylabel("patents")
-ax.set_title("Wear themes within each cohort", fontweight="bold")
+# chart 2: themes — 100% stacked horizontal bar per cohort (posture)
+fig, ax = plt.subplots(figsize=(9.2, 4.2))
+seg_keys = ["benefit_only", "both", "defensive_only"]
+seg_lbl = ["Benefit only (claims a wear/mileage win)",
+           "Both (a win + fixes uneven wear)",
+           "Defensive only (fixes uneven wear)",
+           "Other wear mention"]
+seg_col = [GREEN, "#B0A6C9", RED, "#DDDDDD"]
+rows = names[::-1]  # Nylon-Aramid on top
+for yi, n in enumerate(rows):
+    tot = S[n]["wear"]
+    vals = [S[n][k] for k in seg_keys]
+    vals.append(tot - sum(vals))            # "other"
+    left = 0
+    for v, c in zip(vals, seg_col):
+        ax.barh(yi, 100*v/tot, left=left, color=c, edgecolor="white")
+        if v/tot > 0.05:
+            ax.text(left + 50*v/tot, yi, f"{v}\n{100*v/tot:.0f}%",
+                    ha="center", va="center", fontsize=10,
+                    color="white" if c in (GREEN, RED) else "black", fontweight="bold")
+        left += 100*v/tot
+ax.set_yticks(range(len(rows)))
+ax.set_yticklabels([f"{n}\n(n={S[n]['wear']} wear patents)" for n in rows], fontsize=11)
+ax.set_xlim(0, 100); ax.set_xlabel("share of the cohort's wear/mileage patents (%)")
+ax.set_title("Wear posture: claiming a benefit vs. fixing uneven wear", fontweight="bold")
+handles = [plt.Rectangle((0, 0), 1, 1, color=c) for c in seg_col]
+ax.legend(handles, seg_lbl, loc="upper center", bbox_to_anchor=(0.5, -0.22),
+          ncol=2, fontsize=9, frameon=False)
+ax.grid(False)
 save(fig, "output/deck_themes.png")
 
 # chart 3: mechanisms
@@ -207,15 +226,17 @@ bullets(tf, [
 add_img(s, "output/deck_cohorts.png", 6.7, 1.6, 6.2)
 
 # 4 themes
-s = content_slide("Wear Themes — Benefit vs. Defensive")
-add_img(s, "output/deck_themes.png", 6.6, 1.5, 6.4)
-tf = textbox(s, 0.6, 1.6, 5.8, 5.0)
+s = content_slide("Wear Posture — Claiming a Benefit vs. Fixing Uneven Wear")
+add_img(s, "output/deck_themes.png", 0.7, 1.5, 8.4)
+tf = textbox(s, 9.1, 1.5, 3.9, 5.4)
 bullets(tf, [
-    (f"General hybrid:  {SG['benefit_only']} benefit-only · {SG['both']} both · {SG['defensive_only']} defensive-only.", 0),
-    (f"Nylon-Aramid:  {SN['benefit_only']} benefit-only · {SN['both']} both · {SN['defensive_only']} defensive-only.", 0),
-    ("Nylon-Aramid defensive-only (22) outnumbers its 'both' (10) — opposite of general hybrid.", 0),
-    ("Interpretation: high-modulus aramid raises circumferential stiffness, which both helps footprint uniformity AND can trigger uneven wear that must be engineered out.", 0),
-], size=16)
+    ("Each bar = 100% of that cohort's wear patents, split by what they claim.", 0),
+    ("Benefit only = a wear/mileage win, no problem mentioned.", 1),
+    ("Defensive = fixes uneven / irregular wear.", 1),
+    (f"Nylon-Aramid is more defensive: {SN['defensive_only']} defensive-only vs only {SN['both']} 'both'.", 0),
+    (f"General hybrid is the reverse: {SG['both']} 'both' vs {SG['defensive_only']} defensive-only.", 0),
+    ("Why: stiff aramid helps footprint uniformity, but its stiffness step can trigger uneven wear that must be engineered out.", 0),
+], size=14)
 
 # 5 mechanisms
 s = content_slide("Claimed Wear Mechanisms")
