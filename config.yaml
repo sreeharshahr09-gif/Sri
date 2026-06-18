@@ -4,8 +4,10 @@
 
 project:
   name: "Hybrid Zero-Degree Belt Cords in PCR Tires"
-  # Analysis window. Patents with a priority/publication year inside this range
-  # are kept; everything else is dropped during ingestion.
+  # Date filtering is OFF: the pipeline analyzes the FULL export as-is, every
+  # year included. The date scope is controlled entirely by what you export
+  # from PatSeer. Set apply_year_filter: true (in `filtering`) and adjust the
+  # range below only if you ever want the program to trim by year itself.
   year_start: 2015
   year_end: 2025
 
@@ -15,6 +17,8 @@ paths:
   output_dir: "output"         # final report + figures + data matrices
 
 filtering:
+  # Take the full export as-is — do NOT trim by year inside the program.
+  apply_year_filter: false
   # A patent is kept only if it looks like it concerns a circumferential
   # (zero-degree) belt/overlay AND a passenger-car radial (PCR) tire.
   require_zero_degree_signal: true

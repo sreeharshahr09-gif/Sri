@@ -56,14 +56,19 @@ def annotate(df: pd.DataFrame) -> pd.DataFrame:
 def filter_corpus(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """Apply the year window and topical/segment gates from config."""
     f = cfg["filtering"]
-    y0, y1 = cfg["project"]["year_start"], cfg["project"]["year_end"]
 
     df = annotate(df)
     keep = pd.Series(True, index=df.index)
 
-    # Year window (keep rows with missing year — better recall, flagged later).
-    has_year = df["year"].notna()
-    keep &= (~has_year) | df["year"].between(y0, y1)
+    # Year window is OFF by default: analyze the full export, every year.
+    # Enable only if filtering.apply_year_filter is true in config.
+    if f.get("apply_year_filter", False):
+        y0, y1 = cfg["project"]["year_start"], cfg["project"]["year_end"]
+        has_year = df["year"].notna()
+        keep &= (~has_year) | df["year"].between(y0, y1)
+        print(f"  applying year filter {y0}-{y1}")
+    else:
+        print("  year filter OFF — keeping all years in the export")
 
     if f.get("require_zero_degree_signal", True):
         keep &= df["zero_degree_hits"] > 0
