@@ -1,9 +1,9 @@
 """
-Build a PowerPoint deck for the hybrid-cord wear/mileage analysis
-(General hybrid vs Nylon-Aramid).
+Build the PowerPoint deck for the hybrid-cord wear analysis
+(General hybrid vs Nylon-Aramid), using the AUDITED cohort definitions
+in scripts/cohorts.py (motorcycle excluded; strict hybrid-cord cohorts).
 
-Input : data/interim/screened.csv
-Output: deck-quality charts in output/, and reports/Hybrid_Cord_Wear_Analysis.pptx
+Output: deck charts in output/, reports/Hybrid_Cord_Wear_Analysis.pptx
 Run   : python scripts/build_ppt.py
 """
 import re
@@ -15,333 +15,244 @@ import matplotlib.pyplot as plt
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN
 
-plt.rcParams.update({"font.size": 13, "axes.grid": True, "grid.alpha": 0.25,
-                     "axes.spines.top": False, "axes.spines.right": False,
-                     "figure.dpi": 150})
-NAVY, BLUE, RED, GREEN, GREY = "#1F3B57", "#4C72B0", "#C44E52", "#55A868", "#999999"
+import cohorts as C
 
-# ── analysis ────────────────────────────────────────────────────────────────
-df = pd.read_csv("data/interim/screened.csv").fillna("")
-fields = ["ai_advantages", "ai_method", "abstract", "claims", "ai_problem",
-          "description", "title"]
-txt = df[fields].agg(" ".join, axis=1).str.lower()
+plt.rcParams.update({"font.size": 12, "axes.grid": True, "grid.alpha": 0.25,
+                     "axes.spines.top": False, "axes.spines.right": False, "figure.dpi": 150})
+NAVY, BLUE, RED, GREEN, GREY, PURP = "#1F3B57", "#4C72B0", "#C44E52", "#55A868", "#999999", "#B0A6C9"
 
-hybrid_word = txt.str.contains(
-    r"hybrid cord|hybrid tire cord|hybrid yarn|composite cord|hybrid construction|"
-    r"co-twisted|two-component cord|dual modulus|different modulus|merged cord", regex=True)
-def near(a, b): return txt.str.contains(rf"{a}.{{0,40}}{b}|{b}.{{0,40}}{a}", regex=True)
-ar_ny = near("aramid", "nylon") | near("aramid", "polyamide")
-pet_ny = near("polyester", "nylon") | near("pet", "nylon")
-GENERAL = hybrid_word | ar_ny | pet_ny
-NYLON_ARAMID = ar_ny | (txt.str.contains("aramid") & txt.str.contains(r"nylon|polyamide") & hybrid_word)
-
-wear_re = re.compile(
-    r"mileage|tread ?wear|wear resistanc|wear life|wear performance|tread life|"
-    r"tire life|abrasion|uneven wear|irregular wear|even wear|uniform wear|"
-    r"anti-?wear|wear propert", re.I)
-WEAR = txt.map(lambda t: bool(wear_re.search(t)))
-defensive = txt.str.contains(r"uneven wear|irregular wear|eccentric wear|partial wear", regex=True)
-benefit = txt.str.contains(
-    r"wear resistanc|mileage|tread life|tire life|abrasion resist|wear performance|long.{0,4}wear", regex=True)
-MECH = {
-    "Cord modulus /\nmaterial": r"modulus|aramid|hybrid|nylon|pet|denier",
-    "Groove /\ntread pattern": r"groove|land portion|tread pattern",
-    "Growth /\nprofile control": r"growth|profile|curvature|flatten",
-    "Footprint /\ncontact pressure": r"contact (area|pressure|patch)|ground contact|footprint",
-    "Circumferential\nrigidity / shear": r"circumferential rigid|crown.{0,15}(rigid|stiff)|hoop|shear modulus",
-}
-mech_mask = {k: txt.str.contains(p, regex=True) for k, p in MECH.items()}
+df = C.load()                       # 1080 PCR (motorcycle dropped)
+m = C.masks(df)
+t = df["_txt"]
+GEN, NA, WEAR = m["general"], m["nylon_aramid"], m["wear"]
+N_CORPUS = len(df)
 
 def norm(s):
     s = str(s).split(";")[0]; s = re.sub(r"\([A-Z]{2}\)", "", s)
     return re.sub(r"\s+", " ", s).strip(" .,").upper()
 
-def st(mask):
-    m = mask & WEAR
-    return dict(cohort=int(mask.sum()), wear=int(m.sum()),
-               benefit_only=int((m & benefit & ~defensive).sum()),
-               both=int((m & benefit & defensive).sum()),
-               defensive_only=int((m & defensive & ~benefit).sum()),
-               mech={k: int((m & v).sum()) for k, v in mech_mask.items()})
-SG, SN = st(GENERAL), st(NYLON_ARAMID)
-names = ["General hybrid", "Nylon-Aramid"]
-S = {"General hybrid": SG, "Nylon-Aramid": SN}
+def themes(mask):
+    s = t[(mask & WEAR).values]
+    d = s.str.contains(r"uneven wear|irregular wear|eccentric wear|partial wear", regex=True)
+    b = s.str.contains(r"wear resistanc|mileage|tread life|tire life|abrasion resist|wear performance|long.{0,4}wear", regex=True)
+    n = len(s)
+    return dict(n=n, benefit_only=int((b & ~d).sum()), both=int((b & d).sum()),
+                defensive_only=int((d & ~b).sum()), other=int((~b & ~d).sum()))
 
-# ── deck charts ─────────────────────────────────────────────────────────────
+SG = dict(cohort=int(GEN.sum()), wear=int((GEN & WEAR).sum()), **themes(GEN))
+SN = dict(cohort=int(NA.sum()), wear=int((NA & WEAR).sum()), **themes(NA))
+
 def save(fig, path):
     fig.tight_layout(); fig.savefig(path, bbox_inches="tight", facecolor="white"); plt.close(fig)
 
 # chart 1: cohort & wear share
-fig, ax = plt.subplots(figsize=(8.5, 4.6))
+fig, ax = plt.subplots(figsize=(8.6, 4.6))
+names = ["General hybrid", "Nylon-Aramid"]; S = {"General hybrid": SG, "Nylon-Aramid": SN}
 x = np.arange(2); w = 0.38
 b1 = ax.bar(x - w/2, [S[n]["cohort"] for n in names], w, label="cohort size", color=GREY)
-b2 = ax.bar(x + w/2, [S[n]["wear"] for n in names], w, label="mention wear/mileage", color=RED)
+b2 = ax.bar(x + w/2, [S[n]["wear"] for n in names], w, label="mention wear", color=RED)
 ax.bar_label(b1); ax.bar_label(b2)
 for i, n in enumerate(names):
-    ax.text(i + w/2, S[n]["wear"] + 8, f"{100*S[n]['wear']/S[n]['cohort']:.0f}%",
+    ax.text(i + w/2, S[n]["wear"] + 3, f"{100*S[n]['wear']/S[n]['cohort']:.0f}%",
             ha="center", color=RED, fontweight="bold")
 ax.set_xticks(x); ax.set_xticklabels(names); ax.legend(); ax.set_ylabel("patents")
-ax.set_title("Cohort size & wear/mileage share", fontweight="bold")
+ax.set_title("Cohort size & wear share (strict, PCR-only)", fontweight="bold")
 save(fig, "output/deck_cohorts.png")
 
-# chart 2: themes — 100% stacked horizontal bar per cohort (posture)
-fig, ax = plt.subplots(figsize=(9.2, 4.2))
-seg_keys = ["benefit_only", "both", "defensive_only"]
-seg_lbl = ["Benefit only (claims a wear/mileage win)",
-           "Both (a win + fixes uneven wear)",
-           "Defensive only (fixes uneven wear)",
-           "Other wear mention"]
-seg_col = [GREEN, "#B0A6C9", RED, "#DDDDDD"]
-rows = names[::-1]  # Nylon-Aramid on top
-for yi, n in enumerate(rows):
-    tot = S[n]["wear"]
-    vals = [S[n][k] for k in seg_keys]
-    vals.append(tot - sum(vals))            # "other"
-    left = 0
-    for v, c in zip(vals, seg_col):
+# chart 2: wear posture (100% stacked)
+fig, ax = plt.subplots(figsize=(9.2, 4.0))
+segk = ["benefit_only", "both", "defensive_only", "other"]
+segl = ["Benefit only", "Both (benefit + fixes uneven wear)", "Defensive only (fixes uneven wear)", "Other wear mention"]
+segc = [GREEN, PURP, RED, "#DDDDDD"]
+for yi, n in enumerate(names[::-1]):
+    tot = S[n]["wear"]; left = 0
+    for k, c in zip(segk, segc):
+        v = S[n][k]
         ax.barh(yi, 100*v/tot, left=left, color=c, edgecolor="white")
-        if v/tot > 0.05:
-            ax.text(left + 50*v/tot, yi, f"{v}\n{100*v/tot:.0f}%",
-                    ha="center", va="center", fontsize=10,
-                    color="white" if c in (GREEN, RED) else "black", fontweight="bold")
+        if v/tot > 0.06:
+            ax.text(left + 50*v/tot, yi, f"{v}\n{100*v/tot:.0f}%", ha="center", va="center",
+                    fontsize=10, color="white" if c in (GREEN, RED) else "black", fontweight="bold")
         left += 100*v/tot
-ax.set_yticks(range(len(rows)))
-ax.set_yticklabels([f"{n}\n(n={S[n]['wear']} wear patents)" for n in rows], fontsize=11)
-ax.set_xlim(0, 100); ax.set_xlabel("share of the cohort's wear/mileage patents (%)")
+ax.set_yticks(range(2)); ax.set_yticklabels([f"{n}\n(n={S[n]['wear']})" for n in names[::-1]])
+ax.set_xlim(0, 100); ax.set_xlabel("share of cohort's wear patents (%)")
 ax.set_title("Wear posture: claiming a benefit vs. fixing uneven wear", fontweight="bold")
-handles = [plt.Rectangle((0, 0), 1, 1, color=c) for c in seg_col]
-ax.legend(handles, seg_lbl, loc="upper center", bbox_to_anchor=(0.5, -0.22),
-          ncol=2, fontsize=9, frameon=False)
+ax.legend([plt.Rectangle((0, 0), 1, 1, color=c) for c in segc], segl,
+          loc="upper center", bbox_to_anchor=(0.5, -0.22), ncol=2, fontsize=9, frameon=False)
 ax.grid(False)
 save(fig, "output/deck_themes.png")
 
-# chart 3: mechanisms
-fig, ax = plt.subplots(figsize=(8.5, 4.8))
-mk = list(MECH); y = np.arange(len(mk)); h = 0.38
-for i, (n, c) in enumerate(zip(names, [BLUE, RED])):
-    bb = ax.barh(y + (i-0.5)*h, [S[n]["mech"][k] for k in mk], h, label=n, color=c)
-    ax.bar_label(bb, fontsize=9, padding=2)
-ax.set_yticks(y); ax.set_yticklabels(mk, fontsize=10); ax.legend()
-ax.set_xlabel("patents"); ax.set_title("Claimed wear mechanisms", fontweight="bold")
-save(fig, "output/deck_mechanisms.png")
-
-# chart 4: nylon-aramid top assignees
-fig, ax = plt.subplots(figsize=(8.5, 4.6))
-naw = df[(NYLON_ARAMID & WEAR).values].copy(); naw["a"] = naw["assignee"].map(norm)
-top = naw["a"].replace("", np.nan).dropna().value_counts().head(8).iloc[::-1]
-bb = ax.barh([i[:28] for i in top.index], top.values, color=RED)
-ax.bar_label(bb, padding=2)
-ax.set_xlabel("patents"); ax.set_title("Top assignees — Nylon-Aramid wear patents", fontweight="bold")
-save(fig, "output/deck_assignees.png")
-
-# chart 5: nylon-aramid solution approaches
-nawt = txt[(NYLON_ARAMID & WEAR).values]
+# chart 3: solution approaches — Nylon-Aramid vs baseline (enrichment)
 SOL = {
-    "Twist / cord geometry tuning": r"twist|denier|dtex|filament count|cord diameter|cord thickness",
-    "Adhesion / dip system": r"adhesion|adhesive|\brfl\b|dip|epoxy|coating|tackif",
-    "Graded / dual-modulus cord": r"(high|low|first|second|different).{0,20}modulus|graded modulus|modulus.{0,20}(gradient|difference|ratio)|elastic modulus",
-    "Two-layer / edge-cover overlay": r"two layer|double layer|dual layer|full[- ]?width.{0,30}(edge|band)|edge (band|cover|cap|layer)|plural.{0,20}layer",
-    "Aramid:nylon ratio / core-sheath": r"(aramid|nylon).{0,20}(ratio|proportion|content|percentage)|blend|core.{0,15}(aramid|nylon|sheath)|sheath|wound around.{0,15}core",
-    "Position relative to grooves": r"(below|beneath|under|outside|inside).{0,25}(groove|land)|groove.{0,25}(belt|reinforc|cord)|land portion",
-    "Zoned density (center vs edge)": r"(center|centre|shoulder|edge|side section|side portion|end portion).{0,60}(density|spacing|count|ends per|epdm)",
-    "Variable / graded winding pitch": r"(variable|gradually|graded|different).{0,30}(pitch|spacing|winding)|winding pitch",
+    "Twist / cord geometry": r"twist|denier|dtex|filament count|cord diameter|cord thickness",
+    "Graded / dual-modulus": r"(high|low|first|second|different).{0,20}modulus|graded modulus|elastic modulus",
+    "Adhesion / dip system": r"adhesion|adhesive|\brfl\b|dip|epoxy|tackif",
+    "Core-sheath / wrap": r"core.{0,15}(sheath|wrap|cover)|sheath|wound around.{0,15}core|wrap yarn",
+    "Two-layer / edge-cover": r"two layer|double layer|dual layer|edge (band|cover|cap|layer)",
+    "Position vs grooves": r"(below|beneath|under).{0,25}(groove|land)|land portion",
+    "Zoned density (center/edge)": r"(center|centre|shoulder|edge|side section|side portion).{0,60}(density|spacing|epdm|ends per)",
 }
-NAW_N = len(nawt)
-sol_counts = pd.Series({k: int(nawt.str.contains(p, regex=True).sum()) for k, p in SOL.items()}).sort_values()
-avg_tags = float(pd.DataFrame({k: nawt.str.contains(p, regex=True).values
-                               for k, p in SOL.items()}).sum(axis=1).mean())
-fig, ax = plt.subplots(figsize=(9.4, 5.2))
-bars = ax.barh(sol_counts.index, sol_counts.values, color=RED)
-ax.bar_label(bars, labels=[f"  {v}  ({100*v/NAW_N:.0f}%)" for v in sol_counts.values],
-             padding=2, fontsize=10)
-ax.set_xlim(0, max(sol_counts.values) * 1.25)
-ax.set_xlabel(f"number of patents (of {NAW_N})")
-ax.set_title(f"How Nylon-Aramid patents tackle wear / mileage\n"
-             f"(multi-label: patents use ~{avg_tags:.1f} methods each, so % do not sum to 100)",
+coh = t[NA.values]
+rows = [(k, coh.str.contains(p, regex=True).mean(), t.str.contains(p, regex=True).mean()) for k, p in SOL.items()]
+rows.sort(key=lambda r: (r[1]/r[2]) if r[2] else 0)
+fig, ax = plt.subplots(figsize=(9.6, 5.2))
+y = np.arange(len(rows)); h = 0.4
+b1 = ax.barh(y + h/2, [100*r[1] for r in rows], h, color=RED, label=f"Nylon-Aramid (n={SN['cohort']})")
+b2 = ax.barh(y - h/2, [100*r[2] for r in rows], h, color=GREY, label=f"All PCR baseline (n={N_CORPUS})")
+ax.bar_label(b1, labels=[f" {r[1]/r[2]:.1f}x" for r in rows], fontsize=9, fontweight="bold")
+ax.set_yticks(y); ax.set_yticklabels([r[0] for r in rows], fontsize=10); ax.legend(fontsize=9)
+ax.set_xlabel("% of patents mentioning the approach")
+ax.set_title("How Nylon-Aramid patents differ — approach vs. baseline\n"
+             "(enrichment x; only core-sheath, dual-modulus & twist are distinctive)",
              fontweight="bold", fontsize=12)
 save(fig, "output/deck_solutions.png")
 
-# representative nylon-aramid patents
-belt_re = re.compile(r"cap ply|cap-ply|overlay|jointless|spiral|circumferential|belt|band|cord|reinforc", re.I)
-def snippet(i):
-    for f in ["ai_advantages", "ai_method", "abstract", "claims", "ai_problem"]:
+# chart 4: nylon-aramid cohort assignees
+fig, ax = plt.subplots(figsize=(8.6, 4.6))
+naw = df[NA.values].copy(); naw["a"] = naw["assignee"].map(norm)
+top = naw["a"].replace("", np.nan).dropna().value_counts().head(8).iloc[::-1]
+ax.bar_label(ax.barh([i[:28] for i in top.index], top.values, color=RED), padding=2)
+ax.set_xlabel("patents"); ax.set_title(f"Top assignees — Nylon-Aramid cohort (n={SN['cohort']})", fontweight="bold")
+save(fig, "output/deck_assignees.png")
+
+# representative valid NA patents (wear-first, then construction)
+belt = re.compile(r"cap ply|overlay|spiral|circumferential|belt|band|cord|hybrid", re.I)
+wre = re.compile(C.WEAR_RE, re.I)
+def snip(i, need_wear=True):
+    for f in ["ai_method", "ai_advantages", "abstract", "claims", "ai_problem"]:
         for s in re.split(r"(?<=[.;])\s+", str(df.loc[i, f])):
-            if wear_re.search(s) and belt_re.search(s) and 40 < len(s) < 240:
+            if (not need_wear or wre.search(s)) and belt.search(s) and 45 < len(s) < 240:
                 return s.strip()
     return ""
-naw["snip"] = [snippet(i) for i in naw.index]
-naw["year"] = pd.to_numeric(naw["year"], errors="coerce")
-key = naw[(naw["snip"].str.len() > 40)].sort_values(
-    ["legal_status", "year"], ascending=[True, False])
-KEY_PATENTS = [(r["doc_id"], norm(r["assignee"])[:26], int(r["year"]) if pd.notna(r["year"]) else "",
-                r["legal_status"], r["snip"]) for _, r in key.head(6).iterrows()]
+naw_w = df[(NA & WEAR).values].copy(); naw_w["y"] = pd.to_numeric(naw_w["year"], errors="coerce")
+KEY = []
+for i in naw_w.sort_values("y", ascending=False).index:
+    sn = snip(i, True)
+    if sn:
+        KEY.append((df.loc[i, "doc_id"], norm(df.loc[i, "assignee"])[:26],
+                    str(df.loc[i, "year"])[:4], df.loc[i, "legal_status"], sn))
+# fill with NA construction patents if few wear snippets
+for i in df[NA.values].index:
+    if len(KEY) >= 6: break
+    if df.loc[i, "doc_id"] in [k[0] for k in KEY]: continue
+    sn = snip(i, False)
+    if sn and "hybrid" in sn.lower():
+        KEY.append((df.loc[i, "doc_id"], norm(df.loc[i, "assignee"])[:26],
+                    str(df.loc[i, "year"])[:4], df.loc[i, "legal_status"], sn))
 
 # ── PPTX ────────────────────────────────────────────────────────────────────
-prs = Presentation()
-prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
+prs = Presentation(); prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
 BLANK = prs.slide_layouts[6]
-NAVY_RGB, RED_RGB, GREY_RGB = RGBColor(0x1F, 0x3B, 0x57), RGBColor(0xC4, 0x4E, 0x52), RGBColor(0x55, 0x55, 0x55)
+NV, GY = RGBColor(0x1F, 0x3B, 0x57), RGBColor(0x55, 0x55, 0x55)
 
-def textbox(slide, l, t, w, h):
-    tb = slide.shapes.add_textbox(Inches(l), Inches(t), Inches(w), Inches(h))
-    tb.text_frame.word_wrap = True
-    return tb.text_frame
-
-def bar(slide, color=NAVY_RGB, h=0.18, t=0.0):
-    sp = slide.shapes.add_shape(1, Inches(0), Inches(t), prs.slide_width, Inches(h))
-    sp.fill.solid(); sp.fill.fore_color.rgb = color; sp.line.fill.background()
-    return sp
-
-def title_slide(title, subtitle):
+def tb(s, l, t_, w, h):
+    x = s.shapes.add_textbox(Inches(l), Inches(t_), Inches(w), Inches(h)); x.text_frame.word_wrap = True
+    return x.text_frame
+def title_slide(t1, t2):
+    s = prs.slides.add_slide(BLANK); s.background.fill.solid(); s.background.fill.fore_color.rgb = NV
+    f = tb(s, 0.9, 2.4, 11.5, 3)
+    p = f.paragraphs[0]; p.text = t1; p.font.size = Pt(38); p.font.bold = True; p.font.color.rgb = RGBColor(255, 255, 255)
+    p2 = f.add_paragraph(); p2.text = t2; p2.font.size = Pt(18); p2.font.color.rgb = RGBColor(0xBF, 0xD3, 0xE6)
+def cslide(title):
     s = prs.slides.add_slide(BLANK)
-    bg = s.background.fill; bg.solid(); bg.fore_color.rgb = NAVY_RGB
-    tf = textbox(s, 0.9, 2.5, 11.5, 2.5)
-    p = tf.paragraphs[0]; p.text = title
-    p.font.size = Pt(40); p.font.bold = True; p.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
-    p2 = tf.add_paragraph(); p2.text = subtitle
-    p2.font.size = Pt(20); p2.font.color.rgb = RGBColor(0xBF, 0xD3, 0xE6)
+    sp = s.shapes.add_shape(1, Inches(0), Inches(0), prs.slide_width, Inches(0.18))
+    sp.fill.solid(); sp.fill.fore_color.rgb = NV; sp.line.fill.background()
+    f = tb(s, 0.5, 0.3, 12.3, 0.9); p = f.paragraphs[0]; p.text = title
+    p.font.size = Pt(25); p.font.bold = True; p.font.color.rgb = NV
     return s
-
-def content_slide(title):
-    s = prs.slides.add_slide(BLANK)
-    bar(s)
-    tf = textbox(s, 0.5, 0.32, 12.3, 0.9)
-    p = tf.paragraphs[0]; p.text = title
-    p.font.size = Pt(26); p.font.bold = True; p.font.color.rgb = NAVY_RGB
-    return s
-
-def bullets(tf, items, size=16):
-    for i, (txt_, lvl) in enumerate(items):
-        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-        p.text = ("• " if lvl == 0 else "   – ") + txt_
-        p.font.size = Pt(size - (2 if lvl else 0))
-        p.font.color.rgb = GREY_RGB if lvl else NAVY_RGB
-        p.space_after = Pt(5)
-
-def add_img(slide, path, l, t, w):
-    slide.shapes.add_picture(path, Inches(l), Inches(t), width=Inches(w))
+def bullets(f, items, size=15):
+    for i, (x, lvl) in enumerate(items):
+        p = f.paragraphs[0] if i == 0 else f.add_paragraph()
+        p.text = ("• " if lvl == 0 else "    – ") + x
+        p.font.size = Pt(size - (2 if lvl else 0)); p.font.color.rgb = GY if lvl else NV; p.space_after = Pt(5)
+def img(s, path, l, t_, w): s.shapes.add_picture(path, Inches(l), Inches(t_), width=Inches(w))
 
 # 1 title
-title_slide("Hybrid Cord Patents — Wear / Mileage Analysis",
+title_slide("Hybrid Cord Patents — Wear Analysis",
             "Zero-degree belt cords in PCR tires · General hybrid vs. Nylon-Aramid · "
-            "PatSeer landscape, 1,172 PCR patents")
-
+            f"{N_CORPUS} PCR patents (audited, motorcycle-excluded)")
 # 2 scope
-s = content_slide("Scope & Method")
-tf = textbox(s, 0.6, 1.4, 12.1, 5.6)
-bullets(tf, [
-    ("Source: PatSeer zero-degree belt landscape — 1,816 families, screened to 1,172 passenger-car-radial (PCR) zero-degree (cap-ply / overlay / jointless-band) patents.", 0),
-    ("Two hybrid-cord cohorts defined from patent text:", 0),
-    (f"General hybrid cords — explicit hybrid wording or any two-material cord co-occurrence:  {SG['cohort']} patents", 1),
-    (f"Nylon-Aramid cords (focus) — aramid + nylon hybrid:  {SN['cohort']} patents", 1),
-    ("Wear/mileage detection: lexicon over title, abstract, claims, description and PatSeer AI summaries.", 0),
-    ("Theme tagging: BENEFIT (wear resistance / mileage / tread life) vs. DEFENSIVE (fixing uneven / irregular wear).", 0),
-    ("Caveat: keyword + co-occurrence based — high recall; verify borderline cases against claims.", 0),
-], size=16)
-
-# 3 headline finding
-s = content_slide("Headline Finding")
-tf = textbox(s, 0.6, 1.5, 6.0, 5.2)
-bullets(tf, [
-    (f"General hybrid: {SG['wear']} of {SG['cohort']} ({100*SG['wear']/SG['cohort']:.0f}%) make a wear/mileage claim.", 0),
-    (f"Nylon-Aramid: {SN['wear']} of {SN['cohort']} ({100*SN['wear']/SN['cohort']:.0f}%) make a wear/mileage claim.", 0),
-    ("The zero-degree cord is NOT primarily a mileage technology — its wear effect is indirect (crown stiffness & footprint uniformity).", 0),
-    ("Key difference: Nylon-Aramid skews more DEFENSIVE — a larger share fixes uneven wear the stiff aramid cap ply introduces, rather than claiming a clean mileage win.", 0),
-], size=17)
-add_img(s, "output/deck_cohorts.png", 6.7, 1.6, 6.2)
-
-# 4 themes
-s = content_slide("Wear Posture — Claiming a Benefit vs. Fixing Uneven Wear")
-add_img(s, "output/deck_themes.png", 0.7, 1.5, 8.4)
-tf = textbox(s, 9.1, 1.5, 3.9, 5.4)
-bullets(tf, [
-    ("Each bar = 100% of that cohort's wear patents, split by what they claim.", 0),
-    ("Benefit only = a wear/mileage win, no problem mentioned.", 1),
-    ("Defensive = fixes uneven / irregular wear.", 1),
-    (f"Nylon-Aramid is more defensive: {SN['defensive_only']} defensive-only vs only {SN['both']} 'both'.", 0),
-    (f"General hybrid is the reverse: {SG['both']} 'both' vs {SG['defensive_only']} defensive-only.", 0),
-    ("Why: stiff aramid helps footprint uniformity, but its stiffness step can trigger uneven wear that must be engineered out.", 0),
-], size=14)
-
-# 5 mechanisms
-s = content_slide("Claimed Wear Mechanisms")
-add_img(s, "output/deck_mechanisms.png", 6.5, 1.5, 6.5)
-tf = textbox(s, 0.6, 1.7, 5.7, 4.8)
-bullets(tf, [
-    ("Wear effects attributed mainly to cord modulus / material and circumferential rigidity / in-plane shear.", 0),
-    ("Then growth & tread-profile control and footprint / contact-pressure uniformity.", 0),
-    ("Confirms mechanism is structural (stiffness, footprint) — not tread-compound abrasion chemistry.", 0),
-    ("Patents may count under several mechanisms.", 0),
-], size=16)
-
-# 6 assignees
-s = content_slide("Who Owns the Nylon-Aramid Wear IP")
-add_img(s, "output/deck_assignees.png", 6.5, 1.5, 6.5)
-tf = textbox(s, 0.6, 1.7, 5.7, 4.8)
-bullets(tf, [
-    ("Sumitomo, Bridgestone, Goodyear lead; Continental, AlliedSignal (Honeywell) and Kumho also active.", 0),
-    ("Several Continental and Kumho entries are legally ALIVE — current freedom-to-operate relevance.", 0),
-    ("AlliedSignal patents frame treadwear via in-plane shear modulus of the fiber belt.", 0),
-], size=16)
-
-# 7 key patents
-s = content_slide("Representative Nylon-Aramid Wear Patents")
-tf = textbox(s, 0.5, 1.35, 12.4, 5.7)
+s = cslide("Scope & Method")
+bullets(tb(s, 0.6, 1.4, 12.1, 5.6), [
+    (f"PatSeer zero-degree landscape, screened to {N_CORPUS} passenger-car-radial (PCR) patents — primary motorcycle tires excluded.", 0),
+    ("Two hybrid-cord cohorts, defined by EXPLICIT hybrid-cord construction (not mere material co-occurrence):", 0),
+    (f"General hybrid cords: {SG['cohort']} patents", 1),
+    (f"Nylon-Aramid cords (focus): {SN['cohort']} patents", 1),
+    ("Wear detection over title/abstract/claims/description + PatSeer AI summaries; 'mileage' is rarely named — this is predominantly a treadwear analysis.", 0),
+    ("Theme tagging: BENEFIT (wear resistance/mileage) vs. DEFENSIVE (fixing uneven wear). See Limitations slide for caveats.", 0),
+], 15)
+# 3 headline
+s = cslide("Headline Finding")
+img(s, "output/deck_cohorts.png", 6.8, 1.6, 6.1)
+bullets(tb(s, 0.6, 1.6, 6.0, 5.2), [
+    (f"General hybrid: {SG['wear']} of {SG['cohort']} ({100*SG['wear']/SG['cohort']:.0f}%) make a wear claim.", 0),
+    (f"Nylon-Aramid: {SN['wear']} of {SN['cohort']} ({100*SN['wear']/SN['cohort']:.0f}%) make a wear claim.", 0),
+    ("Wear is a SECONDARY, indirect benefit — driven by crown stiffness & footprint uniformity, not abrasion chemistry.", 0),
+    ("Nylon-Aramid-specific wear evidence is thin (31 patents) — interpret with care.", 0),
+], 16)
+# 4 posture
+s = cslide("Wear Posture — Benefit vs. Fixing Uneven Wear")
+img(s, "output/deck_themes.png", 0.7, 1.5, 8.4)
+bullets(tb(s, 9.2, 1.6, 3.8, 5.2), [
+    ("Each bar = 100% of that cohort's wear patents.", 0),
+    (f"Nylon-Aramid: {SN['defensive_only']} defensive-only vs {SN['both']} 'both'.", 0),
+    (f"General hybrid: {SG['benefit_only']} benefit-only leads.", 0),
+    ("Stiff aramid helps footprint uniformity but its stiffness step can trigger uneven wear that must be engineered out.", 0),
+], 14)
+# 5 solutions
+s = cslide("How Nylon-Aramid Tackles Wear (vs. baseline)")
+img(s, "output/deck_solutions.png", 6.3, 1.45, 6.7)
+bullets(tb(s, 0.6, 1.7, 5.6, 5.0), [
+    ("Compared to all PCR patents, Nylon-Aramid is distinctive in the CORD itself:", 0),
+    ("Core-sheath / wrap construction (2.0x)", 1),
+    ("Graded / dual-modulus cord (1.9x)", 1),
+    ("Twist / cord-geometry tuning (1.8x)", 1),
+    ("Adhesion/dip, two-layer and ZONED density are NOT distinctive to Nylon-Aramid (~1x) — zoned density is a PET/PA story (next slide).", 0),
+], 14)
+# 6 representative patents
+s = cslide("Representative Nylon-Aramid Patents")
 items = []
-for doc, asg, yr, ls, snip in KEY_PATENTS:
-    items.append((f"{doc}  —  {asg}  ({yr}, {ls})", 0))
-    items.append((snip, 1))
-bullets(tf, items, size=14)
-
-# 8 deep dive — solution approaches
-s = content_slide("Deep Dive — How Nylon-Aramid Patents Solve Wear")
-add_img(s, "output/deck_solutions.png", 6.4, 1.4, 6.6)
-tf = textbox(s, 0.6, 1.6, 5.5, 5.2)
-bullets(tf, [
-    ("Researchers rarely chase abrasion resistance directly.", 0),
-    ("The strategy: make the contact patch uniform & dimensionally stable.", 0),
-    ("Aramid gives hoop stiffness → restrains crown growth → stable tread geometry → less slip/squirm wear.", 0),
-    ("But aramid's stiffness step itself causes uneven wear — so most IP is about placing & grading that stiffness.", 0),
-], size=15)
-
-# 9 five recurring solutions
-s = content_slide("Five Recurring Engineering Solutions")
-tf = textbox(s, 0.6, 1.35, 12.2, 5.7)
-bullets(tf, [
-    ("1. Dual-modulus / core-sheath cord (51%) — low-mod core (nylon/rayon/PET) + high-mod aramid sheath; soft to build, stiff in service.", 0),
-    ("Goodyear EP2380755A2 (ALIVE): low-modulus core, 5–15 TPI, high-modulus outer filament.", 1),
-    ("2. Twist / cord-geometry tuning (64%) — twist, denier, filament count set where the modulus transition occurs.", 0),
-    ("3. Adhesion / dip engineering (61%) — epoxy pre-dip + RFL; less cord-rubber slip → less wear & edge separation.", 0),
-    ("Goodyear US20160288575A1: single-end-dipped (SED) cords, no calendering.", 1),
-    ("4. Zoned / two-layer overlay (46%) — different cord/density across tread width to equalise contact pressure (the uneven-wear fix).", 0),
-    ("5. Positioning vs. grooves & geometry ratios (20%) — keep the stiffness step away from where wear initiates.", 0),
-], size=14)
-
-# 10 zoned density examples (live art)
-s = content_slide("The Uneven-Wear Fix: Zoned Density (live art)")
-tf = textbox(s, 0.6, 1.4, 12.2, 5.6)
-bullets(tf, [
-    ("Continental EP3912833A1 (ALIVE): centre PET at 120 EPDM + PA4.6 side sections at 130 EPDM.", 0),
-    ("Continental DE102016223304B4 (ALIVE): 3-section bandage, centre PA6.6 (470x2) + side sections for 'more uniform abrasion'.", 0),
-    ("Sumitomo JP2018184071A (ALIVE): centre low density (Ec) + shoulder high density (Em) → even stiffness across the tread.", 0),
-    ("Continental EP2048005B1 (ALIVE): tuned radius-to-width ratios so the stiffness discontinuity doesn't land at wear-initiation sites.", 0),
-    ("Implication: the defensible path is stiffness PLACEMENT (zoning / grading), not a harder cord — and Continental & Sumitomo already hold live art here.", 0),
-], size=15)
-
-# 11 takeaways
-s = content_slide("Takeaways & Recommendations")
-tf = textbox(s, 0.6, 1.4, 12.1, 5.6)
-bullets(tf, [
-    ("Wear/mileage is a SECONDARY, indirect benefit of hybrid zero-degree cords — led by stiffness and footprint control.", 0),
-    ("For Nylon-Aramid specifically, manage the uneven-wear risk: the stiffness step at the cap-ply edge / over the reinforcing layer drives irregular wear.", 0),
-    ("Design levers in the IP: dual-modulus cord, twist tuning, adhesion/dip, zoned/two-layer bandage, positioning vs. grooves.", 0),
-    ("White space is narrow: zoned-density / modulus-grading is the proven path but Continental & Sumitomo hold live art — check freedom-to-operate.", 0),
-    ("Next: tighten the Nylon-Aramid set to explicit co-twisted constructions; add rolling-resistance and high-speed-durability axes.", 0),
-], size=15)
+for doc, asg, yr, ls, sn in KEY[:6]:
+    items.append((f"{doc} — {asg} ({yr}, {ls})", 0)); items.append((sn, 1))
+bullets(tb(s, 0.5, 1.35, 12.4, 5.7), items, 14)
+# 7 zoned density honesty slide
+s = cslide("Related Lever: Zoned Density is PET/PA — not Nylon-Aramid")
+bullets(tb(s, 0.6, 1.4, 12.1, 5.6), [
+    ("Zoned-density bandages (different cord/density centre vs. shoulder) are a real uneven-wear fix — but in PET/PA hybrids, not Nylon-Aramid.", 0),
+    ("Continental EP3912833A1 (ALIVE): centre PET 120 EPDM + PA4.6 side sections 130 EPDM.", 1),
+    ("Continental DE102016223304B4 (ALIVE): 3-section bandage, centre PA6.6 (470x2) for 'more uniform abrasion'.", 1),
+    ("In the Nylon-Aramid cohort zoned density appears in only ~3% (1.3x) — it is NOT the Nylon-Aramid wear lever.", 0),
+    ("Takeaway: do not attribute the zoned-density wear story to Nylon-Aramid cords.", 0),
+], 15)
+# 8 assignees
+s = cslide("Who Owns the Nylon-Aramid IP")
+img(s, "output/deck_assignees.png", 6.5, 1.5, 6.5)
+bullets(tb(s, 0.6, 1.7, 5.7, 4.8), [
+    ("Japanese OEMs (Bridgestone, Sumitomo, Yokohama) plus Goodyear, Michelin, Continental.", 0),
+    ("Cord makers (Kordsa, Hyosung) appear in the construction patents.", 0),
+    ("Most Nylon-Aramid wear patents are legally DEAD — limited live art on the wear angle specifically.", 0),
+], 15)
+# 9 limitations
+s = cslide("Limitations & Methodology (read before citing)")
+bullets(tb(s, 0.6, 1.35, 12.2, 5.8), [
+    ("Cohorts are text-mined (PatSeer fields + AI summaries) with high recall; spot-check before quoting individual patents.", 0),
+    ("'Nylon-Aramid' = explicit aramid+nylon hybrid-cord construction. A looser co-occurrence rule inflated this ~3x (318 -> 100); the strict figure is used here.", 0),
+    ("92 primary motorcycle tires were removed; some patents still mention motorcycle as a secondary application.", 0),
+    ("Solution percentages are multi-label and shown as ENRICHMENT vs. baseline to avoid overstating common vocabulary.", 0),
+    ("Wear is predominantly treadwear, not 'mileage' (named in only ~12 patents).", 0),
+    ("Corpus skews pre-2015; legal status reflects the export date.", 0),
+], 14)
+# 10 takeaways
+s = cslide("Takeaways & Recommendations")
+bullets(tb(s, 0.6, 1.4, 12.1, 5.6), [
+    ("Wear/mileage is a secondary, indirect benefit of Nylon-Aramid zero-degree cords — via stiffness and footprint control.", 0),
+    ("The Nylon-Aramid wear lever is the CORD: core-sheath, dual-modulus, twist tuning — not zoned density (that is PET/PA).", 0),
+    ("Manage the uneven-wear risk created by the aramid stiffness step (defensive IP is a real share).", 0),
+    ("White space: Nylon-Aramid wear evidence is thin and mostly dead — opportunity, but validate FTO against live PET/PA zoned-density art.", 0),
+    ("Next: pull full claims for the strict Nylon-Aramid set; add rolling-resistance and high-speed-durability axes.", 0),
+], 15)
 
 out = "reports/Hybrid_Cord_Wear_Analysis.pptx"
 prs.save(out)
 print("saved", out, "|", len(prs.slides._sldIdLst), "slides")
-print("General wear", SG["wear"], "Nylon-Aramid wear", SN["wear"])
+print(f"corpus={N_CORPUS} | general {SG['cohort']}/{SG['wear']} | nylon-aramid {SN['cohort']}/{SN['wear']}")
