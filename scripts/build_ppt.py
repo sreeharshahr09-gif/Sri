@@ -25,7 +25,7 @@ NAVY, BLUE, RED, GREEN, GREY, PURP = "#1F3B57", "#4C72B0", "#C44E52", "#55A868",
 df = C.load()                       # 1080 PCR (motorcycle dropped)
 m = C.masks(df)
 t = df["_txt"]
-GEN, NA, WEAR = m["general"], m["nylon_aramid"], m["wear"]
+GEN, NA, PN, WEAR = m["general"], m["nylon_aramid"], m["pet_nylon"], m["wear"]
 N_CORPUS = len(df)
 
 def norm(s):
@@ -42,6 +42,7 @@ def themes(mask):
 
 SG = dict(cohort=int(GEN.sum()), wear=int((GEN & WEAR).sum()), **themes(GEN))
 SN = dict(cohort=int(NA.sum()), wear=int((NA & WEAR).sum()), **themes(NA))
+SP = dict(cohort=int(PN.sum()), wear=int((PN & WEAR).sum()), overlap=int((PN & NA).sum()), **themes(PN))
 
 def save(fig, path):
     fig.tight_layout(); fig.savefig(path, bbox_inches="tight", facecolor="white"); plt.close(fig)
@@ -84,13 +85,13 @@ save(fig, "output/deck_themes.png")
 
 # chart 3: solution approaches — Nylon-Aramid vs baseline (enrichment)
 SOL = {
-    "Twist / cord geometry": r"twist|denier|dtex|filament count|cord diameter|cord thickness",
-    "Graded / dual-modulus": r"(high|low|first|second|different).{0,20}modulus|graded modulus|elastic modulus",
-    "Adhesion / dip system": r"adhesion|adhesive|\brfl\b|dip|epoxy|tackif",
-    "Core-sheath / wrap": r"core.{0,15}(sheath|wrap|cover)|sheath|wound around.{0,15}core|wrap yarn",
-    "Two-layer / edge-cover": r"two layer|double layer|dual layer|edge (band|cover|cap|layer)",
-    "Position vs grooves": r"(below|beneath|under).{0,25}(groove|land)|land portion",
-    "Zoned density (center/edge)": r"(center|centre|shoulder|edge|side section|side portion).{0,60}(density|spacing|epdm|ends per)",
+    "Cord twist & geometry": r"twist|denier|dtex|filament count|cord diameter|cord thickness",
+    "Dual-modulus cord (two stiffnesses)": r"(high|low|first|second|different).{0,20}modulus|graded modulus|elastic modulus",
+    "Cord-to-rubber adhesion (dip)": r"adhesion|adhesive|\brfl\b|dip|epoxy|tackif",
+    "Core-sheath cord (2 materials, 1 cord)": r"core.{0,15}(sheath|wrap|cover)|sheath|wound around.{0,15}core|wrap yarn",
+    "Layered / edge-cover bandage": r"two layer|double layer|dual layer|edge (band|cover|cap|layer)",
+    "Cord position under grooves": r"(below|beneath|under).{0,25}(groove|land)|land portion",
+    "Center-vs-edge cord layout (zoned)": r"(center|centre|shoulder|edge|side section|side portion).{0,60}(density|spacing|epdm|ends per)",
 }
 coh = t[NA.values]
 rows = [(k, coh.str.contains(p, regex=True).mean(), t.str.contains(p, regex=True).mean()) for k, p in SOL.items()]
@@ -106,6 +107,44 @@ ax.set_title("How Nylon-Aramid patents differ — approach vs. baseline\n"
              "(enrichment x; only core-sheath, dual-modulus & twist are distinctive)",
              fontweight="bold", fontsize=12)
 save(fig, "output/deck_solutions.png")
+
+# chart 3b: PET-Nylon vs baseline (same taxonomy, enrichment)
+cohPN = t[PN.values]
+rowsPN = sorted([(k, cohPN.str.contains(p, regex=True).mean(), t.str.contains(p, regex=True).mean())
+                 for k, p in SOL.items()], key=lambda r: (r[1]/r[2]) if r[2] else 0)
+fig, ax = plt.subplots(figsize=(9.6, 5.2))
+y = np.arange(len(rowsPN)); h = 0.4
+b1 = ax.barh(y + h/2, [100*r[1] for r in rowsPN], h, color=BLUE, label=f"PET-Nylon (n={int(PN.sum())})")
+ax.barh(y - h/2, [100*r[2] for r in rowsPN], h, color=GREY, label=f"All PCR baseline (n={N_CORPUS})")
+ax.bar_label(b1, labels=[f" {r[1]/r[2]:.1f}x" for r in rowsPN], fontsize=9, fontweight="bold")
+ax.set_yticks(y); ax.set_yticklabels([r[0] for r in rowsPN], fontsize=10); ax.legend(fontsize=9)
+ax.set_xlabel("% of patents mentioning the approach")
+ax.set_title("How PET-Nylon patents differ — approach vs. baseline\n"
+             "(enrichment x; center-vs-edge cord layout is the distinctive lever)",
+             fontweight="bold", fontsize=12)
+save(fig, "output/deck_pet_solutions.png")
+
+# chart 3c: PET-Nylon vs Nylon-Aramid head-to-head (enrichment)
+ePN = {k: (cohPN.str.contains(p, regex=True).mean() / t.str.contains(p, regex=True).mean())
+       for k, p in SOL.items()}
+eNA = {k: (coh.str.contains(p, regex=True).mean() / t.str.contains(p, regex=True).mean())
+       for k, p in SOL.items()}
+order = sorted(SOL, key=lambda k: max(ePN[k], eNA[k]))
+fig, ax = plt.subplots(figsize=(10.4, 5.6))
+y = np.arange(len(order)); h = 0.4
+bP = ax.barh(y + h/2, [ePN[k] for k in order], h, color=BLUE, label=f"PET-Nylon (n={int(PN.sum())})")
+bN = ax.barh(y - h/2, [eNA[k] for k in order], h, color=RED, label=f"Nylon-Aramid (n={int(NA.sum())})")
+ax.bar_label(bP, labels=[f" {ePN[k]:.1f}x" for k in order], fontsize=9, fontweight="bold")
+ax.bar_label(bN, labels=[f" {eNA[k]:.1f}x" for k in order], fontsize=9, fontweight="bold")
+ax.axvline(1.0, color="#444444", lw=1, ls="--")
+ax.set_yticks(y); ax.set_yticklabels(order, fontsize=10); ax.legend(loc="lower right", fontsize=9)
+ax.set_xlabel("enrichment vs. all-PCR baseline  (x)")
+PN_ZONE_X = ePN["Center-vs-edge cord layout (zoned)"]; NA_CORE_X = eNA["Core-sheath cord (2 materials, 1 cord)"]
+ax.set_title("Two different wear strategies — PET-Nylon vs. Nylon-Aramid\n"
+             f"PET-Nylon = center-vs-edge cord layout ({PN_ZONE_X:.1f}x); Nylon-Aramid = the CORD "
+             f"(core-sheath {NA_CORE_X:.1f}x); dual-modulus & twist shared",
+             fontweight="bold", fontsize=11)
+save(fig, "output/deck_pet_vs_na.png")
 
 # chart 4: nylon-aramid cohort assignees
 fig, ax = plt.subplots(figsize=(8.6, 4.6))
@@ -178,6 +217,7 @@ bullets(tb(s, 0.6, 1.4, 12.1, 5.6), [
     ("Two hybrid-cord cohorts, defined by EXPLICIT hybrid-cord construction (not mere material co-occurrence):", 0),
     (f"General hybrid cords: {SG['cohort']} patents", 1),
     (f"Nylon-Aramid cords (focus): {SN['cohort']} patents", 1),
+    (f"PET-Nylon cords (comparison): {SP['cohort']} patents", 1),
     ("Wear detection over title/abstract/claims/description + PatSeer AI summaries; 'mileage' is rarely named — this is predominantly a treadwear analysis.", 0),
     ("Theme tagging: BENEFIT (wear resistance/mileage) vs. DEFENSIVE (fixing uneven wear). See Limitations slide for caveats.", 0),
 ], 15)
@@ -204,10 +244,10 @@ s = cslide("How Nylon-Aramid Tackles Wear (vs. baseline)")
 img(s, "output/deck_solutions.png", 6.3, 1.45, 6.7)
 bullets(tb(s, 0.6, 1.7, 5.6, 5.0), [
     ("Compared to all PCR patents, Nylon-Aramid is distinctive in the CORD itself:", 0),
-    ("Core-sheath / wrap construction (2.0x)", 1),
-    ("Graded / dual-modulus cord (1.9x)", 1),
-    ("Twist / cord-geometry tuning (1.8x)", 1),
-    ("Adhesion/dip, two-layer and ZONED density are NOT distinctive to Nylon-Aramid (~1x) — zoned density is a PET/PA story (next slide).", 0),
+    ("Core-sheath cord — 2 materials in 1 cord (2.0x)", 1),
+    ("Dual-modulus cord — two stiffnesses (1.9x)", 1),
+    ("Cord twist & geometry tuning (1.8x)", 1),
+    ("Adhesion/dip, layered bandage and center-vs-edge layout are NOT distinctive to Nylon-Aramid (~1x) — zoned layout is a PET/PA story (next slide).", 0),
 ], 14)
 # 6 representative patents
 s = cslide("Representative Nylon-Aramid Patents")
@@ -224,7 +264,33 @@ bullets(tb(s, 0.6, 1.4, 12.1, 5.6), [
     ("In the Nylon-Aramid cohort zoned density appears in only ~3% (1.3x) — it is NOT the Nylon-Aramid wear lever.", 0),
     ("Takeaway: do not attribute the zoned-density wear story to Nylon-Aramid cords.", 0),
 ], 15)
-# 8 assignees
+# 8 PET-Nylon tackles wear (vs baseline) — the requested parallel study
+s = cslide("How PET-Nylon Tackles Wear (vs. baseline)")
+img(s, "output/deck_pet_solutions.png", 6.3, 1.45, 6.7)
+bullets(tb(s, 0.6, 1.6, 5.6, 5.2), [
+    (f"PET-Nylon (polyester+polyamide) hybrid cohort: {SP['cohort']} PCR patents, "
+     f"{SP['wear']} make a wear claim ({100*SP['wear']/SP['cohort']:.0f}%).", 0),
+    ("Same taxonomy and baseline as the Nylon-Aramid study, so the two are directly comparable.", 0),
+    ("PET-Nylon's distinctive wear lever is SPATIAL, not the cord:", 0),
+    (f"Center-vs-edge cord layout (zoned) — by far the most enriched approach ({PN_ZONE_X:.0f}x baseline)", 1),
+    ("Layered / edge-cover bandage is also above baseline", 1),
+    ("The blended cord itself (core-sheath) is NOT enriched — PET-Nylon zones "
+     "different cords by position rather than co-twisting one composite filament.", 0),
+    ("Dual-modulus & twist tuning are shared hybrid-cord vocabulary.", 0),
+], 13)
+# 9 head-to-head comparison (the deliverable graph)
+s = cslide("PET-Nylon vs. Nylon-Aramid — Two Different Wear Strategies")
+img(s, "output/deck_pet_vs_na.png", 5.6, 1.5, 7.4)
+bullets(tb(s, 0.5, 1.6, 5.0, 5.4), [
+    ("Both raise mileage/treadwear indirectly via crown stiffness & footprint control — but by different means:", 0),
+    (f"Nylon-Aramid -> engineers the CORD: core-sheath cord, 2 materials in 1 ({NA_CORE_X:.0f}x).", 1),
+    (f"PET-Nylon -> engineers the LAYOUT: center-vs-edge cord placement ({PN_ZONE_X:.0f}x).", 1),
+    ("Shared levers: dual-modulus stiffness step, twist tuning, cord-to-rubber adhesion.", 0),
+    (f"Evidence base is thin for both wear angles — PET-Nylon {SP['wear']} wear patents, "
+     f"Nylon-Aramid {SN['wear']}; {SP['overlap']} patents use both constructions. Interpret enrichment as direction, not magnitude.", 0),
+    ("This quantifies the earlier point: zoned density is the PET/PA story, the cord is the Nylon-Aramid story.", 0),
+], 13)
+# 10 assignees
 s = cslide("Who Owns the Nylon-Aramid IP")
 img(s, "output/deck_assignees.png", 6.5, 1.5, 6.5)
 bullets(tb(s, 0.6, 1.7, 5.7, 4.8), [
@@ -237,6 +303,7 @@ s = cslide("Limitations & Methodology (read before citing)")
 bullets(tb(s, 0.6, 1.35, 12.2, 5.8), [
     ("Cohorts are text-mined (PatSeer fields + AI summaries) with high recall; spot-check before quoting individual patents.", 0),
     ("'Nylon-Aramid' = explicit aramid+nylon hybrid-cord construction. A looser co-occurrence rule inflated this ~3x (318 -> 100); the strict figure is used here.", 0),
+    (f"'PET-Nylon' = explicit polyester+polyamide pairing, core-sheath, or zoned PET-vs-PA bandage ({SP['cohort']} patents). Polyester+nylon are commodity fibres, so loose co-occurrence was rejected; {SP['overlap']} overlap with Nylon-Aramid (multi-material bandages).", 0),
     ("92 primary motorcycle tires were removed; some patents still mention motorcycle as a secondary application.", 0),
     ("Solution percentages are multi-label and shown as ENRICHMENT vs. baseline to avoid overstating common vocabulary.", 0),
     ("Wear is predominantly treadwear, not 'mileage' (named in only ~12 patents).", 0),
@@ -247,6 +314,7 @@ s = cslide("Takeaways & Recommendations")
 bullets(tb(s, 0.6, 1.4, 12.1, 5.6), [
     ("Wear/mileage is a secondary, indirect benefit of Nylon-Aramid zero-degree cords — via stiffness and footprint control.", 0),
     ("The Nylon-Aramid wear lever is the CORD: core-sheath, dual-modulus, twist tuning — not zoned density (that is PET/PA).", 0),
+    ("PET-Nylon attacks the same wear problem differently — center-vs-edge cord layout (zoned) — confirmed in its own enrichment study.", 0),
     ("Manage the uneven-wear risk created by the aramid stiffness step (defensive IP is a real share).", 0),
     ("White space: Nylon-Aramid wear evidence is thin and mostly dead — opportunity, but validate FTO against live PET/PA zoned-density art.", 0),
     ("Next: pull full claims for the strict Nylon-Aramid set; add rolling-resistance and high-speed-durability axes.", 0),

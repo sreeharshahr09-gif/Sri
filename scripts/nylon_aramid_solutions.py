@@ -20,13 +20,13 @@ df = C.load(); m = C.masks(df); t = df["_txt"]
 NA = m["nylon_aramid"]; N = int(NA.sum()); BASE = len(df)
 
 SOL = {
-    "Twist / cord geometry": r"twist|denier|dtex|filament count|cord diameter|cord thickness",
-    "Graded / dual-modulus": r"(high|low|first|second|different).{0,20}modulus|graded modulus|elastic modulus",
-    "Adhesion / dip system": r"adhesion|adhesive|\brfl\b|dip|epoxy|tackif",
-    "Core-sheath / wrap": r"core.{0,15}(sheath|wrap|cover)|sheath|wound around.{0,15}core|wrap yarn",
-    "Two-layer / edge-cover": r"two layer|double layer|dual layer|edge (band|cover|cap|layer)",
-    "Position vs grooves": r"(below|beneath|under).{0,25}(groove|land)|land portion",
-    "Zoned density (center/edge)": r"(center|centre|shoulder|edge|side section|side portion).{0,60}(density|spacing|epdm|ends per)",
+    "Cord twist & geometry": r"twist|denier|dtex|filament count|cord diameter|cord thickness",
+    "Dual-modulus cord (two stiffnesses)": r"(high|low|first|second|different).{0,20}modulus|graded modulus|elastic modulus",
+    "Cord-to-rubber adhesion (dip)": r"adhesion|adhesive|\brfl\b|dip|epoxy|tackif",
+    "Core-sheath cord (2 materials, 1 cord)": r"core.{0,15}(sheath|wrap|cover)|sheath|wound around.{0,15}core|wrap yarn",
+    "Layered / edge-cover bandage": r"two layer|double layer|dual layer|edge (band|cover|cap|layer)",
+    "Cord position under grooves": r"(below|beneath|under).{0,25}(groove|land)|land portion",
+    "Center-vs-edge cord layout (zoned)": r"(center|centre|shoulder|edge|side section|side portion).{0,60}(density|spacing|epdm|ends per)",
 }
 coh = t[NA.values]
 rows = [(k, coh.str.contains(p, regex=True).mean(), t.str.contains(p, regex=True).mean()) for k, p in SOL.items()]
