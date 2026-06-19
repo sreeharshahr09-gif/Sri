@@ -136,6 +136,29 @@ ax.bar_label(bb, padding=2)
 ax.set_xlabel("patents"); ax.set_title("Top assignees — Nylon-Aramid wear patents", fontweight="bold")
 save(fig, "output/deck_assignees.png")
 
+# chart 5: nylon-aramid solution approaches
+nawt = txt[(NYLON_ARAMID & WEAR).values]
+SOL = {
+    "Twist / cord geometry tuning": r"twist|denier|dtex|filament count|cord diameter|cord thickness",
+    "Adhesion / dip system": r"adhesion|adhesive|\brfl\b|dip|epoxy|coating|tackif",
+    "Graded / dual-modulus cord": r"(high|low|first|second|different).{0,20}modulus|graded modulus|modulus.{0,20}(gradient|difference|ratio)|elastic modulus",
+    "Two-layer / edge-cover overlay": r"two layer|double layer|dual layer|full[- ]?width.{0,30}(edge|band)|edge (band|cover|cap|layer)|plural.{0,20}layer",
+    "Aramid:nylon ratio / core-sheath": r"(aramid|nylon).{0,20}(ratio|proportion|content|percentage)|blend|core.{0,15}(aramid|nylon|sheath)|sheath|wound around.{0,15}core",
+    "Position relative to grooves": r"(below|beneath|under|outside|inside).{0,25}(groove|land)|groove.{0,25}(belt|reinforc|cord)|land portion",
+    "Zoned density (center vs edge)": r"(center|centre|shoulder|edge|side section|side portion|end portion).{0,60}(density|spacing|count|ends per|epdm)",
+    "Variable / graded winding pitch": r"(variable|gradually|graded|different).{0,30}(pitch|spacing|winding)|winding pitch",
+}
+NAW_N = len(nawt)
+sol_counts = pd.Series({k: int(nawt.str.contains(p, regex=True).sum()) for k, p in SOL.items()}).sort_values()
+fig, ax = plt.subplots(figsize=(9.0, 5.0))
+bars = ax.barh(sol_counts.index, sol_counts.values, color=RED)
+ax.bar_label(bars, padding=3)
+ax.bar_label(bars, labels=[f"{100*v/NAW_N:.0f}%" for v in sol_counts.values],
+             padding=-40, color="white", fontweight="bold", fontsize=9)
+ax.set_xlabel(f"patents (of {NAW_N} Nylon-Aramid wear patents)")
+ax.set_title("How Nylon-Aramid patents tackle wear / mileage", fontweight="bold")
+save(fig, "output/deck_solutions.png")
+
 # representative nylon-aramid patents
 belt_re = re.compile(r"cap ply|cap-ply|overlay|jointless|spiral|circumferential|belt|band|cord|reinforc", re.I)
 def snippet(i):
@@ -268,16 +291,51 @@ for doc, asg, yr, ls, snip in KEY_PATENTS:
     items.append((snip, 1))
 bullets(tf, items, size=14)
 
-# 8 takeaways
+# 8 deep dive — solution approaches
+s = content_slide("Deep Dive — How Nylon-Aramid Patents Solve Wear")
+add_img(s, "output/deck_solutions.png", 6.4, 1.4, 6.6)
+tf = textbox(s, 0.6, 1.6, 5.5, 5.2)
+bullets(tf, [
+    ("Researchers rarely chase abrasion resistance directly.", 0),
+    ("The strategy: make the contact patch uniform & dimensionally stable.", 0),
+    ("Aramid gives hoop stiffness → restrains crown growth → stable tread geometry → less slip/squirm wear.", 0),
+    ("But aramid's stiffness step itself causes uneven wear — so most IP is about placing & grading that stiffness.", 0),
+], size=15)
+
+# 9 five recurring solutions
+s = content_slide("Five Recurring Engineering Solutions")
+tf = textbox(s, 0.6, 1.35, 12.2, 5.7)
+bullets(tf, [
+    ("1. Dual-modulus / core-sheath cord (51%) — low-mod core (nylon/rayon/PET) + high-mod aramid sheath; soft to build, stiff in service.", 0),
+    ("Goodyear EP2380755A2 (ALIVE): low-modulus core, 5–15 TPI, high-modulus outer filament.", 1),
+    ("2. Twist / cord-geometry tuning (64%) — twist, denier, filament count set where the modulus transition occurs.", 0),
+    ("3. Adhesion / dip engineering (61%) — epoxy pre-dip + RFL; less cord-rubber slip → less wear & edge separation.", 0),
+    ("Goodyear US20160288575A1: single-end-dipped (SED) cords, no calendering.", 1),
+    ("4. Zoned / two-layer overlay (46%) — different cord/density across tread width to equalise contact pressure (the uneven-wear fix).", 0),
+    ("5. Positioning vs. grooves & geometry ratios (20%) — keep the stiffness step away from where wear initiates.", 0),
+], size=14)
+
+# 10 zoned density examples (live art)
+s = content_slide("The Uneven-Wear Fix: Zoned Density (live art)")
+tf = textbox(s, 0.6, 1.4, 12.2, 5.6)
+bullets(tf, [
+    ("Continental EP3912833A1 (ALIVE): centre PET at 120 EPDM + PA4.6 side sections at 130 EPDM.", 0),
+    ("Continental DE102016223304B4 (ALIVE): 3-section bandage, centre PA6.6 (470x2) + side sections for 'more uniform abrasion'.", 0),
+    ("Sumitomo JP2018184071A (ALIVE): centre low density (Ec) + shoulder high density (Em) → even stiffness across the tread.", 0),
+    ("Continental EP2048005B1 (ALIVE): tuned radius-to-width ratios so the stiffness discontinuity doesn't land at wear-initiation sites.", 0),
+    ("Implication: the defensible path is stiffness PLACEMENT (zoning / grading), not a harder cord — and Continental & Sumitomo already hold live art here.", 0),
+], size=15)
+
+# 11 takeaways
 s = content_slide("Takeaways & Recommendations")
 tf = textbox(s, 0.6, 1.4, 12.1, 5.6)
 bullets(tf, [
     ("Wear/mileage is a SECONDARY, indirect benefit of hybrid zero-degree cords — led by stiffness and footprint control.", 0),
-    ("For Nylon-Aramid specifically, manage the uneven-wear risk: the stiffness step at the cap-ply edge/over the reinforcing layer drives irregular wear.", 0),
-    ("Design levers seen in the IP: zoned / variable-pitch bandage, side vs. centre cord density, modulus tuning, positioning relative to grooves.", 0),
-    ("Watch the ALIVE Continental / Kumho / Sumitomo families for current art.", 0),
+    ("For Nylon-Aramid specifically, manage the uneven-wear risk: the stiffness step at the cap-ply edge / over the reinforcing layer drives irregular wear.", 0),
+    ("Design levers in the IP: dual-modulus cord, twist tuning, adhesion/dip, zoned/two-layer bandage, positioning vs. grooves.", 0),
+    ("White space is narrow: zoned-density / modulus-grading is the proven path but Continental & Sumitomo hold live art — check freedom-to-operate.", 0),
     ("Next: tighten the Nylon-Aramid set to explicit co-twisted constructions; add rolling-resistance and high-speed-durability axes.", 0),
-], size=16)
+], size=15)
 
 out = "reports/Hybrid_Cord_Wear_Analysis.pptx"
 prs.save(out)
