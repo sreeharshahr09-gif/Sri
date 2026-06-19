@@ -22,7 +22,8 @@ txt = df[fields].agg(" ".join, axis=1).str.lower()
 def near(a, b): return txt.str.contains(rf"{a}.{{0,40}}{b}|{b}.{{0,40}}{a}", regex=True)
 hybrid_word = txt.str.contains(r"hybrid cord|hybrid yarn|composite cord|co-twisted|two-component cord|dual modulus|different modulus|merged cord", regex=True)
 NA = near("aramid", "nylon") | near("aramid", "polyamide") | (txt.str.contains("aramid") & txt.str.contains(r"nylon|polyamide") & hybrid_word)
-wear_re = re.compile(r"mileage|tread ?wear|wear resistanc|wear life|tread life|abrasion|uneven wear|irregular wear|even wear|uniform wear|wear propert", re.I)
+# Canonical wear filter — identical to the deck and cohort analyses (N=115).
+wear_re = re.compile(r"mileage|tread ?wear|wear resistanc|wear life|wear performance|tread life|tire life|abrasion|uneven wear|irregular wear|even wear|uniform wear|anti-?wear|wear propert", re.I)
 WEAR = txt.map(lambda t: bool(wear_re.search(t)))
 naw = df[(NA & WEAR).values].copy()
 nawt = txt[(NA & WEAR).values]
@@ -42,15 +43,17 @@ for k, p in SOL.items():
 
 counts = pd.Series({k: int(naw[k].sum()) for k in SOL}).sort_values()
 N = len(naw)
+avg_tags = naw[list(SOL)].sum(axis=1).mean()
 
-fig, ax = plt.subplots(figsize=(10, 5.6))
+fig, ax = plt.subplots(figsize=(10.2, 5.8))
 bars = ax.barh(counts.index, counts.values, color="#C44E52")
-ax.bar_label(bars, padding=3)
-ax.bar_label(bars, labels=[f"{100*v/N:.0f}%" for v in counts.values], padding=-42,
-             color="white", fontweight="bold", fontsize=10)
-ax.set_xlabel(f"patents (of {N} Nylon-Aramid wear/mileage patents)")
-ax.set_title("How Nylon-Aramid patents tackle the wear / mileage problem",
-             fontweight="bold")
+ax.bar_label(bars, labels=[f"  {v}  ({100*v/N:.0f}%)" for v in counts.values],
+             padding=2, fontsize=11)
+ax.set_xlim(0, max(counts.values) * 1.25)
+ax.set_xlabel(f"number of patents (of {N})")
+ax.set_title(f"How Nylon-Aramid patents tackle the wear / mileage problem\n"
+             f"(multi-label: patents use ~{avg_tags:.1f} methods each, so % do not sum to 100)",
+             fontweight="bold", fontsize=12)
 plt.tight_layout(); plt.savefig("output/nylon_aramid_solutions.png", bbox_inches="tight")
 plt.close()
 

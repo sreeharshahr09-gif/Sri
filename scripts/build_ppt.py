@@ -150,13 +150,17 @@ SOL = {
 }
 NAW_N = len(nawt)
 sol_counts = pd.Series({k: int(nawt.str.contains(p, regex=True).sum()) for k, p in SOL.items()}).sort_values()
-fig, ax = plt.subplots(figsize=(9.0, 5.0))
+avg_tags = float(pd.DataFrame({k: nawt.str.contains(p, regex=True).values
+                               for k, p in SOL.items()}).sum(axis=1).mean())
+fig, ax = plt.subplots(figsize=(9.4, 5.2))
 bars = ax.barh(sol_counts.index, sol_counts.values, color=RED)
-ax.bar_label(bars, padding=3)
-ax.bar_label(bars, labels=[f"{100*v/NAW_N:.0f}%" for v in sol_counts.values],
-             padding=-40, color="white", fontweight="bold", fontsize=9)
-ax.set_xlabel(f"patents (of {NAW_N} Nylon-Aramid wear patents)")
-ax.set_title("How Nylon-Aramid patents tackle wear / mileage", fontweight="bold")
+ax.bar_label(bars, labels=[f"  {v}  ({100*v/NAW_N:.0f}%)" for v in sol_counts.values],
+             padding=2, fontsize=10)
+ax.set_xlim(0, max(sol_counts.values) * 1.25)
+ax.set_xlabel(f"number of patents (of {NAW_N})")
+ax.set_title(f"How Nylon-Aramid patents tackle wear / mileage\n"
+             f"(multi-label: patents use ~{avg_tags:.1f} methods each, so % do not sum to 100)",
+             fontweight="bold", fontsize=12)
 save(fig, "output/deck_solutions.png")
 
 # representative nylon-aramid patents
