@@ -5396,6 +5396,10 @@ function selectDesign(idx){
   const rhoEl=document.getElementById('inp-rho');      if(rhoEl) rhoEl.value=d.perfRho??1150;
   const plEl=document.getElementById('inp-pitch-len'); if(plEl) plEl.value=d.perfPitchLen??30;
   const shoreEl=document.getElementById('inp-shore');  if(shoreEl){ const want=d.perfShore||'62'; const opts=[...shoreEl.options].map(o=>o.value); if(opts.includes(String(want))){ shoreEl.value=String(want); } else if(want==='custom'){ shoreEl.value='custom'; } else { const nums=opts.filter(o=>o!=='custom').map(Number); const snap=nums.reduce((b,n)=>Math.abs(n- (+want))<Math.abs(b-(+want))?n:b, nums[0]); shoreEl.value=String(snap); } onShoreChange(); }
+  // onShoreChange() above auto-overwrites inp-E with the Shore-table default.
+  // Restore this design's actual saved E so editing an existing design keeps
+  // its (possibly manually-overridden) modulus instead of snapping to default.
+  const eElSel=document.getElementById('inp-E'); if(eElSel){ eElSel.value=d.E; eElSel.removeAttribute('data-shore-auto'); }
   const kcEl=document.getElementById('inp-k-custom');  if(kcEl) kcEl.value=d.perfKCustom??0.64;
   const taEl=document.getElementById('inp-target-area'); if(taEl) taEl.value=d.targetArea??'';
   updateAreaLockPreview();
