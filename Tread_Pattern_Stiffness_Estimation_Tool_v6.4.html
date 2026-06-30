@@ -903,7 +903,12 @@ details.input-details .details-body{padding:12px}
 <!-- ═══════════════ TAB 2b: CONTACT PATCH (v6.4) ═══════════════ -->
 <div id="tab-contact-patch" class="tab-panel">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap">
-    <label style="margin:0;white-space:nowrap">Pattern source:</label>
+    <label style="margin:0;white-space:nowrap">Scope:</label>
+    <select id="cp-scope" onchange="onCpScopeChange()" style="width:180px">
+      <option value="design">Single design</option>
+      <option value="pitch">Pitch group (all blocks)</option>
+    </select>
+    <label style="margin:0;white-space:nowrap" id="cp-source-label">Pattern source:</label>
     <select id="cp-design-select" onchange="renderContactPatch()" style="width:240px"></select>
     <label style="margin:0;white-space:nowrap">Overlay:</label>
     <select id="cp-overlay" onchange="renderContactPatch()" style="width:160px">
@@ -1449,6 +1454,86 @@ Lc         = A_contact / Wc              [mm]
         </div>
         <div id="pitch-group-count" style="font-size:11px;color:var(--tx3);margin-top:8px;line-height:1.6">
           All pitch groups are plotted together. No dropdown selection is required.
+        </div>
+      </div>
+
+      <!-- ═══ v6.5 — Bulk Edit (pitch-level parameters) ═══ -->
+      <div class="panel" id="pitch-bulk-edit-panel">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+          <h3 style="margin:0">Bulk Parameter Editor <span style="font-size:9px;color:var(--acc);font-weight:600;margin-left:4px">v6.5</span></h3>
+          <span style="font-size:10px;color:var(--tx3)">Apply input changes to every block of a pitch group at once. Designed for post-DXF cleanup.</span>
+        </div>
+        <div class="row3" style="gap:8px;margin-bottom:8px">
+          <div class="field"><label>Target pitch group</label>
+            <select id="bulk-pg-select" style="width:100%"></select>
+          </div>
+          <div class="field"><label>Affected blocks</label>
+            <div id="bulk-pg-count" style="padding:6px 8px;font-size:11px;color:var(--tx2);font-family:'JetBrains Mono',monospace;background:var(--bg);border:1px solid var(--brd);border-radius:5px">—</div>
+          </div>
+          <div class="field"><label>&nbsp;</label>
+            <button class="btn btn-sm" onclick="refreshBulkPitchSelector()" style="width:100%">↻ Refresh groups</button>
+          </div>
+        </div>
+
+        <div style="font-size:10px;color:var(--tx3);margin:6px 0 4px 0;letter-spacing:1.5px;font-family:'JetBrains Mono',monospace">PROPERTIES TO APPLY <span style="color:var(--tx3);font-weight:400">— blank = leave untouched</span></div>
+
+        <div class="row3" style="gap:8px">
+          <div class="field"><label>NSD (mm)</label><input id="bulk-nsd" type="number" step="0.1" min="0.1" placeholder=""></div>
+          <div class="field"><label>E (N/mm²)</label><input id="bulk-E" type="number" step="0.1" min="0.1" placeholder=""></div>
+          <div class="field"><label>ν Poisson</label><input id="bulk-nu" type="number" step="0.01" min="0" max="0.499" placeholder=""></div>
+        </div>
+        <div class="row3" style="gap:8px">
+          <div class="field"><label>Shore A</label>
+            <select id="bulk-shore">
+              <option value="">(no change)</option>
+              <option value="50">50</option><option value="55">55</option>
+              <option value="60">60</option><option value="62">62</option>
+              <option value="65">65</option><option value="70">70</option>
+              <option value="75">75</option><option value="80">80</option>
+            </select>
+          </div>
+          <div class="field"><label>Tyre Type</label>
+            <select id="bulk-tyre-type">
+              <option value="">(no change)</option>
+              <option value="pcr">PCR</option>
+              <option value="tbr">TBR</option>
+              <option value="lt">LT</option>
+            </select>
+          </div>
+          <div class="field"><label>Rubber ρ (kg/m³)</label><input id="bulk-rho" type="number" step="50" min="900" max="1400" placeholder=""></div>
+        </div>
+        <div class="row3" style="gap:8px">
+          <div class="field"><label>Fz (N)</label><input id="bulk-fz" type="number" step="50" min="0" placeholder=""></div>
+          <div class="field"><label>μ friction</label><input id="bulk-mu" type="number" step="0.05" min="0.1" max="2" placeholder=""></div>
+          <div class="field"><label>Pitch Length (mm)</label><input id="bulk-pitchlen" type="number" step="1" min="1" placeholder=""></div>
+        </div>
+        <div class="row3" style="gap:8px">
+          <div class="field"><label>Slip α (°)</label><input id="bulk-alpha" type="number" step="0.5" min="0" max="20" placeholder=""></div>
+          <div class="field"><label>Long. slip κ</label><input id="bulk-kappa" type="number" step="0.01" min="0" max="0.3" placeholder=""></div>
+          <div class="field"><label>Lc (mm)</label><input id="bulk-lc" type="number" step="5" min="1" placeholder=""></div>
+        </div>
+        <div class="row3" style="gap:8px">
+          <div class="field"><label>Wc (mm)</label><input id="bulk-wc" type="number" step="5" min="1" placeholder=""></div>
+          <div class="field"><label>Inflation (kPa)</label><input id="bulk-inflation" type="number" step="10" min="50" placeholder=""></div>
+          <div class="field"><label>Section W (mm)</label><input id="bulk-sectionw" type="number" step="5" min="80" placeholder=""></div>
+        </div>
+        <div class="row3" style="gap:8px">
+          <div class="field"><label>Aspect Ratio (%)</label><input id="bulk-aspect" type="number" step="5" min="20" max="100" placeholder=""></div>
+          <div class="field"><label>Rim Ø (in)</label><input id="bulk-rim" type="number" step="1" min="10" max="26" placeholder=""></div>
+          <div class="field" style="display:flex;align-items:flex-end">
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;margin:0">
+              <input id="bulk-auto-lcwc" type="checkbox" style="width:auto"> Force Auto Lc/Wc on
+            </label>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
+          <button class="btn btn-acc" onclick="bulkApplyToPitchGroup()">⚡ Apply to pitch group</button>
+          <button class="btn btn-sm" onclick="bulkClearForm()">Clear form</button>
+          <span id="bulk-status" style="font-size:11px;color:var(--tx2);margin-left:auto;font-family:'JetBrains Mono',monospace"></span>
+        </div>
+        <div style="font-size:10px;color:var(--tx3);margin-top:6px;line-height:1.5">
+          Leave a field blank to keep each block's existing value. Tick <em>Force Auto Lc/Wc on</em> to make the pitch group auto-derive Lc &amp; Wc from tire spec after apply.
         </div>
       </div>
       <div id="pitch-analysis-empty" style="text-align:center;padding:60px;color:var(--tx3)">
@@ -3920,7 +4005,7 @@ function showTab(name){
   if(name==='pattern')renderPattern();
   if(name==='validation')renderValidation();
   if(name==='view3d'){requestAnimationFrame(()=>{refresh3DSelector(); resize3DRenderer(); render3DSelected();});}
-  if(name==='pitch'){updatePitchBlockTable(); analyzePitch();}
+  if(name==='pitch'){updatePitchBlockTable(); analyzePitch(); if(typeof refreshBulkPitchSelector==='function') refreshBulkPitchSelector();}
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3929,17 +4014,46 @@ function showTab(name){
 //  stick/slip / pressure / per-block SWE.
 // ═══════════════════════════════════════════════════════════════
 function refreshContactPatchSelector(){
-  const sel = document.getElementById('cp-design-select');
+  const sel   = document.getElementById('cp-design-select');
+  const scope = document.getElementById('cp-scope');
+  const label = document.getElementById('cp-source-label');
   if (!sel) return;
   const cur = sel.value;
   sel.innerHTML = '';
+  const scopeMode = (scope && scope.value) || 'design';
+  if (scopeMode === 'pitch'){
+    if (label) label.textContent = 'Pitch group:';
+    // Build pitch-group list from designs
+    const groups = Array.from(new Set(designs
+      .map(d => (d.pitchGroup||'').trim())
+      .filter(Boolean))).sort();
+    if (!groups.length){
+      const opt = document.createElement('option');
+      opt.value = ''; opt.textContent = '(no pitch groups defined)';
+      sel.appendChild(opt);
+      return;
+    }
+    groups.forEach(g => {
+      const opt = document.createElement('option');
+      opt.value = 'pg:' + g; opt.textContent = g + ' (' +
+        designs.filter(d => (d.pitchGroup||'').trim() === g).length + ' blocks)';
+      sel.appendChild(opt);
+    });
+    if (cur && cur.startsWith('pg:') && groups.includes(cur.slice(3))) sel.value = cur;
+    return;
+  }
+  if (label) label.textContent = 'Pattern source:';
   designs.forEach((d, i) => {
     const opt = document.createElement('option');
     opt.value = String(i);
     opt.textContent = d.name || `Design ${i+1}`;
     sel.appendChild(opt);
   });
-  if (cur && +cur < designs.length) sel.value = cur;
+  if (cur && !cur.startsWith('pg:') && +cur < designs.length) sel.value = cur;
+}
+function onCpScopeChange(){
+  refreshContactPatchSelector();
+  renderContactPatch();
 }
 function onCpSliderChange(){
   const aS = document.getElementById('cp-alpha-slider');
@@ -4014,63 +4128,111 @@ function renderContactPatch(){
   if (cont)  cont.style.display = '';
   refreshContactPatchSelector();
 
-  const idx = parseInt(document.getElementById('cp-design-select').value, 10) || 0;
-  const d   = designs[idx];
-  if (!d) return;
+  const scope   = (document.getElementById('cp-scope')?.value) || 'design';
+  const selVal  = document.getElementById('cp-design-select').value;
 
-  // Read current sliders (override inp-alpha/inp-kappa for this view)
+  // ── Resolve the set of source designs (1 or many) ────────────────
+  let sourceDesigns = [];
+  let scopeLabel = '';
+  if (scope === 'pitch' && selVal.startsWith('pg:')){
+    const group = selVal.slice(3);
+    sourceDesigns = designs.filter(d => (d.pitchGroup||'').trim() === group);
+    scopeLabel = `Pitch group "${group}" — ${sourceDesigns.length} block${sourceDesigns.length===1?'':'s'}`;
+    if (!sourceDesigns.length){
+      document.getElementById('cp-svg').innerHTML = '';
+      document.getElementById('cp-readout').innerHTML = '<span style="color:var(--err)">Empty pitch group.</span>';
+      return;
+    }
+  } else {
+    const idx = parseInt(selVal, 10) || 0;
+    const d   = designs[idx];
+    if (!d) return;
+    sourceDesigns = [d];
+    scopeLabel   = d.name || `Design ${idx+1}`;
+  }
+
+  // Read current sliders (override design's stored α/κ for this view)
   const alpha_deg = parseFloat(document.getElementById('cp-alpha-slider').value) || 0;
   const kappa     = parseFloat(document.getElementById('cp-kappa-slider').value) || 0;
   const alpha_rad = alpha_deg * Math.PI / 180;
 
-  // Compute brush-model state for this design at slider conditions
-  const dShifted = {...d, perfAlpha: alpha_deg, perfKappa: kappa};
-  const r  = effectiveK_loaded(dShifted);
-  const pp = computePerformanceParams(dShifted, r);
-  if (!pp) return;
+  // The "reference design" sets Lc/Wc/Fz/μ for the patch frame.
+  // In pitch-group mode all designs in the group should already share these
+  // (the Bulk Edit panel enforces it). We take the first as canonical.
+  const dRef = sourceDesigns[0];
+  const dRefShifted = {...dRef, perfAlpha: alpha_deg, perfKappa: kappa};
+  const rRef  = effectiveK_loaded(dRefShifted);
+  const ppRef = computePerformanceParams(dRefShifted, rRef);
+  if (!ppRef) return;
 
-  const Lc = pp.Lc, Wc = pp.Wc, mu = pp.mu;
-  const Fz = Math.max(d.Fz || 0, 1);     // avoid div0 in q_z
-  const Kx = r.Kx, Ky = r.Ky;
+  const Lc = ppRef.Lc, Wc = ppRef.Wc, mu = ppRef.mu;
+  const Fz = Math.max(dRef.Fz || 0, 1);
 
-  // Pitch length: use design's perfPitchLen
-  const pitchLen = Math.max(d.perfPitchLen || 30, 1);
+  // Compute per-design Kx, Ky for each member of the scope.
+  const perDesign = sourceDesigns.map(d => {
+    const dS = {...d, perfAlpha: alpha_deg, perfKappa: kappa};
+    const rD = effectiveK_loaded(dS);
+    const pD = computePerformanceParams(dS, rD);
+    return {d, rD, pD};
+  });
 
   // Build the SVG. Layout: 800x480 viewBox, top-left = leading-edge-left.
   const svg = document.getElementById('cp-svg');
   const VBX = 800, VBY = 480;
   const margin = 30;
-  // Fit Lc × Wc into the box preserving aspect ratio
   const drawW = VBX - 2*margin;
   const drawH = VBY - 2*margin;
   const scale = Math.min(drawW / Lc, drawH / Wc);
   const ox = margin + (drawW - scale*Lc) / 2;
   const oy = margin + (drawH - scale*Wc) / 2;
   const px = (xmm) => ox + xmm*scale;
-  const py = (ymm) => oy + (Wc/2 + ymm)*scale; // y centred at 0
+  const py = (ymm) => oy + (Wc/2 + ymm)*scale;
 
-  // 1) Build all blocks tiled across Lc (single rib for now: design centered at y=0).
-  // Each tile is a horizontal shift of the design polygon by k*pitchLen.
+  // ── 1) Build block tiles ─────────────────────────────────────────
+  // Single-design mode: centre design vertically (legacy behaviour).
+  // Pitch mode: preserve each design's own Y position (relative to its
+  //  group centroid) — this lays out all blocks across the width.
   const blockTiles = [];
-  // Estimate per-design bounding-box so we can centre vertically within Wc.
-  let xs = d.vertices.map(v => v[0]);
-  let ys = d.vertices.map(v => v[1]);
-  const dxMin = Math.min(...xs), dxMax = Math.max(...xs);
-  const dyMin = Math.min(...ys), dyMax = Math.max(...ys);
-  const dyMid = (dyMin + dyMax) / 2;
-  // Number of pitches to tile: enough to fully cover [0, Lc] plus margins
-  const nLeft  = Math.ceil((dxMax - dxMin) / pitchLen) + 1;
-  const nRight = Math.ceil(Lc / pitchLen) + 1;
-  for (let k = -nLeft; k <= nRight; k++){
-    const shiftX = -dxMin + k*pitchLen;     // shift design so first instance starts at x=0
-    const verts = d.vertices.map(v => [v[0] + shiftX, v[1] - dyMid]);
-    const clipped = clipPolyToRect(verts, 0, Lc, -Wc/2, Wc/2);
-    if (clipped.length >= 3){
-      // Compute per-block SWE if needed for overlay-C
-      const blockSWE = computeBlockSWE(clipped, Lc, Wc, Fz, mu, Kx, Ky, alpha_rad, kappa);
-      blockTiles.push({verts: clipped, k, blockSWE});
-    }
+  const isPitchMode = (scope === 'pitch');
+
+  // Compute group Y centroid (for pitch mode centring across Wc)
+  let groupYmin = +Infinity, groupYmax = -Infinity;
+  if (isPitchMode){
+    sourceDesigns.forEach(d => {
+      d.vertices.forEach(v => {
+        if (v[1] < groupYmin) groupYmin = v[1];
+        if (v[1] > groupYmax) groupYmax = v[1];
+      });
+    });
   }
+  const groupYmid = (groupYmin + groupYmax) / 2;
+
+  perDesign.forEach((entry, designIdx) => {
+    const d = entry.d;
+    const Kx = entry.rD.Kx, Ky = entry.rD.Ky;
+    const pitchLen = Math.max(d.perfPitchLen || 30, 1);
+    let xs = d.vertices.map(v => v[0]);
+    let ys = d.vertices.map(v => v[1]);
+    const dxMin = Math.min(...xs), dxMax = Math.max(...xs);
+    const dyMin = Math.min(...ys), dyMax = Math.max(...ys);
+    const yShift = isPitchMode ? -groupYmid : -((dyMin + dyMax) / 2);
+
+    const nLeft  = Math.ceil((dxMax - dxMin) / pitchLen) + 1;
+    const nRight = Math.ceil(Lc / pitchLen) + 1;
+    for (let k = -nLeft; k <= nRight; k++){
+      const shiftX = -dxMin + k*pitchLen;
+      const verts = d.vertices.map(v => [v[0] + shiftX, v[1] + yShift]);
+      const clipped = clipPolyToRect(verts, 0, Lc, -Wc/2, Wc/2);
+      if (clipped.length >= 3){
+        const blockSWE = computeBlockSWE(clipped, Lc, Wc, Fz, mu, Kx, Ky, alpha_rad, kappa);
+        blockTiles.push({
+          verts: clipped, k, blockSWE,
+          designIdx, designName: d.name || `Design ${designIdx+1}`,
+          Kx, Ky
+        });
+      }
+    }
+  });
 
   // 2) Build the SVG content
   let bgRect = `<rect x="${px(0)}" y="${py(-Wc/2)}" width="${Lc*scale}" height="${Wc*scale}" fill="#0a0e17" stroke="var(--acc)" stroke-width="1"/>`;
@@ -4098,11 +4260,11 @@ function renderContactPatch(){
       for (let i = 0; i < NX; i++){
         const xc = (i + 0.5) * cw;
         const yc = -Wc/2 + (j + 0.5) * ch;
-        // Skip cells that don't fall within any block — only paint inside blocks
-        const inside = blockTiles.some(bt => pointInPoly(bt.verts, xc, yc));
-        if (!inside) continue;
+        // Find the owner tile (so we use the right Kx/Ky in pitch mode)
+        const owner = blockTiles.find(bt => pointInPoly(bt.verts, xc, yc));
+        if (!owner) continue;
         const qz = (3*Fz / (2*Lc*Wc)) * (1 - Math.pow((2*xc - Lc)/Lc, 2)); // N/mm² (parabolic across length)
-        const st = brushCellState(xc, qz*Wc, Kx, Ky, mu, Lc, alpha_rad, kappa);
+        const st = brushCellState(xc, qz*Wc, owner.Kx, owner.Ky, mu, Lc, alpha_rad, kappa);
         let fill;
         if (st.state === 'stick'){
           fill = `rgba(34,197,94,0.55)`;
@@ -4137,30 +4299,74 @@ function renderContactPatch(){
     blocks += `<polygon points="${pts}" fill="${fill}" stroke="rgba(200,220,255,0.7)" stroke-width="0.6"/>`;
   });
 
-  // 4) Annotations: x_s line for lateral, leading/trailing edge labels
+  // 4) Annotations: x_s line for lateral, leading/trailing edge labels.
+  // In pitch mode draw one dashed line per distinct design (each has its own x_s).
   let ann = '';
-  if (pp.x_s_lat > 0 && pp.x_s_lat < Lc){
-    ann += `<line x1="${px(pp.x_s_lat)}" y1="${py(-Wc/2)}" x2="${px(pp.x_s_lat)}" y2="${py(Wc/2)}" stroke="#facc15" stroke-width="1" stroke-dasharray="4 4"/>`;
-    ann += `<text x="${px(pp.x_s_lat)+4}" y="${py(-Wc/2)+12}" fill="#facc15" font-family="JetBrains Mono" font-size="11">x_s = ${pp.x_s_lat.toFixed(1)} mm</text>`;
+  if (isPitchMode){
+    const seen = new Set();
+    perDesign.forEach(e => {
+      const x_s = e.pD.x_s_lat;
+      const key = x_s.toFixed(1);
+      if (seen.has(key)) return; seen.add(key);
+      if (x_s > 0 && x_s < Lc){
+        ann += `<line x1="${px(x_s)}" y1="${py(-Wc/2)}" x2="${px(x_s)}" y2="${py(Wc/2)}" stroke="#facc15" stroke-width="0.8" stroke-dasharray="3 3" opacity="0.7"/>`;
+        ann += `<text x="${px(x_s)+3}" y="${py(-Wc/2)+12}" fill="#facc15" font-family="JetBrains Mono" font-size="10">${e.d.name}: x_s ${x_s.toFixed(1)}</text>`;
+      }
+    });
+  } else if (ppRef.x_s_lat > 0 && ppRef.x_s_lat < Lc){
+    ann += `<line x1="${px(ppRef.x_s_lat)}" y1="${py(-Wc/2)}" x2="${px(ppRef.x_s_lat)}" y2="${py(Wc/2)}" stroke="#facc15" stroke-width="1" stroke-dasharray="4 4"/>`;
+    ann += `<text x="${px(ppRef.x_s_lat)+4}" y="${py(-Wc/2)+12}" fill="#facc15" font-family="JetBrains Mono" font-size="11">x_s = ${ppRef.x_s_lat.toFixed(1)} mm</text>`;
   }
   ann += `<text x="${px(0)}" y="${py(-Wc/2)-6}" fill="var(--tx2)" font-family="JetBrains Mono" font-size="11">Leading edge (entry, x=0)</text>`;
   ann += `<text x="${px(Lc)-150}" y="${py(-Wc/2)-6}" fill="var(--tx2)" font-family="JetBrains Mono" font-size="11">Trailing edge (x=${Lc.toFixed(0)} mm)</text>`;
 
   svg.innerHTML = bgRect + overlay + blocks + ann;
 
-  // 5) Side readout
+  // ── x_s annotation: use reference design's value in single mode.
+  //    In pitch mode there's a separate x_s per design; we show the
+  //    softest (largest x_s) and stiffest (smallest x_s) as guide lines.
+  // (We already drew it from pp.x_s_lat above using the ref design.)
+
+  // ── Side readout ────────────────────────────────────────────────
   document.getElementById('cp-dim-label').textContent =
-    `Lc ${Lc.toFixed(1)} × Wc ${Wc.toFixed(1)} mm | Fz ${Fz.toFixed(0)} N | μ ${mu.toFixed(2)} | Ky ${Ky.toFixed(1)} N/mm`;
-  const slipPct = (pp.slipFracLat*100).toFixed(0);
-  const maxBlk = blockTiles.reduce((acc, b) => b.blockSWE > acc.blockSWE ? b : acc, blockTiles[0] || {blockSWE:0, k:0});
-  document.getElementById('cp-readout').innerHTML =
-    `<div>α = ${alpha_deg.toFixed(2)}°, κ = ${kappa.toFixed(3)}</div>` +
-    `<div>x_s lateral = <span style="color:#facc15">${pp.x_s_lat.toFixed(1)} mm</span> (${slipPct}% sliding)</div>` +
-    `<div>x_s long.   = <span style="color:#facc15">${pp.x_s_lon.toFixed(1)} mm</span> (${(pp.slipFracLon*100).toFixed(0)}% sliding)</div>` +
-    `<div style="margin-top:6px">SWE_lat = <strong style="color:var(--acc3)">${pp.SWE_lat.toFixed(3)} N·mm</strong></div>` +
-    `<div>SWE_lon = <strong style="color:var(--acc3)">${pp.SWE_lon.toFixed(3)} N·mm</strong></div>` +
-    `<div>SWE combined = <strong style="color:var(--err)">${pp.SWE_combined.toFixed(3)} N·mm</strong></div>` +
-    `<div style="margin-top:6px;font-size:11px;color:var(--tx3)">Worst block: tile #${maxBlk?maxBlk.k:'—'} (SWE ${(maxBlk?maxBlk.blockSWE:0).toFixed(3)} N·mm)</div>`;
+    `${scopeLabel}  |  Lc ${Lc.toFixed(1)} × Wc ${Wc.toFixed(1)} mm  |  Fz ${Fz.toFixed(0)} N  |  μ ${mu.toFixed(2)}`;
+
+  const slipPctRef = (ppRef.slipFracLat*100).toFixed(0);
+  const maxBlk = blockTiles.reduce((acc, b) => b.blockSWE > acc.blockSWE ? b : acc, blockTiles[0] || {blockSWE:0, k:0, designName:'—'});
+
+  let readout = '';
+  if (isPitchMode){
+    // Aggregate: sum SWE across all tiles within the patch (already inside Lc×Wc).
+    const totalSWE = blockTiles.reduce((a, b) => a + b.blockSWE, 0);
+    readout =
+      `<div>α = ${alpha_deg.toFixed(2)}°, κ = ${kappa.toFixed(3)}</div>` +
+      `<div style="margin-top:6px;color:var(--tx2);font-size:11px">Per-design results (rank by SWE)</div>`;
+    // Sort designs by SWE_combined desc
+    const ranked = perDesign.map(e => ({
+      name: e.d.name,
+      Kx: e.rD.Kx, Ky: e.rD.Ky,
+      SWE: e.pD.SWE_combined,
+      slip: e.pD.slipFracLat,
+      x_s: e.pD.x_s_lat
+    })).sort((a,b) => b.SWE - a.SWE);
+    ranked.forEach(r => {
+      readout += `<div style="font-size:11px">${r.name.padEnd(14)}  Ky=${r.Ky.toFixed(0)}  ` +
+                 `<span style="color:var(--err)">SWE ${r.SWE.toFixed(2)}</span>  ` +
+                 `<span style="color:#facc15">slip ${(r.slip*100).toFixed(0)}%</span></div>`;
+    });
+    readout += `<div style="margin-top:8px;font-size:11px;color:var(--tx2)">Patch-integrated tile SWE: <strong style="color:var(--err)">${totalSWE.toFixed(2)} N·mm</strong></div>`;
+    readout += `<div style="font-size:11px;color:var(--tx3)">Worst block tile in patch: ${maxBlk.designName} (SWE ${maxBlk.blockSWE.toFixed(3)} N·mm)</div>`;
+  } else {
+    readout =
+      `<div>α = ${alpha_deg.toFixed(2)}°, κ = ${kappa.toFixed(3)}</div>` +
+      `<div>x_s lateral = <span style="color:#facc15">${ppRef.x_s_lat.toFixed(1)} mm</span> (${slipPctRef}% sliding)</div>` +
+      `<div>x_s long.   = <span style="color:#facc15">${ppRef.x_s_lon.toFixed(1)} mm</span> (${(ppRef.slipFracLon*100).toFixed(0)}% sliding)</div>` +
+      `<div style="margin-top:6px">SWE_lat = <strong style="color:var(--acc3)">${ppRef.SWE_lat.toFixed(3)} N·mm</strong></div>` +
+      `<div>SWE_lon = <strong style="color:var(--acc3)">${ppRef.SWE_lon.toFixed(3)} N·mm</strong></div>` +
+      `<div>SWE combined = <strong style="color:var(--err)">${ppRef.SWE_combined.toFixed(3)} N·mm</strong></div>` +
+      `<div style="margin-top:6px;font-size:11px;color:var(--tx3)">Worst tile: #${maxBlk?maxBlk.k:'—'} (SWE ${(maxBlk?maxBlk.blockSWE:0).toFixed(3)} N·mm)</div>`;
+  }
+  document.getElementById('cp-readout').innerHTML = readout;
 }
 // Point-in-polygon ray cast (axis-aligned ray along +x).
 function pointInPoly(poly, x, y){
@@ -9586,6 +9792,142 @@ function getPitchGroupDesigns(groupName){
     if((d.pitchGroup||'').trim() === groupName) members.push({idx:i, design:d});
   });
   return { name: groupName, members };
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  v6.5  BULK PITCH-LEVEL PARAMETER EDITOR
+//  Applies a set of input fields to every design in a pitch group.
+//  Empty fields are skipped (each block's existing value is kept).
+//  This solves the "DXF import → manually edit N blocks" workflow.
+// ═══════════════════════════════════════════════════════════════
+function _bulkPitchGroups(){
+  // Returns sorted list of unique non-empty pitchGroup tags.
+  const set = new Set();
+  designs.forEach(d => { if (d.pitchGroup && d.pitchGroup.trim()) set.add(d.pitchGroup.trim()); });
+  return Array.from(set).sort();
+}
+function refreshBulkPitchSelector(){
+  const sel = document.getElementById('bulk-pg-select');
+  const cnt = document.getElementById('bulk-pg-count');
+  if (!sel) return;
+  const groups = _bulkPitchGroups();
+  const prev = sel.value;
+  sel.innerHTML = '';
+  if (!groups.length){
+    const o = document.createElement('option'); o.value=''; o.textContent='(no pitch groups defined)'; sel.appendChild(o);
+    if (cnt) cnt.textContent = '0 blocks';
+    return;
+  }
+  groups.forEach(g => {
+    const o = document.createElement('option'); o.value = g; o.textContent = g;
+    sel.appendChild(o);
+  });
+  if (prev && groups.includes(prev)) sel.value = prev;
+  // Hook change handler exactly once
+  if (!sel._bulkHooked){
+    sel.addEventListener('change', _bulkUpdatePgCount);
+    sel._bulkHooked = true;
+  }
+  _bulkUpdatePgCount();
+}
+function _bulkUpdatePgCount(){
+  const sel = document.getElementById('bulk-pg-select');
+  const cnt = document.getElementById('bulk-pg-count');
+  if (!sel || !cnt) return;
+  const g = sel.value;
+  const n = designs.filter(d => (d.pitchGroup||'').trim() === g).length;
+  cnt.textContent = `${n} block${n===1?'':'s'} in "${g}"`;
+}
+function bulkClearForm(){
+  ['bulk-nsd','bulk-E','bulk-nu','bulk-rho','bulk-fz','bulk-mu','bulk-pitchlen',
+   'bulk-alpha','bulk-kappa','bulk-lc','bulk-wc','bulk-inflation','bulk-sectionw',
+   'bulk-aspect','bulk-rim'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const ts = document.getElementById('bulk-shore');     if (ts) ts.value = '';
+  const tt = document.getElementById('bulk-tyre-type'); if (tt) tt.value = '';
+  const ac = document.getElementById('bulk-auto-lcwc'); if (ac) ac.checked = false;
+  const st = document.getElementById('bulk-status');    if (st){ st.textContent=''; st.style.color='var(--tx2)'; }
+}
+function _bulkVal(id){
+  const el = document.getElementById(id);
+  if (!el) return null;
+  const v = (el.value || '').trim();
+  if (v === '') return null;
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : null;
+}
+function _bulkStr(id){
+  const el = document.getElementById(id);
+  if (!el) return null;
+  const v = (el.value || '').trim();
+  return v === '' ? null : v;
+}
+function bulkApplyToPitchGroup(){
+  const sel = document.getElementById('bulk-pg-select');
+  const status = document.getElementById('bulk-status');
+  if (!sel || !sel.value){
+    if (status){ status.textContent = 'Pick a pitch group first.'; status.style.color = 'var(--err)'; }
+    return;
+  }
+  const group = sel.value;
+  const targets = designs.filter(d => (d.pitchGroup||'').trim() === group);
+  if (!targets.length){
+    if (status){ status.textContent = `No blocks in "${group}".`; status.style.color = 'var(--err)'; }
+    return;
+  }
+
+  // Collect the set of patches (only fields the user filled in)
+  const patch = {};
+  const fields = [
+    ['nsd','bulk-nsd','num'], ['E','bulk-E','num'], ['nu','bulk-nu','num'],
+    ['perfRho','bulk-rho','num'], ['Fz','bulk-fz','num'], ['perfMu','bulk-mu','num'],
+    ['perfPitchLen','bulk-pitchlen','num'],
+    ['perfAlpha','bulk-alpha','num'], ['perfKappa','bulk-kappa','num'],
+    ['perfLc','bulk-lc','num'], ['perfWc','bulk-wc','num'],
+    ['inflationKPa','bulk-inflation','num'], ['sectionWidthMM','bulk-sectionw','num'],
+    ['aspectRatio','bulk-aspect','num'], ['rimDiamIN','bulk-rim','num'],
+    ['perfShore','bulk-shore','str'], ['perfTyreType','bulk-tyre-type','str']
+  ];
+  fields.forEach(([k, id, type]) => {
+    const v = type === 'num' ? _bulkVal(id) : _bulkStr(id);
+    if (v !== null) patch[k] = v;
+  });
+  const forceAuto = document.getElementById('bulk-auto-lcwc')?.checked === true;
+  if (forceAuto) patch.autoLcWc = true;
+
+  const nKeys = Object.keys(patch).length;
+  if (nKeys === 0){
+    if (status){ status.textContent = 'No fields filled — nothing to apply.'; status.style.color = 'var(--acc3)'; }
+    return;
+  }
+
+  // Apply: mutate the design objects in place.  Core stiffness/wear engine
+  // re-reads these on every refresh — no other state needs updating.
+  let touched = 0;
+  targets.forEach(d => {
+    Object.entries(patch).forEach(([k, v]) => { d[k] = v; });
+    // If user forced autoLcWc and supplied any tire-spec field, also recompute
+    // Lc/Wc from spec for this design.
+    if (forceAuto){
+      const cp = computeContactPatch(d);
+      if (cp){ d.perfLc = cp.Lc; d.perfWc = cp.Wc; }
+    }
+    touched++;
+  });
+
+  // Refresh all dependent views without touching anything outside the group.
+  if (typeof refreshAllDesignResults === 'function') refreshAllDesignResults();
+  if (typeof refreshDupSourceSelector === 'function') refreshDupSourceSelector();
+  if (document.getElementById('tab-pitch')?.classList.contains('active')) analyzePitch();
+  if (document.getElementById('tab-performance')?.classList.contains('active')) renderPerformance();
+  if (document.getElementById('tab-compare')?.classList.contains('active')) renderCompare();
+  if (document.getElementById('tab-contact-patch')?.classList.contains('active')) renderContactPatch();
+
+  if (status){
+    status.textContent = `Applied ${nKeys} field${nKeys===1?'':'s'} to ${touched} block${touched===1?'':'s'} in "${group}".`;
+    status.style.color = 'var(--acc4)';
+  }
 }
 
 function analyzePitch(){
