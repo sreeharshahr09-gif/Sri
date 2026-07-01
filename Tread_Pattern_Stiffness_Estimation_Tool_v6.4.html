@@ -9916,16 +9916,43 @@ function bulkApplyToPitchGroup(){
     touched++;
   });
 
+  // ── Sync Input-tab form if the currently-edited design was in the group.
+  //    Without this, the form fields on the Input tab would still show the
+  //    pre-bulk values even though the underlying design object was updated.
+  //    selectDesign(idx) is the tool's canonical "reload every input field
+  //    from the design object" routine — it covers tire-construction, α/κ,
+  //    Shore, tyre type, Auto Lc/Wc, geometry coords and sipes.
+  let inputFormSynced = false;
+  if (editingDesignIdx !== null && designs[editingDesignIdx]){
+    const editing = designs[editingDesignIdx];
+    if ((editing.pitchGroup||'').trim() === group){
+      if (typeof selectDesign === 'function'){
+        try { selectDesign(editingDesignIdx); inputFormSynced = true; }
+        catch(_e){ /* fall through — still refresh other views */ }
+      }
+    }
+  }
+
   // Refresh all dependent views without touching anything outside the group.
   if (typeof refreshAllDesignResults === 'function') refreshAllDesignResults();
   if (typeof refreshDupSourceSelector === 'function') refreshDupSourceSelector();
+  // Re-run Auto Lc/Wc if the form now has updated tire-spec fields
+  if (typeof recomputeAutoLcWc === 'function' && document.getElementById('inp-auto-lcwc')?.checked){
+    try { recomputeAutoLcWc(); } catch(_e){}
+  }
+  // previewDesign() re-renders the Input tab's live preview charts + design
+  // list; safe to call unconditionally since it reads from the current form.
+  if (typeof previewDesign === 'function') previewDesign();
   if (document.getElementById('tab-pitch')?.classList.contains('active')) analyzePitch();
   if (document.getElementById('tab-performance')?.classList.contains('active')) renderPerformance();
   if (document.getElementById('tab-compare')?.classList.contains('active')) renderCompare();
   if (document.getElementById('tab-contact-patch')?.classList.contains('active')) renderContactPatch();
+  if (document.getElementById('tab-pattern')?.classList.contains('active') && typeof renderPattern === 'function') renderPattern();
+  if (document.getElementById('tab-output')?.classList.contains('active') && typeof renderOutput === 'function') renderOutput();
 
   if (status){
-    status.textContent = `Applied ${nKeys} field${nKeys===1?'':'s'} to ${touched} block${touched===1?'':'s'} in "${group}".`;
+    const syncNote = inputFormSynced ? ' Input form re-synced.' : '';
+    status.textContent = `Applied ${nKeys} field${nKeys===1?'':'s'} to ${touched} block${touched===1?'':'s'} in "${group}".${syncNote}`;
     status.style.color = 'var(--acc4)';
   }
 }
