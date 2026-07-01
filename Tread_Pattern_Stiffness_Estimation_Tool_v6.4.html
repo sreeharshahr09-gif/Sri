@@ -877,6 +877,48 @@ details.input-details .details-body{padding:12px}
       <div id="perf-regime-summary" style="font-size:12px;line-height:1.8;font-family:'JetBrains Mono',monospace;color:var(--tx)"></div>
     </div>
 
+    <!-- ═══ v6.5 — Parameter Explorer (picker + scope + bar chart) ═══ -->
+    <div class="panel" id="param-explorer-panel" style="margin-top:14px">
+      <h3>Parameter Explorer <span style="font-size:9px;color:var(--acc);font-weight:600;margin-left:4px">v6.5</span>
+        <span style="font-size:10px;color:var(--tx3);font-weight:400;margin-left:6px">— pick any single metric, compare at block or pitch level</span>
+      </h3>
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px">
+        <div style="min-width:120px">
+          <div style="font-size:10px;color:var(--tx3);margin-bottom:3px;letter-spacing:1.2px;font-family:'JetBrains Mono',monospace">SCOPE</div>
+          <div class="psub-row" style="gap:2px">
+            <button class="psub-btn active" id="pe-scope-block" onclick="setPeScope('block')">Block</button>
+            <button class="psub-btn" id="pe-scope-pitch" onclick="setPeScope('pitch')">Pitch</button>
+          </div>
+        </div>
+        <div style="min-width:260px">
+          <div style="font-size:10px;color:var(--tx3);margin-bottom:3px;letter-spacing:1.2px;font-family:'JetBrains Mono',monospace">PARAMETER</div>
+          <select id="pe-parameter" onchange="renderParamExplorer()" style="width:100%"></select>
+        </div>
+        <div style="min-width:150px">
+          <div style="font-size:10px;color:var(--tx3);margin-bottom:3px;letter-spacing:1.2px;font-family:'JetBrains Mono',monospace">SORT</div>
+          <select id="pe-sort" onchange="renderParamExplorer()" style="width:100%">
+            <option value="asc">Value ascending</option>
+            <option value="desc" selected>Value descending</option>
+            <option value="name">By name</option>
+          </select>
+        </div>
+        <div style="min-width:180px" id="pe-agg-info">
+          <div style="font-size:10px;color:var(--tx3);margin-bottom:3px;letter-spacing:1.2px;font-family:'JetBrains Mono',monospace">AGGREGATION</div>
+          <div id="pe-agg-note" style="font-size:11px;padding:6px 8px;color:var(--tx2);font-family:'JetBrains Mono',monospace;background:var(--bg);border:1px solid var(--brd);border-radius:5px">per block</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:6px">
+          <button class="btn btn-sm" onclick="copyParamExplorerCSV()">📋 Copy CSV</button>
+        </div>
+      </div>
+      <div id="pe-empty" style="text-align:center;padding:30px;color:var(--tx3);font-size:12px;display:none">
+        No designs available for the current scope.
+      </div>
+      <div id="pe-chart-wrap" style="position:relative;width:100%;height:340px">
+        <canvas id="pe-chart"></canvas>
+      </div>
+      <div id="pe-summary" style="font-size:11px;color:var(--tx2);margin-top:8px;line-height:1.7;font-family:'JetBrains Mono',monospace"></div>
+    </div>
+
     <!-- ── Sub-Block Performance Panel (shown only when sipes present) ── -->
     <div class="panel" id="sub-perf-panel" style="margin-top:14px;display:none">
       <h3>Sub-Block Performance Metrics
@@ -7972,11 +8014,321 @@ function renderPerformance(){
   // ── Sub-block performance panel ──
   renderSubBlockPerformance(d, r);
 
+  // ── v6.5 Parameter Explorer (picker + scope + bar chart) ──
+  try { renderParamExplorer(); } catch(_e){ console.error('renderParamExplorer:', _e); }
+
   } catch(err) {
     const errEl = document.getElementById('perf-content');
     if(errEl) errEl.innerHTML = `<p style="color:var(--err);padding:20px;font-family:'JetBrains Mono',monospace;font-size:12px">Performance render error: ${err.message}<br><span style="color:var(--tx3)">Check that a valid block design is selected and all inputs are set.</span></p>`;
     console.error('renderPerformance error:', err);
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  v6.5  PARAMETER EXPLORER
+//  Picker + scope + bar chart in Performance tab.
+//  Scope: 'block'  → one bar per design
+//         'pitch'  → one bar per pitch-group (aggregated)
+//  All units are SI-mm consistent (see PE_METRICS below for unit tags).
+// ═══════════════════════════════════════════════════════════════
+
+// Catalogue of metrics: {key, label, unit, extract(pp,r,d)→number, agg}
+// agg tells the pitch-aggregator how to combine block values:
+//   'sum'          — parallel-spring sum (Kx, Ky, Kz, Kxy, Cα, CS, SWE_*, area)
+//   'sumCompliance'— compliance-of-parallel-spring: 1 / Σ(1/C_i)  (Cx, Cy)
+//   'weiFromK'     — recompute √(Cx²+Cy²) from summed Kx,Ky
+//   'min'          — weakest link governs (Pcr, x_s_lat, x_s_lon)
+//   'max'          — worst case (CSI)
+//   'areaMean'     — area-weighted mean (S, E_eff, sliding-fraction%,
+//                    Cα-normalised, Ky/Kx ratio, void ratio*)
+//   'massRms'      — sqrt(Σ m·f² / Σ m)  for natural frequencies
+//   'derivedRatio' — computed from the pitch total values
+window.PE_METRICS = [
+  // Stiffness (parallel spring sums)
+  {k:'Kx',           label:'Kx  (shear, rolling)',        unit:'N/mm',   ex:(pp,r)=>r.Kx,                agg:'sum'},
+  {k:'Ky',           label:'Ky  (shear, lateral)',        unit:'N/mm',   ex:(pp,r)=>r.Ky,                agg:'sum'},
+  {k:'Kz',           label:'Kz  (radial / vertical)',     unit:'N/mm',   ex:(pp,r)=>pp.Kz,               agg:'sum'},
+  {k:'Kxy',          label:'Kxy (coupling)',              unit:'N/mm',   ex:(pp,r)=>r.Kxy,               agg:'sum'},
+  {k:'Ky_over_Kx',   label:'Ky / Kx  (anisotropy)',       unit:'—',      ex:(pp,r)=>r.Kx>0 ? r.Ky/r.Kx : 0, agg:'areaMean'},
+  // Cornering / braking
+  {k:'C_alpha_deg',  label:'Cα  (cornering)',             unit:'N/deg',  ex:(pp)=>pp.C_alpha_deg,        agg:'sum'},
+  {k:'CS_deg',       label:'CS  (braking)',               unit:'N/deg',  ex:(pp)=>pp.CS_braking_deg,     agg:'sum'},
+  {k:'C_alpha_norm', label:'Cα / Fz  (normalised)',       unit:'1/rad',  ex:(pp,r,d)=>{const Fz=d.Fz||0; return Fz>0 ? pp.C_alpha_rad/Fz : 0;}, agg:'areaMean'},
+  // Wear (v6.4 SWE)
+  {k:'SWE_lat',      label:'SWE_lat  (cornering wear)',   unit:'N·mm',   ex:(pp)=>pp.SWE_lat,            agg:'sum'},
+  {k:'SWE_lon',      label:'SWE_lon  (braking wear)',     unit:'N·mm',   ex:(pp)=>pp.SWE_lon,            agg:'sum'},
+  {k:'SWE_combined', label:'SWE combined',                unit:'N·mm',   ex:(pp)=>pp.SWE_combined,       agg:'sum'},
+  {k:'SWE_per_area', label:'SWE per area',                unit:'mJ/mm²', ex:(pp)=>pp.SWE_per_area,       agg:'areaMean'},
+  {k:'slipFracLat',  label:'Sliding fraction (lateral)',  unit:'%',      ex:(pp)=>pp.slipFracLat*100,    agg:'areaMean'},
+  {k:'x_s_lat',      label:'x_s  (stick→slip, lateral)',  unit:'mm',     ex:(pp)=>pp.x_s_lat,            agg:'min'},
+  // Elastic (legacy)
+  {k:'Cx',           label:'Cx  (long. compliance)',      unit:'μm/N',   ex:(pp)=>pp.Cx*1000,            agg:'sumCompliance'},
+  {k:'Cy',           label:'Cy  (lat. compliance)',       unit:'μm/N',   ex:(pp)=>pp.Cy*1000,            agg:'sumCompliance'},
+  {k:'WEI',          label:'WEI  (legacy elastic proxy)', unit:'μm/N',   ex:(pp)=>pp.WEI*1000,           agg:'weiFromK'},
+  // NVH
+  {k:'fn_x',         label:'fn_x  (nat. freq. rolling)',  unit:'Hz',     ex:(pp)=>pp.fn_x,               agg:'massRms'},
+  {k:'fn_y',         label:'fn_y  (nat. freq. lateral)',  unit:'Hz',     ex:(pp)=>pp.fn_y,               agg:'massRms'},
+  {k:'V_res_x',      label:'V_res_x  (rolling)',          unit:'km/h',   ex:(pp)=>pp.V_res_x,            agg:'massRms'},
+  {k:'V_res_y',      label:'V_res_y  (lateral)',          unit:'km/h',   ex:(pp)=>pp.V_res_y,            agg:'massRms'},
+  // Stability / material
+  {k:'Pcr',          label:'Pcr  (buckling load)',        unit:'N',      ex:(pp)=>pp.Pcr,                agg:'min'},
+  {k:'CSI',          label:'CSI  (compression-shear)',    unit:'—',      ex:(pp)=>pp.CSI,                agg:'max'},
+  {k:'S',            label:'S  (shape factor)',           unit:'—',      ex:(pp)=>pp.S,                  agg:'areaMean'},
+  {k:'E_eff',        label:'E_eff  (effective modulus)',  unit:'N/mm²',  ex:(pp)=>pp.E_eff,              agg:'areaMean'},
+  {k:'A_net',        label:'A_net  (net contact area)',   unit:'mm²',    ex:(pp)=>pp.A,                  agg:'sum'},
+  {k:'block_mass',   label:'Block mass',                  unit:'g',      ex:(pp)=>pp.m_block*1000,       agg:'sum'}
+];
+
+let _peScope = 'block';
+let _peChart = null;
+
+function _populatePeParamSelect(){
+  const sel = document.getElementById('pe-parameter');
+  if (!sel) return;
+  if (sel._filled) return;
+  sel.innerHTML = window.PE_METRICS.map(m =>
+    `<option value="${m.k}">${m.label}  [${m.unit}]</option>`).join('');
+  // Default to SWE combined
+  sel.value = 'SWE_combined';
+  sel._filled = true;
+}
+function setPeScope(scope){
+  _peScope = (scope === 'pitch') ? 'pitch' : 'block';
+  document.getElementById('pe-scope-block')?.classList.toggle('active', _peScope==='block');
+  document.getElementById('pe-scope-pitch')?.classList.toggle('active', _peScope==='pitch');
+  renderParamExplorer();
+}
+function _peAggLabel(agg){
+  return {
+    sum:            'Σ block values (parallel springs)',
+    sumCompliance:  '1 / Σ(1/C_i)  (compliance in parallel)',
+    weiFromK:       '√(Cx² + Cy²) from pitch Kx, Ky',
+    min:            'min (weakest link)',
+    max:            'max (worst case)',
+    areaMean:       'area-weighted mean',
+    massRms:        'mass-weighted RMS  √(Σ m·f² / Σ m)'
+  }[agg] || 'sum';
+}
+
+// Per-design metric evaluator: returns {val, pp, r, area, mass, Fz}
+function _peEvalDesign(d){
+  const r  = effectiveK_loaded(d);
+  if (!r) return null;
+  const pp = computePerformanceParams(d, r);
+  if (!pp) return null;
+  return { r, pp, area: pp.A, mass: pp.m_block, Fz: d.Fz||0 };
+}
+
+// Pitch-level aggregation for a given metric spec.
+// Args: metricSpec, array of {d, r, pp, area, mass, Fz}
+function _peAggregate(spec, entries){
+  if (!entries.length) return null;
+  const vals = entries.map(e => spec.ex(e.pp, e.r, e.d));
+  const areas = entries.map(e => e.area);
+  const masses = entries.map(e => e.mass);
+  const sumArea  = areas.reduce((a,b) => a+b, 0);
+  const sumMass  = masses.reduce((a,b) => a+b, 0);
+
+  switch(spec.agg){
+    case 'sum':
+      return vals.reduce((a,b) => a + (isFinite(b)?b:0), 0);
+    case 'sumCompliance': {
+      // For a metric that is compliance (unit μm/N), each block's compliance
+      // C_i comes back scaled ×1000 (μm/N).  Parallel-spring result:
+      //     C_total = 1 / Σ(1/C_i)   [μm/N]
+      const denom = vals.reduce((a,b) => a + (b>1e-12 ? 1/b : 0), 0);
+      return denom > 0 ? 1/denom : 0;
+    }
+    case 'weiFromK': {
+      // Recompute √(Cx² + Cy²) from the pitch-level Kx, Ky sums.
+      // Result in μm/N (matches per-block WEI scaling).
+      const sKx = entries.reduce((a,e) => a + e.r.Kx, 0);
+      const sKy = entries.reduce((a,e) => a + e.r.Ky, 0);
+      const Cx = sKx > 0 ? 1/sKx : 0;
+      const Cy = sKy > 0 ? 1/sKy : 0;
+      return Math.sqrt(Cx*Cx + Cy*Cy) * 1000;
+    }
+    case 'min':
+      return Math.min(...vals);
+    case 'max':
+      return Math.max(...vals);
+    case 'areaMean': {
+      if (sumArea <= 0) return vals.reduce((a,b) => a+b, 0) / vals.length;
+      let acc = 0;
+      for (let i = 0; i < vals.length; i++) acc += vals[i] * areas[i];
+      return acc / sumArea;
+    }
+    case 'massRms': {
+      if (sumMass <= 0) return 0;
+      let acc = 0;
+      for (let i = 0; i < vals.length; i++) acc += masses[i] * vals[i] * vals[i];
+      return Math.sqrt(acc / sumMass);
+    }
+    default:
+      return vals.reduce((a,b) => a+b, 0);
+  }
+}
+
+function _peCopyCSV(rows, unit, scopeLabel){
+  const csv = ['scope,name,value,unit'].concat(
+    rows.map(r => `${scopeLabel},${JSON.stringify(r.name)},${r.value},${unit}`)
+  ).join('\n');
+  try {
+    if (navigator && navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(csv);
+    }
+  } catch(_e){}
+  const s = document.getElementById('pe-summary');
+  if (s) s.innerHTML = 'CSV copied to clipboard (' + rows.length + ' rows).<br>' + (s.innerHTML || '');
+}
+function copyParamExplorerCSV(){
+  const cache = window._peLastRender;
+  if (!cache) return;
+  _peCopyCSV(cache.rows, cache.unit, cache.scope);
+}
+
+function renderParamExplorer(){
+  _populatePeParamSelect();
+  const paramKey = document.getElementById('pe-parameter')?.value || 'SWE_combined';
+  const spec = window.PE_METRICS.find(m => m.k === paramKey) || window.PE_METRICS[0];
+  const sortMode = document.getElementById('pe-sort')?.value || 'desc';
+  const empty = document.getElementById('pe-empty');
+  const wrap  = document.getElementById('pe-chart-wrap');
+  const aggEl = document.getElementById('pe-agg-note');
+  const sumEl = document.getElementById('pe-summary');
+
+  // Compute per-design eval once
+  const entries = designs.map(d => {
+    const e = _peEvalDesign(d);
+    return e ? Object.assign({d}, e) : null;
+  }).filter(Boolean);
+
+  if (!entries.length){
+    if (empty){ empty.style.display=''; empty.textContent='No designs available.'; }
+    if (wrap)  wrap.style.display='none';
+    return;
+  }
+
+  let rows = [];
+  if (_peScope === 'block'){
+    rows = entries.map(e => ({
+      name: e.d.name,
+      value: spec.ex(e.pp, e.r, e.d),
+      subtitle: (e.d.pitchGroup || '').trim()
+    }));
+    if (aggEl) aggEl.textContent = 'per block';
+  } else {
+    // Group by pitchGroup
+    const groups = {};
+    entries.forEach(e => {
+      const g = (e.d.pitchGroup || '(ungrouped)').trim();
+      (groups[g] = groups[g] || []).push(e);
+    });
+    rows = Object.entries(groups).map(([g, arr]) => ({
+      name: g,
+      value: _peAggregate(spec, arr),
+      subtitle: arr.length + ' block' + (arr.length===1?'':'s')
+    }));
+    if (aggEl) aggEl.textContent = _peAggLabel(spec.agg);
+  }
+
+  // Filter non-finite
+  rows = rows.filter(r => isFinite(r.value));
+  if (!rows.length){
+    if (empty){ empty.style.display=''; empty.textContent='No finite values for the selected metric.'; }
+    if (wrap)  wrap.style.display='none';
+    return;
+  }
+  if (empty) empty.style.display='none';
+  if (wrap)  wrap.style.display='';
+
+  // Sort
+  if (sortMode === 'asc')  rows.sort((a,b) => a.value - b.value);
+  else if (sortMode === 'desc') rows.sort((a,b) => b.value - a.value);
+  else                          rows.sort((a,b) => (a.name||'').localeCompare(b.name||''));
+
+  // Colour ramp: cool→warm for value ranking (regardless of sort)
+  const vs = rows.map(r => r.value);
+  const vMin = Math.min(...vs), vMax = Math.max(...vs);
+  function colFor(v){
+    const t = (vMax > vMin) ? (v - vMin) / (vMax - vMin) : 0.5;
+    // acc4 (green) → acc3 (amber) → err (red)
+    const r = Math.round(52  + t * (248 - 52));
+    const g = Math.round(211 - t * (150));
+    const b = Math.round(153 - t * (100));
+    return `rgba(${r},${g},${b},0.85)`;
+  }
+  const bgColors = rows.map(r => colFor(r.value));
+
+  // Build/refresh Chart.js chart
+  const canvas = document.getElementById('pe-chart');
+  if (!canvas) return;
+  if (_peChart) { try { _peChart.destroy(); } catch(_e){} _peChart = null; }
+  const isDarkTheme = document.body.classList.contains('light') ? false : true;
+  const tickCol = isDarkTheme ? '#94a3b8' : '#475569';
+  const gridCol = isDarkTheme ? '#1e293b' : '#e2e8f0';
+
+  _peChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.name),
+      datasets: [{
+        label: spec.label + '  [' + spec.unit + ']',
+        data: rows.map(r => r.value),
+        backgroundColor: bgColors,
+        borderColor: bgColors,
+        borderWidth: 1,
+        borderRadius: 3
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      indexAxis: rows.length > 8 ? 'y' : 'x',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (items) => items[0].label,
+            label: (ctx) => {
+              const row = rows[ctx.dataIndex];
+              const v = row.value;
+              const shown = Math.abs(v) < 0.01 ? v.toExponential(3) : v.toFixed(3);
+              return `${shown} ${spec.unit}` + (row.subtitle ? '  (' + row.subtitle + ')' : '');
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: tickCol, font:{size:10}, maxRotation: 40 },
+          grid:  { color: gridCol }
+        },
+        y: {
+          ticks: { color: tickCol, font:{size:10} },
+          grid:  { color: gridCol },
+          title: { display: true, text: spec.label + ' [' + spec.unit + ']', color: tickCol, font:{size:10} }
+        }
+      }
+    }
+  });
+
+  // Summary line
+  const total = rows.reduce((a,r) => a + r.value, 0);
+  const mean  = total / rows.length;
+  const min   = Math.min(...vs), max = Math.max(...vs);
+  const decs  = Math.abs(mean) < 0.1 ? 4 : 2;
+  const scopeStr = _peScope === 'pitch' ? 'Pitch scope' : 'Block scope';
+  if (sumEl){
+    sumEl.innerHTML =
+      `<strong>${scopeStr}</strong>  ·  ${rows.length} ${_peScope==='pitch' ? 'pitch group(s)' : 'block(s)'}  ·  ` +
+      `min ${min.toFixed(decs)}  ·  mean ${mean.toFixed(decs)}  ·  max ${max.toFixed(decs)}  [${spec.unit}]  ·  ` +
+      `agg = ${_peAggLabel(spec.agg)}`;
+  }
+
+  // Cache for CSV export
+  window._peLastRender = { rows, unit: spec.unit, scope: _peScope };
 }
 
 
