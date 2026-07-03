@@ -9,7 +9,14 @@
 TARGET_MONTH = pd.Period("2026-06", freq="M")
 REPORT_BASE_DIR = r"C:\Users\...\Patent_Monthly_report"
 AUTHOR = "..."
+MAX_NOTABLE_PATENTS = 25   # hard ceiling on patents that get PDF drawings/links
 ```
+
+`MAX_NOTABLE_PATENTS` is your monthly PDF-handling capacity: however busy
+the month, at most this many patents are selected (Top-5 Interest and
+Top-5 Novelty always kept, remaining slots filled by Interest Score) for
+PDF download, drawing embedding, and folder links. The notebook prints
+how many candidates the cap dropped so you can raise it consciously.
 
 `MONTH_NAME`, `MONTH_FOLDER`, `FILE_DIR`, `FILE_NAME`, and `PDF_FOLDER_LINK`
 are all derived from `TARGET_MONTH` — do not edit them directly, or they can
