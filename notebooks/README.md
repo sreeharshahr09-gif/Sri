@@ -25,6 +25,20 @@ REPORT_BASE_DIR/
     Downloaded_Patent_PDFs/          local PDF copies for figure extraction
 ```
 
+## PatSeer query (source of record)
+
+`patseer_query.txt` is the frozen search query that produces the monthly
+export — paste it into PatSeer as-is after editing **only** the `PBD:[...]`
+date line to the target month. Do not tweak terms casually: volume and
+trend charts are only comparable month-over-month if the query stays
+stable. If the query must change, commit the new version here with a note
+of what changed and why, and expect a step change in monthly counts.
+
+The query is stored in pairwise-nested form (`((((TAC AND FT) AND CPC)
+AND PBD) AND LSN)`) because PatSeer's validator rejects a flat chain of
+`AND`s between the field blocks ("Invalid search query! You have used
+either (OR with AND)...").
+
 ## Safety guard
 
 After cleaning, the notebook checks that the publication dates in the

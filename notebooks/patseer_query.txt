@@ -1,0 +1,192 @@
+(
+  (
+    (
+      (
+        TAC:(tire OR tyre OR TBR OR PCR OR OHT OR "off highway" OR
+  "Pneumatic Tire" OR "Pneumatic Tyre" OR
+  "Radial Tire" OR "Radial Tyre" OR
+  "Bias Tyre" OR "Bias Tire"
+)
+        AND
+        FT:(
+  tread OR "tread cap" OR "tread base" OR undertread OR
+  shoulder OR sidewall OR "side wall" OR buttress OR crown OR
+  carcass OR casing OR "body ply" OR "carcass ply" OR
+  innerliner OR "inner liner" OR
+
+  bead OR "bead core" OR "bead wire" OR
+  "bead apex" OR "bead filler" OR chafer OR flipper OR
+
+  belt OR "belt layer" OR "belt package" OR breaker OR
+  overlay OR "cap ply" OR "cap-ply" OR
+  "circumferential reinforcement" OR
+  "circumferential belt" OR
+  "zero degree" OR "zero-degree" OR
+  "0 degree" OR "0-degree" OR
+  "low angle" OR "low-angle" OR
+  "belt angle" OR "spiral winding" OR "helical winding" OR
+
+  reinforcement OR reinforcing OR
+  cord OR cords OR
+  "steel cord" OR steelcord OR
+  "textile cord" OR textilecord OR
+  "hybrid cord" OR
+  "aramid cord" OR
+  monofilament OR multifilament OR
+  nylon OR polyester OR rayon OR aramid OR PET OR PEN OR PVA OR
+
+  rubber OR elastomer OR elastomeric OR
+  "rubber composition" OR
+  "polymer composition" OR
+  "polymer blend" OR
+  composite OR nanocomposite OR
+  "natural rubber" OR
+  "synthetic rubber" OR
+  polybutadiene OR
+  "styrene butadiene rubber" OR
+  "styrene-butadiene rubber" OR
+  butyl OR halobutyl OR chlorobutyl OR bromobutyl OR
+  silica OR "carbon black" OR
+  filler OR "reinforcing filler" OR
+  resin OR silane OR "coupling agent" OR
+  plasticizer OR "process oil" OR
+  antioxidant OR antiozonant OR
+  sulfur OR accelerator OR "curing agent" OR
+  crosslink OR "cross-link" OR
+  "cross link density" OR
+  adhesion OR "adhesion promoter" OR
+
+  mixing OR masterbatch OR
+  compounding OR formulation OR
+  extrusion OR extruding OR
+  calendering OR calendaring OR
+  dipping OR coating OR skim OR
+  "tire building" OR "tyre building" OR
+  "building drum" OR
+  "tire drum" OR "tyre drum" OR
+  winding OR "strip winding" OR
+  "cord winding" OR "bead winding" OR
+  lamination OR splicing OR stitching OR shaping OR
+  molding OR moulding OR mold OR mould OR
+  "tire mold" OR "tyre mould" OR
+  vulcanization OR vulcanisation OR
+  curing OR "curing press" OR
+  "vulcanizing press" OR bladder OR
+  demolding OR demoulding OR
+  retreading OR recapping OR buffing OR
+
+  "rolling resistance" OR
+  "low rolling resistance" OR
+  "ultra low rolling resistance" OR
+  "ultralow rolling resistance" OR
+  hysteresis OR "energy loss" OR
+
+  wear OR abrasion OR mileage OR
+  traction OR "wet grip" OR "dry grip" OR
+  braking OR handling OR cornering OR
+  durability OR endurance OR fatigue OR
+  "heat build-up" OR "heat buildup" OR
+  cracking OR chipping OR chunking OR
+  "cut resistance" OR
+  puncture OR "puncture resistance" OR
+  permeability OR permeation OR "air retention" OR
+  uniformity OR
+  "radial force variation" OR
+  "lateral force variation" OR
+  conicity OR imbalance OR
+  NVH OR noise OR vibration OR harshness OR
+  "cavity noise" OR "cavity resonance" OR
+  hydroplaning OR aquaplaning OR
+  snow OR ice OR
+  "high speed" OR "high-speed" OR
+  lightweight OR lightweighting OR
+  "load capacity" OR
+
+  "non-pneumatic" OR nonpneumatic OR
+  airless OR spoke OR spokes OR
+  "shear band" OR lattice OR honeycomb OR
+  sealant OR "sealant layer" OR
+  "self sealing" OR "self-sealing" OR
+  "run flat" OR "run-flat" OR
+  "noise absorber" OR
+  "acoustic foam" OR insert OR inserts OR
+
+  testing OR inspection OR
+  "contact patch" OR footprint OR
+  "drum test" OR
+  "rolling resistance test" OR
+  "uniformity test" OR
+  "wear test" OR
+  "endurance test" OR
+  "high speed test" OR
+  shearography OR
+  "X-ray inspection" OR
+  "X ray inspection" OR
+  "computed tomography" OR
+  "non-destructive testing" OR
+  "nondestructive testing" OR
+
+  simulation OR modelling OR modeling OR
+  "finite element" OR FEM OR FEA OR
+  optimisation OR optimization OR
+  "computer aided tire design" OR
+  "computer aided tyre design" OR
+  "digital twin" OR
+  "machine learning" OR
+  "artificial intelligence" OR
+  "neural network" OR
+  "deep learning" OR
+  "computer vision" OR
+  "predictive model" OR
+
+  TPMS OR
+  "tire pressure monitoring" OR
+  "tyre pressure monitoring" OR
+  "tire temperature monitoring" OR
+  "tyre temperature monitoring" OR
+  "tread wear monitoring" OR
+  "tire wear monitoring" OR
+  "tyre wear monitoring" OR
+  sensor OR sensing OR
+  strain OR deformation OR
+  RFID OR transponder OR antenna OR
+  piezoelectric OR triboelectric OR
+  "energy harvesting" OR
+  "self-powered" OR
+  "load estimation" OR
+  "friction estimation" OR
+  "road condition" OR
+  "road surface condition" OR
+
+  sustainable OR sustainability OR renewable OR
+  "bio-based" OR biobased OR
+  recycled OR recyclable OR circular OR
+  "recycled carbon black" OR
+  "recovered carbon black" OR
+  "reclaimed rubber" OR
+  "devulcanized rubber" OR
+  "devulcanised rubber" OR
+  devulcanization OR devulcanisation OR
+  pyrolysis OR
+  "end of life tire" OR
+  "end-of-life tire" OR
+  "end of life tyre" OR
+  "end-of-life tyre" OR
+
+  "self healing" OR "self-healing" OR
+  smart OR intelligent
+)
+      )
+      AND
+      CPC:(
+  B60C* OR
+  B29D30* OR
+  G01M17/02*
+)
+    )
+    AND
+    PBD:[2026-07-01 TO 2026-07-31]
+  )
+  AND
+  LSN:(1 OR 2 OR 3)
+)
