@@ -48,6 +48,12 @@ either (OR with AND)...").
 
 ## Safety guard
 
+Each Section-5 patent card starts on a fresh page (`SECTION5_ONE_CARD_PER_PAGE`
+in Cell 1) and its Abstract/Claims are budgeted so a card never exceeds one
+page; lower the two `SECTION5_*_MAX_CHARS` values if a card ever looks tight.
+
+## Safety guard note
+
 After cleaning, the notebook checks that the publication dates in the
 export actually fall inside `TARGET_MONTH` and raises an error if none do
 (catches loading the wrong month's file or forgetting to update
