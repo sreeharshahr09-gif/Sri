@@ -54,6 +54,26 @@ export actually fall inside `TARGET_MONTH` and raises an error if none do
 `TARGET_MONTH`). If only some rows fall outside the target month it prints a
 warning and continues.
 
+## Downloading notable-patent PDFs (Cell 12)
+
+Cell 12 downloads the actual patent PDFs (from the export's "PDF Link"
+column) for the patents shown in Section 4, into
+`Downloaded_Patent_PDFs/`, named by Record Number. A later Run All then
+embeds their drawing pages into the Section-5 cards.
+
+- Run it on a machine logged into PatSeer.
+- `DOWNLOAD_SCOPE`: `"section4"` (default — shortlist + each thematic
+  table's top-N), `"notable25"` (shortlist only), or `"all"`.
+- The PatSeer PDF URLs open the file directly in a browser, so a plain
+  request usually works. If you get HTTP 401/403, paste your PatSeer
+  session cookie into `PATSEER_COOKIE` (browser DevTools -> Network ->
+  any request -> copy the `Cookie:` header) and re-run.
+- The cell skips PDFs already present, validates each is a real PDF, and
+  prints a success/failure summary.
+
+Two-pass workflow: Run All (report + this cell downloads PDFs) -> Run
+All again (drawings now embed into Section 5).
+
 ## Known follow-up work (not yet implemented)
 
 See project history for the full roadmap. Not done in this pass:
