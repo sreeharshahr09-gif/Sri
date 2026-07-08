@@ -49,10 +49,30 @@ modern browser and drop a DXF in.
 
 ### Export
 - Export selected drawings into one DXF, or each into its own file.
+- Two formats:
+  - **Clean (R12)** *(recommended)* — writes a minimal, self-consistent DXF
+    containing only the exported geometry: fresh HEADER with recomputed
+    extents, a minimal LAYER table, and the entities converted to
+    widely-readable R12 records (arcs preserved as polyline bulges;
+    ellipses/splines/inserts flattened). No handles, dictionaries, or
+    leftover dimension-association objects — so strict CAM / stiffness-tool
+    readers load the closed loops reliably.
+  - **Faithful** — copies the original HEADER/TABLES/BLOCKS/OBJECTS verbatim.
+    Preserves everything, but if you deleted dimensions/text their
+    association objects can be left dangling; use only when you need the
+    original blocks/metadata.
 - Optional filters: **geometry only** and **closed profiles only**.
-- Unedited records are emitted byte-for-byte, so coordinates are preserved
-  exactly; header, tables, and block definitions are carried over so the
-  output stays valid.
+- Optional **recenter near origin** — shifts all exported entities by one
+  common offset (relative layout preserved) so tools that can't display
+  geometry placed far from the origin still show it.
+
+> **Why "clean" exists:** a real export from this tool was rejected by a
+> downstream stiffness tool. The loops were geometrically valid closed
+> polylines, but the faithful export had carried over the original
+> `OBJECTS` section, which still held `DIMASSOC` objects pointing at the
+> handles of dimensions that had been deleted. Lenient readers silently drop
+> those; strict readers fail to load the model space, so the loops never
+> appear. The clean R12 export emits no such baggage.
 
 ## Usage
 

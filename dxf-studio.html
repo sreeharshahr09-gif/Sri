@@ -152,15 +152,29 @@
 
     <div class="card">
       <h2>6 · Export</h2>
+      <div class="row" style="margin-bottom:2px">
+        <span class="mini">Format</span>
+        <select id="expFormat" style="flex:1">
+          <option value="clean">Clean DXF — R12, geometry only (recommended)</option>
+          <option value="faithful">Faithful — preserve original sections</option>
+        </select>
+      </div>
+      <div id="cleanHint" class="hint" style="margin:4px 0 6px">
+        Writes a minimal, self-consistent DXF with only the exported geometry — no leftover dictionaries, dimension-association objects or unused blocks that can make strict readers (CAM / stiffness tools) fail to load the loops. Arcs are preserved as polyline bulges.
+      </div>
+      <div id="faithfulHint" class="hint" style="margin:4px 0 6px;display:none;color:var(--warn)">
+        ⚠ Copies the original HEADER/TABLES/BLOCKS/OBJECTS verbatim. If you deleted dimensions or text, their association objects may be left dangling and some strict readers will reject the file. Use only if you specifically need the original blocks/metadata.
+      </div>
       <label class="chk"><input type="checkbox" id="expGeomOnly" /> Geometry only (skip dimensions, text, construction, hatches, frames)</label>
       <label class="chk"><input type="checkbox" id="expClosedOnly" /> Closed profiles only (skip open-ended chains &amp; stray points)</label>
+      <label class="chk"><input type="checkbox" id="expRecenter" /> Recenter near origin (helps tools that can't show geometry placed far away)</label>
       <div class="split" style="margin-top:10px">
         <button class="green" id="exportSel">Export selected → DXF</button>
       </div>
       <div class="split" style="margin-top:6px">
         <button class="secondary" id="exportEach">Export each selected → separate files</button>
       </div>
-      <div class="hint" style="margin-top:8px">Coordinates are preserved exactly. Deleted &amp; hidden entities are never exported. Header, layer tables and block definitions are carried over so the file stays valid.</div>
+      <div class="hint" style="margin-top:8px">Deleted &amp; hidden entities are never exported. In Clean mode, extents are recomputed so tools auto-zoom to the geometry. Recenter shifts all exported entities by the same offset, preserving relative layout.</div>
       <a id="dl" class="dl"></a>
     </div>
   </div>
@@ -1673,12 +1687,26 @@ function exportFilter(i){
   }
   return true;
 }
-function buildExportDXF(selectedDrawings){
+function collectExport(selectedDrawings){
   analyzeAll(); // ensure _open flags are current
   const wanted=new Set();
   for(const d of selectedDrawings) for(const i of d.entityIdx) if(exportFilter(i)) wanted.add(i);
-  const idxSorted=[...wanted].sort((a,b)=>a-b);
+  return [...wanted].sort((a,b)=>a-b);
+}
+function exportOffset(idxSorted){
+  if(!$('#expRecenter').checked) return [0,0];
+  let minx=Infinity,miny=Infinity;
+  for(const i of idxSorted){ const g=ENTITIES[i].geom; if(!g) continue;
+    minx=Math.min(minx,g.min[0]); miny=Math.min(miny,g.min[1]); }
+  if(!isFinite(minx)) return [0,0];
+  return [-minx, -miny];
+}
+
+/* ---------- Faithful export: original sections verbatim + selected raw ---- */
+function buildExportDXF(selectedDrawings){
+  const idxSorted=collectExport(selectedDrawings);
   if(!idxSorted.length) return null;
+  const [ox,oy]=exportOffset(idxSorted);
 
   let out='';
   if(DXF.sections['HEADER']) out += sectionVerbatim('HEADER');
@@ -1688,12 +1716,162 @@ function buildExportDXF(selectedDrawings){
 
   out += '0\r\nSECTION\r\n2\r\nENTITIES\r\n';
   for(const i of idxSorted){
-    for(const ent of ENTITIES[i].raw){ out += pairsToText(ent); }
+    for(const ent of ENTITIES[i].raw){
+      out += pairsToText(ox||oy ? translatedRecordPairs(ent,ox,oy) : ent);
+    }
   }
   out += '0\r\nENDSEC\r\n';
   if(DXF.sections['OBJECTS']) out += sectionVerbatim('OBJECTS');
   out += '0\r\nEOF\r\n';
   return out;
+}
+function translatedRecordPairs(rec, dx, dy){
+  const t=rec[0][1].trim().toUpperCase();
+  const map=MOVE_CODES[t]||MOVE_CODES.DEFAULT;
+  return rec.map(([c,v])=>{
+    if(map.x.includes(c)){ const n=parseFloat(v); return isFinite(n)?[c,fmt(n+dx)]:[c,v]; }
+    if(map.y.includes(c)){ const n=parseFloat(v); return isFinite(n)?[c,fmt(n+dy)]:[c,v]; }
+    return [c,v];
+  });
+}
+
+/* ---------- Clean export: minimal, self-consistent R12 DXF ---------------
+   Emits only exported geometry, converted to widely-readable R12 records:
+   no handles, subclass markers, dictionaries or dangling association objects.
+   Arcs survive as POLYLINE bulges; ELLIPSE/SPLINE/INSERT are flattened from
+   their computed geometry.                                                  */
+function r12line(c,v){ return c+'\r\n'+v+'\r\n'; }
+function r12poly(pts, closed, layer, bulges){
+  // pts: [[x,y],...]; bulges: optional array, bulge applies to segment AFTER vertex i
+  let s=r12line(0,'POLYLINE')+r12line(8,layer)+r12line(66,1)+r12line(70,closed?1:0)
+      +r12line(10,'0.0')+r12line(20,'0.0')+r12line(30,'0.0');
+  pts.forEach((p,i)=>{
+    s+=r12line(0,'VERTEX')+r12line(8,layer)+r12line(10,fmt(p[0]))+r12line(20,fmt(p[1]))+r12line(30,'0.0');
+    if(bulges && Math.abs(bulges[i]||0)>1e-12) s+=r12line(42,fmt(bulges[i]));
+  });
+  s+=r12line(0,'SEQEND')+r12line(8,layer);
+  return s;
+}
+function entToR12(e, dx, dy){
+  const layer=e.layer||'0';
+  const t=e.type;
+  const ent=e.raw[0];
+  const X=v=>fmt(parseFloat(v)+dx), Y=v=>fmt(parseFloat(v)+dy);
+  const n=(c)=>gnum(ent,c);
+  if(t==='LINE'){
+    return r12line(0,'LINE')+r12line(8,layer)
+      +r12line(10,fmt(n(10)+dx))+r12line(20,fmt(n(20)+dy))
+      +r12line(11,fmt(n(11)+dx))+r12line(21,fmt(n(21)+dy));
+  }
+  if(t==='CIRCLE'){
+    return r12line(0,'CIRCLE')+r12line(8,layer)
+      +r12line(10,fmt(n(10)+dx))+r12line(20,fmt(n(20)+dy))+r12line(40,fmt(n(40)));
+  }
+  if(t==='ARC'){
+    return r12line(0,'ARC')+r12line(8,layer)
+      +r12line(10,fmt(n(10)+dx))+r12line(20,fmt(n(20)+dy))+r12line(40,fmt(n(40)))
+      +r12line(50,fmt(n(50)))+r12line(51,fmt(n(51)));
+  }
+  if(t==='POINT'){
+    return r12line(0,'POINT')+r12line(8,layer)+r12line(10,fmt(n(10)+dx))+r12line(20,fmt(n(20)+dy));
+  }
+  if(t==='TEXT' || t==='ATTRIB' || t==='ATTDEF'){
+    const h=n(40)||1, rot=n(50)||0, txt=gval(ent,1)||'';
+    return r12line(0,'TEXT')+r12line(8,layer)
+      +r12line(10,fmt(n(10)+dx))+r12line(20,fmt(n(20)+dy))
+      +r12line(40,fmt(h))+r12line(1,txt)+r12line(50,fmt(rot));
+  }
+  if(t==='SOLID' || t==='TRACE' || t==='3DFACE'){
+    let s=r12line(0,t)+r12line(8,layer);
+    for(const [px,py] of [[10,20],[11,21],[12,22],[13,23]]){
+      const x=n(px),y=n(py);
+      if(x!==undefined&&y!==undefined&&isFinite(x)&&isFinite(y))
+        s+=r12line(px,fmt(x+dx))+r12line(py,fmt(y+dy));
+    }
+    return s;
+  }
+  if(t==='LWPOLYLINE'){
+    const verts=lwVerts(ent);
+    const closed=((parseInt(gval(ent,70)||'0',10))&1)===1;
+    const pts=verts.map(v=>[v.x+dx, v.y+dy]);
+    const bulges=verts.map(v=>v.b||0);
+    return r12poly(pts, closed, layer, bulges);
+  }
+  if(t==='POLYLINE'){
+    const verts=e._verts||[];
+    const pts=verts.map(v=>[v.x+dx, v.y+dy]);
+    const bulges=verts.map(v=>v.b||0);
+    return r12poly(pts, !!e._closed, layer, bulges);
+  }
+  // Fallback (ELLIPSE, SPLINE, INSERT, unknown): flatten computed primitives.
+  if(e.geom && e.geom.draw && e.geom.draw.length){
+    let s='';
+    for(const pr of e.geom.draw){
+      if(pr.type==='poly' && pr.pts.length>1){
+        s+=r12poly(pr.pts.map(p=>[p[0]+dx,p[1]+dy]), !!pr.closed, layer);
+      } else if(pr.type==='circle'){
+        s+=r12line(0,'CIRCLE')+r12line(8,layer)+r12line(10,fmt(pr.x+dx))+r12line(20,fmt(pr.y+dy))+r12line(40,fmt(pr.r));
+      } else if(pr.type==='arc'){
+        s+=r12line(0,'ARC')+r12line(8,layer)+r12line(10,fmt(pr.x+dx))+r12line(20,fmt(pr.y+dy))+r12line(40,fmt(pr.r))+r12line(50,fmt(pr.a1))+r12line(51,fmt(pr.a2));
+      } else if(pr.type==='point'){
+        s+=r12line(0,'POINT')+r12line(8,layer)+r12line(10,fmt(pr.x+dx))+r12line(20,fmt(pr.y+dy));
+      } else if(pr.type==='text'){
+        s+=r12line(0,'TEXT')+r12line(8,layer)+r12line(10,fmt(pr.x+dx))+r12line(20,fmt(pr.y+dy))+r12line(40,fmt(pr.h||1))+r12line(1,pr.txt||'');
+      }
+    }
+    return s;
+  }
+  return '';
+}
+function buildCleanDXF(selectedDrawings){
+  const idxSorted=collectExport(selectedDrawings);
+  if(!idxSorted.length) return null;
+  const [dx,dy]=exportOffset(idxSorted);
+
+  // used layers + extents (post-offset)
+  const usedLayers=new Set();
+  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+  for(const i of idxSorted){
+    const e=ENTITIES[i];
+    usedLayers.add(e.layer||'0');
+    const g=e.geom; if(!g) continue;
+    minx=Math.min(minx,g.min[0]+dx); miny=Math.min(miny,g.min[1]+dy);
+    maxx=Math.max(maxx,g.max[0]+dx); maxy=Math.max(maxy,g.max[1]+dy);
+  }
+  if(!isFinite(minx)){ minx=miny=0; maxx=maxy=1; }
+  usedLayers.add('0');
+
+  let out='';
+  // HEADER
+  out += '0\r\nSECTION\r\n2\r\nHEADER\r\n';
+  out += r12line(9,'$ACADVER')+r12line(1,'AC1009');
+  out += r12line(9,'$INSBASE')+r12line(10,'0.0')+r12line(20,'0.0')+r12line(30,'0.0');
+  out += r12line(9,'$EXTMIN')+r12line(10,fmt(minx))+r12line(20,fmt(miny))+r12line(30,'0.0');
+  out += r12line(9,'$EXTMAX')+r12line(10,fmt(maxx))+r12line(20,fmt(maxy))+r12line(30,'0.0');
+  out += '0\r\nENDSEC\r\n';
+  // TABLES: LTYPE (CONTINUOUS) + used LAYERs
+  out += '0\r\nSECTION\r\n2\r\nTABLES\r\n';
+  out += '0\r\nTABLE\r\n2\r\nLTYPE\r\n70\r\n1\r\n';
+  out += r12line(0,'LTYPE')+r12line(2,'CONTINUOUS')+r12line(70,0)+r12line(3,'Solid line')+r12line(72,65)+r12line(73,0)+r12line(40,'0.0');
+  out += '0\r\nENDTAB\r\n';
+  const layers=[...usedLayers];
+  out += '0\r\nTABLE\r\n2\r\nLAYER\r\n'+r12line(70,layers.length);
+  for(const L of layers){
+    out += r12line(0,'LAYER')+r12line(2,L)+r12line(70,0)+r12line(62,7)+r12line(6,'CONTINUOUS');
+  }
+  out += '0\r\nENDTAB\r\n';
+  out += '0\r\nENDSEC\r\n';
+  // ENTITIES
+  out += '0\r\nSECTION\r\n2\r\nENTITIES\r\n';
+  for(const i of idxSorted) out += entToR12(ENTITIES[i], dx, dy);
+  out += '0\r\nENDSEC\r\n';
+  out += '0\r\nEOF\r\n';
+  return out;
+}
+function buildDXF(selectedDrawings){
+  return $('#expFormat').value==='faithful'
+    ? buildExportDXF(selectedDrawings)
+    : buildCleanDXF(selectedDrawings);
 }
 function download(filename, text){
   const blob=new Blob([text],{type:'application/dxf'});
@@ -1830,23 +2008,29 @@ $('#prepBtn').addEventListener('click',()=>{
 $('#exportSel').addEventListener('click',()=>{
   const sel=DRAWINGS.filter(d=>d.selected);
   if(!sel.length){toast('No drawings selected.');return;}
-  const dxf=buildExportDXF(sel);
+  const dxf=buildDXF(sel);
   if(!dxf){ toast('Nothing to export after filters — check hidden classes/layers and export options.'); return; }
   download(baseName+'_selected.dxf', dxf);
-  toast('Exported '+sel.length+' drawing(s).');
+  toast('Exported '+sel.length+' drawing(s) as '+$('#expFormat').value+' DXF.');
 });
 $('#exportEach').addEventListener('click',()=>{
   const sel=DRAWINGS.filter(d=>d.selected);
   if(!sel.length){toast('No drawings selected.');return;}
   let n=0;
   sel.forEach((d,k)=>{
-    const dxf=buildExportDXF([d]);
+    const dxf=buildDXF([d]);
     if(!dxf) return;
     n++;
     const safe=d.name.replace(/[^a-z0-9_\-]+/gi,'_');
     setTimeout(()=>download(`${baseName}_${safe||('drawing'+(k+1))}.dxf`, dxf), k*350);
   });
   toast(n?('Exporting '+n+' separate file(s)…'):'Nothing to export after filters.');
+});
+
+$('#expFormat').addEventListener('change',()=>{
+  const faithful=$('#expFormat').value==='faithful';
+  $('#cleanHint').style.display=faithful?'none':'block';
+  $('#faithfulHint').style.display=faithful?'block':'none';
 });
 
 /* mode / tool toggles */
