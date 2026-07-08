@@ -138,8 +138,11 @@
         <button id="joinBtn">Join &amp; close chains</button>
         <button class="warn" id="keepClosed">Delete open-ended</button>
       </div>
+      <div class="row" style="margin-top:6px">
+        <button class="secondary" id="bridgeBtn">✏ Bridge gap — draw closing line</button>
+      </div>
       <div class="hint" style="margin-top:8px">
-        <b>Join &amp; close</b> welds touching LINE/ARC segments (within tolerance) into single polylines and marks loops as closed — gaps ≤ tolerance are healed. <b>Delete open-ended</b> removes geometry that still isn't part of a closed loop. Both are undoable (<span class="kbd">Ctrl+Z</span>).
+        <b>Join &amp; close</b> welds touching LINE/ARC segments (within tolerance) into single polylines and marks loops as closed — gaps ≤ tolerance are healed. <b>Bridge gap</b> lets you click two open endpoints (red ✚) and draws a straight line between them to close the profile. <b>Delete open-ended</b> removes geometry that still isn't part of a closed loop. All are undoable (<span class="kbd">Ctrl+Z</span>).
       </div>
       <div class="split" style="margin-top:10px">
         <button class="green" id="prepBtn">⚡ Prepare for stiffness tool</button>
@@ -170,6 +173,7 @@
       <span style="width:8px"></span>
       <button class="secondary tgl on" id="toolSel" title="Box/click select">Select</button>
       <button class="secondary tgl" id="toolMove" title="Drag to move current selection (M)">Move</button>
+      <button class="secondary tgl" id="toolBridge" title="Click two open endpoints (red ✚) to close the gap with a straight line (B)">✏ Bridge</button>
       <span style="width:8px"></span>
       <button class="secondary" id="undoBtn" title="Ctrl+Z">↶ Undo</button>
       <button class="secondary" id="delBtn" title="Delete key">🗑 Delete sel.</button>
@@ -178,7 +182,7 @@
       <span id="viewInfo">No file loaded.</span>
     </div>
     <div class="toolbar" style="border-top:none;padding-top:0">
-      <span class="mini">Drag = box-select · <span class="kbd">Shift</span> add · <span class="kbd">Alt</span> remove · Right-drag/<span class="kbd">Space</span> = pan · Scroll = zoom · <span class="kbd">Del</span> delete · <span class="kbd">Ctrl+Z</span> undo · <span class="kbd">Esc</span> clear · red ✚ = open endpoint</span>
+      <span class="mini">Drag = box-select · <span class="kbd">Shift</span> add · <span class="kbd">Alt</span> remove · Right-drag/<span class="kbd">Space</span> = pan · Scroll = zoom · <span class="kbd">Del</span> delete · <span class="kbd">Ctrl+Z</span> undo · <span class="kbd">B</span> bridge tool · <span class="kbd">Esc</span> clear · red ✚ = open endpoint</span>
     </div>
     <canvas id="cv"></canvas>
     <div class="toast" id="toast"></div>
@@ -892,7 +896,8 @@ function analyzeDrawing(d, tol){
     if(n.deg===1){
       const c=compOf.get(id);
       if(c!==undefined) compOpen[c]=true;
-      openEnds.push({x:n.x,y:n.y});
+      const ed=(adj.get(id)||[])[0];
+      openEnds.push({x:n.x,y:n.y,layer:ed?ENTITIES[ed.idx].layer:'0'});
     }
   });
   let openChains=0, closedComps=0;
@@ -931,7 +936,7 @@ function analyzeAll(){
     analyzeDrawing(d,t);
     if(d.topo){
       loops+=d.topo.loops; open+=d.topo.openChains; ends+=d.topo.openEnds.length;
-      if(d.visible) OPEN_ENDS.push(...d.topo.openEnds);
+      if(d.visible) OPEN_ENDS.push(...d.topo.openEnds.map(p=>({x:p.x,y:p.y,layer:p.layer,d})));
     }
   }
   $('#stLoops').textContent=loops;
@@ -957,6 +962,7 @@ function refreshAfterEdit(){
     d.entityIdx=d.entityIdx.filter(i=>ENTITIES[i]); // safety
     d.bbox=bboxOf(d.entityIdx);
   }
+  bridgeHover=null; // OPEN_ENDS is rebuilt below; stale refs would mislead
   analyzeAll();
   renderDrawings(); renderClasses(); renderLayers();
   draw();
@@ -1170,6 +1176,26 @@ function joinChainsInDrawings(drawings, silent=false){
   return {added, removed, chainCount, closedCount};
 }
 
+/* ---------- bridge: close a gap between two open endpoints with a LINE --- */
+function bridgeGap(a, b){
+  const layer=a.layer||b.layer||'0';
+  const rec=[[0,'LINE'],[5,nextHandle()],[100,'AcDbEntity'],[8,layer],[100,'AcDbLine'],
+    [10,fmt(a.x)],[20,fmt(a.y)],[11,fmt(b.x)],[21,fmt(b.y)]];
+  const ent={raw:[rec], type:'LINE', layer, ltype:'', geom:null, block:null, del:false, cls:'geometry'};
+  const idx=ENTITIES.length;
+  ENTITIES.push(ent);
+  recomputeGeom(idx);
+  const d=a.d||b.d||DRAWINGS[0];
+  if(d) d.entityIdx.push(idx);
+  if(!LAYERS.has(layer)) LAYERS.set(layer,{visible:true});
+  pushUndo({type:'join', added:[idx], removed:[]});
+  const len=Math.hypot(b.x-a.x,b.y-a.y);
+  refreshAfterEdit();
+  const closedNow = d && d.topo && d.topo.openChains===0 && d.topo.openEnds.length===0 && d.topo.loops>0;
+  toast('Bridged gap with a '+len.toFixed(3)+'-unit line.'+(closedNow?' Profile is now closed ✓':' '+(d&&d.topo?d.topo.openEnds.length:'?')+' open end(s) remain.'));
+  return idx;
+}
+
 function deleteOpenEnded(drawings, silent=false){
   analyzeAll();
   const idxs=[];
@@ -1366,16 +1392,40 @@ function draw(){
   }
   ctx.globalAlpha=1;
   // open endpoint markers
-  ctx.strokeStyle='#f85149'; ctx.lineWidth=1.6;
+  const mr = tool==='bridge' ? 7 : 5;
   for(const p of OPEN_ENDS){
     const [sx,sy]=W2S(p.x,p.y);
+    const isFirst = bridgeFirst && Math.hypot(p.x-bridgeFirst.x,p.y-bridgeFirst.y)<1e-12;
+    const isHover = tool==='bridge' && bridgeHover && Math.hypot(p.x-bridgeHover.x,p.y-bridgeHover.y)<1e-12;
+    ctx.strokeStyle = isFirst ? '#2ea043' : '#f85149';
+    ctx.lineWidth = 1.6;
     ctx.beginPath();
-    ctx.moveTo(sx-5,sy);ctx.lineTo(sx+5,sy);
-    ctx.moveTo(sx,sy-5);ctx.lineTo(sx,sy+5);
+    ctx.moveTo(sx-mr,sy);ctx.lineTo(sx+mr,sy);
+    ctx.moveTo(sx,sy-mr);ctx.lineTo(sx,sy+mr);
     ctx.stroke();
-    ctx.beginPath();ctx.arc(sx,sy,7,0,Math.PI*2);ctx.globalAlpha=.5;ctx.stroke();ctx.globalAlpha=1;
+    if(isFirst){
+      ctx.fillStyle='#2ea043'; ctx.globalAlpha=.35;
+      ctx.beginPath();ctx.arc(sx,sy,mr+3,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
+    }
+    ctx.beginPath();ctx.arc(sx,sy,mr+2,0,Math.PI*2);
+    ctx.globalAlpha=isHover?1:.5; ctx.lineWidth=isHover?2.2:1.6; ctx.stroke();
+    ctx.globalAlpha=1;
   }
   ctx.lineWidth=1;
+  // bridge preview line
+  if(tool==='bridge' && bridgeFirst && hoverScreen){
+    const [ax,ay]=W2S(bridgeFirst.x,bridgeFirst.y);
+    const [bx,by]=bridgeHover?W2S(bridgeHover.x,bridgeHover.y):hoverScreen;
+    ctx.save();
+    ctx.strokeStyle='#2ea043'; ctx.lineWidth=1.6; ctx.setLineDash([7,5]);
+    ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();
+    ctx.restore();
+    if(bridgeHover){
+      const len=Math.hypot(bridgeHover.x-bridgeFirst.x,bridgeHover.y-bridgeFirst.y);
+      ctx.fillStyle='#2ea043'; ctx.font='11px sans-serif';
+      ctx.fillText(len.toFixed(3), (ax+bx)/2+6, (ay+by)/2-6);
+    }
+  }
   // rubber-band selection box
   if(box){
     const x=Math.min(box.x0,box.x1), y=Math.min(box.y0,box.y1);
@@ -1410,8 +1460,13 @@ window.addEventListener('keydown',e=>{
     e.preventDefault();
   }
   if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){ undo(); e.preventDefault(); }
-  if(e.key==='Escape'){ SEL_ENT.clear(); draw(); }
+  if(e.key==='Escape'){
+    SEL_ENT.clear();
+    if(bridgeFirst){ bridgeFirst=null; toast('Bridge cancelled.'); }
+    draw();
+  }
   if(e.key.toLowerCase()==='m'){ setTool(tool==='move'?'select':'move'); }
+  if(e.key.toLowerCase()==='b'){ setTool(tool==='bridge'?'select':'bridge'); if(tool==='bridge') toast('Bridge tool: click two open endpoints (red ✚) to connect them.'); }
 });
 window.addEventListener('keyup',e=>{if(e.code==='Space'){spaceDown=false;}});
 cv.addEventListener('contextmenu',e=>e.preventDefault());
@@ -1421,6 +1476,38 @@ let box=null;
 let boxMods={add:false, sub:false};
 let lastX=0,lastY=0;
 let moveStart=null;       // world coords
+let bridgeFirst=null;     // first picked open endpoint {x,y,layer,d}
+let bridgeHover=null;     // open endpoint currently under cursor
+let hoverScreen=null;     // [px,py] cursor pos while bridge tool active
+
+function findOpenEndNear(px,py,maxDist=12){
+  let best=null, bd=maxDist;
+  for(const p of OPEN_ENDS){
+    const [sx,sy]=W2S(p.x,p.y);
+    const d0=Math.hypot(sx-px,sy-py);
+    if(d0<bd){ bd=d0; best=p; }
+  }
+  return best;
+}
+function handleBridgeClick(px,py){
+  if(!OPEN_ENDS.length){ toast('No open endpoints — every visible profile is already closed. ✓'); return; }
+  const end=findOpenEndNear(px,py);
+  if(!end){ toast('Click on an open endpoint (red ✚). Zoom in if needed.'); return; }
+  if(!bridgeFirst){
+    bridgeFirst=end;
+    toast('First endpoint set — click the second open endpoint (Esc cancels).');
+    draw();
+    return;
+  }
+  if(Math.hypot(end.x-bridgeFirst.x, end.y-bridgeFirst.y)<1e-12){
+    toast('Same endpoint — pick a different one.');
+    return;
+  }
+  const a=bridgeFirst;
+  bridgeFirst=null; bridgeHover=null;
+  bridgeGap(a,end);
+  renderDrawings();
+}
 
 function canvasPt(e){const r=cv.getBoundingClientRect();return [e.clientX-r.left, e.clientY-r.top];}
 
@@ -1441,7 +1528,9 @@ cv.addEventListener('mousedown',e=>{
     mode='pan'; lastX=e.clientX; lastY=e.clientY;
     cv.style.cursor='grabbing';
   } else if(e.button===0){
-    if(tool==='move'){
+    if(tool==='bridge'){
+      handleBridgeClick(px,py);
+    } else if(tool==='move'){
       const set=currentMoveSet();
       if(!set.size){ toast(uiMode==='entities'?'Select entities first (switch to Select tool).':'Select drawing(s) first.'); return; }
       mode='move';
@@ -1464,6 +1553,10 @@ window.addEventListener('mousemove',e=>{
     const [px,py]=canvasPt(e);
     const [wx,wy]=S2W(px,py);
     tempMove.dx=wx-moveStart[0]; tempMove.dy=wy-moveStart[1];
+    draw();
+  } else if(tool==='bridge' && DRAWINGS.length){
+    hoverScreen=canvasPt(e);
+    bridgeHover=findOpenEndNear(hoverScreen[0],hoverScreen[1]);
     draw();
   }
 });
@@ -1768,12 +1861,23 @@ function setTool(t){
   tool=t;
   $('#toolSel').classList.toggle('on',t==='select');
   $('#toolMove').classList.toggle('on',t==='move');
+  $('#toolBridge').classList.toggle('on',t==='bridge');
+  if(t!=='bridge'){ bridgeFirst=null; bridgeHover=null; hoverScreen=null; }
   cv.style.cursor = t==='move'?'move':'crosshair';
+  draw();
 }
 $('#modeDw').addEventListener('click',()=>setUiMode('drawings'));
 $('#modeEnt').addEventListener('click',()=>setUiMode('entities'));
 $('#toolSel').addEventListener('click',()=>setTool('select'));
 $('#toolMove').addEventListener('click',()=>setTool('move'));
+$('#toolBridge').addEventListener('click',()=>{ setTool('bridge'); toast('Bridge tool: click two open endpoints (red ✚) to connect them with a line.'); });
+$('#bridgeBtn').addEventListener('click',()=>{
+  if(!DRAWINGS.length){ toast('Load a DXF first.'); return; }
+  setTool('bridge');
+  toast(OPEN_ENDS.length
+    ? 'Bridge tool active: click two open endpoints (red ✚) to close the gap. B/Esc exits.'
+    : 'Bridge tool active — but every visible profile is already closed. ✓');
+});
 
 window.addEventListener('resize',()=>{resizeCanvas();draw();});
 $('#spatialOpts').style.display='flex';

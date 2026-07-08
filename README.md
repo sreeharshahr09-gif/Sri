@@ -32,6 +32,10 @@ modern browser and drop a DXF in.
 - **Join & close chains** — welds touching LINE/ARC segments (within
   tolerance) into single LWPOLYLINEs with correct arc bulges; loops get the
   closed flag, and gaps ≤ tolerance are healed.
+- **✏ Bridge tool** (`B`) — click two open endpoints and a straight LINE is
+  drawn between them to close the profile manually: endpoints snap under the
+  cursor, a dashed preview shows the closing line with its length, and the
+  new line inherits the profile's layer.
 - **Delete open-ended** — removes geometry not part of any closed loop.
 - **⚡ Prepare for stiffness tool** — one click: strips
   dimensions/text/construction/hatches/frames, joins & closes chains, then
