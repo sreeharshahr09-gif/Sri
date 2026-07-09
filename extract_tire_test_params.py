@@ -8,9 +8,11 @@ Layout expected in each source file (on the first sheet):
     B2:B21    -> parameter values
 
 How to use:
-    1. Drop this script into the folder that holds all the test Excel files.
+    1. Keep this script anywhere you like (only ONE copy needed).
     2. Run it:   python extract_tire_test_params.py
-    3. A new file "tire_test_parameters.xlsx" is created in the same folder.
+    3. A folder-picker window opens -> choose the folder that holds the
+       Excel test files.
+    4. A new file "tire_test_parameters.xlsx" is created in that folder.
 
 The output has one column per test case (headed by the B1 label) and one row
 per parameter, so every test can be compared side by side.
@@ -26,6 +28,25 @@ LAST_DATA_ROW = 21
 LABEL_CELL = "B1"
 
 OUTPUT_FILENAME = "tire_test_parameters.xlsx"
+
+
+def choose_folder():
+    """Open a folder-picker dialog and return the selected path (or None)."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except Exception:
+        # tkinter unavailable (rare) -> fall back to the current directory.
+        print("Folder picker unavailable; using the current folder.")
+        return os.getcwd()
+
+    root = tk.Tk()
+    root.withdraw()          # hide the empty root window
+    root.attributes("-topmost", True)  # bring dialog to the front
+    folder = filedialog.askdirectory(
+        title="Select the folder containing the tire test Excel files")
+    root.destroy()
+    return folder or None    # returns "" if the user cancels
 
 
 def extract_from_file(path):
@@ -51,8 +72,10 @@ def extract_from_file(path):
 
 
 def main():
-    folder = os.path.dirname(os.path.abspath(__file__))
-    script_name = os.path.basename(__file__)
+    folder = choose_folder()
+    if not folder:
+        print("No folder selected. Exiting.")
+        sys.exit(0)
 
     # Collect Excel files, skipping temp/lock files and any prior output.
     excel_files = []
@@ -69,8 +92,7 @@ def main():
         print("No Excel test files found in:", folder)
         sys.exit(1)
 
-    # Read every file. Use the parameter names from the first file as the
-    # canonical row order; other files are matched by name.
+    # Read every file, preserving the order parameters first appear.
     cases = []            # list of (label, {param_name: value})
     param_order = []      # preserves the order parameters first appear
 
