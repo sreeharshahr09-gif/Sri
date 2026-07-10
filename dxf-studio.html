@@ -230,6 +230,8 @@ let view = {scale:1, ox:0, oy:0};
 let uiMode = 'drawings';   // 'drawings' | 'entities'
 let tool = 'select';       // 'select' | 'move'
 let OPEN_ENDS = [];        // [{x,y}] world coords of open endpoints (all drawings)
+let CURTOL = 1e-9;         // current snap tolerance (set by analyzeAll); used for
+                           // vertex-coincidence / closure tests at real-world scale
 
 const CLS_META = {
   geometry:     {label:'Geometry',            dot:'#4c9aff'},
@@ -808,7 +810,8 @@ function entityEnds(e){
     const verts=lwVerts(ent);
     if(verts.length<2) return null;
     const a=verts[0], b=verts[verts.length-1];
-    if(Math.hypot(a.x-b.x,a.y-b.y)<1e-12) return {closed:true};
+    // real-world coords can leave a tiny gap on a "closed" loop — use snap tol
+    if(Math.hypot(a.x-b.x,a.y-b.y)<=CURTOL) return {closed:true};
     return {closed:false, ends:[[a.x,a.y],[b.x,b.y]]};
   }
   if(t==='POLYLINE'){
@@ -816,7 +819,7 @@ function entityEnds(e){
     const v=e._verts||[];
     if(v.length<2) return null;
     const a=v[0], b=v[v.length-1];
-    if(Math.hypot(a.x-b.x,a.y-b.y)<1e-12) return {closed:true};
+    if(Math.hypot(a.x-b.x,a.y-b.y)<=CURTOL) return {closed:true};
     return {closed:false, ends:[[a.x,a.y],[b.x,b.y]]};
   }
   if(t==='SPLINE'){
@@ -826,7 +829,7 @@ function entityEnds(e){
     const xs=fx.length>1?fx:cx, ys=fy.length>1?fy:cy;
     if(xs.length<2) return null;
     const a=[xs[0],ys[0]], b=[xs[xs.length-1],ys[ys.length-1]];
-    if(Math.hypot(a[0]-b[0],a[1]-b[1])<1e-12) return {closed:true};
+    if(Math.hypot(a[0]-b[0],a[1]-b[1])<=CURTOL) return {closed:true};
     return {closed:false, ends:[a,b]};
   }
   return null; // POINT, TEXT, INSERT, etc. don't participate
@@ -944,6 +947,7 @@ function countUnknownOpen(d){
 function analyzeAll(){
   const tol=parseFloat($('#tol').value);
   const t=isFinite(tol)&&tol>0?tol:autoTol();
+  CURTOL=t;               // keep coincidence tests (entityEnds, export) at this scale
   OPEN_ENDS=[];
   let loops=0, open=0, ends=0;
   for(const d of DRAWINGS){
@@ -1752,6 +1756,30 @@ function r12poly(pts, closed, layer, bulges){
   s+=r12line(0,'SEQEND')+r12line(8,layer);
   return s;
 }
+/* Vertices/closed status for polyline export. Recognises geometrically-closed
+   loops whose closed flag was never set (e.g. 3D polylines, or profiles left
+   with a sub-tolerance gap between first and last vertex), and drops a
+   duplicate closing vertex so the exported polygon is clean.                 */
+function polyExportData(e){
+  let verts;
+  let closed;
+  if(e.type==='LWPOLYLINE'){
+    verts=lwVerts(e.raw[0]).map(v=>({x:v.x,y:v.y,b:v.b||0}));
+    closed=((parseInt(gval(e.raw[0],70)||'0',10))&1)===1;
+  } else { // POLYLINE
+    verts=(e._verts||[]).map(v=>({x:v.x,y:v.y,b:v.b||0}));
+    closed=!!e._closed;
+  }
+  if(verts.length>2){
+    const a=verts[0], b=verts[verts.length-1];
+    const coincident=Math.hypot(a.x-b.x,a.y-b.y)<=CURTOL;
+    if(coincident){
+      closed=true;
+      verts=verts.slice(0,-1);   // drop duplicate closing vertex
+    }
+  }
+  return {pts:verts.map(v=>[v.x,v.y]), bulges:verts.map(v=>v.b||0), closed};
+}
 function entToR12(e, dx, dy){
   const layer=e.layer||'0';
   const t=e.type;
@@ -1790,18 +1818,10 @@ function entToR12(e, dx, dy){
     }
     return s;
   }
-  if(t==='LWPOLYLINE'){
-    const verts=lwVerts(ent);
-    const closed=((parseInt(gval(ent,70)||'0',10))&1)===1;
-    const pts=verts.map(v=>[v.x+dx, v.y+dy]);
-    const bulges=verts.map(v=>v.b||0);
-    return r12poly(pts, closed, layer, bulges);
-  }
-  if(t==='POLYLINE'){
-    const verts=e._verts||[];
-    const pts=verts.map(v=>[v.x+dx, v.y+dy]);
-    const bulges=verts.map(v=>v.b||0);
-    return r12poly(pts, !!e._closed, layer, bulges);
+  if(t==='LWPOLYLINE' || t==='POLYLINE'){
+    const pd=polyExportData(e);
+    const pts=pd.pts.map(p=>[p[0]+dx, p[1]+dy]);
+    return r12poly(pts, pd.closed, layer, pd.bulges);
   }
   // Fallback (ELLIPSE, SPLINE, INSERT, unknown): flatten computed primitives.
   if(e.geom && e.geom.draw && e.geom.draw.length){

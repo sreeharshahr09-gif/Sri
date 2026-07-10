@@ -29,6 +29,12 @@ modern browser and drop a DXF in.
 - Endpoint-connectivity analysis with a snap tolerance: every drawing is
   badged **✓ closed** or **⚠ open**, and each open endpoint is marked with a
   red ✚ on the canvas.
+- Closure is judged at the **snap tolerance**, not a hard floating-point
+  epsilon, so a loop that is geometrically closed but left with a tiny
+  sub-unit gap (common in real CAD output, and in 3D polylines whose
+  "closed" flag was never set) is correctly recognised as closed — and
+  **exported** with the closed flag set, instead of silently dropping out of
+  a downstream tool that only accepts closed profiles.
 - **Join & close chains** — welds touching LINE/ARC segments (within
   tolerance) into single LWPOLYLINEs with correct arc bulges; loops get the
   closed flag, and gaps ≤ tolerance are healed.
