@@ -1,0 +1,2603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tire Brush-Fiala Tool v9</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--acc:#2563eb;--acc2:#059669;--warn:#d97706;
+  --danger:#dc2626;--bdr:#e2e8f0;--txt:#1e293b;--muted:#64748b;--r:8px;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--txt);font-size:13.5px;}
+h1{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;padding:14px 24px;font-size:1.25rem;}
+h1 span{font-size:.75rem;font-weight:400;opacity:.8;display:block;margin-top:2px;}
+.tabs{display:flex;gap:2px;background:#cbd5e1;padding:4px 6px;flex-wrap:wrap;}
+.tb{background:#e2e8f0;border:none;padding:8px 14px;cursor:pointer;border-radius:5px;
+    font-size:.8rem;font-weight:600;color:var(--muted);}
+.tb.on{background:var(--acc);color:#fff;}
+.tb:hover:not(.on){background:#bfdbfe;}
+.tab{display:none;padding:16px;animation:fi .15s;}
+.tab.on{display:block;}
+@keyframes fi{from{opacity:0}to{opacity:1}}
+.card{background:var(--card);border:1px solid var(--bdr);border-radius:var(--r);
+  padding:14px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+.card h2{font-size:.9rem;font-weight:700;color:var(--acc);margin-bottom:10px;
+  padding-bottom:5px;border-bottom:2px solid var(--bdr);}
+.card h3{font-size:.82rem;font-weight:600;color:var(--txt);margin-bottom:7px;}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+.g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:14px;margin-bottom:14px;}
+@media(max-width:850px){.g2,.g3,.g4{grid-template-columns:1fr;}}
+table{width:100%;border-collapse:collapse;font-size:.79rem;}
+th{background:#f1f5f9;text-align:left;padding:5px 8px;border:1px solid var(--bdr);
+   font-weight:600;color:var(--muted);}
+td{padding:4px 8px;border:1px solid var(--bdr);vertical-align:middle;}
+tr:nth-child(even) td{background:#f8fafc;}
+input:not([type=file]){width:100%;padding:4px 7px;border:1px solid #cbd5e1;
+  border-radius:4px;font-size:.79rem;background:#fff;}
+input:focus{outline:2px solid var(--acc);}
+select{padding:5px 8px;border:1px solid #cbd5e1;border-radius:4px;font-size:.79rem;
+  background:#fff;width:100%;}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 16px;border:none;
+  border-radius:5px;cursor:pointer;font-size:.8rem;font-weight:600;}
+.bp{background:var(--acc);color:#fff;}.bp:hover{background:#1d4ed8;}
+.bs{background:var(--acc2);color:#fff;}.bs:hover{background:#047857;}
+.bw{background:var(--warn);color:#fff;}.bw:hover{background:#b45309;}
+.bo{background:transparent;border:1.5px solid var(--acc);color:var(--acc);}
+.bo:hover{background:#eff6ff;}
+.br{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+.mv{font-weight:700;color:var(--acc);}
+.eq-tbl{width:100%;border-collapse:collapse;font-size:.82rem;margin-top:6px;}
+.eq-tbl th{background:var(--acc);color:#fff;padding:6px 10px;text-align:left;font-size:.76rem;font-weight:700;letter-spacing:.04em;}
+.eq-tbl td{padding:6px 10px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.5;}
+.eq-tbl tr:nth-child(even) td{background:#f8faff;}
+.eq-tbl tr:hover td{background:#eff6ff;}
+.eq{font-family:'Courier New',monospace;font-size:.83rem;color:#1e3a5f;font-weight:600;white-space:nowrap;}
+.eq sub,.eq sup{font-size:.72rem;}
+.note{background:#eff6ff;border-left:3px solid var(--acc);padding:7px 10px;
+  border-radius:0 5px 5px 0;font-size:.78rem;color:var(--muted);margin:7px 0;}
+/* chart container — let Chart.js own the canvas size */
+.cw{display:block;width:100%;}
+.sl{font-size:.68rem;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);
+  font-weight:700;margin:12px 0 6px;}
+.badge{display:inline-block;padding:1px 7px;border-radius:20px;font-size:.72rem;font-weight:700;}
+.bok{background:#d1fae5;color:#065f46;} .berr{background:#fee2e2;color:#991b1b;}
+.sb{padding:5px 12px;border-radius:5px;font-size:.79rem;font-weight:700;
+  display:inline-block;margin-top:8px;}
+.sbok{background:#d1fae5;color:#065f46;} .sberr{background:#fee2e2;color:#991b1b;}
+.sbwn{background:#fef3c7;color:#92400e;}
+.hmc{text-align:center;font-size:.75rem;font-weight:700;padding:5px 3px;}
+.pi{background:#eff6ff!important;border:1.5px solid #93c5fd!important;}
+.di td{background:#f0fdf4;}
+.di td input{background:#dcfce7;color:#166534;font-weight:700;cursor:not-allowed;border:1px solid #86efac;}
+.di td:first-child{color:#166534;font-size:.78rem;font-style:italic;}
+
+/* ── Sub-tabs ────────────────────────────────────────────────────── */
+.stabs{display:flex;gap:2px;background:#e2e8f0;padding:3px 5px;
+  border-radius:6px;margin-bottom:12px;flex-wrap:wrap;}
+.stb{background:transparent;border:none;padding:5px 14px;cursor:pointer;
+  border-radius:4px;font-size:.78rem;font-weight:600;color:var(--muted);}
+.stb.on{background:#fff;color:var(--acc);box-shadow:0 1px 3px rgba(0,0,0,.12);}
+.stb:hover:not(.on){background:#f1f5f9;}
+.spanel{display:none;animation:fi .12s;}
+.spanel.on{display:block;}
+</style>
+</head>
+
+<body>
+<h1>Tire Brush–Fiala Screening Tool
+<span>v9 | Rigid-carcass Fiala + Coupled 4th-order Belt + Combined Slip | Simply-supported BCs</span></h1>
+
+<div class="tabs">
+  <button class="tb on" onclick="ST('setup')">⚙ Tyre Setup</button>
+  <button class="tb"    onclick="ST('project')">🏷 Project</button>
+  <button class="tb"    onclick="ST('results')">📊 Results</button>
+  <button class="tb"    onclick="ST('doe')">📈 Parameter Study</button>
+  <button class="tb"    onclick="ST('calib')">🧪 Fit to Test Data</button>
+  <button class="tb"    onclick="ST('compare')">⚖ Compare Tyres</button>
+  <button class="tb"    onclick="ST('optimise')">🎯 Design Targets</button>
+  <button class="tb"    onclick="ST('durability')">🔩 Wear & Life</button>
+  <button class="tb"    onclick="ST('theory')">📚 Background</button>
+</div>
+
+<!-- SETUP TAB -->
+<div id="tab-setup" class="tab on">
+<div class="note">Defaults = 295/90R20 calibrated. Enter Tread rubber shear modulus [MPa] + Tread depth [mm] → Cy; Total lateral spring rate Ky [kN/m] → kf = Ky/(L·b). Derived fields in green (read-only).</div>
+<div class="card">
+  <h2>Tyre Operating Conditions</h2>
+  <div class="g3">
+    <table>
+      <tr><td>Wheel load [N]</td><td><input id="Fz" value="34826" oninput="updateDerived();validateInputs()"></td></tr>
+      <tr><td>Road friction coefficient</td><td><input id="mu" value="1.05"></td></tr>
+      <tr><td>Test cornering angle [deg]</td><td><input id="alpha_test_deg" value="5"></td></tr>
+      <tr><td>Braking / drive slip ratio</td><td><input id="kappa" value="0"></td></tr>
+      <tr><td>Vehicle speed [km/h] <span style="font-size:.70rem;color:var(--muted)">(sliding-speed term)</span></td><td><input id="veh_speed" value="40"></td></tr>
+    </table>
+    <table>
+      <tr><td>Footprint length L [m]</td><td><input id="L_contact" value="0.157" oninput="updateDerived()"></td></tr>
+      <tr class="di"><td>↳ Estimated footprint length (ETRTO) [m]<br><span style="font-size:.70rem;color:#166534;font-weight:400">Approximate — valid near rated load</span></td>
+        <td><input id="L_etrto" readonly tabindex="-1">
+        <button class="bo" style="margin-top:3px;padding:2px 8px;font-size:.72rem" onclick="document.getElementById('L_contact').value=document.getElementById('L_etrto').value;updateDerived()">↑ Use</button></td></tr>
+      <tr><td>Footprint width b [m]</td><td><input id="b_width" value="0.238" oninput="updateDerived()"></td></tr>
+      <tr><td style="font-size:.72rem;font-weight:700;color:var(--acc);padding-top:6px" colspan="2">TREAD — Enter physical properties</td></tr>
+      <tr><td>Tread rubber shear modulus [MPa]</td><td><input id="G_tread" class="pi" value="1.49" oninput="updateDerived()"></td></tr>
+      <tr><td>Tread depth [mm]</td><td><input id="h_tread" class="pi" value="18" oninput="updateDerived()"></td></tr>
+      <tr class="di"><td>↳ Lateral tread stiffness [N/m³]</td><td><input id="Cy_tread" readonly tabindex="-1"></td></tr>
+      <tr><td>Tread shear modulus — longitudinal [MPa]</td><td><input id="G_cx" class="pi" value="1.49" oninput="updateDerived()"></td></tr>
+      <tr class="di"><td>↳ Longitudinal tread stiffness Cx [N/m³]</td><td><input id="Cx_tread" readonly tabindex="-1"></td></tr>
+    </table>
+    <table>
+      <tr><td style="font-size:.72rem;font-weight:700;color:var(--acc)" colspan="2">CARCASS STIFFNESS</td></tr>
+      <tr><td>Total lateral spring rate Ky [kN/m]</td><td><input id="Ky_lateral" class="pi" value="336" oninput="updateDerived()"></td></tr>
+      <tr class="di"><td>↳ Carcass foundation stiffness [N/m²]</td><td><input id="k_foundation" readonly tabindex="-1"></td></tr>
+      <tr><td style="font-size:.72rem;font-weight:700;color:var(--acc);padding-top:6px" colspan="2">INFLATION PRESSURE</td></tr>
+      <tr><td>Inflation pressure [kPa]</td><td><input id="infl_pressure" class="pi" value="930" oninput="updateDerived()"></td></tr>
+      <tr><td>Loaded tyre radius R [m]</td><td><input id="tyre_radius" class="pi" value="0.52" oninput="updateDerived()"></td></tr>
+      <tr><td>Sidewall stiffness k_sw [N/m²] <span style="font-size:.70rem;color:var(--muted)">(for β sensitivity)</span></td><td><input id="k_sw" value="300000"></td></tr>
+      <tr class="di"><td>↳ Belt pre-tension from inflation T₀ [N]</td><td><input id="T0_val" readonly tabindex="-1"></td></tr>
+      <tr><td style="padding-top:8px">Maximum cornering angle [deg]</td><td><input id="alpha_max_deg" value="15"></td></tr>
+      <tr><td>Number of angle steps</td><td><input id="n_alpha" value="101"></td></tr>
+      <tr><td>Solver accuracy (nodes)</td><td><input id="n_nodes" value="201"></td></tr>
+    </table>
+  </div>
+</div>
+<div class="card">
+  <h2>4-Belt Package &nbsp;<span style="font-weight:400;font-size:.75rem;color:var(--muted)">(E_cord / E_rubber in GPa)</span></h2>
+  <div class="note">Voigt mixing rule → E_x,eff = E_hom·cos⁴(β). Parallel-axis theorem for EI. BCs: simply-supported (y=0, y″=0).</div>
+  <table id="beltTable">
+    <thead><tr><th>Layer</th><th>β [°]</th><th>t [m]</th><th>w [m]</th>
+    <th>E_cord [GPa]</th><th>E_rubber [GPa]</th><th>V_cord [–]</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="br">
+    <button class="btn bo" onclick="addBelt()">+ Add Layer</button>
+    <button class="btn bo" onclick="rmBelt()">– Remove Last</button>
+  </div>
+</div>
+<div class="br">
+  <button class="btn bp" onclick="runAll()">▶ Run Model</button>
+  <button class="btn bo" onclick="exportCSV()">⬇ Export CSV</button>
+</div>
+<div id="runStat" style="display:none" class="sb sbok"></div>
+</div>
+
+<!-- RESULTS TAB -->
+<div id="tab-results" class="tab">
+<!-- Sub-tab navigation -->
+<div class="stabs">
+  <button class="stb on" onclick="SST('tab-results','sres')">📊 Results</button>
+  <button class="stb"    onclick="SST('tab-results','scont')">🔬 Contact Patch</button>
+  <button class="stb"    onclick="SST('tab-results','sbelt')">🏗 Belt Analysis</button>
+</div>
+
+<!-- Panel: Results -->
+<div id="sres" class="spanel on">
+<div class="g2">
+  <div class="card">
+    <h2>Key Results</h2>
+    <table id="metricsTable"><tr><td colspan="3" style="color:var(--muted)">Run model first</td></tr></table>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <h2>Cornering Stiffness — Three Model Levels</h2>
+    <div class="note" style="font-size:.77rem">Three levels: rigid brush | Sun &amp; Lu analytical (Eq.22, λ₀ basis) | numerical coupled solver. ε = lateral flexibility ratio (ε&lt;0.3 rigid, 0.3–1.0 transitional, ε≥1.0 flexible).</div>
+    <table id="caCompTable" style="margin-top:8px"><tr><td colspan="5" style="color:var(--muted)">Run model first</td></tr></table>
+    <div id="epsDisplay" style="margin-top:6px;font-size:.78rem;color:var(--muted)">Run model first</div>
+  </div>
+  <div class="card">
+    <h2>Belt Layer Properties</h2>
+    <table id="layerTable"><tr><td colspan="7" style="color:var(--muted)">Run model first</td></tr></table>
+  </div>
+</div>
+
+<div class="sl">Lateral Force vs Cornering Angle</div>
+<div class="g4">
+  <div class="card"><h3>Lateral Force vs Cornering Angle — grip and sliding zones</h3><div class="cw"><canvas id="fyChart"></canvas></div></div>
+  <div class="card"><h3>Self-Aligning Moment &amp; Pneumatic Trail vs Cornering Angle</h3><div class="cw"><canvas id="dualMzTr"></canvas></div></div>
+  <div class="card"><h3>Cornering Stiffness vs Cornering Angle</h3><div class="cw"><canvas id="caChart"></canvas></div></div>
+</div>
+
+
+
+<div class="sl">Belt Design Analysis</div>
+<div class="g4">
+  <div class="card"><h3>Cornering Stiffness vs Wheel Load — for 4 belt angles</h3><div class="cw"><canvas id="caFzChart"></canvas></div></div>
+  <div class="card"><h3>Belt Bending Stiffness EI vs Belt Cord Angle</h3><div class="cw"><canvas id="eiBetaChart"></canvas></div></div>
+  <div class="card"><h3>Cornering Stiffness vs Belt Cord Angle — at 3 load levels</h3><div class="cw"><canvas id="caBetaChart"></canvas></div></div>
+  <div class="card"><h3>Estimated Footprint Length vs Wheel Load (ETRTO formula)</h3><div class="cw"><canvas id="lEtrtoFzChart"></canvas></div></div>
+</div>
+
+<div class="sl">How the Model Works</div>
+<div class="card">
+  <h2>Governing Equations — how every output is computed</h2>
+  <div class="note" style="font-size:.81rem;line-height:1.7">
+    All equations are evaluated in SI units: N, m, Pa, rad. Belt stiffness inputs are in GPa and converted internally.
+    Subscripts: <em>i</em> = belt layer index, <em>j</em> = beam node index, <em>x</em> = along-patch coordinate (0 = leading edge).
+  </div>
+
+  <!-- SECTION 1: Belt Package -->
+  <div style="margin-top:18px">
+    <div class="sl" style="margin:0 0 10px 0;font-size:.8rem;letter-spacing:.08em">1 — BELT STRUCTURAL PACKAGE</div>
+    <table class="eq-tbl">
+      <tr><th>Output</th><th>Equation</th><th>Where used</th></tr>
+      <tr>
+        <td>Homogenised cord modulus</td>
+        <td class="eq">E<sub>hom,i</sub> = V<sub>cord,i</sub>·E<sub>cord,i</sub> + (1−V<sub>cord,i</sub>)·E<sub>rubber,i</sub></td>
+        <td>Voigt rule-of-mixtures along cord direction</td>
+      </tr>
+      <tr>
+        <td>Effective axial modulus</td>
+        <td class="eq">E<sub>x,i</sub> = E<sub>hom,i</sub>·cos⁴(β<sub>i</sub>)</td>
+        <td>Cord angle projection onto rolling direction</td>
+      </tr>
+      <tr>
+        <td>Neutral-axis depth</td>
+        <td class="eq">z̄ = Σ(E<sub>x,i</sub>·A<sub>i</sub>·z<sub>c,i</sub>) / Σ(E<sub>x,i</sub>·A<sub>i</sub>)</td>
+        <td>Weighted centroid of belt cross-section</td>
+      </tr>
+      <tr>
+        <td>Second moment — layer i</td>
+        <td class="eq">I<sub>s,i</sub> = w<sub>i</sub>t<sub>i</sub>³/12 + w<sub>i</sub>t<sub>i</sub>·(z<sub>c,i</sub>−z̄)²</td>
+        <td>Parallel-axis theorem (own inertia + offset²)</td>
+      </tr>
+      <tr>
+        <td>Belt bending stiffness</td>
+        <td class="eq">EI = Σ E<sub>x,i</sub>·I<sub>s,i</sub></td>
+        <td>Total belt EI used in beam equation</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- SECTION 2: Rigid Carcass Reference -->
+  <div style="margin-top:18px">
+    <div class="sl" style="margin:0 0 10px 0;font-size:.8rem;letter-spacing:.08em">2 — RIGID-CARCASS FIALA REFERENCE (ANALYTICAL)</div>
+    <table class="eq-tbl">
+      <tr><th>Output</th><th>Equation</th><th>Physical meaning</th></tr>
+      <tr>
+        <td>Cornering stiffness (rigid)</td>
+        <td class="eq">C<sub>α</sub> = C<sub>y</sub>·b·L²/2</td>
+        <td>Slope of Fy vs α at α=0 for rigid belt — upper bound</td>
+      </tr>
+      <tr>
+        <td>C<sub>mα</sub> stiffness</td>
+        <td class="eq">C<sub>mα</sub> = C<sub>α</sub>·L/6</td>
+        <td>Slope of Mz vs α at α=0</td>
+      </tr>
+      <tr>
+        <td>Small-slip trail</td>
+        <td class="eq">t<sub>p0</sub> = L/6</td>
+        <td>Pneumatic trail at α→0 (= C<sub>mα</sub>/C<sub>α</sub>)</td>
+      </tr>
+      <tr>
+        <td>Relaxation length</td>
+        <td class="eq">σ<sub>α</sub> = L²/2 = C<sub>α</sub>/K<sub>y</sub></td>
+        <td>Distance tyre must roll for Fy to reach steady-state</td>
+      </tr>
+      <tr>
+        <td>Sliding onset angle</td>
+        <td class="eq">α<sub>sl</sub> = arctan(3μF<sub>z</sub>/C<sub>α</sub>)</td>
+        <td>α where sliding first occurs at trailing edge</td>
+      </tr>
+      <tr>
+        <td>Trail peak angle</td>
+        <td class="eq">α<sub>pt</sub> = arctan(μF<sub>z</sub>/C<sub>α</sub>)</td>
+        <td>α where pneumatic trail is maximum</td>
+      </tr>
+      <tr>
+        <td>Normalised stiffness</td>
+        <td class="eq">C<sub>α</sub>/F<sub>z</sub> [1/rad]</td>
+        <td>Load-independent stiffness indicator; 5–9 typical for truck</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- SECTION 3: Contact Patch / Beam Model -->
+  <div style="margin-top:18px">
+    <div class="sl" style="margin:0 0 10px 0;font-size:.8rem;letter-spacing:.08em">3 — CONTACT PATCH & COUPLED BEAM MODEL (NUMERICAL)</div>
+    <table class="eq-tbl">
+      <tr><th>Output</th><th>Equation</th><th>Physical meaning</th></tr>
+      <tr>
+        <td>Normal pressure</td>
+        <td class="eq">q<sub>z</sub>(x) = 6F<sub>z</sub>/(bL) · (x/L)·(1−x/L)</td>
+        <td>Parabolic distribution; integrates to F<sub>z</sub></td>
+      </tr>
+      <tr>
+        <td>Tread deformation</td>
+        <td class="eq">δ<sub>y</sub>(x) = x·tan α − y(x)</td>
+        <td>Kinematic slip minus belt deflection</td>
+      </tr>
+      <tr>
+        <td>Tread lateral stress</td>
+        <td class="eq">f<sub>y</sub>(x) = C<sub>y</sub>·δ<sub>y</sub>(x)</td>
+        <td>Elastic tread; clipped at friction limit below</td>
+      </tr>
+      <tr>
+        <td>Friction limit (combined)</td>
+        <td class="eq">|f<sub>y</sub>|² + |f<sub>x</sub>|² ≤ (μ·q<sub>z</sub>)²</td>
+        <td>Coulomb cone — sliding if exceeded, scaled back to limit</td>
+      </tr>
+      <tr>
+        <td>Lateral line load on belt</td>
+        <td class="eq">q<sub>y</sub>(x) = b·f<sub>y</sub>(x)</td>
+        <td>Load per unit length driving belt deflection</td>
+      </tr>
+      <tr>
+        <td>Belt beam equation</td>
+        <td class="eq">EI·y⁽⁴⁾(x) + k<sub>f</sub>·y(x) = q<sub>y</sub>(x)</td>
+        <td>4th-order Euler-Bernoulli beam on elastic foundation (Winkler)</td>
+      </tr>
+      <tr>
+        <td>Boundary conditions</td>
+        <td class="eq">y(0)=0, y″(0)=0, y(L)=0, y″(L)=0</td>
+        <td>Simply-supported ends: zero deflection and zero moment</td>
+      </tr>
+      <tr>
+        <td>Lateral force</td>
+        <td class="eq">F<sub>y</sub> = ∫₀ᴸ q<sub>y</sub>(x) dx</td>
+        <td>Integrated line load over contact length</td>
+      </tr>
+      <tr>
+        <td>Self-aligning torque</td>
+        <td class="eq">M<sub>z</sub> = −∫₀ᴸ q<sub>y</sub>(x)·(x−L/2) dx + x<sub>c</sub>·(R₀−R<sub>N</sub>)</td>
+        <td>Moment about patch centre; BC shear-reaction correction added</td>
+      </tr>
+      <tr>
+        <td>Pneumatic trail</td>
+        <td class="eq">t<sub>p</sub> = −M<sub>z</sub>/F<sub>y</sub></td>
+        <td>Effective moment arm of lateral force behind wheel centre</td>
+      </tr>
+      <tr>
+        <td>Adhesion Fy component</td>
+        <td class="eq">F<sub>ya</sub> = b·∫<sub>adhesion</sub> f<sub>y</sub>(x) dx</td>
+        <td>Contribution from non-sliding tread elements</td>
+      </tr>
+      <tr>
+        <td>Sliding Fy component</td>
+        <td class="eq">F<sub>ys</sub> = b·∫<sub>sliding</sub> f<sub>y</sub>(x) dx</td>
+        <td>Contribution from sliding tread elements (at friction limit)</td>
+      </tr>
+      <tr>
+        <td>Sliding onset position</td>
+        <td class="eq">x<sub>h</sub> = first x where |f<sub>y</sub>²+f<sub>x</sub>²| = (μq<sub>z</sub>)²</td>
+        <td>Distance from leading edge to onset of tread sliding</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- SECTION 4: Normalised / Universal -->
+  <div style="margin-top:18px">
+    <div class="sl" style="margin:0 0 10px 0;font-size:.8rem;letter-spacing:.08em">4 — NORMALISED & UNIVERSAL CURVE</div>
+    <table class="eq-tbl">
+      <tr><th>Output</th><th>Equation</th><th>Physical meaning</th></tr>
+      <tr>
+        <td>Normalised lateral force</td>
+        <td class="eq">η = F<sub>y</sub>/(μF<sub>z</sub>)</td>
+        <td>Friction utilisation in lateral direction; η→1 at full sliding</td>
+      </tr>
+      <tr>
+        <td>Universal slip parameter φ</td>
+        <td class="eq">φ = C<sub>α,num</sub>·|tan α| / (μF<sub>z</sub>)</td>
+        <td>Normalised kinematic slip; φ=1 at sliding onset (rigid Fiala)</td>
+      </tr>
+      <tr>
+        <td>Universal curve (rigid Fiala)</td>
+        <td class="eq">η = 1−(1−φ/3)³ for φ≤3; η=1 for φ&gt;3</td>
+        <td>Load/friction-independent master curve</td>
+      </tr>
+      <tr>
+        <td>Friction circle utilisation</td>
+        <td class="eq">|F| / (μF<sub>z</sub>) = √(F<sub>y</sub>²+F<sub>x</sub>²) / (μF<sub>z</sub>)</td>
+        <td>Combined slip fraction of available friction; ≤1 always</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- SECTION 5: Belt Diagnostics -->
+  <div style="margin-top:18px">
+    <div class="sl" style="margin:0 0 10px 0;font-size:.8rem;letter-spacing:.08em">5 — BELT DIAGNOSTICS & WEAR</div>
+    <table class="eq-tbl">
+      <tr><th>Output</th><th>Equation</th><th>Physical meaning</th></tr>
+      <tr>
+        <td>Belt curvature</td>
+        <td class="eq">κ(x) = y″(x) ≈ (y<sub>j−1</sub>−2y<sub>j</sub>+y<sub>j+1</sub>)/Δx²</td>
+        <td>Local bending curvature; high values indicate belt stress concentration</td>
+      </tr>
+      <tr>
+        <td>Bending moment</td>
+        <td class="eq">M(x) = EI·κ(x)</td>
+        <td>Belt bending moment; peak M drives cord fatigue</td>
+      </tr>
+      <tr>
+        <td>Belt strain energy</td>
+        <td class="eq">U = ½·EI·∫κ²dx</td>
+        <td>Elastic energy stored in belt; small U confirms rigid-belt regime</td>
+      </tr>
+      <tr>
+        <td>Belt flexibility ratio</td>
+        <td class="eq">R = y<sub>max</sub> / (x<sub>mid</sub>·tan α)</td>
+        <td>Belt deflection / kinematic slip; R≪1 → belt is effectively rigid</td>
+      </tr>
+      <tr>
+        <td>Lateral rolling resistance</td>
+        <td class="eq">C<sub>r,lat</sub> = [b·∫<sub>sliding</sub> f<sub>y</sub>(x)·δ<sub>slip</sub>(x) dx] / F<sub>z</sub></td>
+        <td>Sliding energy dissipated per unit normal force per unit distance (Archard basis)</td>
+      </tr>
+      <tr>
+        <td>Local sliding speed <span style="color:var(--muted);font-size:.7rem">(Liu-Cebon)</span></td>
+        <td class="eq">v(x) = V<sub>r</sub>·|(tan α − dδ<sub>y</sub>/dx, κ − dδ<sub>x</sub>/dx)| &nbsp;(sliding zone)</td>
+        <td>Tip slip speed = transport speed × (kinematic slip − deflection gradient); zero in adhesion</td>
+      </tr>
+      <tr>
+        <td>Local wear law <span style="color:var(--muted);font-size:.7rem">(Liu-Cebon Eq.2)</span></td>
+        <td class="eq">w = k<sub>1</sub>·(p/p<sub>0</sub>)·(1 + k<sub>2</sub>·v/v<sub>0</sub>) &nbsp;[kg/m³]</td>
+        <td>Mass loss per area per sliding distance; p<sub>0</sub>=1 MPa, v<sub>0</sub>=1 m/s. k₁=compound×surface, k₂≈0.37</td>
+      </tr>
+      <tr>
+        <td>Wear rate per km</td>
+        <td class="eq">ṁ = 1000·b·∫<sub>sliding</sub> w·(v/V<sub>r</sub>) dx &nbsp;[kg/km]</td>
+        <td>Distance-normalised abrasion; V<sub>r</sub> cancels except in the k₂ speed term</td>
+      </tr>
+      <tr>
+        <td>Numerical C<sub>α</sub></td>
+        <td class="eq">C<sub>α,num</sub> = dF<sub>y</sub>/dα|<sub>α→0</sub> &nbsp;(finite difference)</td>
+        <td>Flexible-belt cornering stiffness; lower than rigid C<sub>α</sub> when belt deflects</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- SECTION 6: Solution algorithm -->
+  <div style="margin-top:18px">
+    <div class="sl" style="margin:0 0 10px 0;font-size:.8rem;letter-spacing:.08em">6 — ITERATIVE SOLUTION ALGORITHM</div>
+    <div class="note" style="font-size:.81rem;line-height:1.8">
+      The belt deflection y(x) and the tread loads q<sub>y</sub>(x) are mutually dependent — belt deflection changes the tread deformation, which changes the loads, which change the deflection. The model resolves this with a <strong>successive-substitution iteration</strong>:
+      <ol style="margin:8px 0 0 18px;line-height:2">
+        <li>Start with y(x) = 0 (rigid belt assumption)</li>
+        <li>Compute tread loads q<sub>y</sub>(x) = b·min(C<sub>y</sub>·δ<sub>y</sub>, μq<sub>z</sub>) from current y</li>
+        <li>Solve the beam equation: EI·y⁽⁴⁾ + k<sub>f</sub>·y = q<sub>y</sub> (Gaussian elimination with pivoting)</li>
+        <li>Update: y<sub>new</sub> = 0.5·y<sub>beam</sub> + 0.5·y<sub>old</sub> &nbsp;(under-relaxation for stability)</li>
+        <li>Repeat until max|y<sub>new</sub>−y<sub>old</sub>| &lt; 10⁻⁷ m &nbsp;(typically 5–25 iterations)</li>
+      </ol>
+      The <strong>simply-supported boundary conditions</strong> (y=0 at both ends) mean the belt ends cannot deflect. The beam endpoints exert shear reactions R₀ = EI·y‴(0) and R<sub>N</sub> = −EI·y‴(L) which are absent from the q<sub>y</sub> integral but contribute to M<sub>z</sub>. These are added as a post-correction: ΔM<sub>z</sub> = x<sub>c</sub>·(R₀−R<sub>N</sub>).
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- Panel: Contact Patch -->
+<div id="scont" class="spanel">
+<div class="note">All distributions at test point (α_test, κ, Fz). x=0 is leading edge.</div>
+<div class="note">All distributions at test point (α_test, κ, Fz). x=0 is leading edge.</div>
+<div class="g4">
+  <div class="card"><h3>Lateral &amp; Longitudinal Force vs Cornering Angle</h3><div class="cw"><canvas id="dualFyFx"></canvas></div></div>
+  <div class="card"><h3>Normal pressure &amp; lateral tread stress across footprint [kPa]</h3><div class="cw"><canvas id="contPressChart"></canvas></div></div>
+  <div class="card"><h3>Lateral load per unit length &amp; wear indicator across footprint</h3><div class="cw"><canvas id="contQyChart"></canvas></div></div>
+  <div class="card"><h3>Tread element deflection across footprint [mm]</h3><div class="cw"><canvas id="contDeltaChart"></canvas></div></div>
+  <div class="card"><h3>Sliding zone map (1 = sliding, 0 = gripping)</h3><div class="cw"><canvas id="contSlideChart"></canvas></div></div>
+  <div class="card"><h3>Local wear rate &amp; sliding speed across footprint <span style="font-size:.72rem;font-weight:400;color:var(--muted)">(Liu-Cebon)</span></h3><div class="cw"><canvas id="contWearChart"></canvas></div></div>
+</div>
+</div>
+
+<!-- Panel: Belt Structure -->
+<div id="sbelt" class="spanel">
+<div class="g4">
+  <div class="card"><h3>Belt lateral deflection across footprint [mm]</h3><div class="cw"><canvas id="beamChart"></canvas></div></div>
+  <div class="card"><h3>Belt curvature across footprint [1/m]</h3><div class="cw"><canvas id="curvChart"></canvas></div></div>
+  <div class="card"><h3>Belt bending moment across footprint [N·m]</h3><div class="cw"><canvas id="momChart"></canvas></div></div>
+  <div class="card"><h3>Solver convergence — iterations to solution</h3><div class="cw"><canvas id="convChart"></canvas></div></div>
+  <div class="card"><h3>Stiffness contribution by belt layer [%]</h3><div class="cw"><canvas id="eiLayerChart"></canvas></div></div>
+</div>
+
+<div class="sl">Belt Lateral Deflection — Parametric Studies</div>
+<div class="g4">
+  <div class="card"><h3>Belt deflection profile y(x) — belt cord angle effect (Fz=35 kN, α=5°)</h3><div class="cw"><canvas id="deflBetaChart"></canvas></div></div>
+  <div class="card"><h3>Belt deflection profile y(x) — wheel load effect (β=20°, α=5°)</h3><div class="cw"><canvas id="deflFzChart"></canvas></div></div>
+  <div class="card"><h3>Belt deflection profile y(x) — cord modulus effect (Fz=35 kN, α=5°)</h3><div class="cw"><canvas id="deflEcordChart"></canvas></div></div>
+</div>
+<div class="card" style="max-width:600px">
+  <h2>Belt Stiffness Summary</h2>
+  <table id="beltSumTable"><tr><td colspan="5" style="color:var(--muted)">Run model first</td></tr></table>
+</div>
+</div>
+</div>
+
+<!-- DoE TAB (1-D and 2-D merged) -->
+<div id="tab-doe" class="tab">
+<div class="stabs">
+  <button class="stb on" onclick="SST('tab-doe','sdoe1')">📈 1-D Sweep</button>
+  <button class="stb"    onclick="SST('tab-doe','sdoe2')">🗺 2-D Study</button>
+</div>
+
+<!-- Panel: 1-D DoE -->
+<div id="sdoe1" class="spanel on">
+<div class="card">
+  <h2>1-Parameter Sensitivity Study</h2>
+  <div class="note">Vary one parameter over 2–4 values; each value runs a full α-sweep. Multi-line Lateral force, self-aligning moment, cornering stiffness vs angle are shown.</div>
+  <div class="g3">
+    <div>
+      <div style="margin-bottom:6px"><label>Sweep parameter</label>
+      <select id="d1par">
+        <optgroup label="Tyre Operating Conditions">
+          <option value="Fz">Wheel load [N]</option>
+          <option value="mu">Friction coefficient [–]</option>
+          <option value="kappa">Braking / drive slip ratio</option>
+          <option value="alpha_test_deg">Test cornering angle [°]</option>
+          <option value="infl_pressure">Inflation pressure [kPa]</option>
+        </optgroup>
+        <optgroup label="Contact Geometry">
+          <option value="L_contact">Footprint length L [m]</option>
+          <option value="b_width">Footprint width b [m]</option>
+        </optgroup>
+        <optgroup label="Tread Stiffness">
+          <option value="Cy_tread">Lateral tread stiffness [N/m³]</option>
+          <option value="Cx_tread">Longitudinal tread stiffness [N/m³]</option>
+        </optgroup>
+        <optgroup label="Belt / Carcass">
+          <option value="k_foundation">Carcass foundation stiffness [N/m²]</option>
+          <option value="beta_working">Belt cord angle [°]</option>
+          <option value="Ecord_working">Belt cord elastic modulus [GPa]</option>
+        </optgroup>
+        <optgroup label="Belt Widths">
+          <option value="belt0_w">Transition ply width [m]</option>
+          <option value="belt1_w">Working ply 1 width [m]</option>
+          <option value="belt2_w">Working ply 2 width [m]</option>
+          <option value="belt3_w">Protector ply width [m]</option>
+        </optgroup>
+        <optgroup label="Belt E_cord per Layer">
+          <option value="belt0_Ecord">Transition ply cord modulus [GPa]</option>
+          <option value="belt1_Ecord">Working ply 1 cord modulus [GPa]</option>
+          <option value="belt2_Ecord">Working ply 2 cord modulus [GPa]</option>
+          <option value="belt3_Ecord">Protector ply cord modulus [GPa]</option>
+        </optgroup>
+      </select></div>
+    </div>
+    <div>
+      <label>Min</label><input id="d1min" value="2000">
+      <label style="margin-top:6px">Max</label><input id="d1max" value="8000">
+    </div>
+    <div>
+      <label>Number of curves (2–4)</label>
+      <select id="d1n"><option value="2">2</option><option value="3">3</option><option value="4" selected>4</option></select>
+      <div class="br" style="margin-top:10px">
+        <button class="btn bs" onclick="run1D()">▶ Run 1-D Sweep</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="g4">
+  <div class="card"><h3>Fy vs α</h3><div class="cw"><canvas id="d1Fy"></canvas></div></div>
+  <div class="card"><h3>Mz vs α</h3><div class="cw"><canvas id="d1Mz"></canvas></div></div>
+  <div class="card"><h3>Cornering Stiffness vs Cornering Angle</h3><div class="cw"><canvas id="d1Ca"></canvas></div></div>
+  <div class="card"><h3>Cornering Stiffness &amp; Belt Stiffness per configuration</h3><div class="cw"><canvas id="d1Bar"></canvas></div></div>
+  <div class="card"><h3>Belt lateral deflection y(x) at test angle — one line per configuration</h3><div class="cw"><canvas id="d1Defl"></canvas></div></div>
+</div>
+</div>
+
+<!-- Panel: 2-D DoE -->
+<div id="sdoe2" class="spanel">
+<div class="card">
+  <h2>2-Parameter Interaction Study</h2>
+  <div class="g3">
+    <div>
+      <label>Row parameter (P1)</label>
+      <select id="d2p1">
+        <optgroup label="Tyre Operating Conditions">
+          <option value="Fz">Wheel load [N]</option>
+          <option value="mu">Friction coefficient [–]</option>
+          <option value="kappa">Braking / drive slip ratio</option>
+          <option value="alpha_test_deg">Test cornering angle [°]</option>
+          <option value="infl_pressure">Inflation pressure [kPa]</option>
+        </optgroup>
+        <optgroup label="Contact Geometry">
+          <option value="L_contact">Footprint length L [m]</option>
+          <option value="b_width">Footprint width b [m]</option>
+        </optgroup>
+        <optgroup label="Tread Stiffness">
+          <option value="Cy_tread">Lateral tread stiffness [N/m³]</option>
+          <option value="Cx_tread">Longitudinal tread stiffness [N/m³]</option>
+        </optgroup>
+        <optgroup label="Belt / Carcass">
+          <option value="k_foundation">Carcass foundation stiffness [N/m²]</option>
+          <option value="beta_working">Belt cord angle [°]</option>
+          <option value="Ecord_working">Belt cord elastic modulus [GPa]</option>
+        </optgroup>
+        <optgroup label="Belt Widths">
+          <option value="belt0_w">Transition ply width [m]</option>
+          <option value="belt1_w">Working ply 1 width [m]</option>
+          <option value="belt2_w">Working ply 2 width [m]</option>
+          <option value="belt3_w">Protector ply width [m]</option>
+        </optgroup>
+        <optgroup label="Belt E_cord per Layer">
+          <option value="belt0_Ecord">Transition ply cord modulus [GPa]</option>
+          <option value="belt1_Ecord">Working ply 1 cord modulus [GPa]</option>
+          <option value="belt2_Ecord">Working ply 2 cord modulus [GPa]</option>
+          <option value="belt3_Ecord">Protector ply cord modulus [GPa]</option>
+        </optgroup>
+      </select>
+      <label style="margin-top:6px">Min P1</label><input id="d2p1min" value="2000">
+      <label style="margin-top:4px">Max P1</label><input id="d2p1max" value="8000">
+      <label style="margin-top:4px">Steps</label><input id="d2p1n" value="4">
+    </div>
+    <div>
+      <label>Column parameter (P2)</label>
+      <select id="d2p2">
+        <optgroup label="Tyre Operating Conditions">
+          <option value="mu">Friction coefficient [–]</option>
+          <option value="Fz">Wheel load [N]</option>
+          <option value="kappa">Braking / drive slip ratio</option>
+          <option value="alpha_test_deg">Test cornering angle [°]</option>
+          <option value="infl_pressure">Inflation pressure [kPa]</option>
+        </optgroup>
+        <optgroup label="Contact Geometry">
+          <option value="L_contact">Footprint length L [m]</option>
+          <option value="b_width">Footprint width b [m]</option>
+        </optgroup>
+        <optgroup label="Tread Stiffness">
+          <option value="Cy_tread">Lateral tread stiffness [N/m³]</option>
+          <option value="Cx_tread">Longitudinal tread stiffness [N/m³]</option>
+        </optgroup>
+        <optgroup label="Belt / Carcass">
+          <option value="k_foundation">Carcass foundation stiffness [N/m²]</option>
+          <option value="beta_working">Belt cord angle [°]</option>
+          <option value="Ecord_working">Belt cord elastic modulus [GPa]</option>
+        </optgroup>
+        <optgroup label="Belt Widths">
+          <option value="belt0_w">Transition ply width [m]</option>
+          <option value="belt1_w">Working ply 1 width [m]</option>
+          <option value="belt2_w">Working ply 2 width [m]</option>
+          <option value="belt3_w">Protector ply width [m]</option>
+        </optgroup>
+        <optgroup label="Belt E_cord per Layer">
+          <option value="belt0_Ecord">Transition ply cord modulus [GPa]</option>
+          <option value="belt1_Ecord">Working ply 1 cord modulus [GPa]</option>
+          <option value="belt2_Ecord">Working ply 2 cord modulus [GPa]</option>
+          <option value="belt3_Ecord">Protector ply cord modulus [GPa]</option>
+        </optgroup>
+      </select>
+      <label style="margin-top:6px">Min P2</label><input id="d2p2min" value="0.7">
+      <label style="margin-top:4px">Max P2</label><input id="d2p2max" value="1.0">
+      <label style="margin-top:4px">Steps</label><input id="d2p2n" value="4">
+    </div>
+    <div>
+      <label>Output metric</label>
+      <select id="d2met">
+        <option value="Fy">Fy [N]</option>
+        <option value="Fx">Fx [N]</option>
+        <option value="Ca">Cα [N/rad]</option>
+        <option value="Mz">|Mz| [N·m]</option>
+        <option value="trail">Trail [mm]</option>
+        <option value="EI">EI [N·m²]</option>
+        <option value="Cr">Cr,lat [–]</option>
+        <option value="Fya">Fy adhesion [N]</option>
+        <option value="Fys">Fy sliding [N]</option>
+        <option value="xh">Sliding onset xh [mm]</option>
+      </select>
+      <div class="br" style="margin-top:14px">
+        <button class="btn bw" onclick="run2D()">▶ Run 2-D Study</button>
+      </div>
+      <div id="d2prog" style="font-size:.75rem;color:var(--muted);margin-top:6px"></div>
+    </div>
+  </div>
+</div>
+<div class="sl">Heatmap</div>
+<div class="card"><h3 id="d2htitle">—</h3><div style="overflow-x:auto" id="d2hmap"><p style="color:var(--muted)">Run study first</p></div></div>
+<div class="sl">Sensitivity — metric vs P2, one line per P1 level</div>
+<div class="card"><h3 id="d2linetitle">—</h3><div class="cw" style="max-width:600px"><canvas id="d2line"></canvas></div></div>
+</div>
+</div>
+
+<!-- CALIBRATION TAB -->
+<div id="tab-calib" class="tab">
+<div class="card">
+  <h2>Fit Model to Measured Data</h2>
+  <div class="note">Upload a 2-column TXT or CSV file (no header): column 1 = slip angle [deg], column 2 = Fy [N]. The tool overlays model and test on one chart. Use "Fit μ" to scale friction coefficient for best match.</div>
+  <input type="file" id="calibFile" accept=".txt,.csv" onchange="loadCalib(event)">
+  <div class="br" style="margin-top:10px">
+    <button class="btn bs" onclick="fitMu()">📐 Fit μ to test data</button>
+    <button class="btn bo"  onclick="drawCalib()">↻ Refresh chart</button>
+  </div>
+  <div id="calibStat" style="font-size:.79rem;color:var(--muted);margin-top:6px"></div>
+</div>
+<div class="g2">
+  <div class="card"><h3>Fy vs α — Model (solid) + Test data (dots)</h3><div class="cw" style="max-width:400px"><canvas id="calibChart"></canvas></div></div>
+  <div class="card">
+    <h3>Goodness of fit</h3>
+    <table id="calibMetTable"><tr><td colspan="2" style="color:var(--muted)">Load data first</td></tr></table>
+  </div>
+</div>
+</div>
+
+<!-- COMPARE TAB -->
+<div id="tab-compare" class="tab">
+<div class="card">
+  <h2>Compare Multiple Tyres</h2>
+  <div class="note">Configure each tire in Setup, run the model, then store it as Tire A/B/C. Up to 3 tires overlay on Fy, Mz and Cα charts.</div>
+  <div class="br">
+    <button class="btn bp" onclick="storeConfig('A')">Store as Tire A</button>
+    <button class="btn bs" onclick="storeConfig('B')">Store as Tire B</button>
+    <button class="btn bw" onclick="storeConfig('C')">Store as Tire C</button>
+    <button class="btn bo" onclick="clearCompare()">✕ Clear all</button>
+  </div>
+  <div id="cmpStat" style="font-size:.79rem;color:var(--muted);margin-top:6px"></div>
+</div>
+<div class="g3">
+  <div class="card"><h3>Fy vs α — A / B / C</h3><div class="cw"><canvas id="cmpFy"></canvas></div></div>
+  <div class="card"><h3>Mz vs α — A / B / C</h3><div class="cw"><canvas id="cmpMz"></canvas></div></div>
+  <div class="card"><h3>Cα vs α — A / B / C</h3><div class="cw"><canvas id="cmpCa"></canvas></div></div>
+</div>
+<div class="card" style="max-width:700px">
+  <h2>Comparison Table</h2>
+  <table id="cmpTable"><tr><td colspan="8" style="color:var(--muted)">Store tires first</td></tr></table>
+</div>
+</div>
+
+<script>
+// ─── PHYSICS ──────────────────────────────────────────────────────────────────
+let belts=[
+  {name:"transition", beta_deg:50,  t:0.0009,w:0.175,E_cord:100,  E_rubber:0.008,V_cord:0.18},
+  {name:"working_1",  beta_deg:20,  t:0.0012,w:0.200,E_cord:160,  E_rubber:0.008,V_cord:0.26},
+  {name:"working_2",  beta_deg:-20, t:0.0012,w:0.200,E_cord:160,  E_rubber:0.008,V_cord:0.26},
+  {name:"protector",  beta_deg:18,  t:0.0010,w:0.230,E_cord:100,  E_rubber:0.008,V_cord:0.20}
+];
+
+function computeKcbRatio(belts,beta_work_new,beta_work_ref,k_sw,r_tyre){
+  // Kcb(beta_new)/Kcb(beta_ref) using Euler ring + composite plate theory
+  // Reference: Gil & Lee, Tire Science and Technology 2021
+  var N=20,F=1000;
+  function kcbForBelts(bls){
+    var A11=0,A22=0,A12=0,A66=0;
+    bls.forEach(function(ly){
+      var Ec=ly.E_cord*1e9,Er=(ly.E_rubber||0.008)*1e9,Vc=ly.V_cord,t=ly.t;
+      var bg=ly.beta_deg*Math.PI/180,c=Math.cos(bg),s=Math.sin(bg);
+      var E1=Ec*Vc+Er*(1-Vc),E2=Er/(1-Vc),G12=Er/(1-Vc),nu12=0.5,nu21=nu12*E2/E1;
+      var Q11=E1/(1-nu12*nu21),Q22=E2/(1-nu12*nu21),Q12=nu12*E2/(1-nu12*nu21),Q66=G12;
+      A11+=( Q11*c*c*c*c+2*(Q12+2*Q66)*s*s*c*c+Q22*s*s*s*s)*t;
+      A22+=( Q11*s*s*s*s+2*(Q12+2*Q66)*s*s*c*c+Q22*c*c*c*c)*t;
+      A12+=((Q11+Q22-4*Q66)*s*s*c*c+Q12*(s*s*s*s+c*c*c*c))*t;
+      A66+=((Q11+Q22-2*Q12-2*Q66)*s*s*c*c+Q66*(s*s*s*s+c*c*c*c))*t;
+    });
+    var h=bls.reduce(function(a,l){return a+l.t;},0);
+    var Ex=(A11*A22-A12*A12)/(h*A22);
+    var W=bls.reduce(function(a,l){return Math.max(a,l.w);},0);
+    var Iz=h*W*W*W/12,a0=F/(2*Math.PI*r_tyre*k_sw),w0=a0;
+    for(var n=1;n<=N;n++) w0+=F*r_tyre*r_tyre*r_tyre/(Math.PI*(Ex*Iz*n*n*n*n+k_sw*r_tyre*r_tyre*r_tyre*r_tyre));
+    return F/w0;
+  }
+  var blsN=JSON.parse(JSON.stringify(belts)),blsR=JSON.parse(JSON.stringify(belts));
+  blsN[1].beta_deg=beta_work_new; blsN[2].beta_deg=-beta_work_new;
+  blsR[1].beta_deg=beta_work_ref; blsR[2].beta_deg=-beta_work_ref;
+  var Kcb_n=kcbForBelts(blsN),Kcb_r=kcbForBelts(blsR);
+  return (Kcb_r>0)?Kcb_n/Kcb_r:1.0;
+}
+
+function computePkg(bl){
+  let zR=0; const rows=[];
+  bl.forEach(ly=>{
+    const Eh=(ly.V_cord*ly.E_cord+(1-ly.V_cord)*ly.E_rubber)*1e9; // GPa→Pa
+    const b=ly.beta_deg*Math.PI/180;
+    const Ex=Eh*Math.pow(Math.cos(b),4);
+    const A=ly.w*ly.t, zc=zR+0.5*ly.t, Ic=ly.w*ly.t*ly.t*ly.t/12;
+    rows.push({name:ly.name,beta:ly.beta_deg,Eh,Ex,A,zc,Ic});
+    zR+=ly.t;
+  });
+  let sEA=0,sEAz=0;
+  rows.forEach(r=>{sEA+=r.Ex*r.A; sEAz+=r.Ex*r.A*r.zc;});
+  const zna=sEAz/sEA;
+  let EI=0;
+  rows.forEach(r=>{
+    r.dz=r.zc-zna; r.Is=r.Ic+r.A*r.dz*r.dz; r.EIl=r.Ex*r.Is; EI+=r.EIl;
+  });
+  rows.forEach(r=>r.EIp=100*r.EIl/EI);
+  return{EI,zna,rows};
+}
+
+function rigidM(p){
+  const Ca=p.Cy_tread*p.b_width*p.L*p.L/2;
+  return{Ca,Cm:Ca*p.L/6,tp0:p.L/6,sg:p.L*p.L/2,
+         asl:Math.atan(3*p.mu*p.Fz/Ca)*180/Math.PI,
+         apt:Math.atan(p.mu*p.Fz/Ca)*180/Math.PI,
+         nCa:Ca/p.Fz};
+}
+
+function qzP(x,Fz,b,L){
+  if(x<0||x>L)return 0;
+  const xi=x/L; return 6*Fz/(b*L)*xi*(1-xi);
+}
+
+function localLd(xA,yA,aR,k,p){
+  const qy=[],qx=[],qz=[],fyA=[],fxA=[],dY=[],dX=[],sl=[],wr=[],faA=[],fsA=[];
+  for(let i=0;i<xA.length;i++){
+    const x=xA[i], pz=qzP(x,p.Fz,p.b_width,p.L);
+    qz.push(pz);
+    const dy=x*Math.tan(aR)-yA[i], dx=x*k;
+    dY.push(dy); dX.push(dx);
+    let fyT=p.Cy_tread*dy, fxT=p.Cx_tread*dx;
+    const lim=p.mu*pz, mag=Math.sqrt(fyT*fyT+fxT*fxT);
+    let fy=fyT,fx=fxT,s=false;
+    if(mag>lim&&mag>1e-16){const sc=lim/mag; fy*=sc; fx*=sc; s=true;}
+    fyA.push(fy); fxA.push(fx);
+    qy.push(p.b_width*fy); qx.push(p.b_width*fx);
+    sl.push(s?1:0);
+    faA.push(s?0:fy); fsA.push(s?fy:0);
+    const fyCap=Math.sqrt(Math.max(lim*lim-fx*fx,0));
+    const dex=s?Math.max(Math.abs(fyT)-fyCap,0)/Math.max(p.Cy_tread,1e-16):0;
+    wr.push(s?Math.abs(fy)*dex:0);
+  }
+  return{qy,qx,qz,fyA,fxA,dY,dX,sl,wr,faA,fsA};
+}
+
+function solveBeam(qy,EI,kf,L,T0){
+  // ODE: EI*y'''' - T0*y'' + kf*y = q
+  // T0 = p[Pa]*R[m]*b[m]  [N] — inflation pre-tension across belt width
+  // FD stencil:
+  //   y''''_i ≈ (y[i-2]-4y[i-1]+6y[i]-4y[i+1]+y[i+2])/dx^4
+  //   y''_i   ≈ (y[i-1]-2y[i]+y[i+1])/dx^2
+  const N=qy.length, dx=L/(N-1);
+  const A=Array.from({length:N},()=>new Float64Array(N)), b=new Float64Array(N);
+  A[0][0]=1;
+  A[1][0]=1; A[1][1]=-2; A[1][2]=1;
+  const c4=EI/Math.pow(dx,4);
+  const c2=(T0||0)/Math.pow(dx,2);
+  for(let i=2;i<=N-3;i++){
+    A[i][i-2]= c4;
+    A[i][i-1]=-4*c4 - c2;
+    A[i][i]  = 6*c4 + 2*c2 + kf;
+    A[i][i+1]=-4*c4 - c2;
+    A[i][i+2]= c4;
+    b[i]=qy[i];
+  }
+  A[N-2][N-3]=1; A[N-2][N-2]=-2; A[N-2][N-1]=1;
+  A[N-1][N-1]=1;
+  return gaussPiv(A,b);
+}
+
+function gaussPiv(Ain,bin){
+  const n=bin.length;
+  const A=Ain.map(r=>Float64Array.from(r)), b=Float64Array.from(bin);
+  for(let k=0;k<n;k++){
+    let mr=k,mv=Math.abs(A[k][k]);
+    for(let i=k+1;i<n;i++) if(Math.abs(A[i][k])>mv){mv=Math.abs(A[i][k]);mr=i;}
+    if(mv<1e-20) throw new Error("Singular matrix");
+    if(mr!==k){let t=A[k];A[k]=A[mr];A[mr]=t; let tb=b[k];b[k]=b[mr];b[mr]=tb;}
+    for(let i=k+1;i<n;i++){
+      const f=A[i][k]/A[k][k];
+      for(let j=k;j<n;j++) A[i][j]-=f*A[k][j];
+      b[i]-=f*b[k];
+    }
+  }
+  const x=new Float64Array(n);
+  for(let i=n-1;i>=0;i--){
+    let s=b[i]; for(let j=i+1;j<n;j++) s-=A[i][j]*x[j]; x[i]=s/A[i][i];
+  }
+  return Array.from(x);
+}
+
+function solvePt(aR,k,p,EI){
+  const N=p.n_nodes, x=Array.from({length:N},(_,i)=>i*p.L/(N-1));
+  let y=Array(N).fill(0), qyPrev=Array(N).fill(0);
+  const yH=[],qH=[],ymH=[];
+  let con=null, ok=false;
+  for(let it=0;it<80;it++){
+    con=localLd(x,y,aR,k,p);
+    const yN=solveBeam(con.qy,EI,p.kf,p.L,p.T0||0);
+    const yX=yN.map((v,i)=>0.5*v+0.5*y[i]);
+    let eY=0,eQ=0;
+    for(let i=0;i<N;i++){
+      eY=Math.max(eY,Math.abs(yX[i]-y[i]));
+      eQ=Math.max(eQ,Math.abs(con.qy[i]-qyPrev[i]));
+    }
+    yH.push(eY); qH.push(eQ); ymH.push(Math.max(...yX.map(Math.abs)));
+    y=yX.slice(); qyPrev=con.qy.slice();
+    if(eY<1e-7){ok=true;break;}
+  }
+  con=localLd(x,y,aR,k,p);
+  const dx=x[1]-x[0], xc=0.5*p.L;
+  let Fy=0,Fx=0,Mz=0,Fya=0,Fys=0;
+  for(let i=0;i<N;i++){
+    Fy+=con.qy[i]*dx; Fx+=con.qx[i]*dx;
+    Mz+=(-con.qy[i]*(x[i]-xc)*dx);
+    Fya+=con.faA[i]*p.b_width*dx; Fys+=con.fsA[i]*p.b_width*dx;
+  }
+  // BC shear-reaction correction: y=0 ends exert point forces absent from qy integral
+  // R0=EI*y'''[0], RN=-EI*y'''[N-1]; ΔMz=xc*(R0-RN)
+  {
+    const dx3=dx*dx*dx;
+    const yp3_0=(y[3]-3*y[2]+3*y[1])/dx3;
+    const yp3_N=(-y[N-4]+3*y[N-3]-3*y[N-2])/dx3;
+    const R0=EI*yp3_0, RN=-EI*yp3_N;
+    Mz+=xc*(R0-RN);
+  }
+  const tr=(Math.abs(Fy)>1e-16)?(-Mz/Fy):NaN;
+  let xh=x[N-1]; for(let i=0;i<N;i++) if(con.sl[i]===1){xh=x[i];break;}
+  // beam diagnostics
+  const kx=Array(N).fill(0), mo=Array(N).fill(0);
+  for(let i=1;i<N-1;i++){kx[i]=(y[i-1]-2*y[i]+y[i+1])/(dx*dx); mo[i]=EI*kx[i];}
+  let U=0,km=0,Mm=0;
+  for(let i=0;i<N;i++){U+=0.5*EI*kx[i]*kx[i]*dx; km=Math.max(km,Math.abs(kx[i])); Mm=Math.max(Mm,Math.abs(mo[i]));}
+  // corrected R & Cr
+  const maxY=Math.max(...y.map(Math.abs));
+  const maxK=Math.max(...x.map(v=>Math.abs(v*Math.tan(aR))),1e-16);
+  const R=maxY/maxK;
+  let El=0; for(let i=0;i<N;i++) if(con.sl[i]===1) El+=con.wr[i]*p.b_width*dx;
+  const Cr=El/Math.max(p.Fz,1e-16);
+
+  // ── Liu & Cebon (2025) local wear law — Phase 1 ────────────────────────────
+  //   Local wear law (Eq. 2):  w = k1·(p/p0)·(1 + k2·v/v0)   [kg/m³]
+  //     w   = mass loss per unit contact area per unit sliding distance
+  //     p   = local vertical pressure [Pa]      (p0 = 1e6 Pa)
+  //     v   = local sliding speed  [m/s]        (v0 = 1 m/s)
+  //   Sliding speed (brush kinematics):  v = V_r·(slip − d(δ)/dx), sliding zone only.
+  //     lateral  slip = tanα,  δ = δy (con.dY);  longitudinal slip = κ, δ = δx (con.dX)
+  //   Wear per km (1-D, width-averaged):
+  //     ṁ = 1000·b·Σ_slide w·(v/V_r)·dx   [kg/km]   (V_r cancels except in the k2 term)
+  //   Only sliding nodes contribute — no wear in the adhesion/stick zone.
+  const Vr=Math.max(p.V_r||1e-9,1e-9), k1=p.k1||0, k2=p.k2||0;
+  const tanA=Math.tan(aR), kap=k;
+  const Cy=Math.max(p.Cy_tread||1e-9,1e-9), Cx=Math.max(p.Cx_tread||1e-9,1e-9);
+  // Actual (friction-capped) tread-tip deflection q = τ/C. In the sliding zone
+  // the force is capped at μp, so q follows the pressure and its gradient (which
+  // rises toward the low-pressure trailing edge) drives the sliding speed. Using
+  // the kinematic-demand line con.dY instead would under-predict rear slip.
+  const qy=con.fyA.map(v=>v/Cy), qx=con.fxA.map(v=>v/Cx);
+  const wArr=Array(N).fill(0), vsArr=Array(N).fill(0), wiArr=Array(N).fill(0);
+  let mLine=0;                                   // Σ w·(v/V_r)·dx  [kg/m²]
+  for(let i=0;i<N;i++){
+    if(con.sl[i]!==1) continue;                  // adhesion/stick → no wear
+    const im=Math.max(i-1,0), ip=Math.min(i+1,N-1);
+    const denom=((ip-im)*dx)||dx;
+    const dqy=(qy[ip]-qy[im])/denom;             // d(q_y)/dx  [–]
+    const dqx=(qx[ip]-qx[im])/denom;             // d(q_x)/dx  [–]
+    const slope=Math.hypot(tanA-dqy, kap-dqx);   // = v_slip / V_r  [–], ≥0
+    const vslip=Vr*slope;                        // local sliding speed [m/s]
+    const pres=Math.max(con.qz[i],0);            // local vertical pressure [Pa]
+    const w=k1*(pres/1e6)*(1+k2*vslip);          // local wear rate [kg/m³]
+    const wi=w*slope;                            // wear intensity = w·v_slip/V_r [kg/m²·(1/m)]
+    mLine+=wi*dx;                                // integrate along contact length
+    wArr[i]=w; vsArr[i]=vslip; wiArr[i]=wi;
+  }
+  const massPerKm=1000*p.b_width*mLine;          // [kg/km]  (per whole footprint width)
+  const wearLC={massPerKm, w:wArr, vslip:vsArr, wi:wiArr, Vr};
+
+  return{x,y,con,Fy,Fx,Mz,tr,xh,R,ok,Fya,Fys,yH,qH,ymH,kx,mo,U,km,Mm,Cr,wearLC};
+}
+
+function linsp(a,b,n){if(n===1)return[a];return Array.from({length:n},(_,i)=>a+i*(b-a)/(n-1));}
+function numDv(y,x){
+  const n=y.length,d=Array(n).fill(0);
+  for(let i=1;i<n-1;i++) d[i]=(y[i+1]-y[i-1])/(x[i+1]-x[i-1]);
+  d[0]=(y[1]-y[0])/(x[1]-x[0]); d[n-1]=(y[n-1]-y[n-2])/(x[n-1]-x[n-2]);
+  return d;
+}
+
+function runSweep(p,EI){
+  const aD=linsp(0,p.alpha_max,p.n_alpha), aR=aD.map(a=>a*Math.PI/180);
+  const Fy=[],Fx=[],Mz=[],tr=[],eta=[],fc=[],FyA=[],FyS=[];
+  aR.forEach((a,i)=>{
+    const r=solvePt(a,p.kappa,p,EI);
+    Fy.push(r.Fy); Fx.push(r.Fx); Mz.push(r.Mz); tr.push(r.tr);
+    eta.push(r.Fy/(p.mu*p.Fz));
+    fc.push(Math.sqrt(r.Fy*r.Fy+r.Fx*r.Fx)/(p.mu*p.Fz));
+    FyA.push(r.Fya); FyS.push(r.Fys);
+  });
+  const Ca=numDv(Fy,aR);
+  // phi uses Ca[0] (numerical flexible Ca) for a self-consistent universal curve
+  const phi=aR.map(a=>Math.abs(Ca[0]*Math.tan(a))/(p.mu*p.Fz));
+  return{aD,aR,Fy,Fx,Mz,tr,Ca,eta,phi,fc,FyA,FyS};
+}
+
+// ─── CHART HELPERS ────────────────────────────────────────────────────────────
+const CH={};
+const CL=['#2563eb','#dc2626','#059669','#d97706','#7c3aed','#0891b2','#be185d','#854d0e'];
+
+const DPR=window.devicePixelRatio||2;
+const COPTS={responsive:false,animation:false,devicePixelRatio:DPR,
+  plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:13}}}},
+  scales:{x:{title:{display:true,font:{size:14,weight:'bold'}},ticks:{font:{size:13},maxTicksLimit:10,autoSkip:true,maxRotation:0}},
+          y:{title:{display:true,font:{size:14,weight:'bold'}},ticks:{font:{size:13},maxTicksLimit:8,autoSkip:true}}}};
+function szC(id){
+  const el=document.getElementById(id);
+  const w=el.parentElement.clientWidth||480, h=Math.round(w*0.65);
+  el.width=w*DPR; el.height=h*DPR;
+  el.style.width=w+'px'; el.style.height=h+'px';
+  return el;
+}
+function mkO(xL,yL,extra){
+  const o=JSON.parse(JSON.stringify(COPTS));
+  o.scales.x.title.text=xL; o.scales.y.title.text=yL;
+  if(extra)Object.assign(o,extra); return o;
+}
+function mkL(id,lb,ds,xL,yL){
+  if(CH[id])CH[id].destroy();
+  CH[id]=new Chart(szC(id),{type:'line',data:{labels:lb,datasets:ds},options:mkO(xL,yL)});
+}
+function mkB(id,lb,ds,xL,yL){
+  if(CH[id])CH[id].destroy();
+  CH[id]=new Chart(szC(id),{type:'bar',data:{labels:lb,datasets:ds},options:mkO(xL,yL)});
+}
+function mkDual(id,lb,d1,d2,y1L,y2L,xL){
+  if(CH[id])CH[id].destroy();
+  const o=mkO(xL,y1L);
+  o.scales.y.position='left';
+  o.scales.y1={title:{display:true,text:y2L,font:{size:14,weight:'bold'}},ticks:{font:{size:13},maxTicksLimit:8,autoSkip:true},position:'right',grid:{drawOnChartArea:false}};
+  CH[id]=new Chart(szC(id),{type:'line',data:{labels:lb,datasets:[
+    {label:y1L,data:d1,borderColor:CL[0],yAxisID:'y',fill:false,pointRadius:0,borderWidth:2},
+    {label:y2L,data:d2,borderColor:CL[1],yAxisID:'y1',fill:false,pointRadius:0,borderWidth:2,borderDash:[5,3]}
+  ]},options:o});
+}
+function mkBub(id,ds,xL,yL){
+  if(CH[id])CH[id].destroy();
+  CH[id]=new Chart(szC(id),{type:'bubble',data:{datasets:ds},options:mkO(xL,yL)});
+}
+
+// ─── BELT TABLE UI ────────────────────────────────────────────────────────────
+function rBeltTbl(){
+  const tb=document.querySelector('#beltTable tbody'); tb.innerHTML='';
+  belts.forEach((b,i)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td><input value="${b.name}" onchange="belts[${i}].name=this.value" style="width:80px"></td>
+      <td><input value="${b.beta_deg}" onchange="belts[${i}].beta_deg=parseFloat(this.value)"></td>
+      <td><input value="${b.t}" onchange="belts[${i}].t=parseFloat(this.value)"></td>
+      <td><input value="${b.w}" onchange="belts[${i}].w=parseFloat(this.value)"></td>
+      <td><input value="${b.E_cord}" onchange="belts[${i}].E_cord=parseFloat(this.value)"></td>
+      <td><input value="${b.E_rubber}" onchange="belts[${i}].E_rubber=parseFloat(this.value)"></td>
+      <td><input value="${b.V_cord}" onchange="belts[${i}].V_cord=parseFloat(this.value)"></td>`;
+    tb.appendChild(tr);
+  });
+}
+function addBelt(){belts.push({name:'new',beta_deg:20,t:0.001,w:0.19,E_cord:120,E_rubber:0.008,V_cord:0.20});rBeltTbl();}
+function rmBelt(){if(belts.length>1){belts.pop();rBeltTbl();}}
+rBeltTbl();
+updateDerived();
+
+// ─── INPUTS ───────────────────────────────────────────────────────────────────
+function gI(){
+  return{Fz:+document.getElementById('Fz').value,
+    mu:+document.getElementById('mu').value,
+    alpha_test:+document.getElementById('alpha_test_deg').value,
+    kappa:+document.getElementById('kappa').value,
+    L:+document.getElementById('L_contact').value,
+    b_width:+document.getElementById('b_width').value,
+    Cy_tread:+document.getElementById('Cy_tread').value,
+    Cx_tread:+document.getElementById('Cx_tread').value,
+    kf:+document.getElementById('k_foundation').value,
+    Ky:+document.getElementById('Ky_lateral').value,
+    T0:+document.getElementById('T0_val').value,
+    p_infl:parseFloat(document.getElementById('infl_pressure').value)||930,
+    R_tyre:parseFloat(document.getElementById('tyre_radius').value)||0.52,
+    k_sw:parseFloat(document.getElementById('k_sw').value)||300000,
+    alpha_max:+document.getElementById('alpha_max_deg').value,
+    n_alpha:+document.getElementById('n_alpha').value,
+    n_nodes:+document.getElementById('n_nodes').value,
+    // ── Phase 1: Liu–Cebon wear-law parameters ──
+    // Vehicle speed → transport/rolling speed V_r [m/s] (V_r = V·cosα ≈ V).
+    veh_speed:parseFloat(document.getElementById('veh_speed').value)||40,
+    V_r:Math.max((parseFloat(document.getElementById('veh_speed').value)||40)/3.6,1e-9),
+    // Local wear law  w = k1·(p/p0)·(1 + k2·v/v0)   [kg/m³]
+    // k1 default = 0.193 (240-grit sandpaper, Liu & Cebon Table 1) — a SANDPAPER
+    // value that overpredicts road wear; calibrate to field data for absolute use.
+    k1:parseFloat((document.getElementById('wear_k1')||{}).value)||0.193,
+    k2:parseFloat((document.getElementById('wear_k2')||{}).value)||0.37,
+    rho_tread:parseFloat((document.getElementById('tread_density')||{}).value)||1150,
+    belts:JSON.parse(JSON.stringify(belts))};
+}
+
+// ─── PARAM APPLICATOR ─────────────────────────────────────────────────────────
+function apP(p,k,v){
+  if(k==='beta_working'){
+    var beta_ref=Math.abs(p.belts[1].beta_deg)||20;
+    p.belts[1].beta_deg=v; p.belts[2].beta_deg=-v;
+    if(p.k_sw && p.R_tyre){
+      var ratio=computeKcbRatio(p.belts,v,beta_ref,p.k_sw,p.R_tyre);
+      p.kf=Math.round(p.kf*ratio);
+    }
+  }
+  else if(k==='Ecord_working'){p.belts[1].E_cord=v; p.belts[2].E_cord=v;}
+  else if(k==='belt0_w'){p.belts[0].w=v;}
+  else if(k==='belt1_w'){p.belts[1].w=v;}
+  else if(k==='belt2_w'){p.belts[2].w=v;}
+  else if(k==='belt3_w'){p.belts[3].w=v;}
+  else if(k==='belt0_Ecord'){p.belts[0].E_cord=v;}
+  else if(k==='belt1_Ecord'){p.belts[1].E_cord=v;}
+  else if(k==='belt2_Ecord'){p.belts[2].E_cord=v;}
+  else if(k==='belt3_Ecord'){p.belts[3].E_cord=v;}
+  else if(k==='alpha_test_deg'){p.alpha_test=v;}
+  else if(k==='L_contact'){
+    p.L=v;
+    // recompute kf = Ky/(L*b) when contact length changes
+    if(p.Ky) p.kf=Math.round(p.Ky*1000/(v*p.b_width));
+  }
+  else if(k==='b_width'){
+    p.b_width=v;
+    // recompute kf = Ky/(L*b) when contact width changes
+    if(p.Ky) p.kf=Math.round(p.Ky*1000/(p.L*v));
+  }
+  else if(k==='k_foundation'){p.kf=v;}
+  else if(k==='infl_pressure'){
+    // Inflation pressure [kPa] — updates T0, L (ETRTO), and kf
+    p.p_infl = v;
+    var R = p.R_tyre||0.52;
+    p.T0  = Math.round(v*1000*R*p.b_width);          // N
+    p.L   = p.Fz/(v*1000*p.b_width);                 // m — ETRTO
+    if(p.Ky) p.kf = Math.round(p.Ky*1000/(p.L*p.b_width));
+  }
+  else p[k]=v;
+}
+function pLabel(k){
+  return{Fz:'Wheel load [N]',
+    mu:'Friction coefficient',
+    L_contact:'Footprint length [m]',
+    b_width:'Footprint width [m]',
+    Cy_tread:'Lateral tread stiffness [N/m³]',
+    Cx_tread:'Longitudinal tread stiffness [N/m³]',
+    k_foundation:'Carcass foundation stiffness [N/m²]',
+    beta_working:'Belt cord angle [°]',
+    Ecord_working:'Belt cord modulus [GPa]',
+    kappa:'Braking/drive slip ratio',
+    alpha_test_deg:'Test cornering angle [°]',
+    belt0_w:'Transition ply width [m]',
+    belt1_w:'Working ply 1 width [m]',
+    belt2_w:'Working ply 2 width [m]',
+    belt3_w:'Protector ply width [m]',
+    belt0_Ecord:'Transition ply cord modulus [GPa]',
+    belt1_Ecord:'Working ply 1 cord modulus [GPa]',
+    belt2_Ecord:'Working ply 2 cord modulus [GPa]',
+    belt3_Ecord:'Protector ply cord modulus [GPa]',
+    infl_pressure:'Inflation pressure [kPa]'}[k]||k;
+}
+
+// ─── RENDER METRICS ───────────────────────────────────────────────────────────
+function renderMetrics(pkg,bm,pt,sw,p){
+  const tbl=document.getElementById('metricsTable');
+  const badge=v=>v?'<span class="badge bok">✓ CONVERGED</span>':'<span class="badge berr">✗ NOT CONV.</span>';
+  const Ca_num=sw.Ca[0];
+  const muFz=Math.tan(bm.asl*Math.PI/180)*bm.Ca/3;
+  const asl_num=Math.atan(3*muFz/Ca_num)*180/Math.PI;
+  const apt_num=Math.atan(  muFz/Ca_num)*180/Math.PI;
+  const nCa_num=Ca_num*bm.nCa/bm.Ca;
+  const R=[
+    ['Belt bending stiffness EI [N·m²]',       pkg.EI.toFixed(4),          'Composite belt bending stiffness'],
+    ['Belt pre-tension from inflation T₀ [N]',      (p.T0||0).toFixed(0),       'Circumferential belt pre-tension = p·R·b'],
+    ['Cornering stiffness — rigid belt [N/rad]',      bm.Ca.toFixed(0),           'Rigid carcass upper bound — Cy·b·L²/2'],
+    ['Cornering stiffness — model [N/rad]',  Ca_num.toFixed(0),          'Numerical Cα at α→0 (full ODE with T₀)'],
+    ['Cornering stiffness / wheel load [1/rad]',         nCa_num.toFixed(3),         'Normalised cornering stiffness — 5–8 typical for TBR'],
+    ['Angle where tread starts sliding [°]', asl_num.toFixed(2),         'α where tread first slides — based on Ca_num'],
+    ['Pneumatic trail — small angle [mm]',        (bm.tp0*1000).toFixed(2),   'Small-slip pneumatic trail = L/6 (rigid ref.)'],
+    ['Lateral force at test angle [N]',           pt.Fy.toFixed(0),           'Lateral force at (α_test, κ, Fz)'],
+    ['Self-aligning moment at test angle [N·m]',         pt.Mz.toFixed(2),           'Self-aligning torque at test point'],
+    ['Lateral force: gripping / sliding [N]', pt.Fya.toFixed(0)+' / '+pt.Fys.toFixed(0)+' N', 'Adhesion and sliding zone contributions'],
+    ['Lateral rolling resistance [–]',            pt.Cr.toFixed(6),           'Lateral rolling-resistance coefficient (sliding losses)'],
+    ['Wear rate — Liu-Cebon [g/km]',   ((pt.wearLC?pt.wearLC.massPerKm:0)*1000).toFixed(4), 'Abrasive mass loss per km at test point (w=k1·p·(1+k2·v)). k1 is a sandpaper value — calibrate to road.'],
+    ['Peak sliding speed [m/s]',        (pt.wearLC?Math.max(0,...pt.wearLC.vslip):0).toFixed(3), 'Max local sliding speed in the sliding zone at test point'],
+    ['Converged',             badge(pt.ok),               'Iterative solver convergence flag'],
+  ];
+  tbl.innerHTML='<tr><th>Quantity</th><th>Value</th><th>Description</th></tr>'+
+    R.map(r=>`<tr><td>${r[0]}</td><td class="mv">${r[1]}</td><td style="color:var(--muted);font-size:.76rem">${r[2]}</td></tr>`).join('');
+
+  // ── Sun & Lu (2025) Ca comparison ────────────────────────────────────
+  const a_sl   = p.L/2;
+  const lam0   = Math.pow(p.kf/(4*pkg.EI), 0.25);            // λ₀ = (kf/4EI)^0.25 [m⁻¹]
+  const ky     = p.kf * p.b_width;                           // line stiffness [N/m]
+  const Kcb    = ky * Math.pow(lam0,3) * a_sl*a_sl / 3;     // carcass bending stiffness [N/m]
+  const eps    = (Kcb>0) ? 2*a_sl*p.b_width*p.Cy_tread/Kcb : 0; // flexibility ratio ε
+  const Ca_SL  = bm.Ca / Math.pow(1+eps, 2);                 // Sun & Lu Eq.22 [N/rad]
+  const PT_SL  = (p.L/6) * (1+eps);                          // corrected trail [m] Eq.24
+  // Ca_num already declared above as sw.Ca[0]
+
+  // Regime badge
+  const regime = eps<0.3 ? ['RIGID','bok'] : eps<1.0 ? ['TRANSITIONAL','sbwn'] : ['FLEXIBLE','berr'];
+  const regBadge = `<span class="badge ${regime[1]}">${regime[0]}</span>`;
+
+  // Render Ca comparison table
+  const slTbl = document.getElementById('caCompTable');
+  if(slTbl) slTbl.innerHTML =
+    '<tr><th>Model</th><th>Cα [N/rad]</th><th>Cα [N/deg]</th><th>Cα/Fz</th><th>Notes</th></tr>'+
+    `<tr><td>Rigid brush (Ca_rigid)</td><td class="mv">${bm.Ca.toFixed(0)}</td>`+
+    `<td>${(bm.Ca*Math.PI/180).toFixed(1)}</td><td>${bm.nCa.toFixed(3)}</td>`+
+    `<td style="color:var(--muted);font-size:.76rem">Upper bound — rigid belt, no T₀</td></tr>`+
+    `<tr><td>Sun &amp; Lu Eq.22</td><td class="mv">${Ca_SL.toFixed(0)}</td>`+
+    `<td>${(Ca_SL*Math.PI/180).toFixed(1)}</td><td>${(Ca_SL/p.Fz).toFixed(3)}</td>`+
+    `<td style="color:var(--muted);font-size:.76rem">Analytical: Ca_rigid/(1+ε)², ε=${eps.toFixed(4)}, λ₀ basis (T₀ not in λ)</td></tr>`+
+    `<tr style="background:#eff6ff"><td><strong>Numerical (this tool)</strong></td>`+
+    `<td class="mv"><strong>${Ca_num.toFixed(0)}</strong></td>`+
+    `<td><strong>${(Ca_num*Math.PI/180).toFixed(1)}</strong></td>`+
+    `<td><strong>${(Ca_num/p.Fz).toFixed(3)}</strong></td>`+
+    `<td style="color:var(--muted);font-size:.76rem">Full ODE with T₀, coupled beam-tread solver</td></tr>`;
+
+  // Render ε details
+  const epsDiv = document.getElementById('epsDisplay');
+  if(epsDiv) epsDiv.innerHTML =
+    `<div style="font-size:.80rem;margin-top:6px">`+
+    `<strong>Flexibility ratio ε</strong> = ${eps.toFixed(4)} &nbsp;${regBadge}<br>`+
+    `<span style="color:var(--muted)">λ₀ = ${lam0.toFixed(2)} m⁻¹ &nbsp;|&nbsp; `+
+    `Kcb = ${(Kcb/1e6).toFixed(3)} MN/m &nbsp;|&nbsp; `+
+    `Trail (Sun&amp;Lu) = ${(PT_SL*1000).toFixed(2)} mm vs rigid ${(p.L/6*1000).toFixed(2)} mm</span>`+
+    `</div>`;
+}
+
+function renderLayerTbl(rows){
+  document.getElementById('layerTable').innerHTML=
+    '<tr><th>Layer</th><th>β [°]</th><th>Ex,eff [GPa]</th><th>zc [mm]</th><th>dz [mm]</th><th>EI [N·m²]</th><th>EI [%]</th></tr>'+
+    rows.map(r=>`<tr><td>${r.name}</td><td>${r.beta.toFixed(1)}</td><td>${(r.Ex/1e9).toFixed(3)}</td>
+      <td>${(r.zc*1000).toFixed(3)}</td><td>${(r.dz*1000).toFixed(3)}</td>
+      <td>${r.EIl.toFixed(4)}</td><td>${r.EIp.toFixed(1)}</td></tr>`).join('');
+  document.getElementById('beltSumTable').innerHTML=
+    '<tr><th>Layer</th><th>β [°]</th><th>Ex,eff [GPa]</th><th>EI contrib</th><th>EI [%]</th></tr>'+
+    rows.map(r=>`<tr><td>${r.name}</td><td>${r.beta.toFixed(1)}</td><td>${(r.Ex/1e9).toFixed(3)}</td>
+      <td><div style="background:var(--acc);height:8px;border-radius:3px;min-width:2px;width:${r.EIp.toFixed(0)}%"></div></td>
+      <td>${r.EIp.toFixed(1)}</td></tr>`).join('');
+}
+
+// ─── MAIN RUN ─────────────────────────────────────────────────────────────────
+let lastRun=null;
+function runAll(){
+  const t0=performance.now();
+  try{
+    const p=gI();
+    const pkg=computePkg(p.belts);
+    const bm=rigidM(p);
+    const aR=p.alpha_test*Math.PI/180;
+    const pt=solvePt(aR,p.kappa,p,pkg.EI);
+    const sw=runSweep(p,pkg.EI);
+    lastRun={p,pkg,bm,pt,sw};
+
+    renderMetrics(pkg,bm,pt,sw,p);
+    renderLayerTbl(pkg.rows);
+    document.getElementById('caTable') &&
+      (document.getElementById('caTable').innerHTML=
+        `<tr><th>Source</th><th>Value</th></tr>
+         <tr><td>Theory — rigid [N/rad]</td><td class="mv">${bm.Ca.toFixed(1)}</td></tr>
+         <tr><td>Numerical α→0 [N/rad]</td><td class="mv">${sw.Ca[0].toFixed(1)}</td></tr>
+         <tr><td>Normalised Cα/Fz (num.)</td><td class="mv">${(sw.Ca[0]*bm.nCa/bm.Ca).toFixed(4)}</td></tr>`);
+
+    const aD=sw.aD, C=CL;
+    // Fy adhesion/sliding split
+    mkL('fyChart',aD,[
+      {label:'Fy total',    data:sw.Fy, borderColor:C[0],fill:false,pointRadius:0,borderWidth:2},
+      {label:'Fy adhesion', data:sw.FyA,borderColor:C[2],fill:false,pointRadius:0,borderWidth:1.5,borderDash:[4,2]},
+      {label:'Fy sliding',  data:sw.FyS,borderColor:C[1],fill:false,pointRadius:0,borderWidth:1.5,borderDash:[2,2]}
+    ],'α [°]','Fy [N]');
+
+    // Dual-Y: Fy & Fx (now on Contact Patch tab)
+    mkDual('dualFyFx',aD,sw.Fy,sw.Fx,'Fy [N]','Fx [N]','α [°]');
+
+    // Dual-Y: Mz & Trail
+    mkDual('dualMzTr',aD,sw.Mz,sw.tr.map(v=>isNaN(v)?null:v*1000),'Mz [N·m]','Trail [mm]','α [°]');
+
+    mkL('caChart',aD,[{label:'Cα [N/rad]',data:sw.Ca,borderColor:C[3],fill:false,pointRadius:0}],'α [°]','Cα [N/rad]');
+
+
+    // Universal curve — scatter with linear numeric x-axis
+    // Belt design space: Ca vs Fz — L and kf fixed at Setup values
+    // L, kf, b, T0 all held constant at whatever is entered in Setup
+    const FzVals=[5000,10000,15000,20000,25000,30000,35000,40000,45000,50000,55000,60000];
+    const betaVals=[10,18,25,30], dsCA=[];
+    const aSmall=0.5*Math.PI/180;
+    betaVals.forEach((beta,bi)=>{
+      const caNumRow=[];
+      FzVals.forEach(FzV=>{
+        const pB=JSON.parse(JSON.stringify(p)); pB.Fz=FzV;
+        pB.belts[1].beta_deg=beta; pB.belts[2].beta_deg=-beta;
+        const pkgB=computePkg(pB.belts);
+        const ptB=solvePt(aSmall,0,pB,pkgB.EI);
+        caNumRow.push(ptB.Fy/aSmall/1000);
+      });
+      dsCA.push({label:`β=${beta}°`,data:caNumRow,borderColor:C[bi],fill:false,pointRadius:3,borderWidth:2});
+    });
+    mkL('caFzChart',FzVals.map(v=>v/1000),dsCA,'Fz [kN]','Cα [kN/rad]');
+
+    // EI vs beta working angle
+    const bRange=linsp(5,40,20);
+    const eiVals=bRange.map(beta=>{
+      const pB=JSON.parse(JSON.stringify(p));
+      pB.belts[1].beta_deg=beta; pB.belts[2].beta_deg=-beta;
+      return computePkg(pB.belts).EI;
+    });
+    mkL('eiBetaChart',bRange.map(v=>v.toFixed(1)),[{label:'EI [N·m²]',data:eiVals,borderColor:C[3],fill:true,backgroundColor:'rgba(37,99,235,.08)',pointRadius:0,borderWidth:2}],'β working [°]','EI [N·m²]');
+
+    // Ca vs beta working angle — multiple Fz levels
+    // L and kf update with each Fz via ETRTO (L=Fz/(p*b)) for physically correct curves
+    // T0 also updates with Fz (via same inflation pressure)
+    // Lower beta → higher Kcb → higher kf → stiffer carcass → higher Ca (correct direction)
+    {
+      const betaRange=linsp(10,35,26);
+      const FzLevels=[{Fz:15000,col:C[0]},{Fz:p.Fz,col:C[1]},{Fz:45000,col:C[2]}];
+      const p_Pa=(p.p_infl||930)*1000;   // inflation pressure [Pa]
+      const R_t  = p.R_tyre||0.52;
+      const beta_ref=Math.abs(p.belts[1].beta_deg)||20;
+      const dsCaBeta=FzLevels.map(fl=>{
+        const caRow=betaRange.map(beta=>{
+          const pB=JSON.parse(JSON.stringify(p));
+          pB.Fz=fl.Fz;
+          // Update L via ETRTO — footprint length scales with load
+          pB.L = fl.Fz / (p_Pa * p.b_width);
+          // Update T0 (belt pre-tension unchanged — inflation pressure fixed)
+          pB.T0 = Math.round(p_Pa * R_t * p.b_width);
+          // Update kf for new L, then apply Kcb ratio for beta change
+          const kf_L = p.Ky ? Math.round(p.Ky*1000/(pB.L*p.b_width)) : p.kf;
+          const ratio=computeKcbRatio(p.belts,beta,beta_ref,p.k_sw||300000,R_t);
+          pB.kf=Math.round(kf_L*ratio);
+          pB.belts[1].beta_deg=beta; pB.belts[2].beta_deg=-beta;
+          const pkgB=computePkg(pB.belts);
+          const ptB=solvePt(aSmall,0,pB,pkgB.EI);
+          return ptB.Fy/aSmall/1000;
+        });
+        const L_mm=(fl.Fz/(p_Pa*p.b_width)*1000).toFixed(0);
+        return{label:'Fz='+(fl.Fz/1000).toFixed(0)+'kN (L='+L_mm+'mm)',data:caRow,
+               borderColor:fl.col,fill:false,pointRadius:0,borderWidth:2};
+      });
+      mkL('caBetaChart',betaRange.map(v=>v.toFixed(1)),dsCaBeta,'β working [°]','Cα [kN/rad]');
+    }
+
+    // Contact length L_ETRTO vs Fz  (ETRTO rectangular: L = Fz/(p*b))
+    // Uses current inflation pressure p and contact width b from Setup
+    // NOTE: T0, kf, EI all fixed — this is purely the geometric L estimate
+    {
+      const FzL=linsp(5000,60000,12);
+      const p_Pa=p.T0/(p.b_width*(parseFloat(document.getElementById('tyre_radius').value)||0.52)); // back-calc p from T0=p*R*b
+      const p_actual = (parseFloat(document.getElementById('infl_pressure').value)||930)*1000; // Pa
+      const lVals=FzL.map(Fz=>Fz/(p_actual*p.b_width)*1000); // mm
+      mkL('lEtrtoFzChart',FzL.map(v=>(v/1000).toFixed(0)),
+        [{label:'L_ETRTO [mm]',data:lVals,borderColor:C[0],fill:false,pointRadius:3,borderWidth:2}],
+        'Fz [kN]','L [mm]');
+    }
+
+    // Belt bending stiffness EI vs Wheel Load — 4 belt cord angles
+    // EI is a structural property of the belt package, independent of wheel load
+    // Each curve shows a flat line at different EI level for β = 15°,20°,25°,30°
+
+    // EI layer bar
+    mkB('eiLayerChart',pkg.rows.map(r=>r.name),[
+      {label:'EI [%]',data:pkg.rows.map(r=>r.EIp),backgroundColor:CL.slice(0,pkg.rows.length).map(c=>c+'bb')}
+    ],'Layer','EI [%]');
+
+    // ── Belt deflection profile y(x) — parametric studies ──────────────────────
+    // Uses full coupled solver solvePt() — the actual belt deflection during cornering
+    // All three charts use α=5° test angle, 51 nodes, under-relaxation solver
+    // x-axis: position along footprint [mm], y-axis: belt lateral deflection y(x) [mm]
+    {
+      const aTest = 5*Math.PI/180;  // 5° test angle
+      const Fz_ref = 35000;         // reference load for charts 1 & 3
+      const beta_ref_val = 20;      // reference beta for charts 2 & 3
+      const C = CL;
+      const N51 = 51;               // nodes for these sweeps (fast)
+
+      // Helper: solve and return y(x) profile [mm] for given parameter set
+      function yProfile(pSet, EI_val) {
+        const pS = JSON.parse(JSON.stringify(pSet));
+        pS.n_nodes = N51;
+        const pt = solvePt(aTest, 0, pS, EI_val);
+        const xMm = pt.x.map(v => +(v*1000).toFixed(1));
+        const yMm = pt.y.map(v => +(v*1000).toFixed(4));
+        return { xMm, yMm };
+      }
+
+      // ── Chart 1: y(x) vs belt cord angle ─────────────────────────────────
+      // Fixed: Fz=35kN, α=5°.  Sweep β = 15°/18°/20°/24°/27°/30°
+      {
+        const betaLevels = [
+          {b:15,c:C[0]}, {b:18,c:C[1]}, {b:20,c:C[2]},
+          {b:24,c:C[3]}, {b:27,c:C[4]}, {b:30,c:C[5]}
+        ];
+        const ds1 = betaLevels.map(bl => {
+          const pB = JSON.parse(JSON.stringify(p));
+          pB.Fz = Fz_ref;
+          // Apply Kcb ratio for this beta (same as DoE)
+          const beta_cur = Math.abs(p.belts[1].beta_deg) || 20;
+          const ratio = computeKcbRatio(p.belts, bl.b, beta_cur, p.k_sw||300000, p.R_tyre||0.52);
+          pB.kf = Math.round(p.kf * ratio);
+          pB.belts[1].beta_deg =  bl.b;
+          pB.belts[2].beta_deg = -bl.b;
+          const pkgB = computePkg(pB.belts);
+          const prof = yProfile(pB, pkgB.EI);
+          return {
+            label: 'β='+bl.b+'°',
+            data: prof.yMm,
+            borderColor: bl.c, fill: false, pointRadius: 0, borderWidth: 2
+          };
+        });
+        // x-axis labels from first profile (same for all — same L)
+        const p1 = JSON.parse(JSON.stringify(p)); p1.Fz=Fz_ref; p1.n_nodes=N51;
+        const xLbl1 = solvePt(aTest,0,p1,computePkg(p1.belts).EI).x.map(v=>+(v*1000).toFixed(1));
+        mkL('deflBetaChart', xLbl1, ds1,
+          'Position along footprint [mm]', 'Belt deflection y(x) [mm]');
+      }
+
+      // ── Chart 2: y(x) vs wheel load ──────────────────────────────────────
+      // Fixed: β=20°, α=5°.  Sweep Fz = 15/25/35/45 kN
+      // L updates with Fz via ETRTO: L = Fz/(p_kPa*1000*b)
+      {
+        const FzLevels = [
+          {Fz:15000,c:C[0]}, {Fz:25000,c:C[1]},
+          {Fz:35000,c:C[2]}, {Fz:45000,c:C[3]}
+        ];
+        const p_Pa = (p.p_infl||930)*1000;
+        const ds2 = FzLevels.map(fl => {
+          const pB = JSON.parse(JSON.stringify(p));
+          pB.Fz = fl.Fz;
+          pB.belts[1].beta_deg =  beta_ref_val;
+          pB.belts[2].beta_deg = -beta_ref_val;
+          // Update L (ETRTO) and kf
+          pB.L = fl.Fz / (p_Pa * p.b_width);
+          if(pB.Ky) pB.kf = Math.round(pB.Ky*1000/(pB.L*pB.b_width));
+          const pkgB = computePkg(pB.belts);
+          const prof = yProfile(pB, pkgB.EI);
+          // Normalise x to [0,100]% for overlay (different L per load)
+          const N = prof.xMm.length;
+          const xNorm = prof.xMm.map((_, i) => +((i/(N-1)*100)).toFixed(1));
+          return {
+            label: 'Fz='+(fl.Fz/1000)+'kN (L='+(pB.L*1000).toFixed(0)+'mm)',
+            data: prof.yMm,
+            borderColor: fl.c, fill: false, pointRadius: 0, borderWidth: 2
+          };
+        });
+        // x-axis: use % of footprint length for overlay (different L per Fz)
+        const N = N51;
+        const xPct = Array.from({length:N},(_,i)=>+((i/(N-1)*100).toFixed(1)));
+        mkL('deflFzChart', xPct, ds2,
+          'Position along footprint [% of L]', 'Belt deflection y(x) [mm]');
+      }
+
+      // ── Chart 3: y(x) vs cord modulus ────────────────────────────────────
+      // Fixed: Fz=35kN, β=20°, α=5°.  Sweep E_cord = 80/120/160/200 GPa
+      {
+        const EcordLevels = [
+          {E:80, c:C[0]}, {E:120,c:C[1]},
+          {E:160,c:C[2]}, {E:200,c:C[3]}
+        ];
+        const ds3 = EcordLevels.map(el => {
+          const pB = JSON.parse(JSON.stringify(p));
+          pB.Fz = Fz_ref;
+          pB.belts[1].beta_deg =  beta_ref_val;
+          pB.belts[2].beta_deg = -beta_ref_val;
+          pB.belts[1].E_cord = el.E;
+          pB.belts[2].E_cord = el.E;
+          const pkgB = computePkg(pB.belts);
+          const prof = yProfile(pB, pkgB.EI);
+          return {
+            label: 'E_cord='+el.E+'GPa',
+            data: prof.yMm,
+            borderColor: el.c, fill: false, pointRadius: 0, borderWidth: 2
+          };
+        });
+        const p3 = JSON.parse(JSON.stringify(p)); p3.Fz=Fz_ref; p3.n_nodes=N51;
+        const xLbl3 = solvePt(aTest,0,p3,computePkg(p3.belts).EI).x.map(v=>+(v*1000).toFixed(1));
+        mkL('deflEcordChart', xLbl3, ds3,
+          'Position along footprint [mm]', 'Belt deflection y(x) [mm]');
+      }
+    }
+
+    // Contact patch charts
+    const xmm=pt.x.map(v=>+(v*1000).toFixed(2));
+    mkL('contPressChart',xmm,[
+      {label:'qz [kPa]',data:pt.con.qz.map(v=>v/1000),borderColor:C[0],fill:false,pointRadius:0},
+      {label:'fy [kPa]', data:pt.con.fyA.map(v=>v/1000),borderColor:C[1],fill:false,pointRadius:0}
+    ],'x [mm]','[kPa]');
+    mkL('contQyChart',xmm,[
+      {label:'qy [N/m]',data:pt.con.qy,borderColor:C[2],fill:false,pointRadius:0},
+      {label:'Wear proxy',data:pt.con.wr,borderColor:C[3],fill:false,pointRadius:0}
+    ],'x [mm]','qy / wear');
+    mkL('contDeltaChart',xmm,[
+      {label:'δy [mm]',data:pt.con.dY.map(v=>v*1000),borderColor:C[0],fill:false,pointRadius:0},
+      {label:'δx [mm]',data:pt.con.dX.map(v=>v*1000),borderColor:C[1],fill:false,pointRadius:0}
+    ],'x [mm]','Deformation [mm]');
+    const maxQ=Math.max(...pt.con.qy);
+    mkL('contSlideChart',xmm,[
+      {label:'Sliding',data:pt.con.sl.map(v=>v*maxQ*0.9),borderColor:C[1],fill:true,backgroundColor:'rgba(220,38,38,.12)',pointRadius:0,stepped:true}
+    ],'x [mm]','Sliding (scaled)');
+
+    // Local wear rate (Liu-Cebon) & sliding speed across footprint (dual axis)
+    if(pt.wearLC){
+      mkDual('contWearChart',xmm,
+        pt.wearLC.wi.map(v=>v*1e3),      // wear intensity kg/m³ → g/m³ for readable scale
+        pt.wearLC.vslip,                  // sliding speed [m/s]
+        'Local wear intensity [g/m³]','Sliding speed [m/s]','x [mm]');
+    }
+
+    // Belt structure
+    mkL('beamChart',xmm,[{label:'y(x) [mm]',data:pt.y.map(v=>v*1000),borderColor:C[4],fill:false,pointRadius:0}],'x [mm]','y [mm]');
+    mkL('curvChart',xmm,[{label:'κ(x) [1/m]',data:pt.kx,borderColor:C[5],fill:false,pointRadius:0}],'x [mm]','κ [1/m]');
+    mkL('momChart',xmm,[{label:'M(x) [N·m]',data:pt.mo,borderColor:C[3],fill:false,pointRadius:0}],'x [mm]','M [N·m]');
+    mkL('convChart',pt.yH.map((_,i)=>i+1),[
+      {label:'max|Δy|',data:pt.yH,borderColor:C[0],fill:false,pointRadius:2,borderWidth:1.5},
+      {label:'max|Δqy|/1k',data:pt.qH.map(v=>v/1000),borderColor:C[1],fill:false,pointRadius:2,borderWidth:1.5}
+    ],'Iteration','Error');
+
+    // CSV
+    let csv='alpha_deg,Fy_N,Fx_N,Mz_Nm,trail_m,Ca_Nrad,eta,phi,fc,FyAdh_N,FySlide_N\n';
+    sw.aD.forEach((_,i)=>{
+      csv+=[sw.aD[i].toFixed(4),sw.Fy[i].toFixed(4),sw.Fx[i].toFixed(4),sw.Mz[i].toFixed(6),
+        (sw.tr[i]||'NaN').toFixed?sw.tr[i].toFixed(6):'NaN',
+        sw.Ca[i].toFixed(4),sw.eta[i].toFixed(6),sw.phi[i].toFixed(6),
+        sw.fc[i].toFixed(6),sw.FyA[i].toFixed(4),sw.FyS[i].toFixed(4)].join(',')+'\n';
+    });
+    window._lastCSV=csv;
+
+    const dt=((performance.now()-t0)/1000).toFixed(2);
+    const el=document.getElementById('runStat');
+    el.style.display='inline-block';
+    el.className='sb '+(pt.ok?'sbok':'sbwn');
+    el.textContent=(pt.ok?'✓ Converged':'⚠ Not converged')+' — '+dt+' s';
+    ST('results');
+  }catch(e){
+    const el=document.getElementById('runStat');
+    el.style.display='inline-block'; el.className='sb sberr';
+    el.textContent='✗ '+e.message; console.error(e);
+  }
+}
+
+function exportCSV(){
+  if(!window._lastCSV){alert('Run model first');return;}
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([window._lastCSV],{type:'text/csv'}));
+  a.download='tire_v9_sweep.csv'; a.click();
+}
+
+// ─── 1-D DoE ──────────────────────────────────────────────────────────────────
+function run1D(){
+  const p0=gI();
+  const key=document.getElementById('d1par').value;
+  const vMin=+document.getElementById('d1min').value;
+  const vMax=+document.getElementById('d1max').value;
+  const nC=+document.getElementById('d1n').value;
+  const vals=linsp(vMin,vMax,nC);
+  const colors=[CL[0],CL[1],CL[2],CL[3]];
+  const dsFy=[],dsMz=[],dsCa=[], sumCa=[],sumEI=[],sumLbl=[];
+
+  const dsDefl=[];
+  vals.forEach((v,vi)=>{
+    const p=JSON.parse(JSON.stringify(p0));
+    apP(p,key,v);
+    const pkg=computePkg(p.belts);
+    const sw=runSweep(p,pkg.EI);
+    const bm=rigidM(p);
+    const lbl=pLabel(key)+'='+v.toPrecision(4);
+    const opt={borderColor:colors[vi],fill:false,pointRadius:0,borderWidth:2,label:lbl};
+    dsFy.push({...opt,data:sw.Fy});
+    dsMz.push({...opt,data:sw.Mz,borderDash:[4,2]});
+    dsCa.push({...opt,data:sw.Ca,borderDash:[2,2]});
+    sumCa.push(sw.Ca[0]/1000); sumEI.push(pkg.EI); sumLbl.push(v.toPrecision(4));
+    // Belt lateral deflection at test angle
+    const ptD=solvePt(p.alpha_test*Math.PI/180,p.kappa,p,pkg.EI);
+    // x in mm (0=leading edge), y in mm
+    const xMm=ptD.x.map(xi=>+(xi*1000).toFixed(2));
+    const yMm=ptD.y.map(yi=>+(yi*1000).toFixed(4));
+    dsDefl.push({...opt,data:yMm,borderDash:vi>0?[4,2*(vi)]:[]});
+  });
+
+  // Use first sweep's alpha axis
+  const p0run=JSON.parse(JSON.stringify(p0));
+  const pkg0=computePkg(p0run.belts);
+  const sw0=runSweep(p0run,pkg0.EI);
+
+  mkL('d1Fy',sw0.aD,dsFy,'α [°]','Fy [N]');
+  mkL('d1Mz',sw0.aD,dsMz,'α [°]','Mz [N·m]');
+  mkL('d1Ca',sw0.aD,dsCa,'α [°]','Cα [N/rad]');
+  if(CH['d1Bar'])CH['d1Bar'].destroy();
+  {const o=mkO(pLabel(key),'Cα num. [kN/rad]');
+   o.scales.y.position='left';
+   o.scales.y1={title:{display:true,text:'EI [N·m²]',font:{size:14,weight:'bold'}},ticks:{font:{size:13},maxTicksLimit:8,autoSkip:true},position:'right',grid:{drawOnChartArea:false}};
+   CH['d1Bar']=new Chart(szC('d1Bar'),{type:'bar',
+     data:{labels:sumLbl,datasets:[
+       {label:'Cα numerical [kN/rad]',data:sumCa,backgroundColor:colors.slice(0,nC).map(c=>c+'cc')},
+       {label:'EI [N·m²]',data:sumEI,backgroundColor:colors.slice(0,nC).map(c=>c+'55'),yAxisID:'y1'}
+     ]},options:o});}
+  // Belt lateral deflection chart — x axis = position along footprint [mm]
+  {
+    const p0r=JSON.parse(JSON.stringify(p0));
+    const pkg0r=computePkg(p0r.belts);
+    const pt0r=solvePt(p0r.alpha_test*Math.PI/180,p0r.kappa,p0r,pkg0r.EI);
+    const xLbl=pt0r.x.map(xi=>+(xi*1000).toFixed(1));
+    mkL('d1Defl',xLbl,dsDefl,'Position along footprint [mm]','Belt deflection y [mm]');
+  }
+}
+
+// ─── 2-D DoE ──────────────────────────────────────────────────────────────────
+function lerp(v,lo,hi){return Math.max(0,Math.min(1,(v-lo)/(hi-lo||1)));}
+function heatC(t){
+  const S=[[41,128,185],[39,174,96],[241,196,15],[231,76,60]];
+  const s=t*(S.length-1), i=Math.floor(s), f=s-i;
+  const a=S[Math.min(i,S.length-1)], b=S[Math.min(i+1,S.length-1)];
+  return`rgb(${Math.round(a[0]+(b[0]-a[0])*f)},${Math.round(a[1]+(b[1]-a[1])*f)},${Math.round(a[2]+(b[2]-a[2])*f)})`;
+}
+function run2D(){
+  const p0=gI();
+  const k1=document.getElementById('d2p1').value, k2=document.getElementById('d2p2').value;
+  const p1v=linsp(+document.getElementById('d2p1min').value,+document.getElementById('d2p1max').value,+document.getElementById('d2p1n').value);
+  const p2v=linsp(+document.getElementById('d2p2min').value,+document.getElementById('d2p2max').value,+document.getElementById('d2p2n').value);
+  const met=document.getElementById('d2met').value;
+  const aSmall=0.5*Math.PI/180;
+  const grid=p1v.map(v1=>p2v.map(v2=>{
+    const p=JSON.parse(JSON.stringify(p0));
+    apP(p,k1,v1); apP(p,k2,v2);
+    const pkg=computePkg(p.belts);
+    const ptSmall=solvePt(aSmall,0,p,pkg.EI);
+    const Ca_num=ptSmall.Fy/aSmall;
+    const pt=solvePt(p.alpha_test*Math.PI/180,p.kappa,p,pkg.EI);
+    return{Fy:pt.Fy,Fx:pt.Fx,Ca:Ca_num,Mz:Math.abs(pt.Mz),
+           trail:isNaN(pt.tr)?0:pt.tr*1000,EI:pkg.EI,Cr:pt.Cr,
+           Fya:pt.Fya,Fys:pt.Fys,xh:pt.xh*1000}[met]||0;
+  }));
+  const allV=grid.flat(), lo=Math.min(...allV), hi=Math.max(...allV);
+  const p1L=pLabel(k1), p2L=pLabel(k2);
+  const metL=document.getElementById('d2met').options[document.getElementById('d2met').selectedIndex].text;
+  document.getElementById('d2htitle').textContent=`${metL} — ${p1L} (rows) × ${p2L} (cols)`;
+  document.getElementById('d2linetitle').textContent=`${metL} vs ${p2L} — one line per ${p1L} level`;
+
+  // Heatmap
+  let htm=`<table style="border-collapse:collapse;font-size:.76rem"><tr>
+    <th style="padding:5px 8px;background:#f1f5f9">${p1L.slice(0,12)}↓ / ${p2L.slice(0,12)}→</th>`;
+  p2v.forEach(v=>htm+=`<th style="padding:5px 6px;background:#f1f5f9">${v.toPrecision(4)}</th>`);
+  htm+='</tr>';
+  grid.forEach((row,i)=>{
+    htm+=`<tr><th style="padding:5px 8px;background:#f1f5f9;text-align:left">${p1v[i].toPrecision(4)}</th>`;
+    row.forEach(val=>{const t=lerp(val,lo,hi),bg=heatC(t),tc=t>.55?'#fff':'#1e293b';
+      htm+=`<td class="hmc" style="background:${bg};color:${tc}">${val.toPrecision(4)}</td>`;});
+    htm+='</tr>';
+  });
+  document.getElementById('d2hmap').innerHTML=htm+'</table>';
+
+  // Multi-line sensitivity chart: metric vs P2, one line per P1 level
+  const p2Labels=p2v.map(v=>v.toPrecision(4));
+  const dsLine=p1v.map((v1,i)=>({
+    label:`${p1L.slice(0,10)}=${v1.toPrecision(4)}`,
+    data:grid[i],
+    borderColor:`hsla(${i*(200/p1v.length)},70%,45%,1)`,
+    fill:false,pointRadius:3,borderWidth:2
+  }));
+  mkL('d2line',p2Labels,dsLine,p2L,metL);
+
+  document.getElementById('d2prog').textContent=`✓ ${p1v.length}×${p2v.length}=${p1v.length*p2v.length} solves | range: ${lo.toPrecision(4)} – ${hi.toPrecision(4)}`;
+}
+
+// ─── CALIBRATION ──────────────────────────────────────────────────────────────
+let calibData=null;
+function loadCalib(evt){
+  const f=evt.target.files[0]; if(!f)return;
+  const rd=new FileReader();
+  rd.onload=e=>{
+    calibData=e.target.result.split(/\r?\n/).filter(l=>l.trim()).map(l=>{
+      const p=l.split(/[,;\t ]+/).filter(s=>s);
+      return{alpha:+p[0],Fy:+p[1]};
+    }).filter(p=>!isNaN(p.alpha)&&!isNaN(p.Fy));
+    document.getElementById('calibStat').textContent='Loaded '+calibData.length+' data points';
+    drawCalib();
+  };
+  rd.readAsText(f);
+}
+function drawCalib(){
+  if(!lastRun||!calibData)return;
+  const sw=lastRun.sw;
+  if(CH['calibChart'])CH['calibChart'].destroy();
+  CH['calibChart']=new Chart(szC('calibChart'),{type:'scatter',
+    data:{datasets:[
+      {type:'line',label:'Model Fy',data:sw.aD.map((a,i)=>({x:a,y:sw.Fy[i]})),
+        borderColor:CL[0],fill:false,showLine:true,pointRadius:0,borderWidth:2},
+      {label:'Test data',data:calibData.map(p=>({x:p.alpha,y:p.Fy})),
+        backgroundColor:CL[1],pointRadius:4,borderColor:CL[1]}
+    ]},
+    options:(()=>{const o=mkO('α [°]','Fy [N]');o.scales.x.type='linear';return o;})()});
+
+  // Goodness of fit: interpolate model at test alphas
+  const sw_aD=sw.aD, sw_Fy=sw.Fy;
+  const interp=a=>{let bi=0,bd=1e9;
+    sw_aD.forEach((v,i)=>{const d=Math.abs(v-a);if(d<bd){bd=d;bi=i;}});return sw_Fy[bi];};
+  let sse=0,sst=0;
+  const mean=calibData.reduce((s,p)=>s+p.Fy,0)/calibData.length;
+  calibData.forEach(p=>{const m=interp(p.alpha);sse+=(p.Fy-m)**2;sst+=(p.Fy-mean)**2;});
+  const R2=1-sse/sst, RMSE=Math.sqrt(sse/calibData.length);
+  document.getElementById('calibMetTable').innerHTML=`
+    <tr><th>Metric</th><th>Value</th></tr>
+    <tr><td>R² (model vs test)</td><td class="mv">${R2.toFixed(4)}</td></tr>
+    <tr><td>RMSE [N]</td><td class="mv">${RMSE.toFixed(2)}</td></tr>
+    <tr><td>Test data points</td><td class="mv">${calibData.length}</td></tr>`;
+}
+function fitMu(){
+  if(!calibData||!lastRun){alert('Load test data and run model first');return;}
+  const sw=lastRun.sw;
+  const interp=a=>{let bi=0,bd=1e9;sw.aD.forEach((v,i)=>{const d=Math.abs(v-a);if(d<bd){bd=d;bi=i;}});return sw.Fy[bi];};
+  let num=0,den=0;
+  calibData.forEach(p=>{const m=interp(p.alpha);num+=p.Fy*m;den+=m*m;});
+  if(den>0){
+    const sc=num/den;
+    const el=document.getElementById('mu');
+    const mu0=+el.value;
+    el.value=(mu0*sc).toFixed(4);
+    document.getElementById('calibStat').textContent=`μ scaled by ${sc.toFixed(4)} → new μ = ${(mu0*sc).toFixed(4)}. Re-run model.`;
+  }
+}
+
+// ─── COMPARE ──────────────────────────────────────────────────────────────────
+const tireStore={A:null,B:null,C:null};
+const tireCols={A:CL[0],B:CL[1],C:CL[2]};
+function storeConfig(lbl){
+  if(!lastRun){alert('Run model first');return;}
+  tireStore[lbl]={sw:lastRun.sw,bm:lastRun.bm,pkg:lastRun.pkg,p:lastRun.p,label:lbl,name:projLabel()};
+  document.getElementById('cmpStat').textContent=
+    'Stored: '+Object.keys(tireStore).filter(k=>tireStore[k]).map(k=>'Tire '+k+(tireStore[k].name?' ('+tireStore[k].name+')':'')).join(', ');
+  drawCompare();
+}
+function clearCompare(){
+  ['A','B','C'].forEach(k=>tireStore[k]=null);
+  document.getElementById('cmpStat').textContent='Cleared';
+  ['cmpFy','cmpMz','cmpCa'].forEach(id=>{if(CH[id])CH[id].destroy();});
+}
+function drawCompare(){
+  const active=Object.values(tireStore).filter(Boolean);
+  if(!active.length)return;
+  const aD=active[0].sw.aD;
+  const dsFy=active.map(t=>({label:'Tire '+t.label,data:t.sw.Fy,borderColor:tireCols[t.label],fill:false,pointRadius:0,borderWidth:2}));
+  const dsMz=active.map(t=>({label:'Tire '+t.label,data:t.sw.Mz,borderColor:tireCols[t.label],fill:false,pointRadius:0,borderWidth:2}));
+  const dsCa=active.map(t=>({label:'Tire '+t.label,data:t.sw.Ca,borderColor:tireCols[t.label],fill:false,pointRadius:0,borderWidth:2}));
+  mkL('cmpFy',aD,dsFy,'α [°]','Fy [N]');
+  mkL('cmpMz',aD,dsMz,'α [°]','Mz [N·m]');
+  mkL('cmpCa',aD,dsCa,'α [°]','Cα [N/rad]');
+  // Summary table
+  const header='<tr><th>Tire</th><th>Fz [N]</th><th>μ</th><th>EI [N·m²]</th><th>Cα num. [N/rad]</th><th>Cα/Fz</th><th>αsl [°]</th><th>tp₀ [mm]</th></tr>';
+  const rows=active.map(t=>{
+    const Ca_n=t.sw.Ca[0];
+    const muFz=Math.tan(t.bm.asl*Math.PI/180)*t.bm.Ca/3;
+    const asl_n=Math.atan(3*muFz/Ca_n)*180/Math.PI;
+    const nCa_n=Ca_n*t.bm.nCa/t.bm.Ca;
+    return`<tr>
+      <td style="font-weight:700;color:${tireCols[t.label]}">Tire ${t.label}</td>
+      <td>${t.p.Fz}</td><td>${t.p.mu}</td>
+      <td>${t.pkg.EI.toFixed(4)}</td><td>${Ca_n.toFixed(0)}</td>
+      <td>${nCa_n.toFixed(3)}</td><td>${asl_n.toFixed(2)}</td>
+      <td>${(t.bm.tp0*1000).toFixed(2)}</td></tr>`;}).join('');
+  document.getElementById('cmpTable').innerHTML=header+rows;
+}
+
+// ─── OPTIMISE TAB JS ──────────────────────────────────────────────────────────
+
+// ── Shared metric evaluator at a single operating point ──────────────────────
+function evalMetric(met,p,EI){
+  const aSmall=0.5*Math.PI/180;
+  const ptS=solvePt(aSmall,0,p,EI);
+  const Ca_num=ptS.Fy/aSmall;
+  const bm=rigidM(p);
+  const muFz=Math.tan(bm.asl*Math.PI/180)*bm.Ca/3;
+  const pt=solvePt(p.alpha_test*Math.PI/180,p.kappa,p,EI);
+  const asl=Math.atan(3*muFz/Ca_num)*180/Math.PI;
+  return{Ca:Ca_num,asl,nCa:Ca_num/p.Fz,
+         Fy:pt.Fy,Mz:Math.abs(pt.Mz),
+         trail:isNaN(pt.tr)?0:Math.abs(pt.tr*1000),
+         Cr:pt.Cr,EI}[met];
+}
+
+const OPT_VARS=[
+  // Operating conditions — ranges set for TBR truck/bus tyre context
+  {k:'Fz',           label:'Wheel load [N]',             lo:15000, hi:55000},
+  {k:'infl_pressure',label:'Inflation pressure [kPa]',   lo:650,   hi:1100},
+  {k:'mu',           label:'Road friction coefficient',        lo:0.6,   hi:1.2},
+  {k:'kappa',        label:'Braking / drive slip ratio',           lo:-0.2,  hi:0.2},
+  {k:'alpha_test_deg',label:'Test cornering angle [°]',            lo:1,     hi:15},
+  // Contact geometry — 295/90R20 range
+  {k:'L_contact',    label:'Footprint length L [m]',              lo:0.11,  hi:0.22},
+  {k:'b_width',      label:'Footprint width b [m]',               lo:0.17,  hi:0.28},
+  // Tread stiffness — TBR range (Cy = G/h; G=0.8-2.5 MPa, h=12-22 mm)
+  {k:'Cy_tread',     label:'Lateral tread stiffness [N/m³]', lo:3.6e7, hi:2.1e8},
+  {k:'Cx_tread',     label:'Longitudinal tread stiffness [N/m³]',   lo:3.6e7, hi:2.1e8},
+  // Belt / carcass — kf = Ky/(L*b); Ky=200-600 kN/m for TBR
+  {k:'k_foundation', label:'Carcass foundation stiffness [N/m²]',    lo:4e6,   hi:2.5e7},
+  {k:'beta_working', label:'Belt cord angle [°]',           lo:10,    hi:35},
+  {k:'Ecord_working',label:'Belt cord elastic modulus [GPa]',          lo:80,    hi:200},
+  // Per-layer widths
+  {k:'belt0_w',      label:'Transition ply width [m]',     lo:0.13,  hi:0.22},
+  {k:'belt1_w',      label:'Working ply 1 width [m]',      lo:0.15,  hi:0.24},
+  {k:'belt2_w',      label:'Working ply 2 width [m]',      lo:0.15,  hi:0.24},
+  {k:'belt3_w',      label:'Protector ply width [m]',      lo:0.17,  hi:0.26},
+  // Per-layer E_cord
+  {k:'belt0_Ecord',  label:'Transition ply cord modulus [GPa]',  lo:60,    hi:150},
+  {k:'belt1_Ecord',  label:'Working ply 1 cord modulus [GPa]',   lo:100,   hi:200},
+  {k:'belt2_Ecord',  label:'Working ply 2 cord modulus [GPa]',   lo:100,   hi:200},
+  {k:'belt3_Ecord',  label:'Protector ply cord modulus [GPa]',   lo:60,    hi:150},
+];
+const OPT_METS=[
+  {k:'Ca',    label:'Cornering stiffness [N/rad]'},
+  {k:'asl',   label:'Sliding onset angle [°]'},
+  {k:'nCa',   label:'Cornering stiffness/load [–]'},
+  {k:'Fy',    label:'Lateral force at test angle [N]'},
+  {k:'Mz', label:'Self-aligning moment [N·m]'},
+  {k:'trail',label:'Pneumatic trail [mm]'},
+  {k:'Cr',    label:'Lateral rolling resistance [–]'},
+];
+
+// ── Section 1: Sensitivity / Tornado ─────────────────────────────────────────
+function runSensitivity(){
+  if(!lastRun){alert('Run model first (Setup → Run Model)');return;}
+  const met=document.getElementById('optMet').value;
+  const p0=lastRun.p, pkg0=lastRun.pkg;
+  const base=evalMetric(met,p0,pkg0.EI);
+  if(base===undefined||isNaN(base)){alert('Metric returned NaN — check operating point.');return;}
+
+  const sens=OPT_VARS.map(v=>{
+    // Get current value of this parameter from the last run
+    let cur;
+    if(v.k==='beta_working') cur=p0.belts[1].beta_deg;
+    else if(v.k==='Ecord_working') cur=p0.belts[1].E_cord;
+    else if(v.k.startsWith('belt')&&v.k.endsWith('_w'))  cur=p0.belts[+v.k[4]].w;
+    else if(v.k.startsWith('belt')&&v.k.includes('Ecord')) cur=p0.belts[+v.k[4]].E_cord;
+    else if(v.k==='alpha_test_deg') cur=p0.alpha_test;
+    else if(v.k==='L_contact')      cur=p0.L;
+    else if(v.k==='k_foundation')   cur=p0.kf;
+    else cur=p0[v.k]||0;
+    const step=0.1*(v.hi-v.lo);
+    const vHi=Math.min(v.hi,cur+step), vLo=Math.max(v.lo,cur-step);
+    const pHi=JSON.parse(JSON.stringify(p0)), pLo=JSON.parse(JSON.stringify(p0));
+    apP(pHi,v.k,vHi); apP(pLo,v.k,vLo);
+    const mHi=evalMetric(met,pHi,computePkg(pHi.belts).EI);
+    const mLo=evalMetric(met,pLo,computePkg(pLo.belts).EI);
+    const dM_pct=(mHi-mLo)/(Math.abs(base)||1)*100;
+    return{label:v.label,dM:mHi-mLo,dM_pct,mLo,mHi};
+  });
+  sens.sort((a,b)=>Math.abs(b.dM_pct)-Math.abs(a.dM_pct));
+
+  if(CH['tornadoChart'])CH['tornadoChart'].destroy();
+  const el=document.getElementById('tornadoChart');
+  const w=el.parentElement.clientWidth||500,h=Math.max(280,sens.length*46);
+  el.width=w*DPR;el.height=h*DPR;el.style.width=w+'px';el.style.height=h+'px';
+  CH['tornadoChart']=new Chart(el,{type:'bar',
+    data:{labels:sens.map(s=>s.label),datasets:[{
+      label:'Δ metric for ±10% param change',
+      data:sens.map(s=>+s.dM_pct.toFixed(3)),
+      backgroundColor:sens.map(s=>s.dM_pct>=0?'rgba(37,99,235,0.75)':'rgba(220,38,38,0.75)'),
+      borderColor:sens.map(s=>s.dM_pct>=0?'#1d4ed8':'#b91c1c'),borderWidth:1}]},
+    options:{indexAxis:'y',responsive:false,animation:false,devicePixelRatio:DPR,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>`${ctx.raw>0?'+':''}${ctx.raw.toFixed(2)}%`}}},
+      scales:{
+        x:{title:{display:true,text:'Change in metric [%]',font:{size:14,weight:'bold'}},ticks:{font:{size:13}}},
+        y:{ticks:{font:{size:13},autoSkip:false}}}}});
+
+  let htm='<tr><th>Parameter</th><th>Low value</th><th>High value</th><th>Δ metric</th><th>Δ [%]</th></tr>';
+  sens.forEach(s=>{
+    const dir=s.dM_pct>=0?'color:#1d4ed8':'color:#b91c1c';
+    htm+=`<tr><td>${s.label}</td><td>${s.mLo.toPrecision(5)}</td><td>${s.mHi.toPrecision(5)}</td>
+      <td style="${dir};font-weight:700">${s.dM>=0?'+':''}${s.dM.toPrecision(4)}</td>
+      <td style="${dir};font-weight:700">${s.dM_pct>=0?'+':''}${s.dM_pct.toFixed(2)}%</td></tr>`;
+  });
+  document.getElementById('sensTable').innerHTML=htm;
+  document.getElementById('sensResult').style.display='block';
+}
+
+// ── Section 2: Inverse solve (bisection) ─────────────────────────────────────
+function runInverse(){
+  if(!lastRun){alert('Run model first');return;}
+  const dvar=document.getElementById('invVar').value;
+  const met=document.getElementById('invMet').value;
+  const target=+document.getElementById('invTarget').value;
+  const lo=+document.getElementById('invLo').value;
+  const hi=+document.getElementById('invHi').value;
+  const tol=1e-9*(hi-lo);
+  const p0=lastRun.p;
+  function ev(v){
+    const p=JSON.parse(JSON.stringify(p0));
+    apP(p,dvar,v);
+    return evalMetric(met,p,computePkg(p.belts).EI)-target;
+  }
+  let a=lo,b=hi,fa=ev(a),fb=ev(b),iter=0,converged=false,log=[];
+  if(fa*fb>0){
+    document.getElementById('invResult').innerHTML=
+      `<span class="badge berr">✗ Target ${target} not bracketed by [${lo}, ${hi}]. Widen range.</span>`;
+    return;
+  }
+  for(iter=0;iter<60;iter++){
+    const mid=0.5*(a+b), fm=ev(mid);
+    log.push({iter,err:Math.abs(fm)});
+    if(Math.abs(b-a)<tol){converged=true;a=mid;break;}
+    if(fa*fm<=0){b=mid;fb=fm;}else{a=mid;fa=fm;}
+  }
+  const sol=0.5*(a+b);
+  const metL=OPT_METS.find(m=>m.k===met)?.label||met;
+  const varL=OPT_VARS.find(v=>v.k===dvar)?.label||dvar;
+  document.getElementById('invResult').innerHTML=converged
+    ?`<span class="badge bok">✓ Converged in ${iter} iterations</span>
+      <div style="margin-top:8px"><strong>${varL}</strong> = <span class="mv">${sol.toPrecision(6)}</span>
+      → achieves <strong>${metL}</strong> = <span class="mv">${target}</span></div>`
+    :`<span class="badge berr">✗ Did not converge in ${iter} iterations. Try a wider range.</span>`;
+  if(log.length>1) mkL('invConvChart',log.map(l=>l.iter+1),
+    [{label:'|residual|',data:log.map(l=>l.err),borderColor:CL[0],fill:false,pointRadius:3,borderWidth:2}],
+    'Iteration','|f(x) − target|');
+}
+
+// ── Section 3: Trade-off explorer ─────────────────────────────────────────────
+function runTradeoff(){
+  if(!lastRun){alert('Run model first');return;}
+  const dvar=document.getElementById('trVar').value;
+  const met1=document.getElementById('trMet1').value;
+  const met2=document.getElementById('trMet2').value;
+  const lo=+document.getElementById('trLo').value;
+  const hi=+document.getElementById('trHi').value;
+  const n=20, vals=linsp(lo,hi,n), p0=lastRun.p;
+  const m1=[],m2=[];
+  vals.forEach(v=>{
+    const p=JSON.parse(JSON.stringify(p0)); apP(p,dvar,v);
+    const EI=computePkg(p.belts).EI;
+    m1.push(evalMetric(met1,p,EI)); m2.push(evalMetric(met2,p,EI));
+  });
+  const curP=JSON.parse(JSON.stringify(p0));
+  const curM1=evalMetric(met1,curP,computePkg(curP.belts).EI);
+  const curM2=evalMetric(met2,curP,computePkg(curP.belts).EI);
+  const met1L=OPT_METS.find(m=>m.k===met1)?.label||met1;
+  const met2L=OPT_METS.find(m=>m.k===met2)?.label||met2;
+  const varL=OPT_VARS.find(v=>v.k===dvar)?.label||dvar;
+  if(CH['tradeChart'])CH['tradeChart'].destroy();
+  const el=document.getElementById('tradeChart');
+  const w=el.parentElement.clientWidth||500,h=Math.round(w*0.65);
+  el.width=w*DPR;el.height=h*DPR;el.style.width=w+'px';el.style.height=h+'px';
+  CH['tradeChart']=new Chart(el,{type:'scatter',
+    data:{datasets:[
+      {label:`Trade-off (${varL} varies)`,
+       data:m1.map((v,i)=>({x:v,y:m2[i]})),
+       borderColor:CL[0],backgroundColor:CL[0]+'33',showLine:true,pointRadius:5,borderWidth:2,
+       pointBackgroundColor:vals.map((_,i)=>{const t=i/(n-1);
+         return`rgba(${Math.round(37+183*t)},${Math.round(99-40*t)},${Math.round(235-180*t)},0.85)`;})},
+      {label:'Current design',data:[{x:curM1,y:curM2}],
+       backgroundColor:'#dc2626',pointRadius:10,pointStyle:'crossRot',borderColor:'#dc2626',borderWidth:3}]},
+    options:{responsive:false,animation:false,devicePixelRatio:DPR,
+      plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:13}}},
+        tooltip:{callbacks:{label:ctx=>ctx.datasetIndex===0
+          ?`${varL}=${vals[ctx.dataIndex]?.toPrecision(4)} → (${ctx.parsed.x.toPrecision(4)}, ${ctx.parsed.y.toPrecision(4)})`
+          :`Current: (${ctx.parsed.x.toPrecision(4)}, ${ctx.parsed.y.toPrecision(4)})`}}},
+      scales:{
+        x:{title:{display:true,text:met1L,font:{size:14,weight:'bold'}},ticks:{font:{size:13},maxTicksLimit:8,autoSkip:true}},
+        y:{title:{display:true,text:met2L,font:{size:14,weight:'bold'}},ticks:{font:{size:13},maxTicksLimit:8,autoSkip:true}}}}});
+}
+
+// ─── DURABILITY TAB JS ────────────────────────────────────────────────────────
+let dcRows=[];
+function addDcRow(){dcRows.push({Fz:4000,alpha:5,kappa:0,pct:5,speed:60});renderDcTable();}
+function removeDcRow(){if(dcRows.length>1){dcRows.pop();renderDcTable();}}
+function renderDcTable(){
+  const tb=document.querySelector('#dcTable tbody'); tb.innerHTML='';
+  dcRows.forEach((r,i)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td><input value="${r.Fz}"    onchange="dcRows[${i}].Fz=+this.value"    style="width:70px"></td>
+      <td><input value="${r.alpha}" onchange="dcRows[${i}].alpha=+this.value"  style="width:55px"></td>
+      <td><input value="${r.kappa}" onchange="dcRows[${i}].kappa=+this.value"  style="width:55px"></td>
+      <td><input value="${r.pct}"   onchange="dcRows[${i}].pct=+this.value"    style="width:55px"></td>
+      <td><input value="${r.speed}" onchange="dcRows[${i}].speed=+this.value"  style="width:55px"></td>`;
+    tb.appendChild(tr);
+  });
+}
+[{Fz:2000,alpha:1,kappa:0,pct:40,speed:100},
+ {Fz:3000,alpha:3,kappa:0,pct:25,speed:80},
+ {Fz:4000,alpha:5,kappa:0,pct:20,speed:60},
+ {Fz:4000,alpha:8,kappa:0.05,pct:10,speed:40},
+ {Fz:5000,alpha:12,kappa:0.1,pct:5,speed:30}
+].forEach(r=>dcRows.push(r));
+// Initialise table after DOM is ready
+document.addEventListener('DOMContentLoaded',()=>renderDcTable());
+
+function runDurability(){
+  if(!lastRun){alert('Run model first (Setup → Run Model)');return;}
+  const p0=lastRun.p, pkg0=lastRun.pkg;
+  const totalPct=dcRows.reduce((s,r)=>s+r.pct,0);
+  if(Math.abs(totalPct-100)>0.5){
+    document.getElementById('durStat').innerHTML=
+      `<span class="badge berr">✗ Percentages sum to ${totalPct.toFixed(1)}% — must equal 100%.</span>`;
+    return;
+  }
+  const k_wear=+document.getElementById('wearCoeff').value;
+  const treadVol=+document.getElementById('treadVol').value;
+  const useAbsolute=k_wear>0&&treadVol>0;
+  // Liu-Cebon life uses tread mass ÷ mass-loss/km; needs only volume + density.
+  const rhoTread=+document.getElementById('tread_density').value||1150;
+  const treadMass_kg=treadVol>0?treadVol*1e-9*rhoTread:0;   // mm³→m³ × kg/m³
+
+  const results=dcRows.map(r=>{
+    const p=JSON.parse(JSON.stringify(p0)); p.Fz=r.Fz;
+    p.V_r=Math.max((+r.speed||p0.veh_speed||40)/3.6,1e-9);  // per-condition rolling speed
+    const pt=solvePt(r.alpha*Math.PI/180,r.kappa,p,pkg0.EI);
+    const wearRate_Jpkm=pt.Cr*r.Fz*1000;
+    const massKm=pt.wearLC?pt.wearLC.massPerKm:0;           // kg/km (Liu-Cebon)
+    return{...r,Fy:pt.Fy,Fx:pt.Fx,Cr:pt.Cr,wearRate_Jpkm,weighted:wearRate_Jpkm*(r.pct/100),
+      massKm,massKmW:massKm*(r.pct/100),ok:pt.ok};
+  });
+  const totalWear=results.reduce((s,r)=>s+r.weighted,0);
+  const totalMassKm=results.reduce((s,r)=>s+r.massKmW,0);   // kg/km duty-weighted
+  const life_km=useAbsolute?treadVol/(k_wear*totalWear):NaN;
+  const lifeLC_km=(treadMass_kg>0&&totalMassKm>0)?treadMass_kg/totalMassKm:NaN;
+  const worst=results.reduce((a,b)=>a.weighted>b.weighted?a:b);
+
+  let htm=`<tr><th>#</th><th>Fz[N]</th><th>α[°]</th><th>κ[–]</th><th>Spd[km/h]</th>
+    <th>%time</th><th>Fy[N]</th><th>Cr,lat</th><th>Wear[J/km]</th><th>Weighted[J/km]</th>
+    <th>Wear[g/km]<br><span style="font-weight:400;font-size:.68rem">Liu-Cebon</span></th><th>Weighted[g/km]</th><th>Share</th></tr>`;
+  results.forEach((r,i)=>{
+    const share=(r.weighted/totalWear*100).toFixed(1);
+    const isWorst=r===worst;
+    htm+=`<tr${isWorst?' style="background:#fef3c7"':''}>
+      <td>${i+1}</td><td>${r.Fz}</td><td>${r.alpha}</td><td>${r.kappa}</td><td>${r.speed}</td>
+      <td>${r.pct}%</td><td>${r.Fy.toFixed(0)}</td><td>${r.Cr.toExponential(3)}</td>
+      <td>${r.wearRate_Jpkm.toExponential(3)}</td>
+      <td><strong>${r.weighted.toExponential(3)}</strong></td>
+      <td>${(r.massKm*1000).toFixed(4)}</td>
+      <td><strong>${(r.massKmW*1000).toFixed(4)}</strong></td>
+      <td><strong style="color:${r===worst?'#b45309':'inherit'}">${share}%${isWorst?' ▲':''}</strong></td></tr>`;
+  });
+  document.getElementById('durTable').innerHTML=htm;
+
+  document.getElementById('durSummary').innerHTML=`<div class="g3">
+    <div class="card"><h3>Liu-Cebon wear rate</h3>
+      <div style="font-size:1.4rem;font-weight:700;color:var(--acc)">${(totalMassKm*1000).toFixed(4)} g/km</div>
+      <div style="color:var(--muted);font-size:.78rem;margin-top:4px">Duty-cycle weighted abrasive mass loss per km (w=k₁·p·(1+k₂·v)).<br><em>k₁=${(+document.getElementById('wear_k1').value)} is a sandpaper value — relative comparison only unless calibrated.</em></div></div>
+    <div class="card"><h3>Worst condition</h3>
+      <div style="font-size:1.1rem;font-weight:700;color:var(--warn)">
+        Condition #${results.indexOf(worst)+1} — α=${worst.alpha}°, Fz=${worst.Fz} N</div>
+      <div style="color:var(--muted);font-size:.78rem;margin-top:4px">
+        ${(worst.weighted/totalWear*100).toFixed(1)}% of total fleet wear (energy)</div></div>
+    <div class="card"><h3>Estimated tyre life</h3>
+      ${(!isNaN(lifeLC_km))
+        ?`<div style="font-size:1.4rem;font-weight:700;color:var(--acc2)">${lifeLC_km.toFixed(0)} km</div>
+           <div style="color:var(--muted);font-size:.78rem;margin-top:4px">Liu-Cebon: tread mass ${treadMass_kg.toFixed(3)} kg ÷ ${(totalMassKm*1000).toFixed(4)} g/km<br>
+           <em>Scales with 1/k₁ — calibrate k₁ to field data for absolute km.</em></div>`
+        :`<div style="color:var(--muted);font-size:.85rem;margin-top:6px">Enter tread volume + density above for Liu-Cebon life estimate</div>`}
+      ${useAbsolute
+        ?`<div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--brd);font-size:.82rem">Archard cross-check: <strong>${life_km.toFixed(0)} km</strong> <span style="color:var(--muted)">(k=${k_wear} mm³/J)</span></div>`
+        :``}
+    </div></div>`;
+
+  mkB('durBarChart',results.map((_,i)=>`#${i+1} α=${_.alpha}°`),
+    [{label:'Weighted wear energy [J/km]',data:results.map(r=>r.weighted),
+      backgroundColor:results.map(r=>`hsla(${220-r.weighted/totalWear*160},65%,48%,0.8)`)}],
+    'Operating condition','Weighted wear [J/km]');
+
+  document.getElementById('durStat').innerHTML=`<span class="badge bok">✓ ${results.length} conditions evaluated | Liu-Cebon wear = ${(totalMassKm*1000).toFixed(4)} g/km | energy = ${totalWear.toExponential(3)} J/km</span>`;
+  document.getElementById('durResult').style.display='block';
+}
+
+// ─── TAB SWITCHER ─────────────────────────────────────────────────────────────
+const tabOrder=['setup','project','results','doe','calib','compare','optimise','durability','theory'];
+function ST(name){
+  tabOrder.forEach(t=>{
+    document.getElementById('tab-'+t).classList.toggle('on',t===name);
+  });
+  document.querySelectorAll('.tb').forEach((b,i)=>{
+    b.classList.toggle('on',tabOrder[i]===name);
+  });
+}
+function SST(tabId,panelId){
+  // Switch sub-tab panel within a main tab
+  var container=document.getElementById(tabId);
+  container.querySelectorAll('.spanel').forEach(function(p){p.classList.remove('on');});
+  container.querySelectorAll('.stb').forEach(function(b){b.classList.remove('on');});
+  document.getElementById(panelId).classList.add('on');
+  // find matching stb by its onclick containing panelId
+  container.querySelectorAll('.stb').forEach(function(b){
+    if(b.getAttribute('onclick')&&b.getAttribute('onclick').indexOf(panelId)>=0)
+      b.classList.add('on');
+  });
+}
+// ─── PHYSICAL INPUTS → DERIVED Cy / Cx / kf / T0 ────────────────────────────
+function updateDerived(){
+  var G   = parseFloat(document.getElementById('G_tread').value)||1.49;
+  var Gcx = parseFloat(document.getElementById('G_cx').value)||1.49;
+  var h   = parseFloat(document.getElementById('h_tread').value)||18;
+  var Ky  = parseFloat(document.getElementById('Ky_lateral').value)||336;
+  var L   = parseFloat(document.getElementById('L_contact').value)||0.157;
+  var b   = parseFloat(document.getElementById('b_width').value)||0.238;
+  var p   = parseFloat(document.getElementById('infl_pressure').value)||930;
+  var R   = parseFloat(document.getElementById('tyre_radius').value)||0.52;
+  document.getElementById('Cy_tread').value     = Math.round(G*1e6/(h/1000));
+  document.getElementById('Cx_tread').value     = Math.round(Gcx*1e6/(h/1000));
+  document.getElementById('k_foundation').value = Math.round(Ky*1000/(L*b));
+  // T0 = p[Pa] * R[m] * b[m]  units: N/m² * m * m = N  ✓
+  document.getElementById('T0_val').value       = Math.round(p*1000*R*b);
+  // L_ETRTO = Fz/(p*b)  [m] — rectangular patch approximation, valid near rated load
+  // Units: N / (N/m² * m) = N / (N/m) = m  ✓
+  var Fz_now = parseFloat(document.getElementById('Fz').value)||34826;
+  var L_etrto = Fz_now / (p*1000*b);
+  document.getElementById('L_etrto').value = L_etrto.toFixed(4);
+}
+
+// ─── PROJECT TAB HELPERS ──────────────────────────────────────────────────────
+var LI_MASS={121:1450,122:1500,123:1550,124:1600,125:1650,126:1700,127:1750,
+  128:1800,129:1850,130:1900,131:1950,132:2000,133:2060,134:2120,135:2180,
+  136:2240,137:2300,138:2360,139:2430,140:2500,141:2575,142:2650,143:2725,
+  144:2800,145:2900,146:3000,147:3075,148:3150,149:3250,150:3350,151:3450,
+  152:3550,153:3650,154:3750,155:3875,156:4000,157:4125,158:4250};
+
+function parseDesig(){
+  var s=(document.getElementById('proj_desig')||{}).value||'';
+  var m=s.match(/^(\d+)\/(\d+)[Rr](\d+)/);
+  if(m){
+    var sw=parseInt(m[1]),ar=parseInt(m[2]),rim=parseInt(m[3]);
+    if(document.getElementById('proj_sw'))  document.getElementById('proj_sw').value=sw;
+    if(document.getElementById('proj_ar'))  document.getElementById('proj_ar').value=ar;
+    if(document.getElementById('proj_rim')) document.getElementById('proj_rim').value=rim;
+    // Suggest b = 0.80 * SW
+    var b_sug=(sw*0.80/1000).toFixed(3);
+    if(confirm('Set contact width b = '+b_sug+' m  (0.80 x SW = 0.80 x '+sw+'mm)?'))
+      document.getElementById('b_width').value=b_sug;
+    updateDerived();
+    return;
+  }
+  var n2=s.match(/^(\d+\.?\d*)[Rr](\d+)/);
+  if(n2){
+    var sw2=Math.round(parseFloat(n2[1])*25.4),rim2=parseInt(n2[2]);
+    if(document.getElementById('proj_sw'))  document.getElementById('proj_sw').value=sw2;
+    if(document.getElementById('proj_rim')) document.getElementById('proj_rim').value=rim2;
+    updateDerived();
+  }
+}
+
+function fillRatedFz(){
+  var li=parseInt((document.getElementById('proj_li')||{}).value)||0;
+  var hint=document.getElementById('rated_fz_hint');
+  if(LI_MASS[li]){
+    var fz=(LI_MASS[li]*9.81).toFixed(0);
+    if(hint) hint.textContent='Rated Fz = '+fz+' N  ('+LI_MASS[li]+' kg x 9.81)';
+    if(confirm('Set Fz = '+fz+' N  (LI '+li+' rated load)?'))
+      document.getElementById('Fz').value=fz;
+    updateDerived();
+  } else {
+    if(hint) hint.textContent='';
+  }
+}
+
+function projLabel(){
+  var n=(document.getElementById('proj_name')||{}).value||'';
+  var d=(document.getElementById('proj_desig')||{}).value||'';
+  return [n,d].filter(Boolean).join(' - ')||'Tire';
+}
+
+function validateInputs(){}
+
+</script>
+
+<!-- OPTIMISE TAB -->
+<div id="tab-optimise" class="tab">
+
+<div class="card">
+  <h2>🎯 Design Optimisation</h2>
+  <div class="note" style="font-size:.82rem;line-height:1.6">
+    <strong>Theoretical basis.</strong> This tab implements three deterministic optimisation methods suited to the mathematical structure of the Brush–Fiala model. Because all output metrics (Cα, αsl, Fy, Mz, trail) are <em>smooth and monotonic</em> functions of the design variables — there are no local optima — gradient-free stochastic methods such as genetic algorithms are unnecessary and would be 100–300× slower for identical accuracy.
+    <br><br>
+    <strong>Section 1 — Sensitivity ranking (Tornado diagram).</strong> Each design variable is perturbed by ±10% of its physical range while all others are held fixed. The resulting change in the target metric is expressed as a percentage and plotted as a horizontal bar chart. This is the standard engineering Tornado diagram used in uncertainty quantification and design prioritisation. It answers: <em>"If I can only improve one thing, which parameter gives the most leverage?"</em>
+    <br><br>
+    <strong>Section 2 — Inverse solve.</strong> Uses bisection (interval halving) to find the exact value of one design variable that achieves a specified target metric value. Bisection is guaranteed to converge in ≤ log₂((hi−lo)/tol) ≈ 50 iterations for any continuous monotonic function. It answers: <em>"What contact length L do I need to achieve Cα = 28,000 N/rad?"</em>
+    <br><br>
+    <strong>Section 3 — Trade-off explorer.</strong> Sweeps one design variable across its range while simultaneously computing two output metrics. The result is plotted as a parametric curve (metric₁ vs metric₂), with the current design highlighted. This reveals whether a trade-off is steep or flat, and where your design sits on it. It answers: <em>"If I increase Cy to gain cornering stiffness, how much does the sliding onset angle αsl decrease?"</em>
+  </div>
+</div>
+
+<div class="sl">Section 1 — Sensitivity Ranking (Tornado Diagram)</div>
+<div class="card">
+  <h2>Which design parameter has the most influence?</h2>
+  <div class="g2">
+    <div>
+      <label>Target metric</label>
+      <select id="optMet">
+        <option value="Ca">Cα — Cornering stiffness [N/rad]</option>
+        <option value="asl">αsl — Sliding onset angle [°]</option>
+        <option value="nCa">Cα/Fz — Normalised cornering stiffness [–]</option>
+        <option value="Fy">Fy — Lateral force at test point [N]</option>
+        <option value="Mz">|Mz| — Self-aligning moment at test point [N·m]</option>
+        <option value="trail">Trail — Pneumatic trail at test point [mm]</option>
+        <option value="Cr">Cr,lat — Lateral rolling resistance [–]</option>
+      </select>
+      <div class="br"><button class="btn bp" onclick="runSensitivity()">▶ Compute Sensitivity</button></div>
+    </div>
+    <div class="note" style="font-size:.79rem">
+      Each bar shows the percentage change in the target metric when that parameter is perturbed by ±10% of its physical range. All 19 design variables are evaluated simultaneously. Blue = increasing the parameter increases the metric; red = increasing it decreases it. Parameters with bars near zero have negligible influence on the chosen metric.
+    </div>
+  </div>
+  <div id="sensResult" style="display:none;margin-top:12px">
+    <div class="cw" style="max-width:600px"><canvas id="tornadoChart"></canvas></div>
+    <div style="overflow-x:auto;margin-top:12px"><table id="sensTable"></table></div>
+  </div>
+</div>
+
+<div class="sl">Section 2 — Inverse Solve (Bisection)</div>
+<div class="card">
+  <h2>What value achieves my target performance?</h2>
+  <div class="g3">
+    <div>
+      <label>Design variable to find</label>
+      <select id="invVar">
+        <optgroup label="Tyre Operating Conditions">
+          <option value="Fz">Wheel load [N]</option>
+          <option value="mu">Friction coefficient [–]</option>
+          <option value="kappa">Braking / drive slip ratio</option>
+          <option value="alpha_test_deg">Test cornering angle [°]</option>
+          <option value="infl_pressure">Inflation pressure [kPa]</option>
+        </optgroup>
+        <optgroup label="Contact Geometry">
+          <option value="L_contact">Footprint length L [m]</option>
+          <option value="b_width">Footprint width b [m]</option>
+        </optgroup>
+        <optgroup label="Tread Stiffness">
+          <option value="Cy_tread">Cy tread [N/m³]</option>
+          <option value="Cx_tread">Cx tread [N/m³]</option>
+        </optgroup>
+        <optgroup label="Belt / Carcass">
+          <option value="k_foundation">Carcass foundation stiffness [N/m²]</option>
+          <option value="beta_working">Belt cord angle [°]</option>
+          <option value="Ecord_working">Belt cord elastic modulus [GPa]</option>
+        </optgroup>
+        <optgroup label="Belt Widths">
+          <option value="belt0_w">Transition ply width [m]</option>
+          <option value="belt1_w">Working ply 1 width [m]</option>
+          <option value="belt2_w">Working ply 2 width [m]</option>
+          <option value="belt3_w">Protector ply width [m]</option>
+        </optgroup>
+        <optgroup label="Belt E_cord per Layer">
+          <option value="belt0_Ecord">Transition ply cord modulus [GPa]</option>
+          <option value="belt1_Ecord">Working ply 1 cord modulus [GPa]</option>
+          <option value="belt2_Ecord">Working ply 2 cord modulus [GPa]</option>
+          <option value="belt3_Ecord">Protector ply cord modulus [GPa]</option>
+        </optgroup>
+      </select>
+      <label style="margin-top:6px">Search range — Min</label><input id="invLo" value="1000000">
+      <label style="margin-top:4px">Search range — Max</label><input id="invHi" value="30000000">
+    </div>
+    <div>
+      <label>Target metric</label>
+      <select id="invMet">
+        <option value="Ca">Cα [N/rad]</option>
+        <option value="asl">αsl [°]</option>
+        <option value="nCa">Cα/Fz [–]</option>
+        <option value="Fy">Fy at test [N]</option>
+        <option value="Mz">|Mz| at test [N·m]</option>
+        <option value="trail">Trail at test [mm]</option>
+        <option value="Cr">Cr,lat [–]</option>
+      </select>
+      <label style="margin-top:6px">Target value</label><input id="invTarget" value="25000">
+      <div class="br"><button class="btn bs" onclick="runInverse()">▶ Find Parameter Value</button></div>
+    </div>
+    <div>
+      <div id="invResult" style="margin-top:6px"></div>
+      <div class="note" style="font-size:.79rem;margin-top:8px">
+        Bisection halves the search interval at each iteration. The algorithm is guaranteed to converge to machine precision in ≤60 iterations provided the target lies within the specified range. If it fails, widen the Min/Max range or check that the target is physically achievable.
+      </div>
+    </div>
+  </div>
+  <div style="margin-top:10px;max-width:400px"><div class="cw"><canvas id="invConvChart"></canvas></div></div>
+</div>
+
+<div class="sl">Section 3 — Trade-off Explorer</div>
+<div class="card">
+  <h2>How does changing one parameter affect two outputs?</h2>
+  <div class="g3">
+    <div>
+      <label>Design variable to sweep</label>
+      <select id="trVar">
+        <optgroup label="Tyre Operating Conditions">
+          <option value="Fz">Wheel load [N]</option>
+          <option value="mu">Friction coefficient [–]</option>
+          <option value="kappa">Braking / drive slip ratio</option>
+          <option value="alpha_test_deg">Test cornering angle [°]</option>
+          <option value="infl_pressure">Inflation pressure [kPa]</option>
+        </optgroup>
+        <optgroup label="Contact Geometry">
+          <option value="L_contact">Footprint length L [m]</option>
+          <option value="b_width">Footprint width b [m]</option>
+        </optgroup>
+        <optgroup label="Tread Stiffness">
+          <option value="Cy_tread">Cy tread [N/m³]</option>
+          <option value="Cx_tread">Cx tread [N/m³]</option>
+        </optgroup>
+        <optgroup label="Belt / Carcass">
+          <option value="k_foundation">Carcass foundation stiffness [N/m²]</option>
+          <option value="beta_working">Belt cord angle [°]</option>
+          <option value="Ecord_working">Belt cord elastic modulus [GPa]</option>
+        </optgroup>
+        <optgroup label="Belt Widths">
+          <option value="belt0_w">Transition ply width [m]</option>
+          <option value="belt1_w">Working ply 1 width [m]</option>
+          <option value="belt2_w">Working ply 2 width [m]</option>
+          <option value="belt3_w">Protector ply width [m]</option>
+        </optgroup>
+        <optgroup label="Belt E_cord per Layer">
+          <option value="belt0_Ecord">Transition ply cord modulus [GPa]</option>
+          <option value="belt1_Ecord">Working ply 1 cord modulus [GPa]</option>
+          <option value="belt2_Ecord">Working ply 2 cord modulus [GPa]</option>
+          <option value="belt3_Ecord">Protector ply cord modulus [GPa]</option>
+        </optgroup>
+      </select>
+      <label style="margin-top:6px">Sweep Min</label><input id="trLo" value="1000000">
+      <label style="margin-top:4px">Sweep Max</label><input id="trHi" value="30000000">
+    </div>
+    <div>
+      <label>Metric 1 (x-axis)</label>
+      <select id="trMet1">
+        <option value="Ca">Cα [N/rad]</option>
+        <option value="asl">αsl [°]</option>
+        <option value="nCa">Cα/Fz [–]</option>
+        <option value="Fy">Fy at test [N]</option>
+        <option value="Mz">|Mz| [N·m]</option>
+        <option value="trail">Trail [mm]</option>
+        <option value="Cr">Cr,lat [–]</option>
+      </select>
+      <label style="margin-top:6px">Metric 2 (y-axis)</label>
+      <select id="trMet2">
+        <option value="asl">αsl [°]</option>
+        <option value="Ca">Cα [N/rad]</option>
+        <option value="nCa">Cα/Fz [–]</option>
+        <option value="Fy">Fy at test [N]</option>
+        <option value="Mz">|Mz| [N·m]</option>
+        <option value="trail">Trail [mm]</option>
+        <option value="Cr">Cr,lat [–]</option>
+      </select>
+      <div class="br"><button class="btn bw" onclick="runTradeoff()">▶ Explore Trade-off</button></div>
+    </div>
+    <div class="note" style="font-size:.79rem">
+      The curve is colour-coded from blue (low parameter value) to red (high). The red cross marks your current design. A steep curve means the trade-off is severe — improving one metric strongly hurts the other. A flat curve means both can be improved together by changing this variable.
+    </div>
+  </div>
+  <div style="margin-top:10px;max-width:550px"><div class="cw"><canvas id="tradeChart"></canvas></div></div>
+</div>
+</div>
+
+<!-- DURABILITY TAB -->
+<div id="tab-durability" class="tab">
+
+<div class="card">
+  <h2>🔩 Duty-Cycle Wear &amp; Durability Estimation</h2>
+  <div class="note" style="font-size:.82rem;line-height:1.6">
+    <strong>Theoretical basis.</strong> Tread wear is governed by the Archard wear law: the volume of material removed is proportional to the frictional energy dissipated at the contact interface. The current Brush–Fiala model already computes <em>Cr,lat</em> — the lateral rolling resistance coefficient — which equals the sliding energy dissipated per unit normal force per unit distance [J/(N·m)]. The wear power per unit distance is therefore: <strong>Ẇ = Cr,lat × Fz [J/m]</strong>.
+    <br><br>
+    <strong>Duty cycle integration.</strong> A duty cycle describes the statistical distribution of operating conditions a tyre experiences over its life. Each condition i is characterised by (Fz_i, α_i, κ_i, % time_i, speed_i). The model evaluates Cr,lat at each condition, weights by distance fraction, and sums to give the duty-cycle-averaged wear energy rate [J/km]. This is the standard approach used in tyre endurance prediction and vehicle homologation.
+    <br><br>
+    <strong>Absolute life estimate.</strong> If the tread wear coefficient <em>k</em> [mm³/J] is known from compound characterisation testing, the estimated tyre life is: <strong>Life [km] = Tread volume [mm³] / (k [mm³/J] × Wear rate [J/km])</strong>. Typical passenger car compound k values range from 0.002–0.02 mm³/J. Without k, the tool gives relative wear severity — sufficient for comparing designs or operating conditions.
+    <br><br>
+    <strong>Limitations.</strong> This model is isothermal and does not capture thermal softening of the rubber compound (significant above ~150 km/h or sustained high-slip cornering). Lateral wear distribution across the tread width is not resolved. Belt cord and carcass structural fatigue require separate fracture mechanics modelling. The ±30–50% life estimate accuracy stated reflects these omissions and the inherent scatter in compound wear coefficients.
+  </div>
+</div>
+
+<div class="sl">Duty Cycle Definition</div>
+<div class="card">
+  <h2>Operating conditions — percentage time must sum to 100%</h2>
+  <div class="note" style="font-size:.79rem">Enter each distinct operating condition. Percentage values must sum to 100. <strong>Speed</strong> now feeds the Liu-Cebon sliding-speed term (V_r = speed/3.6) — it only affects the k₂ speed term of the local wear law; the distance-based base wear is speed-independent. The tyre geometry and belt construction from Setup are used for all conditions.</div>
+  <div style="overflow-x:auto">
+    <table id="dcTable">
+      <thead><tr><th>Fz [N]</th><th>α [°]</th><th>κ [–]</th><th>% time</th><th>Speed [km/h]</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="br" style="margin-top:10px">
+    <button class="btn bo" onclick="addDcRow()">+ Add condition</button>
+    <button class="btn bo" onclick="removeDcRow()">– Remove last</button>
+  </div>
+</div>
+
+<div class="sl">Wear Model Parameters (optional for absolute life)</div>
+<div class="card">
+  <h2>Material inputs</h2>
+  <div class="g2">
+    <table>
+      <tr><td>Archard wear coefficient k [mm³/J]</td>
+          <td><input id="wearCoeff" value="0" placeholder="e.g. 0.005"></td></tr>
+      <tr><td>Usable tread volume [mm³]</td>
+          <td><input id="treadVol"  value="0" placeholder="e.g. 150000"></td></tr>
+      <tr><td colspan="2" style="font-size:.72rem;font-weight:700;color:var(--acc);padding-top:8px">LIU-CEBON LOCAL WEAR LAW &nbsp;w = k₁·(p/p₀)·(1 + k₂·v/v₀)</td></tr>
+      <tr><td>k₁ — wear scale factor [–] <span style="font-size:.70rem;color:var(--muted)">(compound × surface)</span></td>
+          <td><input id="wear_k1" value="0.193"></td></tr>
+      <tr><td>k₂ — sliding-speed coefficient [s/m]</td>
+          <td><input id="wear_k2" value="0.37"></td></tr>
+      <tr><td>Tread density [kg/m³]</td>
+          <td><input id="tread_density" value="1150"></td></tr>
+    </table>
+    <div class="note" style="font-size:.79rem">
+      Leave <strong>k</strong> at 0 to get relative wear severity only (no Archard absolute life estimate).<br>
+      <strong>k</strong>: Archard wear coefficient for your tread compound. Typical range for passenger car compounds: 0.002–0.020 mm³/J. Must be determined from laboratory abrasion tests (DIN 53516) or field correlation — it is a material property, not a model output.<br>
+      <strong>Tread volume</strong>: total usable tread rubber above the wear indicator bars. Approximate as: contact area × (initial depth − minimum depth). Example: 0.18 × 0.22 × 7 mm = 277,200 mm² × mm = 277 cm³ for a typical passenger tyre.<br>
+      <strong>k₁ (Liu-Cebon)</strong>: scale factor of the local wear law — lumps compound abrasion resistance × road-surface abrasiveness. Default 0.193 is the paper's <em>240-grit sandpaper</em> value and will overpredict real-road wear by ~100–1000×; fit it to field/lab data for absolute predictions. <strong>Use relative k₁ between compounds to rank wear</strong> (this is the compound knob). k₂ ≈ 0.37 was found roughly surface-independent. The Liu-Cebon life estimate below uses tread volume × density ÷ mass-loss/km and needs only k₁,k₂ (no Archard k).
+    </div>
+  </div>
+  <div class="br">
+    <button class="btn bp" onclick="runDurability()">▶ Run Durability Analysis</button>
+  </div>
+  <div id="durStat" style="margin-top:8px"></div>
+</div>
+
+<div id="durResult" style="display:none">
+  <div class="sl">Results Summary</div>
+  <div id="durSummary"></div>
+
+  <div class="sl">Condition-by-condition breakdown</div>
+  <div class="card">
+    <div style="overflow-x:auto"><table id="durTable"></table></div>
+    <div class="note" style="font-size:.78rem;margin-top:8px">
+      Highlighted row (amber) = worst-case condition contributing most to total fleet wear (energy basis). Cr,lat = lateral rolling resistance coefficient computed by the Brush–Fiala solver. Wear[J/km] = Cr,lat × Fz × 1000; Weighted = × (% time / 100). <strong>Wear[g/km] (Liu-Cebon)</strong> = abrasive mass loss from the local wear law w=k₁·p·(1+k₂·v) integrated over the sliding zone at that condition's speed.
+    </div>
+  </div>
+
+  <div class="sl">Wear contribution by condition</div>
+  <div class="card"><div class="cw" style="max-width:600px"><canvas id="durBarChart"></canvas></div></div>
+</div>
+</div>
+
+<!-- PROJECT TAB -->
+<div id="tab-project" class="tab">
+<div class="card">
+  <h2>&#127991; Project &amp; Tyre Identification</h2>
+  <div class="note">Documentation fields — no effect on calculations. Project name appears in Compare legend and saved filename.</div>
+  <div class="g3" style="margin-top:12px">
+    <table>
+      <tr><td colspan="2" style="font-size:.72rem;font-weight:700;color:var(--acc);text-transform:uppercase;padding-bottom:4px">Project</td></tr>
+      <tr><td>Project name</td><td><input id="proj_name" value="Project 1" style="font-weight:700"></td></tr>
+      <tr><td>Engineer</td><td><input id="proj_engineer" value=""></td></tr>
+      <tr><td>Date</td><td><input id="proj_date" value=""></td></tr>
+      <tr><td>Notes</td><td><textarea id="proj_notes" rows="3" style="width:100%;padding:4px;font-size:.82rem;border:1px solid var(--bdr);border-radius:4px;resize:vertical"></textarea></td></tr>
+    </table>
+    <table>
+      <tr><td colspan="2" style="font-size:.72rem;font-weight:700;color:var(--acc);text-transform:uppercase;padding-bottom:4px">Tyre Identity</td></tr>
+      <tr><td>Designation</td><td><input id="proj_desig" value="295/90R20" placeholder="e.g. 295/90R20" oninput="parseDesig()"></td></tr>
+      <tr><td>Brand / Model</td><td><input id="proj_brand" value="" placeholder="e.g. MRF Steel Muscle S3P4"></td></tr>
+      <tr><td>Load Index (single)</td><td><input id="proj_li" value="152" oninput="fillRatedFz()"></td></tr>
+      <tr><td colspan="2"><div id="rated_fz_hint" style="font-size:.75rem;color:var(--acc2);font-weight:600;padding:2px 0"></div></td></tr>
+      <tr><td>Test rim</td><td><input id="proj_rim_size" value="7.50x20"></td></tr>
+      <tr><td>Application</td><td><input id="proj_app" value="" placeholder="e.g. Steer axle, on-road"></td></tr>
+    </table>
+    <table>
+      <tr><td colspan="2" style="font-size:.72rem;font-weight:700;color:var(--acc);text-transform:uppercase;padding-bottom:4px">Parsed Dimensions</td></tr>
+      <tr><td>Section width SW [mm]</td><td><input id="proj_sw" value="295" readonly style="background:#f8fafc"></td></tr>
+      <tr><td>Aspect ratio AR [%]</td><td><input id="proj_ar" value="90" readonly style="background:#f8fafc"></td></tr>
+      <tr><td>Rim [in]</td><td><input id="proj_rim" value="20" readonly style="background:#f8fafc"></td></tr>
+      <tr><td colspan="2" style="font-size:.72rem;font-weight:700;color:var(--acc);text-transform:uppercase;padding-top:8px;padding-bottom:4px">Test Conditions</td></tr>
+      <tr><td>Test standard</td><td><input id="test_std" value="" placeholder="e.g. ISO 27955, ETRTO"></td></tr>
+      <tr><td>Road surface</td><td><input id="test_surf" value="" placeholder="e.g. Dry asphalt"></td></tr>
+      <tr><td>Test speed [km/h]</td><td><input id="test_speed" value=""></td></tr>
+      <tr><td>Ky data source</td><td><input id="test_ky_src" value="" placeholder="e.g. Static Ky test, avg 2 runs"></td></tr>
+      <tr><td>Ca / Fy(a) source</td><td><input id="test_ca_src" value="" placeholder="e.g. Flat-trac run 3"></td></tr>
+    </table>
+  </div>
+</div>
+<div class="card" style="font-size:.81rem;color:var(--muted);line-height:1.9;margin-top:8px">
+  <strong>How these fields are used:</strong> Designation auto-parses SW, AR, rim and estimates contact width b. Load Index gives rated Fz with confirmation. Project name + designation appear in Compare legend and in saved filename.
+</div>
+</div>
+
+
+<!-- THEORY TAB -->
+<div id="tab-theory" class="tab">
+<div class="card">
+  <h2>&#128218; Model Theory, Assumptions &amp; References</h2>
+  <div class="stabs">
+    <button class="stb on" onclick="SST('tab-theory','th_ode')">ODE &amp; Solver</button>
+    <button class="stb"    onclick="SST('tab-theory','th_inputs')">Physical Inputs</button>
+    <button class="stb"    onclick="SST('tab-theory','th_sunlu')">Sun &amp; Lu (2025)</button>
+    <button class="stb"    onclick="SST('tab-theory','th_limits')">Limitations</button>
+    <button class="stb"    onclick="SST('tab-theory','th_refs')">References</button>
+  </div>
+
+  <!-- ODE & Solver -->
+  <div id="th_ode" class="spanel on">
+  <div class="card">
+    <h2>Governing Equations</h2>
+    <table class="eq-tbl">
+      <tr><th>Equation</th><th>Formula</th><th>Notes</th></tr>
+      <tr><td>Belt bending stiffness</td>
+          <td class="eq">EI = &Sigma; E<sub>x,i</sub> &middot; (w<sub>i</sub>t<sub>i</sub>&sup3;/12 + A<sub>i</sub>&middot;(z<sub>c,i</sub>&minus;z&#772;)&sup2;)</td>
+          <td>Euler-Bernoulli, parallel-axis. E<sub>x,i</sub> = E<sub>hom,i</sub>&middot;cos&sup4;(&beta;<sub>i</sub>)</td></tr>
+      <tr><td>Belt beam ODE (v12)</td>
+          <td class="eq">EI&middot;y&prime;&prime;&prime;&prime; &minus; T&#8320;&middot;y&prime;&prime; + k<sub>f</sub>&middot;y = q<sub>y</sub>(x)</td>
+          <td>Euler-Bernoulli + Winkler + inflation tension. T&#8320; = p&middot;R&middot;b [N]</td></tr>
+      <tr><td>Normal pressure</td>
+          <td class="eq">q<sub>z</sub>(x) = 6F<sub>z</sub>/(bL) &middot; (x/L)&middot;(1&minus;x/L)</td>
+          <td>Parabolic distribution, integrates to F<sub>z</sub></td></tr>
+      <tr><td>Tread deformation</td>
+          <td class="eq">&delta;<sub>y</sub>(x) = x&middot;tan&alpha; &minus; y(x)</td>
+          <td>Kinematic slip minus belt deflection</td></tr>
+      <tr><td>Friction limit</td>
+          <td class="eq">|f<sub>y</sub>|&sup2; + |f<sub>x</sub>|&sup2; &le; (&mu;&middot;q<sub>z</sub>)&sup2;</td>
+          <td>Coulomb cone — combined slip</td></tr>
+      <tr><td>Rigid Ca reference</td>
+          <td class="eq">C<sub>&alpha;</sub> = C<sub>y</sub>&middot;b&middot;L&sup2;/2</td>
+          <td>Upper bound — rigid belt, no T&#8320;</td></tr>
+      <tr><td>Relaxation length</td>
+          <td class="eq">&sigma;<sub>&alpha;</sub> = L&sup2;/2</td>
+          <td>= C<sub>&alpha;</sub>/K<sub>y</sub></td></tr>
+    </table>
+    <div class="note" style="margin-top:10px;font-size:.80rem;line-height:1.8">
+      <strong>Solver:</strong> Successive-substitution iteration — start y=0, compute tread loads, solve beam ODE (Gaussian elimination with pivoting), update y = 0.5&middot;y<sub>new</sub> + 0.5&middot;y<sub>old</sub>, repeat until max|&Delta;y| &lt; 10&sup7; m. Simply-supported BCs. Shear reaction correction applied to M<sub>z</sub>.
+    </div>
+  </div>
+  </div>
+
+  <!-- Physical Inputs -->
+  <div id="th_inputs" class="spanel">
+  <div class="card">
+    <h2>Physical Input Conversions</h2>
+    <table class="eq-tbl">
+      <tr><th>Model param</th><th>Input</th><th>Conversion</th><th>Standard / source</th></tr>
+      <tr><td>C<sub>y</sub> [N/m&sup3;]</td><td>Tread rubber shear modulus [MPa], h [mm]</td>
+          <td class="eq">C<sub>y</sub> = G&times;10&sup6; / (h/1000)</td>
+          <td>Sun &amp; Lu (2025) Eq.28: k<sub>ty</sub> = G/h. DIN 53513 / ISO 4664-1</td></tr>
+      <tr><td>k<sub>f</sub> [N/m&sup2;]</td><td>K<sub>y</sub> [kN/m]</td>
+          <td class="eq">k<sub>f</sub> = K<sub>y</sub>&times;1000 / (L&times;b)</td>
+          <td>ISO 27955 static lateral stiffness. Zegelaar (1998)</td></tr>
+      <tr><td>T&#8320; [N]</td><td>p [kPa], R [m], b [m]</td>
+          <td class="eq">T&#8320; = p&times;1000 &times; R &times; b</td>
+          <td>Membrane equilibrium of inflated toroid. Pacejka (2012) Ch.9</td></tr>
+      <tr><td>L<sub>ETRTO</sub> [m]</td><td>F<sub>z</sub> [N], p [kPa], b [m]</td>
+          <td class="eq">L = F<sub>z</sub> / (p&times;1000 &times; b)</td>
+          <td>Rectangular patch approximation. Approximate — valid near rated load.</td></tr>
+      <tr><td>L(F<sub>z</sub>) chart</td><td>n exponent (default 0.35)</td>
+          <td class="eq">L = L<sub>rated</sub> &times; (F<sub>z</sub>/F<sub>z,rated</sub>)<sup>n</sup></td>
+          <td>Power law anchored at rated load. TBR: n&approx;0.35</td></tr>
+    </table>
+    <h2 style="margin-top:14px">Typical TBR Parameter Ranges — 295/90R20</h2>
+    <table class="eq-tbl">
+      <tr><th>Parameter</th><th>Symbol</th><th>Typical TBR</th><th>295/90R20 calibrated</th></tr>
+      <tr><td>Rubber shear modulus</td><td>G_tread</td><td>0.8–2.0 MPa</td><td>1.49 MPa</td></tr>
+      <tr><td>Tread depth (new)</td><td>h</td><td>15–20 mm</td><td>18 mm</td></tr>
+      <tr><td>Tread stiffness</td><td>C<sub>y</sub></td><td>40–130 MN/m&sup3;</td><td>83 MN/m&sup3;</td></tr>
+      <tr><td>Lateral spring rate</td><td>K<sub>y</sub></td><td>250–600 kN/m</td><td>336 kN/m (measured)</td></tr>
+      <tr><td>Foundation stiffness</td><td>k<sub>f</sub></td><td>4–25 MN/m&sup2;</td><td>8.99 MN/m&sup2;</td></tr>
+      <tr><td>Belt bending stiffness</td><td>EI</td><td>10–40 N&middot;m&sup2;</td><td>18.44 N&middot;m&sup2;</td></tr>
+      <tr><td>Inflation pre-tension</td><td>T&#8320;</td><td>50–200 kN</td><td>115 kN (930 kPa)</td></tr>
+      <tr><td>Friction coefficient</td><td>&mu;</td><td>0.80–1.10</td><td>1.05 (fitted)</td></tr>
+      <tr><td>C<sub>&alpha;</sub>/F<sub>z</sub></td><td></td><td>5–8 /rad</td><td>5.4 /rad (numerical)</td></tr>
+    </table>
+  </div>
+  </div>
+
+  <!-- Sun & Lu -->
+  <div id="th_sunlu" class="spanel">
+  <div class="card">
+    <h2>Sun &amp; Lu (2025) — Lateral Flexibility Framework</h2>
+    <div class="note" style="font-size:.80rem;line-height:1.8">
+      Sun L and Lu D, "Study on the mechanism of belt cord angle contribution to tire cornering power," <em>Proc IMechE Part D</em>, 2025, Vol. 239(6), pp. 1823–1833. DOI: 10.1177/09544070241229116. Jilin University. Tested: 215/55R17, loads 2–8 kN.
+    </div>
+    <table class="eq-tbl" style="margin-top:10px">
+      <tr><th>Quantity</th><th>Formula</th><th>Eq.</th></tr>
+      <tr><td>Tread stiffness</td><td class="eq">k<sub>ty</sub> = G/h [N/m&sup3;]</td><td>Eq.28</td></tr>
+      <tr><td>Characteristic parameter</td><td class="eq">&lambda;&#8320; = (k<sub>f</sub>/4EI)&sup1;&frasl;&sup4; [m&minus;&sup1;] — T&#8320; neglected</td><td>Eq.10</td></tr>
+      <tr><td>Carcass bending stiffness</td><td class="eq">K<sub>cb</sub> = k<sub>f</sub>&middot;b&middot;&lambda;&#8320;&sup3;&middot;a&sup2;/3 [N/m]</td><td>Eq.15</td></tr>
+      <tr><td>Flexibility ratio</td><td class="eq">&epsilon; = 2a&middot;b&middot;C<sub>y</sub> / K<sub>cb</sub></td><td>—</td></tr>
+      <tr><td>Analytical C<sub>&alpha;</sub></td><td class="eq">C<sub>F&alpha;</sub> = C<sub>&alpha;,rigid</sub> / (1+&epsilon;)&sup2;</td><td>Eq.22</td></tr>
+      <tr><td>Corrected trail</td><td class="eq">PT = (L/6)&middot;(1+&epsilon;)</td><td>Eq.24</td></tr>
+    </table>
+    <div class="note" style="margin-top:10px;font-size:.80rem;line-height:1.8">
+      <strong>Limitation for truck tyres:</strong> Sun &amp; Lu assume T&#8320;/&radic;(4&middot;EI&middot;k<sub>f</sub>) is negligible — valid for passenger car at low pressure. For 295/90R20 at 930 kPa this ratio &asymp; 19. T&#8320; dominates, &epsilon; is suppressed, and the belt angle effect on C<sub>&alpha;</sub> through EI is masked. The C<sub>&alpha;</sub> vs F<sub>z</sub> chart correctly shows this: four &beta; curves nearly identical at truck tyre conditions.
+    </div>
+  </div>
+  </div>
+
+  <!-- Limitations -->
+  <div id="th_limits" class="spanel">
+  <div class="card">
+    <h2>Known Model Limitations</h2>
+    <table class="eq-tbl">
+      <tr><th>Limitation</th><th>Consequence</th><th>Status</th></tr>
+      <tr><td>T&#8320; in ODE</td><td>Belt stiffness underestimated without it</td><td style="color:var(--acc2);font-weight:700">Fixed v12 — T&#8320;=p&middot;R&middot;b in ODE</td></tr>
+      <tr><td>Sun &amp; Lu &epsilon; formula neglects T&#8320; in &lambda;&#8320;</td><td>C<sub>&alpha;,SunLu</sub> slightly high for truck tyres</td><td>Known — numerical solver correct</td></tr>
+      <tr><td>&beta; effect on C<sub>&alpha;</sub></td><td>EI pathway masked by T&#8320;; contact length pathway not modelled</td><td>Known limitation — FEM needed for &beta;&rarr;L</td></tr>
+      <tr><td>No camber (&gamma;=0)</td><td>Camber thrust not predicted</td><td>Future work</td></tr>
+      <tr><td>1D beam (width-averaged)</td><td>No shoulder vs centre resolution</td><td>Future work</td></tr>
+      <tr><td>Static vs rolling L</td><td>Static footprint ~5–10% longer than rolling</td><td>User note — use rolling L if available</td></tr>
+      <tr><td>Parabolic pressure</td><td>Real pressure more uniform in centre</td><td>Acceptable for screening</td></tr>
+      <tr><td>L(F<sub>z</sub>) ETRTO formula</td><td>Rectangular patch — overestimates L at light loads</td><td>Power law with n=0.35 used instead</td></tr>
+      <tr><td>Constant &mu;</td><td>No speed or temperature effect</td><td>Future work</td></tr>
+    </table>
+  </div>
+  </div>
+
+  <!-- References -->
+  <div id="th_refs" class="spanel">
+  <div class="card">
+    <h2>References</h2>
+    <ol style="margin-left:16px;font-size:.81rem;line-height:2.2">
+      <li><strong>Fiala, E. (1954)</strong> — VDI Zeitschrift, 96(29), 973–979. Original brush model.</li>
+      <li><strong>Pacejka, H.B. (2012)</strong> — Tyre and Vehicle Dynamics, 3rd ed., Butterworth-Heinemann. Ch.3 (brush model), Ch.9 (T&#8320; in rigid ring, belt ODE).</li>
+      <li><strong>Zegelaar, P.W.A. (1998)</strong> — PhD thesis, TU Delft. Belt-beam on Winkler foundation; k<sub>f</sub> = c<sub>y</sub>/(2a); inflation pre-tension treatment.</li>
+      <li><strong>Sun, L. &amp; Lu, D. (2025)</strong> — Proc IMechE Part D, 239(6), 1823–1833. DOI: 10.1177/09544070241229116. k<sub>ty</sub>=G/h (Eq.28); &epsilon; framework (Eqs 15,22–24); belt angle mechanism via FEM.</li>
+      <li><strong>O'Neill, A. et al. (2021)</strong> — Vehicle System Dynamics. DOI: 10.1080/00423114.2021.1893766. C<sub>x</sub> and C<sub>y</sub> from flat-trac data.</li>
+      <li><strong>Peng, Y. et al. (2025)</strong> — Vehicle System Dynamics. DOI: 10.1080/00423114.2025.2520489. FEM Type B for C<sub>x</sub>; TBR steel belt.</li>
+      <li><strong>Nakajima, Y. (2019)</strong> — Advanced Tire Mechanics, Springer. Belt beam model derivation.</li>
+      <li><strong>ETRTO Engineering Design Information (2023)</strong> — Contact patch estimation; load index table.</li>
+      <li><strong>ISO 27955:2021</strong> — Static lateral stiffness K<sub>y</sub> test protocol.</li>
+      <li><strong>DIN 53513 / ISO 4664-1</strong> — Rubber shear modulus G measurement.</li>
+    </ol>
+  </div>
+  </div>
+
+</div>
+</div>
+
+
+</body>
+</html
+>
