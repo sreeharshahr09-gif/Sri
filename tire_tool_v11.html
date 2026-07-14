@@ -1075,7 +1075,7 @@ function gI(){
     // Local wear law  w = k1·(p/p0)·(1 + k2·v/v0)   [kg/m³]
     // k1 default = 0.193 (240-grit sandpaper, Liu & Cebon Table 1) — a SANDPAPER
     // value that overpredicts road wear; calibrate to field data for absolute use.
-    k1:parseFloat((document.getElementById('wear_k1')||{}).value)||0.193,
+    k1:(typeof effectiveK1==='function'?effectiveK1():(parseFloat((document.getElementById('wear_k1')||{}).value)||0.193)),
     k2:parseFloat((document.getElementById('wear_k2')||{}).value)||0.37,
     rho_tread:parseFloat((document.getElementById('tread_density')||{}).value)||1150,
     belts:JSON.parse(JSON.stringify(belts))};
@@ -1967,7 +1967,85 @@ function renderDcTable(){
  {Fz:5000,alpha:12,kappa:0.1,pct:5,speed:30}
 ].forEach(r=>dcRows.push(r));
 // Initialise table after DOM is ready
-document.addEventListener('DOMContentLoaded',()=>renderDcTable());
+document.addEventListener('DOMContentLoaded',()=>{renderDcTable();renderCompoundTable();syncEffK1();});
+
+// ─── Phase 2: Compound library, effective k₁, calibration & comparison ────────
+let compounds=[
+  {name:'Baseline (ref)', k1rel:1.00, note:'reference compound'},
+  {name:'Compound A',     k1rel:0.85, note:'placeholder — set from data'},
+  {name:'Compound B',     k1rel:0.70, note:'placeholder — set from data'}
+];
+let selectedCompound=0;
+let lastDur=null;   // {totalMassKm, treadMass_kg, lifeLC_km, k1EffUsed, massPerK1}
+
+function effectiveK1(){
+  const surf=parseFloat((document.getElementById('k1_surface')||{}).value)||0.193;
+  const rel=(compounds[selectedCompound]&&+compounds[selectedCompound].k1rel)||1;
+  return surf*rel;
+}
+function syncEffK1(){
+  const eff=document.getElementById('wear_k1');
+  if(eff) eff.value=effectiveK1().toPrecision(4);
+}
+function renderCompoundSelect(){
+  const s=document.getElementById('compound_select'); if(!s)return;
+  s.innerHTML=compounds.map((c,i)=>`<option value="${i}" ${i===selectedCompound?'selected':''}>${c.name} (k₁,rel=${c.k1rel})</option>`).join('');
+}
+function renderCompoundTable(){
+  const t=document.getElementById('compoundTable'); if(!t)return;
+  let h=`<tr><th>Use</th><th>Compound</th><th>k₁,rel [–]</th><th>Note</th></tr>`;
+  compounds.forEach((c,i)=>{
+    h+=`<tr>
+      <td style="text-align:center"><input type="radio" name="cmpUse" ${i===selectedCompound?'checked':''} onchange="selectCompound(${i})"></td>
+      <td><input value="${c.name}" onchange="compounds[${i}].name=this.value;renderCompoundSelect()" style="width:160px"></td>
+      <td><input value="${c.k1rel}" onchange="compounds[${i}].k1rel=+this.value||0;renderCompoundSelect();if(${i}===selectedCompound)syncEffK1()" style="width:70px"></td>
+      <td><input value="${c.note||''}" onchange="compounds[${i}].note=this.value" style="width:180px"></td></tr>`;
+  });
+  t.innerHTML=h;
+  renderCompoundSelect();
+}
+function selectCompound(i){
+  selectedCompound=Math.min(Math.max(i|0,0),compounds.length-1);
+  const s=document.getElementById('compound_select'); if(s)s.value=selectedCompound;
+  document.querySelectorAll('input[name="cmpUse"]').forEach((r,k)=>{r.checked=(k===selectedCompound);});
+  syncEffK1();
+}
+function addCompound(){compounds.push({name:'New compound',k1rel:1.0,note:''});renderCompoundTable();}
+function removeCompound(){
+  if(compounds.length>1){compounds.pop();
+    if(selectedCompound>=compounds.length)selectedCompound=compounds.length-1;
+    renderCompoundTable();syncEffK1();}
+}
+function calibrateK1FromLife(){
+  const st=document.getElementById('compoundCalibStat');
+  const target=parseFloat(document.getElementById('calib_life_km').value);
+  if(!(target>0)){st.innerHTML=`<span class="badge berr">✗ Enter a positive measured life [km].</span>`;return;}
+  if(!lastDur||!(lastDur.massPerK1>0)){st.innerHTML=`<span class="badge berr">✗ Run a durability analysis first.</span>`;return;}
+  if(!(lastDur.treadMass_kg>0)){st.innerHTML=`<span class="badge berr">✗ Set tread volume + density and re-run durability first.</span>`;return;}
+  // life = treadMass /(massPerK1 · surf · rel_sel)  →  solve surf for target life
+  const relSel=(+compounds[selectedCompound].k1rel)||1;
+  const surfOld=parseFloat(document.getElementById('k1_surface').value)||0.193;
+  const surfNew=lastDur.treadMass_kg/(lastDur.massPerK1*relSel*target);
+  document.getElementById('k1_surface').value=surfNew.toPrecision(4);
+  syncEffK1();
+  st.innerHTML=`<span class="badge bok">✓ k₁,surf ${surfOld.toPrecision(3)} → ${surfNew.toPrecision(3)} so "${compounds[selectedCompound].name}" life = ${target.toFixed(0)} km. Re-run durability to confirm & compare compounds.</span>`;
+}
+function compareCompounds(){
+  const box=document.getElementById('compoundCompareBox');
+  if(!lastDur||!(lastDur.massPerK1>0)){box.innerHTML=`<span class="badge berr">✗ Run a durability analysis first.</span>`;return;}
+  const surf=parseFloat(document.getElementById('k1_surface').value)||0.193;
+  const rows=compounds.map(c=>{
+    const massKm=lastDur.massPerK1*surf*(+c.k1rel||0);      // kg/km
+    const life=(lastDur.treadMass_kg>0&&massKm>0)?lastDur.treadMass_kg/massKm:NaN;
+    return{name:c.name,k1rel:+c.k1rel||0,massG:massKm*1000,life};
+  }).sort((a,b)=>a.massG-b.massG);
+  const best=rows[0].massG||1e-30;
+  let h=`<table><tr><th>Rank</th><th>Compound</th><th>k₁,rel</th><th>Wear [g/km]</th><th>Life [km]</th><th>vs best</th></tr>`;
+  rows.forEach((r,i)=>{h+=`<tr${i===0?' style="background:#dcfce7"':''}><td>${i+1}</td><td>${r.name}</td><td>${r.k1rel}</td>
+    <td>${r.massG.toFixed(4)}</td><td>${isFinite(r.life)?r.life.toFixed(0):'—'}</td><td>${(r.massG/best).toFixed(2)}×</td></tr>`;});
+  h+=`</table><div class="note" style="font-size:.72rem;margin-top:6px">Exact linear scaling of the last duty-cycle run (wear ∝ k₁,rel). Lower = wears less. Life column needs tread volume + density.</div>`;
+  box.innerHTML=h;
+}
 
 function runDurability(){
   if(!lastRun){alert('Run model first (Setup → Run Model)');return;}
@@ -1985,9 +2063,13 @@ function runDurability(){
   const rhoTread=+document.getElementById('tread_density').value||1150;
   const treadMass_kg=treadVol>0?treadVol*1e-9*rhoTread:0;   // mm³→m³ × kg/m³
 
+  // Always use the CURRENT compound selection / wear-law params (may have
+  // changed since the last Run Model), refreshed per condition.
+  const k1eff=effectiveK1(), k2now=parseFloat(document.getElementById('wear_k2').value)||0.37;
   const results=dcRows.map(r=>{
     const p=JSON.parse(JSON.stringify(p0)); p.Fz=r.Fz;
     p.V_r=Math.max((+r.speed||p0.veh_speed||40)/3.6,1e-9);  // per-condition rolling speed
+    p.k1=k1eff; p.k2=k2now;                                 // current compound × surface
     const pt=solvePt(r.alpha*Math.PI/180,r.kappa,p,pkg0.EI);
     const wearRate_Jpkm=pt.Cr*r.Fz*1000;
     const massKm=pt.wearLC?pt.wearLC.massPerKm:0;           // kg/km (Liu-Cebon)
@@ -1999,6 +2081,9 @@ function runDurability(){
   const life_km=useAbsolute?treadVol/(k_wear*totalWear):NaN;
   const lifeLC_km=(treadMass_kg>0&&totalMassKm>0)?treadMass_kg/totalMassKm:NaN;
   const worst=results.reduce((a,b)=>a.weighted>b.weighted?a:b);
+  // Store for Phase-2 compound comparison & calibration (wear ∝ k1eff).
+  lastDur={totalMassKm,treadMass_kg,lifeLC_km,k1EffUsed:k1eff,
+    massPerK1:(k1eff>0?totalMassKm/k1eff:0)};
 
   let htm=`<tr><th>#</th><th>Fz[N]</th><th>α[°]</th><th>κ[–]</th><th>Spd[km/h]</th>
     <th>%time</th><th>Fy[N]</th><th>Cr,lat</th><th>Wear[J/km]</th><th>Weighted[J/km]</th>
@@ -2020,7 +2105,7 @@ function runDurability(){
   document.getElementById('durSummary').innerHTML=`<div class="g3">
     <div class="card"><h3>Liu-Cebon wear rate</h3>
       <div style="font-size:1.4rem;font-weight:700;color:var(--acc)">${(totalMassKm*1000).toFixed(4)} g/km</div>
-      <div style="color:var(--muted);font-size:.78rem;margin-top:4px">Duty-cycle weighted abrasive mass loss per km (w=k₁·p·(1+k₂·v)).<br><em>k₁=${(+document.getElementById('wear_k1').value)} is a sandpaper value — relative comparison only unless calibrated.</em></div></div>
+      <div style="color:var(--muted);font-size:.78rem;margin-top:4px">Duty-cycle weighted abrasive mass loss per km (w=k₁·p·(1+k₂·v)).<br>Compound: <strong>${compounds[selectedCompound].name}</strong> · k₁,eff=${effectiveK1().toPrecision(3)} (surf×rel).<br><em>Default surf is a sandpaper value — relative comparison only unless calibrated.</em></div></div>
     <div class="card"><h3>Worst condition</h3>
       <div style="font-size:1.1rem;font-weight:700;color:var(--warn)">
         Condition #${results.indexOf(worst)+1} — α=${worst.alpha}°, Fz=${worst.Fz} N</div>
@@ -2371,8 +2456,12 @@ function validateInputs(){}
       <tr><td>Usable tread volume [mm³]</td>
           <td><input id="treadVol"  value="0" placeholder="e.g. 150000"></td></tr>
       <tr><td colspan="2" style="font-size:.72rem;font-weight:700;color:var(--acc);padding-top:8px">LIU-CEBON LOCAL WEAR LAW &nbsp;w = k₁·(p/p₀)·(1 + k₂·v/v₀)</td></tr>
-      <tr><td>k₁ — wear scale factor [–] <span style="font-size:.70rem;color:var(--muted)">(compound × surface)</span></td>
-          <td><input id="wear_k1" value="0.193"></td></tr>
+      <tr><td>Surface baseline k₁,surf [–] <span style="font-size:.70rem;color:var(--muted)">(road abrasiveness)</span></td>
+          <td><input id="k1_surface" value="0.193" oninput="syncEffK1()"></td></tr>
+      <tr><td>Compound <span style="font-size:.70rem;color:var(--muted)">(relative factor)</span></td>
+          <td><select id="compound_select" onchange="selectCompound(+this.value)"></select></td></tr>
+      <tr><td>↳ Effective k₁ = k₁,surf × k₁,rel</td>
+          <td><input id="wear_k1" readonly tabindex="-1" style="background:var(--di,#f1f5f9)"></td></tr>
       <tr><td>k₂ — sliding-speed coefficient [s/m]</td>
           <td><input id="wear_k2" value="0.37"></td></tr>
       <tr><td>Tread density [kg/m³]</td>
@@ -2382,13 +2471,39 @@ function validateInputs(){}
       Leave <strong>k</strong> at 0 to get relative wear severity only (no Archard absolute life estimate).<br>
       <strong>k</strong>: Archard wear coefficient for your tread compound. Typical range for passenger car compounds: 0.002–0.020 mm³/J. Must be determined from laboratory abrasion tests (DIN 53516) or field correlation — it is a material property, not a model output.<br>
       <strong>Tread volume</strong>: total usable tread rubber above the wear indicator bars. Approximate as: contact area × (initial depth − minimum depth). Example: 0.18 × 0.22 × 7 mm = 277,200 mm² × mm = 277 cm³ for a typical passenger tyre.<br>
-      <strong>k₁ (Liu-Cebon)</strong>: scale factor of the local wear law — lumps compound abrasion resistance × road-surface abrasiveness. Default 0.193 is the paper's <em>240-grit sandpaper</em> value and will overpredict real-road wear by ~100–1000×; fit it to field/lab data for absolute predictions. <strong>Use relative k₁ between compounds to rank wear</strong> (this is the compound knob). k₂ ≈ 0.37 was found roughly surface-independent. The Liu-Cebon life estimate below uses tread volume × density ÷ mass-loss/km and needs only k₁,k₂ (no Archard k).
+      <strong>k₁ split (Phase 2)</strong>: the wear scale factor is now <strong>k₁,eff = k₁,surf × k₁,rel</strong>. <em>k₁,surf</em> is the road-surface abrasiveness baseline (0.193 = the paper's 240-grit sandpaper, which overpredicts real road ~100–1000× until calibrated). <em>k₁,rel</em> is the selected compound's <strong>relative abrasion factor</strong> from the Compound Library below — this is the cross-brand knob. k₂ ≈ 0.37 is roughly surface-independent. Life = tread volume × density ÷ mass-loss/km (needs only k₁,k₂ — no Archard k). Calibrate k₁,surf to a known mileage in the Compound Library card.
     </div>
   </div>
   <div class="br">
     <button class="btn bp" onclick="runDurability()">▶ Run Durability Analysis</button>
   </div>
   <div id="durStat" style="margin-top:8px"></div>
+</div>
+
+<div class="sl">Compound Library &amp; Calibration</div>
+<div class="card">
+  <h2>Compound abrasion factors (k₁,rel)</h2>
+  <div class="note" style="font-size:.79rem">Each compound is represented by a <strong>relative abrasion factor k₁,rel</strong> (dimensionless): higher = wears faster. The selected compound multiplies the surface baseline. Set factors from lab abrasion data (DIN 53516 / LAT100) or fit them to field mileage ratios. Per Liu &amp; Cebon, compound differences live mainly in k₁; k₂ is treated as shared. Structural/stiffness differences between tyres are separate — set those in Setup or the Compare tab.</div>
+  <div style="overflow-x:auto"><table id="compoundTable"></table></div>
+  <div class="br" style="margin-top:8px">
+    <button class="btn bo" onclick="addCompound()">+ Add compound</button>
+    <button class="btn bo" onclick="removeCompound()">– Remove last</button>
+    <button class="btn bw" onclick="compareCompounds()">▶ Compare compounds (rank wear &amp; life)</button>
+  </div>
+
+  <div class="g2" style="margin-top:12px">
+    <div>
+      <h3 style="font-size:.9rem">Calibrate surface baseline k₁,surf to a known life</h3>
+      <table>
+        <tr><td>Measured tyre life for selected compound [km]</td>
+            <td><input id="calib_life_km" value="" placeholder="e.g. 120000" style="width:110px"></td></tr>
+      </table>
+      <div class="br"><button class="btn bp" onclick="calibrateK1FromLife()">⚙ Calibrate k₁,surf</button></div>
+      <div class="note" style="font-size:.75rem">Requires a durability run first (life ∝ 1/k₁, so this is a one-step solve). It rescales the shared surface baseline; all compounds keep their relative ratios.</div>
+    </div>
+    <div id="compoundCompareBox" class="note" style="font-size:.79rem">Run a durability analysis, then click <em>Compare compounds</em> to rank all library compounds at the current duty cycle (exact linear scaling — no re-solve needed).</div>
+  </div>
+  <div id="compoundCalibStat" style="margin-top:6px"></div>
 </div>
 
 <div id="durResult" style="display:none">
