@@ -121,6 +121,7 @@ select{padding:5px 8px;border:1px solid #cbd5e1;border-radius:4px;font-size:.79r
         <td><input id="L_etrto" readonly tabindex="-1">
         <button class="bo" style="margin-top:3px;padding:2px 8px;font-size:.72rem" onclick="document.getElementById('L_contact').value=document.getElementById('L_etrto').value;updateDerived()">↑ Use</button></td></tr>
       <tr><td>Footprint width b [m]</td><td><input id="b_width" value="0.238" oninput="updateDerived()"></td></tr>
+      <tr><td>Pressure shoulder fraction t [–] <span style="font-size:.70rem;color:var(--muted)">(0.5=parabola, 0.15–0.25=flat TBR)</span></td><td><input id="p_shoulder" value="0.2"></td></tr>
       <tr><td style="font-size:.72rem;font-weight:700;color:var(--acc);padding-top:6px" colspan="2">TREAD — Enter physical properties</td></tr>
       <tr><td>Tread rubber shear modulus [MPa]</td><td><input id="G_tread" class="pi" value="1.49" oninput="updateDerived()"></td></tr>
       <tr><td>Tread depth [mm]</td><td><input id="h_tread" class="pi" value="18" oninput="updateDerived()"></td></tr>
@@ -299,8 +300,8 @@ select{padding:5px 8px;border:1px solid #cbd5e1;border-radius:4px;font-size:.79r
       <tr><th>Output</th><th>Equation</th><th>Physical meaning</th></tr>
       <tr>
         <td>Normal pressure</td>
-        <td class="eq">q<sub>z</sub>(x) = 6F<sub>z</sub>/(bL) · (x/L)·(1−x/L)</td>
-        <td>Parabolic distribution; integrates to F<sub>z</sub></td>
+        <td class="eq">q<sub>z</sub>(x) = [F<sub>z</sub>/(bL(1−2t/3))]·g(ξ,t) &nbsp;<span style="color:var(--muted);font-size:.7rem">flat-top, shoulder t</span></td>
+        <td>Flat plateau with parabolic shoulders; load-conserving. t=0.5 → pure parabola. Flat top (t≈0.2) matches real TBR pressure and enables the wear saturation effect.</td>
       </tr>
       <tr>
         <td>Tread deformation</td>
@@ -799,15 +800,31 @@ function rigidM(p){
          nCa:Ca/p.Fz};
 }
 
-function qzP(x,Fz,b,L){
+// Normal pressure along the footprint. Generalised flat-topped ("trapezoidal
+// with parabolic shoulders") profile with shoulder fraction t ∈ (0,0.5]:
+//   ξ<t          : parabolic rise 0→1 over the leading shoulder
+//   t≤ξ≤1−t      : flat plateau (=1)     ← real radial-TBR pressure is flat here
+//   ξ>1−t        : parabolic fall 1→0 over the trailing shoulder
+// Load is conserved exactly: ∫₀¹ g dξ = 1 − 2t/3, so p_peak = Fz/(b·L·(1−2t/3)).
+// t=0.5 recovers the pure parabola 6Fz/(bL)·ξ(1−ξ) EXACTLY (backward compatible).
+// The flat plateau is what lets the sliding zone reach a constant-pressure region
+// at high slip → reproduces the wear "saturation" effect (Liu & Cebon, Fig. 7).
+function qzP(x,Fz,b,L,t){
   if(x<0||x>L)return 0;
-  const xi=x/L; return 6*Fz/(b*L)*xi*(1-xi);
+  t=(t==null)?0.5:Math.min(Math.max(t,0.05),0.5);
+  const xi=x/L;
+  let g;
+  if(xi<t)        g=1-Math.pow((t-xi)/t,2);
+  else if(xi>1-t) g=1-Math.pow((xi-(1-t))/t,2);
+  else            g=1;
+  const norm=1-2*t/3;                       // ∫ g dξ  (dimensionless)
+  return (Fz/(b*L*norm))*g;                 // [Pa]
 }
 
 function localLd(xA,yA,aR,k,p){
   const qy=[],qx=[],qz=[],fyA=[],fxA=[],dY=[],dX=[],sl=[],wr=[],faA=[],fsA=[];
   for(let i=0;i<xA.length;i++){
-    const x=xA[i], pz=qzP(x,p.Fz,p.b_width,p.L);
+    const x=xA[i], pz=qzP(x,p.Fz,p.b_width,p.L,p.pShoulder);
     qz.push(pz);
     const dy=x*Math.tan(aR)-yA[i], dx=x*k;
     dY.push(dy); dX.push(dx);
@@ -877,19 +894,30 @@ function solvePt(aR,k,p,EI){
   let y=Array(N).fill(0), qyPrev=Array(N).fill(0);
   const yH=[],qH=[],ymH=[];
   let con=null, ok=false;
-  for(let it=0;it<80;it++){
+  // Fixed-point (Picard) iteration on the belt deflection with ADAPTIVE
+  // under-relaxation: relax ω starts at 0.5 and is halved whenever the error
+  // rises (oscillation) so near-limit cases still settle. The best (lowest-
+  // error) iterate is retained and returned if the tolerance isn't met, so a
+  // non-converged point degrades gracefully instead of returning a bad last step.
+  const MAXIT=150, TOL=1e-7;
+  let omega=0.5, prevEY=Infinity, bestEY=Infinity, bestY=y.slice();
+  for(let it=0;it<MAXIT;it++){
     con=localLd(x,y,aR,k,p);
     const yN=solveBeam(con.qy,EI,p.kf,p.L,p.T0||0);
-    const yX=yN.map((v,i)=>0.5*v+0.5*y[i]);
+    const yX=yN.map((v,i)=>omega*v+(1-omega)*y[i]);
     let eY=0,eQ=0;
     for(let i=0;i<N;i++){
       eY=Math.max(eY,Math.abs(yX[i]-y[i]));
       eQ=Math.max(eQ,Math.abs(con.qy[i]-qyPrev[i]));
     }
     yH.push(eY); qH.push(eQ); ymH.push(Math.max(...yX.map(Math.abs)));
+    if(eY<bestEY){bestEY=eY; bestY=yX.slice();}     // remember best iterate
+    if(eY>prevEY*1.05 && omega>0.05) omega*=0.5;     // oscillating → damp harder
+    prevEY=eY;
     y=yX.slice(); qyPrev=con.qy.slice();
-    if(eY<1e-7){ok=true;break;}
+    if(eY<TOL){ok=true;break;}
   }
+  if(!ok) y=bestY.slice();                           // graceful fallback
   con=localLd(x,y,aR,k,p);
   const dx=x[1]-x[0], xc=0.5*p.L;
   let Fy=0,Fx=0,Mz=0,Fya=0,Fys=0;
@@ -1057,6 +1085,7 @@ function gI(){
     kappa:+document.getElementById('kappa').value,
     L:+document.getElementById('L_contact').value,
     b_width:+document.getElementById('b_width').value,
+    pShoulder:Math.min(Math.max(parseFloat(document.getElementById('p_shoulder').value)||0.2,0.05),0.5),
     Cy_tread:+document.getElementById('Cy_tread').value,
     Cx_tread:+document.getElementById('Cx_tread').value,
     kf:+document.getElementById('k_foundation').value,
@@ -2590,8 +2619,8 @@ function validateInputs(){}
           <td class="eq">EI&middot;y&prime;&prime;&prime;&prime; &minus; T&#8320;&middot;y&prime;&prime; + k<sub>f</sub>&middot;y = q<sub>y</sub>(x)</td>
           <td>Euler-Bernoulli + Winkler + inflation tension. T&#8320; = p&middot;R&middot;b [N]</td></tr>
       <tr><td>Normal pressure</td>
-          <td class="eq">q<sub>z</sub>(x) = 6F<sub>z</sub>/(bL) &middot; (x/L)&middot;(1&minus;x/L)</td>
-          <td>Parabolic distribution, integrates to F<sub>z</sub></td></tr>
+          <td class="eq">q<sub>z</sub>(x) = [F<sub>z</sub>/(bL(1&minus;2t/3))]&middot;g(&xi;,t)</td>
+          <td>Flat-topped (shoulder fraction t); load-conserving. t=0.5 → parabola; t&asymp;0.2 → flat TBR profile</td></tr>
       <tr><td>Tread deformation</td>
           <td class="eq">&delta;<sub>y</sub>(x) = x&middot;tan&alpha; &minus; y(x)</td>
           <td>Kinematic slip minus belt deflection</td></tr>
@@ -2683,7 +2712,7 @@ function validateInputs(){}
       <tr><td>No camber (&gamma;=0)</td><td>Camber thrust not predicted</td><td>Future work</td></tr>
       <tr><td>1D beam (width-averaged)</td><td>No shoulder vs centre resolution</td><td>Future work</td></tr>
       <tr><td>Static vs rolling L</td><td>Static footprint ~5–10% longer than rolling</td><td>User note — use rolling L if available</td></tr>
-      <tr><td>Parabolic pressure</td><td>Real pressure more uniform in centre</td><td>Acceptable for screening</td></tr>
+      <tr><td>Flat-topped pressure (t)</td><td>Parametric flat plateau + parabolic shoulders (t≈0.2 for TBR); not a measured map</td><td>Fixed — set t; import measured map = future work</td></tr>
       <tr><td>L(F<sub>z</sub>) ETRTO formula</td><td>Rectangular patch — overestimates L at light loads</td><td>Power law with n=0.35 used instead</td></tr>
       <tr><td>Constant &mu;</td><td>No speed or temperature effect</td><td>Future work</td></tr>
     </table>
