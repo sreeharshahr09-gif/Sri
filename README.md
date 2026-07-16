@@ -45,6 +45,23 @@ curves**. Each DXF must therefore have:
 > To use real drawings, prepare them per the convention above. Run
 > `python -m tyre_analysis validate <file>.dxf` to see exactly what to fix.
 
+## Two ingestion paths
+
+1. **Layer-based (main page)** — for files that follow the convention above:
+   one closed curve per named layer. Fast and unambiguous.
+2. **Manual loop builder (`pages/1_Manual_Loop_Builder.py`)** — for raw drawings
+   that *don't* (e.g. the provided sample: a full section, everything on layer
+   `0`, all curves open). It reconstructs the geometry, auto-detects candidate
+   closed **faces** (`shapely.polygonize`, the same set AutoCAD `BOUNDARY`
+   "pick internal point" would offer), and lets you **lasso/click the faces for
+   each component and name them**. It auto-suggests the rotation axis (the drawn
+   centreline / mid-section) and works one symmetric half at a time so Pappus
+   distances stay correct. Assignments can be saved/loaded as JSON.
+
+   > The provided `real_sample_1.dxf` reconstructs into a full tyre section about
+   > x ≈ 176 with ~14 candidate faces per half — the big face is the air cavity
+   > (skip it); the thin bands are the components.
+
 ## What it computes (per component)
 
 | Quantity | How |
@@ -94,9 +111,8 @@ tests/            analytic + round-trip tests
 ## Open items (need your input)
 
 - **Real SG values** per compound — `sg_table.py` ships placeholders.
-- **Ingestion of real drawings** like the provided sample: they need to be
-  re-prepared in CAD (named layers + closed curves) before the tool can use
-  them. If instead you want an *assisted* segmentation mode (polygonize the raw
-  soup + manually assign/name components), that's a separate, larger feature —
-  ask and it can be added.
 - Confirm the centroid-shift amber tolerance (default 1 mm).
+- **Manual-builder cross-file reuse**: assignments save as face ids tied to one
+  file + reconstruction params. Reusing them across design iterations (where
+  face ids differ) would need matching by representative point instead — easy to
+  add if you need to build many iterations quickly.

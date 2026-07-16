@@ -11,8 +11,10 @@ from pathlib import Path
 
 import pandas as pd
 
+from shapely.geometry import Polygon, MultiPolygon
+
 from .dxf_ingest import load_dxf, ComponentLoop
-from .geometry import compute_geometry, ComponentGeometry
+from .geometry import compute_geometry, geometry_from_polygon, ComponentGeometry
 from .physics import compute_physics, ComponentResult
 from .sg_table import lookup_sg
 
@@ -100,6 +102,60 @@ def analyse_loops(
                 "sg_matched": res.sg_matched,
             }
         )
+
+    df = pd.DataFrame(rows, columns=[c for c in COLUMNS if c != "pct_of_total_weight"])
+    total_w = df["weight_g"].sum()
+    df["pct_of_total_weight"] = (df["weight_g"] / total_w * 100.0) if total_w else 0.0
+    return df[COLUMNS], geoms, warnings
+
+
+def _row_from_result(file_label, geom, res, axis_x):
+    return {
+        "file": file_label,
+        "component": geom.layer,
+        "area_mm2": res.area_mm2,
+        "centroid_x": res.centroid_x,
+        "centroid_y": res.centroid_y,
+        "centroid_distance_mm": res.centroid_distance_mm,
+        "volume_cm3": res.volume_cm3,
+        "weight_g": res.weight_g,
+        "surface_area_mm2": res.surface_area_mm2,
+        "polar_MOI": res.polar_moi_g_mm2,
+        "radius_of_gyration_mm": res.radius_of_gyration_mm,
+        "sg": res.sg,
+        "n_holes": geom.n_holes,
+        "axis_crosses": res.axis_crosses,
+        "sg_matched": res.sg_matched,
+    }
+
+
+def analyse_components(
+    file_label: str,
+    components: dict[str, Polygon | MultiPolygon],
+    axis_x: float,
+    sg_table: dict[str, float] | None = None,
+    fallback_sg: float = 1.10,
+) -> tuple[pd.DataFrame, list[ComponentGeometry], list[str]]:
+    """Analyse manually-assembled component polygons (the manual-builder path).
+
+    *components* maps component name -> shapely polygon (already unioned from
+    picked faces). Returns the same schema as :func:`analyse_loops`.
+    """
+    warnings: list[str] = []
+    rows: list[dict] = []
+    geoms: list[ComponentGeometry] = []
+    for name, poly in components.items():
+        geom = geometry_from_polygon(name, poly, axis_x)
+        sg, matched = lookup_sg(name, sg_table, fallback=fallback_sg)
+        if not matched:
+            warnings.append(f"{name}: no SG table entry; using fallback {sg} g/cm3")
+        res = compute_physics(geom, axis_x, sg, matched)
+        if res.axis_crosses:
+            warnings.append(
+                f"{name}: region crosses the rotation axis -- pick faces on ONE side only"
+            )
+        geoms.append(geom)
+        rows.append(_row_from_result(file_label, geom, res, axis_x))
 
     df = pd.DataFrame(rows, columns=[c for c in COLUMNS if c != "pct_of_total_weight"])
     total_w = df["weight_g"].sum()

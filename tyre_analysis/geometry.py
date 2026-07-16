@@ -151,6 +151,37 @@ def axis_crossing(polygon: Polygon | MultiPolygon, axis_x: float, tol: float = 1
     return crosses, min_dx, max_dx
 
 
+def geometry_from_polygon(
+    name: str, polygon: Polygon | MultiPolygon, axis_x: float
+) -> ComponentGeometry:
+    """Build a :class:`ComponentGeometry` from an already-assembled polygon.
+
+    Used by the manual loop builder, which produces shapely polygons directly
+    (by unioning picked faces) rather than from per-layer DXF loops.
+    """
+    if isinstance(polygon, Polygon):
+        polygon = orient(polygon, sign=1.0)
+    c = polygon.centroid
+    bcx, bcy, blen = boundary_centroid(polygon)
+    n_holes = (
+        len(polygon.interiors)
+        if isinstance(polygon, Polygon)
+        else sum(len(p.interiors) for p in polygon.geoms)
+    )
+    return ComponentGeometry(
+        layer=name,
+        area_mm2=abs(polygon.area),
+        centroid_x=c.x,
+        centroid_y=c.y,
+        boundary_length_mm=blen,
+        boundary_centroid_x=bcx,
+        boundary_centroid_y=bcy,
+        r3_moment_mm5=r3_area_moment(polygon, axis_x),
+        n_holes=n_holes,
+        polygon=polygon,
+    )
+
+
 def compute_geometry(
     layer: str, loops: list[list[tuple[float, float]]], axis_x: float
 ) -> ComponentGeometry:

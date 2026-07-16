@@ -263,6 +263,56 @@ def weight_waterfall(df: pd.DataFrame, baseline: str, final: str) -> go.Figure:
     return fig
 
 
+def face_picker_figure(rec, faces, axis_x, side, assignments, comp_colors):
+    """Interactive face-picking figure for the manual loop builder.
+
+    Draws raw curves as faint context, each candidate *face* as a filled shape
+    (coloured by the component it's assigned to, else light grey), and a single
+    selectable marker trace at the faces' representative points. The marker
+    trace carries face ids in ``customdata`` so the caller can map a lasso/box
+    selection straight back to faces.
+    """
+    fig = go.Figure()
+    # Raw curves for context.
+    for c in rec.curves:
+        xs, ys = zip(*c)
+        fig.add_trace(go.Scatter(x=list(xs), y=list(ys), mode="lines",
+                                 line=dict(color="rgba(120,120,120,0.35)", width=0.6),
+                                 hoverinfo="skip", showlegend=False))
+    # Which component (if any) each face belongs to.
+    face_comp = {fid: comp for comp, ids in assignments.items() for fid in ids}
+    mx, my, mtext, mcustom, mcolor = [], [], [], [], []
+    for f in faces:
+        comp = face_comp.get(f.id)
+        fill = _rgba(comp_colors.get(comp, "#888888"), 0.45) if comp else "rgba(200,200,200,0.25)"
+        line = comp_colors.get(comp, "#666") if comp else "rgba(150,150,150,0.6)"
+        xs, ys = f.polygon.exterior.xy
+        fig.add_trace(go.Scatter(x=list(xs), y=list(ys), mode="lines", fill="toself",
+                                 fillcolor=fill, line=dict(color=line, width=1),
+                                 hoverinfo="skip", showlegend=False))
+        mx.append(f.rep_x); my.append(f.rep_y)
+        mtext.append(f"#{f.id} · {f.area:.0f} mm²" + (f" · {comp}" if comp else ""))
+        mcustom.append(f.id)
+        mcolor.append(comp_colors.get(comp, "#c00") if comp else "#333")
+    fig.add_trace(go.Scatter(
+        x=mx, y=my, mode="markers", name="faces (select me)",
+        marker=dict(size=9, color=mcolor, symbol="circle",
+                    line=dict(width=1, color="white")),
+        text=mtext, customdata=mcustom,
+        hovertemplate="%{text}<extra>lasso/box to pick</extra>",
+    ))
+    fig.add_vline(x=axis_x, line=dict(color="#0a84ff", dash="dash"),
+                  annotation_text="rotation axis")
+    fig.update_layout(
+        title=f"Pick faces for each component — {side} half "
+              f"({len([f for f in faces])} candidates)",
+        xaxis_title="x (mm)", yaxis_title="y (mm)",
+        yaxis_scaleanchor="x", yaxis_scaleratio=1, height=760,
+        dragmode="lasso", clickmode="event+select",
+    )
+    return fig
+
+
 def _rgba(hex_color: str, alpha: float) -> str:
     h = hex_color.lstrip("#")
     r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
