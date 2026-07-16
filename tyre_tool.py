@@ -56,9 +56,37 @@ def _missing_deps() -> list[str]:
 
 def _install_missing() -> None:
     missing = _missing_deps()
-    if missing:
-        print(f"Installing missing dependencies: {', '.join(missing)}")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", *missing])
+    if not missing:
+        return
+    print(f"Installing missing dependencies: {', '.join(missing)}")
+    try:
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--no-warn-script-location", *missing]
+        )
+    except subprocess.CalledProcessError:
+        here = Path(__file__).resolve()
+        sys.stderr.write(
+            "\n"
+            "--------------------------------------------------------------------\n"
+            "Dependency install FAILED.\n"
+            "On Windows this is almost always the 260-character path limit — common\n"
+            "with the Microsoft Store build of Python, whose package folder is very\n"
+            "deep. Streamlit ships a deeply-nested file that then can't be written.\n"
+            "\n"
+            "Fix A (no admin) — install into a virtual env at a SHORT path:\n"
+            "    python -m venv C:\\tyre\n"
+            "    C:\\tyre\\Scripts\\activate\n"
+            f"    python \"{here}\"\n"
+            "\n"
+            "Fix B (one-time, admin PowerShell) — enable long paths, then retry:\n"
+            "    New-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem' \\\n"
+            "        -Name LongPathsEnabled -Value 1 -PropertyType DWORD -Force\n"
+            "\n"
+            "Tip: installing python.org's Python (not the Store version) also avoids\n"
+            "this, because it installs to a short path like C:\\Python312.\n"
+            "--------------------------------------------------------------------\n"
+        )
+        raise SystemExit(1)
 
 
 # --------------------------------------------------------------------------- #
