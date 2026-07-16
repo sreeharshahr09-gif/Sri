@@ -39,8 +39,9 @@ from openpyxl import load_workbook, Workbook
 FIRST_DATA_ROW = 2
 LAST_DATA_ROW = 21
 
-# Only folders with this name (case-insensitive) are searched for test
-# files; Excel files anywhere else in the tree are ignored.
+# Only folders whose name CONTAINS this text (case-insensitive) are searched
+# for test files; Excel files anywhere else in the tree are ignored. This
+# matches "input", "1.input", "2.input", "input_1", etc.
 TARGET_FOLDER_NAME = "input"
 
 # Passing criteria: the parameter names in this range must match the
@@ -290,8 +291,8 @@ def run():
     # --- Pass 1: read every candidate file once, cache the result. ---
     folder_entries = {}  # folder -> [(path, (label, key_names, params) | None, exc | None)]
     for dirpath, _dirnames, _filenames in os.walk(parent):
-        # Only look inside folders named "input".
-        if os.path.basename(os.path.normpath(dirpath)).lower() != TARGET_FOLDER_NAME:
+        # Only look inside folders whose name contains "input".
+        if TARGET_FOLDER_NAME not in os.path.basename(os.path.normpath(dirpath)).lower():
             continue
         candidates = list_candidate_files(dirpath)
         if not candidates:
