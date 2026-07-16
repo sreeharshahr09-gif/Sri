@@ -7,6 +7,12 @@ Layout expected in each source file (on the first sheet):
     B2:B21    -> parameter values
 The file name (without extension) is used as the column label.
 
+Passing criteria:
+    A file is valid only if its parameter names in A2:A10 match the expected
+    set. The file name itself is not checked. The expected set is either
+    EXPECTED_PARAMS (if filled in) or, otherwise, the A2:A10 signature shared
+    by the majority of files found under the parent folder.
+
 How to use:
     1. Keep this script anywhere you like (only ONE copy needed).
     2. Run it:   python extract_tire_test_params.py
@@ -21,22 +27,25 @@ Each output file has two sheets:
 """
 
 import os
-import re
 import sys
+from collections import Counter
 from openpyxl import load_workbook, Workbook
 
 # Rows to read (1-based, matching Excel). A2:A21 / B2:B21 -> rows 2..21.
 FIRST_DATA_ROW = 2
 LAST_DATA_ROW = 21
 
-# Passing criteria: every parameter-name cell in this range must be filled
-# for the file to count as valid. (Looser than the full data range above.)
-REQUIRED_FIRST_ROW = 2
-REQUIRED_LAST_ROW = 10
+# Passing criteria: the parameter names in this range must match the
+# expected set for the file to count as valid.
+KEY_FIRST_ROW = 2
+KEY_LAST_ROW = 10
 
-# Only files whose name matches this pattern are considered test files.
-# Sample: data_20260624_1.stmf.xlsx  ->  data_<8-digit date>_<n>.stmf.xlsx
-FILENAME_PATTERN = re.compile(r"^data_\d{8}_\d+\.stmf\.xlsx$", re.IGNORECASE)
+# The expected parameter names for A2:A10, in order. Comparison is
+# case-insensitive and ignores surrounding spaces.
+#   * Leave this list EMPTY to auto-derive the reference by majority vote
+#     across all files under the parent folder.
+#   * Or fill in the 9 names explicitly to enforce a fixed master list.
+EXPECTED_PARAMS = []
 
 OUTPUT_FILENAME = "tire_test_parameters.xlsx"
 
@@ -60,24 +69,23 @@ def choose_folder():
     return folder or None    # returns "" if the user cancels
 
 
-def extract_from_file(path):
-    """Return (label, [(param_name, value), ...]) from one Excel file's sheet 1.
+def read_file(path):
+    """Read sheet 1 of one Excel file.
 
-    Raises ValueError if the file fails the passing criteria: every
-    parameter-name cell in A2:A10 must be filled.
+    Returns (label, key_names, params) where:
+        label      -> file name without extension (used as the column header)
+        key_names  -> the 9 A2:A10 parameter names (blanks kept as "")
+        params     -> [(name, value), ...] for every filled row in A2:A21
     """
     wb = load_workbook(path, data_only=True)
     ws = wb.worksheets[0]  # sheet 1
 
-    # Use the file name (without extension) as the label.
     label = os.path.splitext(os.path.basename(path))[0]
 
-    # Passing criteria: A2:A10 must all have parameter names.
-    missing = []
-    for row in range(REQUIRED_FIRST_ROW, REQUIRED_LAST_ROW + 1):
-        name = ws.cell(row=row, column=1).value
-        if name is None or str(name).strip() == "":
-            missing.append(row)
+    key_names = []
+    for row in range(KEY_FIRST_ROW, KEY_LAST_ROW + 1):
+        v = ws.cell(row=row, column=1).value
+        key_names.append("" if v is None else str(v).strip())
 
     params = []
     for row in range(FIRST_DATA_ROW, LAST_DATA_ROW + 1):
@@ -88,52 +96,101 @@ def extract_from_file(path):
         params.append((str(name).strip(), value))
 
     wb.close()
+    return str(label).strip(), key_names, params
 
-    if missing:
-        raise ValueError("Missing parameter name(s) in row(s): "
-                         + ", ".join(str(r) for r in missing))
 
-    return str(label).strip(), params
+def _norm(names):
+    """Normalise a list of names for case/space-insensitive comparison."""
+    return [n.strip().lower() for n in names]
+
+
+def validate_key_names(key_names, reference):
+    """Check A2:A10 names against the expected `reference` list.
+
+    Returns (is_valid, details_message).
+    """
+    # Every A2:A10 cell must be filled first.
+    blanks = [KEY_FIRST_ROW + i for i, n in enumerate(key_names) if n == ""]
+    if blanks:
+        return False, ("Missing parameter name(s) in row(s): "
+                       + ", ".join(str(r) for r in blanks))
+
+    if reference is None:
+        # No reference could be established (no complete files at all).
+        return True, "%d parameter(s)" % len(key_names)
+
+    if _norm(key_names) != _norm(reference):
+        diffs = ["row %d: '%s' != '%s'" % (KEY_FIRST_ROW + i, key_names[i],
+                                           reference[i] if i < len(reference) else "")
+                 for i in range(len(key_names))
+                 if i >= len(reference) or _norm([key_names[i]]) != _norm([reference[i]])]
+        return False, "Parameter names differ from expected (" + \
+                      "; ".join(diffs) + ")"
+
+    return True, "%d parameter(s)" % len(key_names)
 
 
 def list_candidate_files(folder):
-    """Return files in one folder whose name matches the test-file pattern.
-
-    Files that do not match the naming convention are skipped silently (they
-    are not test files), so they never appear in the report.
-    """
+    """Return the Excel files in one folder, ignoring temp files and output."""
     files = []
     for name in sorted(os.listdir(folder)):
+        if not name.lower().endswith((".xlsx", ".xlsm", ".xls")):
+            continue
         if name.startswith("~$"):          # Excel lock/temp files
             continue
         if name == OUTPUT_FILENAME:        # don't re-ingest our own output
-            continue
-        if not FILENAME_PATTERN.match(name):
             continue
         files.append(os.path.join(folder, name))
     return files
 
 
-def process_folder(folder):
-    """Extract every valid file in one folder and write its output workbook.
+def determine_reference(folder_entries):
+    """Pick the expected A2:A10 name set.
 
-    Returns (n_success, n_failure) or None if the folder has no candidate
-    Excel files at all.
+    Uses EXPECTED_PARAMS if provided; otherwise the A2:A10 signature shared by
+    the most files (majority vote). Returns a list of names, or None.
     """
-    candidates = list_candidate_files(folder)
-    if not candidates:
-        return None
+    if EXPECTED_PARAMS:
+        return list(EXPECTED_PARAMS)
 
+    counts = Counter()
+    example = {}  # normalised signature -> original-case names (first seen)
+    for entries in folder_entries.values():
+        for _path, result, _exc in entries:
+            if result is None:
+                continue
+            _label, key_names, _params = result
+            if any(n == "" for n in key_names):
+                continue  # only complete A2:A10 rows can define the reference
+            sig = tuple(_norm(key_names))
+            counts[sig] += 1
+            example.setdefault(sig, list(key_names))
+
+    if not counts:
+        return None
+    best_sig = counts.most_common(1)[0][0]
+    return example[best_sig]
+
+
+def build_and_write(folder, entries, reference):
+    """Validate cached entries for one folder and write its output workbook.
+
+    Returns (n_success, n_failure).
+    """
     cases = []            # list of (label, {param_name: value})
     param_order = []      # preserves the order parameters first appear
     report_rows = []      # list of (file_name, status, details)
 
-    for path in candidates:
+    for path, result, exc in entries:
         fname = os.path.basename(path)
-        try:
-            label, params = extract_from_file(path)
-        except Exception as exc:  # unreadable or wrong structure -> failure
+        if result is None:
             report_rows.append((fname, "Failure", str(exc)))
+            continue
+
+        label, key_names, params = result
+        is_valid, details = validate_key_names(key_names, reference)
+        if not is_valid:
+            report_rows.append((fname, "Failure", details))
             continue
 
         param_map = {}
@@ -143,7 +200,7 @@ def process_folder(folder):
             param_map[name] = value
 
         cases.append((label, param_map))
-        report_rows.append((fname, "Success", "%d parameter(s)" % len(params)))
+        report_rows.append((fname, "Success", details))
 
     n_success = len(cases)
     n_failure = len(report_rows) - n_success
@@ -199,25 +256,40 @@ def main():
         print("No folder selected. Exiting.")
         sys.exit(0)
 
+    # --- Pass 1: read every candidate file once, cache the result. ---
+    folder_entries = {}  # folder -> [(path, (label, key_names, params) | None, exc | None)]
+    for dirpath, _dirnames, _filenames in os.walk(parent):
+        candidates = list_candidate_files(dirpath)
+        if not candidates:
+            continue
+        entries = []
+        for path in candidates:
+            try:
+                entries.append((path, read_file(path), None))
+            except Exception as exc:  # unreadable file
+                entries.append((path, None, exc))
+        folder_entries[dirpath] = entries
+
+    if not folder_entries:
+        print("No folders with Excel test files were found under:", parent)
+        sys.exit(1)
+
+    # --- Determine the expected A2:A10 parameter names. ---
+    reference = determine_reference(folder_entries)
+    if reference:
+        print("Expected A2:A10 parameters:", ", ".join(reference))
+
+    # --- Pass 2: validate and write one output workbook per folder. ---
     folders_done = 0
     grand_success = 0
     grand_failure = 0
-
-    # Walk the whole tree so both immediate and nested subfolders are handled.
-    for dirpath, _dirnames, _filenames in os.walk(parent):
-        result = process_folder(dirpath)
-        if result is None:
-            continue
-        n_success, n_failure = result
+    for dirpath, entries in folder_entries.items():
+        n_success, n_failure = build_and_write(dirpath, entries, reference)
         folders_done += 1
         grand_success += n_success
         grand_failure += n_failure
         print("Processed:", dirpath,
               "-> success: %d, failure: %d" % (n_success, n_failure))
-
-    if folders_done == 0:
-        print("No folders with Excel test files were found under:", parent)
-        sys.exit(1)
 
     print("\nDone. {0} folder(s) processed.".format(folders_done))
     print("Total files -> success: {0}, failure: {1}".format(
