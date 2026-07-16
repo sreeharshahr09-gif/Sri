@@ -21,12 +21,22 @@ Each output file has two sheets:
 """
 
 import os
+import re
 import sys
 from openpyxl import load_workbook, Workbook
 
 # Rows to read (1-based, matching Excel). A2:A21 / B2:B21 -> rows 2..21.
 FIRST_DATA_ROW = 2
 LAST_DATA_ROW = 21
+
+# Passing criteria: every parameter-name cell in this range must be filled
+# for the file to count as valid. (Looser than the full data range above.)
+REQUIRED_FIRST_ROW = 2
+REQUIRED_LAST_ROW = 10
+
+# Only files whose name matches this pattern are considered test files.
+# Sample: data_20260624_1.stmf.xlsx  ->  data_<8-digit date>_<n>.stmf.xlsx
+FILENAME_PATTERN = re.compile(r"^data_\d{8}_\d+\.stmf\.xlsx$", re.IGNORECASE)
 
 OUTPUT_FILENAME = "tire_test_parameters.xlsx"
 
@@ -53,14 +63,21 @@ def choose_folder():
 def extract_from_file(path):
     """Return (label, [(param_name, value), ...]) from one Excel file's sheet 1.
 
-    Raises ValueError if the file does not match the expected structure
-    (no parameter names found in A2:A21).
+    Raises ValueError if the file fails the passing criteria: every
+    parameter-name cell in A2:A10 must be filled.
     """
     wb = load_workbook(path, data_only=True)
     ws = wb.worksheets[0]  # sheet 1
 
     # Use the file name (without extension) as the label.
     label = os.path.splitext(os.path.basename(path))[0]
+
+    # Passing criteria: A2:A10 must all have parameter names.
+    missing = []
+    for row in range(REQUIRED_FIRST_ROW, REQUIRED_LAST_ROW + 1):
+        name = ws.cell(row=row, column=1).value
+        if name is None or str(name).strip() == "":
+            missing.append(row)
 
     params = []
     for row in range(FIRST_DATA_ROW, LAST_DATA_ROW + 1):
@@ -72,21 +89,26 @@ def extract_from_file(path):
 
     wb.close()
 
-    if not params:
-        raise ValueError("No parameter names found in A2:A21")
+    if missing:
+        raise ValueError("Missing parameter name(s) in row(s): "
+                         + ", ".join(str(r) for r in missing))
 
     return str(label).strip(), params
 
 
 def list_candidate_files(folder):
-    """Return the Excel files in one folder, ignoring temp files and output."""
+    """Return files in one folder whose name matches the test-file pattern.
+
+    Files that do not match the naming convention are skipped silently (they
+    are not test files), so they never appear in the report.
+    """
     files = []
     for name in sorted(os.listdir(folder)):
-        if not name.lower().endswith((".xlsx", ".xlsm", ".xls")):
-            continue
         if name.startswith("~$"):          # Excel lock/temp files
             continue
         if name == OUTPUT_FILENAME:        # don't re-ingest our own output
+            continue
+        if not FILENAME_PATTERN.match(name):
             continue
         files.append(os.path.join(folder, name))
     return files
