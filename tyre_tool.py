@@ -54,13 +54,29 @@ def _missing_deps() -> list[str]:
     return missing
 
 
-def _bootstrap_and_launch() -> None:
+def _install_missing() -> None:
     missing = _missing_deps()
     if missing:
         print(f"Installing missing dependencies: {', '.join(missing)}")
         subprocess.check_call([sys.executable, "-m", "pip", "install", *missing])
-    print("Launching Streamlit UI… (Ctrl+C to stop)")
-    subprocess.check_call([sys.executable, "-m", "streamlit", "run", str(Path(__file__).resolve())])
+
+
+# --------------------------------------------------------------------------- #
+# EARLY GUARD — runs BEFORE the third-party imports below, so `python
+# tyre_tool.py` on a machine without the libraries installs them first (and,
+# for the GUI, relaunches itself under Streamlit) instead of crashing on
+# `import ezdxf`. Skipped entirely when this file is imported as a module.
+# --------------------------------------------------------------------------- #
+if __name__ == "__main__":
+    _install_missing()
+    _CLI_INVOCATION = len(sys.argv) > 1 and sys.argv[1] in ("--cli", "--make-samples")
+    if not _under_streamlit() and not _CLI_INVOCATION:
+        # Plain `python tyre_tool.py`: hand off to Streamlit, then exit when it does.
+        print("Launching Streamlit UI… (Ctrl+C to stop)")
+        subprocess.check_call(
+            [sys.executable, "-m", "streamlit", "run", str(Path(__file__).resolve())]
+        )
+        sys.exit(0)
 
 
 # ========================================================================== #
@@ -999,5 +1015,5 @@ if __name__ == "__main__":
     elif len(sys.argv) > 1 and sys.argv[1] == "--make-samples":
         b, i = make_samples()
         print(f"Wrote {b} and {i}")
-    else:
-        _bootstrap_and_launch()
+    # Plain `python tyre_tool.py` is handled by the early guard above, which
+    # relaunches under Streamlit and exits before reaching this point.
