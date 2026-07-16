@@ -77,6 +77,29 @@ def choose_folder():
     return folder or None    # returns "" if the user cancels
 
 
+def show_message(title, text):
+    """Show a pop-up so the result is visible even when double-clicked.
+
+    Falls back to console output + an Enter-to-close pause if tkinter or a
+    display is unavailable.
+    """
+    print(title)
+    print(text)
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        messagebox.showinfo(title, text)
+        root.destroy()
+    except Exception:
+        try:
+            input("\nPress Enter to close...")
+        except Exception:
+            pass
+
+
 def read_file(path):
     """Read sheet 1 of one Excel file.
 
@@ -258,11 +281,11 @@ def _write_output(folder, cases, param_order, report_rows, n_success, n_failure)
     out_wb.save(os.path.join(folder, OUTPUT_FILENAME))
 
 
-def main():
+def run():
+    """Do the extraction and return a human-readable summary string."""
     parent = choose_folder()
     if not parent:
-        print("No folder selected. Exiting.")
-        sys.exit(0)
+        return "No folder selected. Nothing to do."
 
     # --- Pass 1: read every candidate file once, cache the result. ---
     folder_entries = {}  # folder -> [(path, (label, key_names, params) | None, exc | None)]
@@ -282,8 +305,9 @@ def main():
         folder_entries[dirpath] = entries
 
     if not folder_entries:
-        print("No folders with Excel test files were found under:", parent)
-        sys.exit(1)
+        return ("No '%s' folders with Excel files were found under:\n%s\n\n"
+                "Check that your test files sit inside subfolders named '%s'."
+                % (TARGET_FOLDER_NAME, parent, TARGET_FOLDER_NAME))
 
     # --- Determine the expected A2:A10 parameter names. ---
     reference = determine_reference(folder_entries)
@@ -302,9 +326,20 @@ def main():
         print("Processed:", dirpath,
               "-> success: %d, failure: %d" % (n_success, n_failure))
 
-    print("\nDone. {0} folder(s) processed.".format(folders_done))
-    print("Total files -> success: {0}, failure: {1}".format(
-        grand_success, grand_failure))
+    return ("Done. {0} '{1}' folder(s) processed.\n"
+            "Total files -> success: {2}, failure: {3}\n\n"
+            "An output file '{4}' was written into each '{1}' folder."
+            .format(folders_done, TARGET_FOLDER_NAME,
+                    grand_success, grand_failure, OUTPUT_FILENAME))
+
+
+def main():
+    try:
+        summary = run()
+        show_message("Tire Test Extractor", summary)
+    except Exception:
+        import traceback
+        show_message("Tire Test Extractor - ERROR", traceback.format_exc())
 
 
 if __name__ == "__main__":
