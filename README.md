@@ -8,7 +8,23 @@ work.
 
 See [`CLAUDE.md`](CLAUDE.md) for the full design brief and rationale.
 
-## Install & run
+## Quickest start — single file
+
+Everything is also bundled into one self-contained script, `tyre_tool.py`:
+
+```bash
+python tyre_tool.py           # installs missing deps, then opens the UI in your browser
+```
+
+Both modes (layer-based + manual loop builder) are in the sidebar. Headless use:
+
+```bash
+python tyre_tool.py --make-samples
+python tyre_tool.py --cli validate sample_data/*.dxf
+python tyre_tool.py --cli analyse --axis-x 0 sample_data/baseline.dxf sample_data/iteration1.dxf -o out.csv
+```
+
+## Install & run (package form)
 
 ```bash
 pip install -r requirements.txt
