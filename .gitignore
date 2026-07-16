@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# User-provided proprietary CAD data (do not commit)
+sample_data/real_sample_1.dxf
