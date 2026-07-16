@@ -61,6 +61,22 @@ curves**. Each DXF must therefore have:
 > To use real drawings, prepare them per the convention above. Run
 > `python -m tyre_analysis validate <file>.dxf` to see exactly what to fix.
 
+## Zero-install option — `tyre_tool.html`
+
+For locked-down machines (no Python, no admin, no network), open **`tyre_tool.html`**
+in any browser. Everything runs client-side in JavaScript; your DXF never leaves
+the machine. It has both ingestion paths:
+
+- **Layer-based** closed curves → exact vector math (matches the Python engine
+  to ~0.05%).
+- **Raw drawings** → click *inside* each region (flood-fill "pick internal
+  point", like AutoCAD BOUNDARY); area is raster-accurate to the chosen
+  resolution (~1%).
+
+Editable SG table, results table, weight/MOI charts, and CSV export are built in.
+(The DXF parser handles LINE / LWPOLYLINE-with-bulge / ARC / CIRCLE / ELLIPSE /
+SPLINE.)
+
 ## Two ingestion paths
 
 1. **Layer-based (main page)** — for files that follow the convention above:

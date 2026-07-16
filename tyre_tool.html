@@ -1,0 +1,878 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tyre Cross-Section Analysis</title>
+<style>
+  :root{--bg:#0f1720;--panel:#182430;--ink:#e8eef4;--mut:#9fb0c0;--line:#2b3a49;--accent:#4C78A8;--good:#2EA043;--bad:#E45756;}
+  @media (prefers-color-scheme: light){:root{--bg:#f5f7fa;--panel:#fff;--ink:#1a2530;--mut:#5a6b7a;--line:#dbe3ea;}}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+  header{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
+  header h1{font-size:17px;margin:0}
+  header .sub{color:var(--mut);font-size:12px}
+  #wrap{display:grid;grid-template-columns:320px 1fr;gap:0;min-height:calc(100vh - 52px)}
+  aside{border-right:1px solid var(--line);padding:14px;overflow:auto;max-height:calc(100vh - 52px)}
+  main{padding:14px;overflow:auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+  .card h2{font-size:13px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+  label{display:block;font-size:12px;color:var(--mut);margin:8px 0 3px}
+  input,select,button{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:6px 8px}
+  input[type=number]{width:100%}
+  button{cursor:pointer;background:var(--accent);color:#fff;border:none}
+  button.sec{background:var(--bg);color:var(--ink);border:1px solid var(--line)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .row{display:flex;gap:8px;align-items:center}
+  .row>*{flex:1}
+  #cvwrap{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;min-height:360px}
+  canvas{display:block;width:100%;height:auto;touch-action:none}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{border-bottom:1px solid var(--line);padding:5px 7px;text-align:right}
+  th:first-child,td:first-child{text-align:left}
+  .pill{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:middle}
+  .comp{display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--line)}
+  .comp .nm{flex:1}
+  .comp button{padding:2px 7px;font-size:12px}
+  .muted{color:var(--mut);font-size:12px}
+  .warn{color:#e8a33d}
+  .tag{display:inline-block;padding:2px 8px;border-radius:20px;background:var(--bg);border:1px solid var(--line);font-size:12px}
+  .barrow{display:flex;align-items:center;gap:8px;margin:3px 0}
+  .barrow .lab{width:90px;font-size:12px}
+  .barrow .bar{height:14px;border-radius:3px;background:var(--accent)}
+  .sgtab td{border:none;padding:2px 4px}
+  .sgtab input{width:78px;padding:3px 5px}
+  a.dl{color:var(--accent)}
+  .hint{background:rgba(76,120,168,.12);border:1px solid var(--accent);border-radius:8px;padding:8px 10px;font-size:12.5px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Tyre Cross-Section Analysis</h1>
+  <span class="sub">Runs entirely in your browser — no install, no upload. Your DXF never leaves this machine.</span>
+</header>
+<div id="wrap">
+  <aside>
+    <div class="card">
+      <h2>1 · Load</h2>
+      <input type="file" id="file" accept=".dxf">
+      <div class="row" style="margin-top:8px">
+        <button class="sec" id="demoRaw">Demo: raw</button>
+        <button class="sec" id="demoLayers">Demo: layers</button>
+      </div>
+      <div id="loadinfo" class="muted" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <h2>2 · Mode &amp; axis</h2>
+      <label>Ingestion mode</label>
+      <select id="mode">
+        <option value="auto">Auto-detect</option>
+        <option value="layer">Layer-based (exact)</option>
+        <option value="manual">Manual pick (raw)</option>
+      </select>
+      <div id="modeinfo" class="muted" style="margin-top:4px"></div>
+      <label>Rotation axis X (mm)</label>
+      <div class="row"><input type="number" id="axis" step="0.5" value="0"><button class="sec" id="axisAuto" style="flex:0 0 auto">auto</button></div>
+      <div id="manualopts">
+        <label>Work on half</label>
+        <select id="side"><option value="right">right</option><option value="left">left</option><option value="both">both</option></select>
+        <label>Resolution (px across, higher = more accurate, slower)</label>
+        <input type="number" id="res" step="200" min="600" max="4000" value="1600">
+        <label>Seal width (px — bridges small gaps in the drawing)</label>
+        <input type="number" id="seal" step="1" min="1" max="9" value="3">
+      </div>
+    </div>
+
+    <div id="pickcard" class="card" style="display:none">
+      <h2>3 · Pick components</h2>
+      <div class="hint">Type a name, click <b>Start</b>, then click <b>inside</b> each region on the drawing that belongs to it. Skip the big air cavity. Click Start again for the next component.</div>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="compName" placeholder="e.g. TREAD">
+        <button id="startPick" style="flex:0 0 auto">Start</button>
+      </div>
+      <div id="picking" class="muted" style="margin-top:6px"></div>
+      <div id="comps"></div>
+    </div>
+
+    <div class="card">
+      <h2>Specific gravity (g/cm³)</h2>
+      <div class="muted">Placeholder values — edit to your real compounds.</div>
+      <table class="sgtab" id="sgtab"></table>
+    </div>
+
+    <div class="card">
+      <button id="compute" style="width:100%">Compute results</button>
+      <div id="warns" class="warn" style="margin-top:8px;font-size:12px"></div>
+    </div>
+  </aside>
+
+  <main>
+    <div id="cvwrap"><canvas id="cv" width="900" height="700"></canvas></div>
+    <div id="results"></div>
+  </main>
+</div>
+<script>
+// Tyre cross-section — core DXF parsing + geometry, pure JavaScript.
+// Runs in the browser (no deps) and under Node for testing.
+"use strict";
+
+// ------------------------------------------------------------------ DXF parse
+function parseDXF(text) {
+  // Return list of entities with raw group codes grouped, from ENTITIES section.
+  const lines = text.split(/\r\n|\r|\n/);
+  // pair (code, value)
+  const pairs = [];
+  for (let i = 0; i + 1 < lines.length; i += 2) {
+    const code = parseInt(lines[i].trim(), 10);
+    const val = lines[i + 1];
+    if (Number.isNaN(code)) { i -= 1; continue; } // resync if odd formatting
+    pairs.push([code, val]);
+  }
+  // find ENTITIES section
+  let start = -1, end = pairs.length;
+  for (let i = 0; i < pairs.length; i++) {
+    if (pairs[i][0] === 2 && pairs[i][1].trim() === "ENTITIES") { start = i + 1; break; }
+  }
+  if (start === -1) { start = 0; }
+  const entities = [];
+  let cur = null;
+  for (let i = start; i < pairs.length; i++) {
+    const [code, rawval] = pairs[i];
+    const val = rawval.trim();
+    if (code === 0) {
+      if (val === "ENDSEC") { if (cur) entities.push(cur); break; }
+      if (cur) entities.push(cur);
+      cur = { type: val, codes: [] };
+    } else if (cur) {
+      cur.codes.push([code, val]);
+    }
+  }
+  return entities;
+}
+
+function _collect(codes) {
+  // group repeated codes into arrays; return {code: [values...]}
+  const m = {};
+  for (const [c, v] of codes) { (m[c] = m[c] || []).push(v); }
+  return m;
+}
+const F = (x) => parseFloat(x);
+
+// ------------------------------------------------------------------ flattening
+function flattenArc(cx, cy, r, a0deg, a1deg, tol = 0.05) {
+  let a0 = a0deg * Math.PI / 180, a1 = a1deg * Math.PI / 180;
+  while (a1 <= a0) a1 += 2 * Math.PI;
+  const sweep = a1 - a0;
+  // step so chord error < tol:  err = r(1-cos(dtheta/2))
+  let dtheta = 2 * Math.acos(Math.max(0, 1 - tol / Math.max(r, 1e-6)));
+  if (!isFinite(dtheta) || dtheta <= 1e-4) dtheta = sweep / 8;
+  const n = Math.max(2, Math.ceil(sweep / dtheta));
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const a = a0 + sweep * i / n;
+    pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+  }
+  return pts;
+}
+
+function _circleFrom3(p0, p1, p2) {
+  const ax = p0[0], ay = p0[1], bx = p1[0], by = p1[1], cx = p2[0], cy = p2[1];
+  const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+  if (Math.abs(d) < 1e-12) return null; // collinear
+  const a2 = ax * ax + ay * ay, b2 = bx * bx + by * by, c2 = cx * cx + cy * cy;
+  const ux = (a2 * (by - cy) + b2 * (cy - ay) + c2 * (ay - by)) / d;
+  const uy = (a2 * (cx - bx) + b2 * (ax - cx) + c2 * (bx - ax)) / d;
+  return { cx: ux, cy: uy, r: Math.hypot(ax - ux, ay - uy) };
+}
+
+function flattenBulge(p0, p1, bulge, tol = 0.05) {
+  // Positive bulge = counter-clockwise arc from p0 to p1 (AutoCAD convention).
+  // Build via an explicit apex point so the bulge side can never flip.
+  if (Math.abs(bulge) < 1e-9) return [p0, p1];
+  const [x0, y0] = p0, [x1, y1] = p1;
+  const d = Math.hypot(x1 - x0, y1 - y0);
+  if (d < 1e-12) return [p0, p1];
+  const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+  const dx = (x1 - x0) / d, dy = (y1 - y0) / d;
+  const rn = [dy, -dx];                          // right normal of travel dir
+  const sag = bulge * (d / 2);                   // signed sagitta
+  const apex = [mx + sag * rn[0], my + sag * rn[1]];
+  const c = _circleFrom3(p0, apex, p1);
+  if (!c) return [p0, apex, p1];
+  const { cx, cy, r } = c;
+  const a0 = Math.atan2(y0 - cy, x0 - cx);
+  const a1 = Math.atan2(y1 - cy, x1 - cx);
+  const aA = Math.atan2(apex[1] - cy, apex[0] - cx);
+  // Sweep from a0 to a1 in whichever direction passes through the apex.
+  let ccw = a1 - a0; while (ccw < 0) ccw += 2 * Math.PI;
+  let ar = aA - a0; while (ar < 0) ar += 2 * Math.PI;
+  let sweep = (ar <= ccw) ? ccw : ccw - 2 * Math.PI;
+  let dtheta = 2 * Math.acos(Math.max(0, 1 - tol / Math.max(r, 1e-6)));
+  if (!isFinite(dtheta) || dtheta <= 1e-4) dtheta = Math.abs(sweep) / 8;
+  const n = Math.max(1, Math.ceil(Math.abs(sweep) / dtheta));
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const a = a0 + sweep * i / n;
+    pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+  }
+  return pts;
+}
+
+function flattenEllipse(cx, cy, mx, my, ratio, t0, t1, tol = 0.05) {
+  // major vector (mx,my) relative to center; minor = perp * ratio
+  const majLen = Math.hypot(mx, my);
+  const ux = mx, uy = my;                          // major axis vector
+  const vx = -my * ratio, vy = mx * ratio;         // minor axis vector
+  let a0 = t0, a1 = t1;
+  while (a1 <= a0) a1 += 2 * Math.PI;
+  const sweep = a1 - a0;
+  const n = Math.max(8, Math.ceil(sweep / (2 * Math.acos(Math.max(0, 1 - tol / Math.max(majLen, 1e-6))) || 0.2)));
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const t = a0 + sweep * i / n;
+    const ct = Math.cos(t), st = Math.sin(t);
+    pts.push([cx + ux * ct + vx * st, cy + uy * ct + vy * st]);
+  }
+  return pts;
+}
+
+// B-spline (NURBS) via de Boor
+function flattenSpline(ctrl, knots, degree, weights, samples) {
+  const n = ctrl.length - 1;
+  if (n < 1) return ctrl.slice();
+  if (!knots || knots.length !== n + degree + 2) {
+    // build a clamped uniform knot vector
+    knots = [];
+    for (let i = 0; i <= degree; i++) knots.push(0);
+    const inner = n - degree;
+    for (let i = 1; i <= inner; i++) knots.push(i / (inner + 1));
+    for (let i = 0; i <= degree; i++) knots.push(1);
+  }
+  const w = weights && weights.length === ctrl.length ? weights : ctrl.map(() => 1);
+  const u0 = knots[degree], u1 = knots[n + 1];
+  const N = samples || Math.max(40, (n + 1) * 8);
+  const pts = [];
+  const findSpan = (u) => {
+    if (u >= knots[n + 1]) return n;
+    let lo = degree, hi = n + 1, mid = (lo + hi) >> 1;
+    while (u < knots[mid] || u >= knots[mid + 1]) {
+      if (u < knots[mid]) hi = mid; else lo = mid;
+      mid = (lo + hi) >> 1;
+    }
+    return mid;
+  };
+  for (let s = 0; s <= N; s++) {
+    const u = u0 + (u1 - u0) * s / N;
+    const span = findSpan(u);
+    // basis functions
+    const Nb = new Array(degree + 1).fill(0);
+    const left = new Array(degree + 1).fill(0);
+    const right = new Array(degree + 1).fill(0);
+    Nb[0] = 1;
+    for (let j = 1; j <= degree; j++) {
+      left[j] = u - knots[span + 1 - j];
+      right[j] = knots[span + j] - u;
+      let saved = 0;
+      for (let r = 0; r < j; r++) {
+        const temp = Nb[r] / (right[r + 1] + left[j - r] || 1e-12);
+        Nb[r] = saved + right[r + 1] * temp;
+        saved = left[j - r] * temp;
+      }
+      Nb[j] = saved;
+    }
+    let x = 0, y = 0, wsum = 0;
+    for (let i = 0; i <= degree; i++) {
+      const idx = span - degree + i;
+      const wi = w[idx] * Nb[i];
+      x += wi * ctrl[idx][0]; y += wi * ctrl[idx][1]; wsum += wi;
+    }
+    pts.push([x / wsum, y / wsum]);
+  }
+  return pts;
+}
+
+// Turn one entity into a flattened polyline (array of [x,y]); null if none.
+function entityToPolyline(ent, tol = 0.05) {
+  const m = _collect(ent.codes);
+  const layer = (m[8] && m[8][0]) ? m[8][0].trim() : "0";
+  const T = ent.type;
+  let pts = null, closed = false;
+  if (T === "LINE") {
+    pts = [[F(m[10][0]), F(m[20][0])], [F(m[11][0]), F(m[21][0])]];
+  } else if (T === "LWPOLYLINE" || T === "POLYLINE") {
+    // Parse vertices in code order: 42 (bulge) is interleaved per-vertex and is
+    // omitted for zero-bulge vertices, so it must be tied to the current 10/20
+    // pair — NOT collected globally (that misaligns bulges to wrong edges).
+    const flags = m[70] ? parseInt(m[70][0], 10) : 0;
+    closed = (flags & 1) === 1;
+    const verts = [];
+    let curx = null, cury = null, curb = 0, haveX = false;
+    for (const [code, val] of ent.codes) {
+      if (code === 10) {
+        if (haveX) verts.push([curx, cury, curb]);
+        curx = F(val); cury = null; curb = 0; haveX = true;
+      } else if (code === 20) { cury = F(val); }
+      else if (code === 42) { curb = F(val); }
+    }
+    if (haveX) verts.push([curx, cury, curb]);
+    pts = [];
+    const seq = closed ? verts.concat([verts[0]]) : verts;
+    for (let i = 0; i < seq.length - 1; i++) {
+      const b = verts[i] ? verts[i][2] : 0;
+      const seg = flattenBulge([seq[i][0], seq[i][1]], [seq[i + 1][0], seq[i + 1][1]], b || 0, tol);
+      for (let k = (i === 0 ? 0 : 1); k < seg.length; k++) pts.push(seg[k]);
+    }
+  } else if (T === "ARC") {
+    pts = flattenArc(F(m[10][0]), F(m[20][0]), F(m[40][0]), F(m[50][0]), F(m[51][0]), tol);
+  } else if (T === "CIRCLE") {
+    pts = flattenArc(F(m[10][0]), F(m[20][0]), F(m[40][0]), 0, 360, tol); closed = true;
+  } else if (T === "ELLIPSE") {
+    const t0 = m[41] ? F(m[41][0]) : 0, t1 = m[42] ? F(m[42][0]) : 2 * Math.PI;
+    pts = flattenEllipse(F(m[10][0]), F(m[20][0]), F(m[11][0]), F(m[21][0]), F(m[40][0]), t0, t1, tol);
+  } else if (T === "SPLINE") {
+    const cx = m[10] || [], cy = m[20] || [];
+    const ctrl = []; for (let i = 0; i < cx.length; i++) ctrl.push([F(cx[i]), F(cy[i])]);
+    const knots = (m[40] || []).map(F);
+    const degree = m[71] ? parseInt(m[71][0], 10) : 3;
+    const weights = m[41] ? m[41].map(F) : null;
+    if (ctrl.length >= 2) pts = flattenSpline(ctrl, knots.length ? knots : null, degree, weights);
+  }
+  if (!pts || pts.length < 2) return null;
+  return { layer, type: T, pts, closed };
+}
+
+function loadEntities(text, tol = 0.05) {
+  return parseDXF(text).map((e) => entityToPolyline(e, tol)).filter(Boolean);
+}
+
+// ------------------------------------------------------------------ geometry
+function polyArea(pts) { // signed shoelace
+  let a = 0;
+  for (let i = 0; i < pts.length - 1; i++) a += pts[i][0] * pts[i + 1][1] - pts[i + 1][0] * pts[i][1];
+  const first = pts[0], last = pts[pts.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) a += last[0] * first[1] - first[0] * last[1];
+  return a / 2;
+}
+function polyCentroid(pts) {
+  let a = 0, cx = 0, cy = 0;
+  const P = pts.slice();
+  if (P[0][0] !== P[P.length - 1][0] || P[0][1] !== P[P.length - 1][1]) P.push(P[0]);
+  for (let i = 0; i < P.length - 1; i++) {
+    const cross = P[i][0] * P[i + 1][1] - P[i + 1][0] * P[i][1];
+    a += cross; cx += (P[i][0] + P[i + 1][0]) * cross; cy += (P[i][1] + P[i + 1][1]) * cross;
+  }
+  a /= 2;
+  if (Math.abs(a) < 1e-12) return [P[0][0], P[0][1], 0];
+  return [cx / (6 * a), cy / (6 * a), Math.abs(a)];
+}
+function boundaryCentroid(pts) {
+  let L = 0, sx = 0, sy = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const seg = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+    L += seg; sx += seg * (pts[i][0] + pts[i + 1][0]) / 2; sy += seg * (pts[i][1] + pts[i + 1][1]) / 2;
+  }
+  if (L === 0) return [pts[0][0], pts[0][1], 0];
+  return [sx / L, sy / L, L];
+}
+function r3Moment(pts, axisX) { // integral |x-axis|^3 dA via Green's theorem
+  let total = 0;
+  const P = pts.slice();
+  if (P[0][0] !== P[P.length - 1][0] || P[0][1] !== P[P.length - 1][1]) P.push(P[0]);
+  for (let i = 0; i < P.length - 1; i++) {
+    const u0 = P[i][0] - axisX, u1 = P[i + 1][0] - axisX, dy = P[i + 1][1] - P[i][1];
+    const du = u1 - u0;
+    const edge = Math.abs(du) < 1e-14 ? Math.pow(u0, 4) : (Math.pow(u1, 5) - Math.pow(u0, 5)) / (5 * du);
+    total += dy * edge / 4;
+  }
+  return Math.abs(total);
+}
+
+// Full physics for one closed polygon loop.
+function computeLoop(name, pts, axisX, sg) {
+  const [cx, cy, area] = polyCentroid(pts);
+  const [bcx, , blen] = boundaryCentroid(closeLoop(pts));
+  const dArea = Math.abs(cx - axisX), dArc = Math.abs(bcx - axisX);
+  const volume_cm3 = (2 * Math.PI * dArea * area) / 1000;
+  const surface = 2 * Math.PI * dArc * blen;
+  const weight = volume_cm3 * sg;
+  const polar = 2 * Math.PI * (sg / 1000) * r3Moment(pts, axisX);
+  const rog = weight > 0 ? Math.sqrt(polar / weight) : 0;
+  return { component: name, area_mm2: area, centroid_x: cx, centroid_y: cy,
+           centroid_distance_mm: dArea, volume_cm3, weight_g: weight,
+           surface_area_mm2: surface, polar_MOI: polar, radius_of_gyration_mm: rog, sg };
+}
+function closeLoop(pts) {
+  const P = pts.slice();
+  if (P[0][0] !== P[P.length - 1][0] || P[0][1] !== P[P.length - 1][1]) P.push(P[0]);
+  return P;
+}
+
+if (typeof module !== "undefined") module.exports = {
+  parseDXF, loadEntities, entityToPolyline, flattenSpline,
+  polyArea, polyCentroid, boundaryCentroid, r3Moment, computeLoop,
+};
+// Manual-mode helpers: flood fill on a rendered raster + region statistics.
+// Pure (no DOM) so they can be unit-tested under Node.
+"use strict";
+
+// Scanline flood fill over a Uint8 "wall" mask (1 = drawn curve / blocked).
+// Returns a Uint8Array "region" mask of the filled area. Fills 4-connected
+// from (sx,sy) across all non-wall pixels.
+function floodFill(wall, w, h, sx, sy) {
+  const region = new Uint8Array(w * h);
+  sx = Math.round(sx); sy = Math.round(sy);
+  if (sx < 0 || sy < 0 || sx >= w || sy >= h) return region;
+  if (wall[sy * w + sx]) return region;          // clicked on a wall
+  const stack = [[sx, sy]];
+  while (stack.length) {
+    const [x0, y] = stack.pop();
+    let x = x0;
+    while (x >= 0 && !wall[y * w + x] && !region[y * w + x]) x--;
+    x++;
+    let up = false, dn = false;
+    while (x < w && !wall[y * w + x] && !region[y * w + x]) {
+      region[y * w + x] = 1;
+      if (y > 0) {
+        const above = (y - 1) * w + x;
+        if (!wall[above] && !region[above]) { if (!up) { stack.push([x, y - 1]); up = true; } }
+        else up = false;
+      }
+      if (y < h - 1) {
+        const below = (y + 1) * w + x;
+        if (!wall[below] && !region[below]) { if (!dn) { stack.push([x, y + 1]); dn = true; } }
+        else dn = false;
+      }
+      x++;
+    }
+  }
+  return region;
+}
+
+// Grow a region mask by `k` pixels (4-connected dilation). Used to expand the
+// filled interior out to the centre-line of the drawn stroke, so the measured
+// area isn't biased small by the stroke's thickness.
+function growRegion(region, w, h, k) {
+  let cur = region;
+  for (let it = 0; it < k; it++) {
+    const next = cur.slice();
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (cur[y * w + x]) continue;
+        if ((x > 0 && cur[y * w + x - 1]) || (x < w - 1 && cur[y * w + x + 1]) ||
+            (y > 0 && cur[(y - 1) * w + x]) || (y < h - 1 && cur[(y + 1) * w + x])) {
+          next[y * w + x] = 1;
+        }
+      }
+    }
+    cur = next;
+  }
+  return cur;
+}
+
+// Statistics of a region mask, in world (mm) units.
+// toWorld: (sx,sy) -> [xmm, ymm];  pxAreaMM: area of one pixel in mm^2.
+// Returns area, centroid, integral r^3 dA, boundary-pixel perimeter, extents.
+function regionStats(region, w, h, toWorld, pxAreaMM, axisX) {
+  let n = 0, sx = 0, sy = 0, r3 = 0, boundary = 0;
+  let minx = Infinity, maxx = -Infinity;
+  const pxLen = Math.sqrt(pxAreaMM);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!region[y * w + x]) continue;
+      const [wx, wy] = toWorld(x, y);
+      n++; sx += wx; sy += wy;
+      const d = Math.abs(wx - axisX);
+      r3 += d * d * d * pxAreaMM;
+      if (wx < minx) minx = wx; if (wx > maxx) maxx = wx;
+      // boundary pixel = has a 4-neighbour outside the region
+      if (x === 0 || x === w - 1 || y === 0 || y === h - 1 ||
+          !region[y * w + x - 1] || !region[y * w + x + 1] ||
+          !region[(y - 1) * w + x] || !region[(y + 1) * w + x]) boundary++;
+    }
+  }
+  if (!n) return null;
+  const area = n * pxAreaMM;
+  const cx = sx / n, cy = sy / n;
+  return { area, cx, cy, r3, perimeter: boundary * pxLen, minx, maxx, npix: n };
+}
+
+// Pappus physics from region stats (matches the vector path's formulas).
+function physicsFromRegion(stats, axisX, sg) {
+  const dArea = Math.abs(stats.cx - axisX);
+  const volume_cm3 = (2 * Math.PI * dArea * stats.area) / 1000;
+  const surface = 2 * Math.PI * dArea * stats.perimeter; // approx (area centroid)
+  const weight = volume_cm3 * sg;
+  const polar = 2 * Math.PI * (sg / 1000) * stats.r3;
+  const rog = weight > 0 ? Math.sqrt(polar / weight) : 0;
+  return { area_mm2: stats.area, centroid_x: stats.cx, centroid_y: stats.cy,
+           centroid_distance_mm: dArea, volume_cm3, weight_g: weight,
+           surface_area_mm2: surface, polar_MOI: polar, radius_of_gyration_mm: rog, sg };
+}
+
+if (typeof module !== "undefined") module.exports = { floodFill, growRegion, regionStats, physicsFromRegion };
+/* ================= UI / interaction (browser only) ================= */
+const $ = (id) => document.getElementById(id);
+const PALETTE = ["#4C78A8","#F58518","#54A24B","#E45756","#72B7B2","#B279A2","#EECA3B","#9D755D","#BAB0AC","#FF9DA6"];
+const DEFAULT_SG = {TREAD:1.15,SIDEWALL:1.10,APEX:1.12,INNERLINER:1.20,"BELT-1":1.30,"BELT-2":1.30,
+                    "PLY-1":1.25,"PLY-2":1.25,BEAD:7.85,"BEAD-FILLER":1.12,CHAFER:1.18};
+
+let ENT = [], BOUNDS = null, MODE = "manual", AXIS = 0;
+let PPMM = 4, W = 0, H = 0, PAD = 0, WALL = null;
+let COMPS = [];            // {name,color,mask:Uint8Array,area}
+let CURRENT = -1;          // index being picked, or -1
+let TINT = null;           // offscreen canvas with tinted regions
+let SG = {...DEFAULT_SG};
+let LAYER_RESULTS = null;
+
+const cv = $("cv"), ctx = cv.getContext("2d");
+
+/* ---------- transforms ---------- */
+const w2sx = (x) => (x - BOUNDS.minX + PAD) * PPMM;
+const w2sy = (y) => (BOUNDS.maxY + PAD - y) * PPMM;
+const s2wx = (px) => BOUNDS.minX - PAD + (px + 0.5) / PPMM;
+const s2wy = (py) => BOUNDS.maxY + PAD - (py + 0.5) / PPMM;
+
+/* ---------- file load ---------- */
+$("file").addEventListener("change", (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { try { setEntities(loadEntities(r.result, 0.01), f.name); } catch (err) { alert("Could not read DXF: " + err.message); } };
+  r.readAsText(f, "latin1");
+});
+$("demoRaw").onclick = () => setEntities(demoRaw(), "demo_raw_full_section (synthetic)");
+$("demoLayers").onclick = () => setEntities(demoLayers(), "demo_layers (synthetic)");
+
+function setEntities(ents, name) {
+  ENT = ents.filter(e => e && e.pts && e.pts.length >= 2);
+  const xs = [], ys = [];
+  for (const e of ENT) for (const p of e.pts) { xs.push(p[0]); ys.push(p[1]); }
+  BOUNDS = { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+  const layers = {}; for (const e of ENT) layers[e.layer] = (layers[e.layer] || 0) + 1;
+  const compLayers = Object.keys(layers).filter(l => l !== "0" && l !== "Defpoints");
+  const closedComp = compLayers.filter(l => ENT.some(e => e.layer === l && e.closed));
+  $("loadinfo").innerHTML = `<b>${name}</b><br>${ENT.length} curves · layers: ${Object.keys(layers).length} · ` +
+    `bounds x[${BOUNDS.minX.toFixed(0)},${BOUNDS.maxX.toFixed(0)}] y[${BOUNDS.minY.toFixed(0)},${BOUNDS.maxY.toFixed(0)}]`;
+  // auto mode
+  const detected = closedComp.length ? "layer" : "manual";
+  $("modeinfo").textContent = detected === "layer"
+    ? `Detected ${closedComp.length} closed component layer(s): ${closedComp.join(", ")}`
+    : "No named closed layers — using manual pick.";
+  if ($("mode").value === "auto") MODE = detected; else MODE = $("mode").value;
+  COMPS = []; CURRENT = -1; TINT = null; LAYER_RESULTS = null;
+  autoAxis();
+  applyMode();
+  seedSG(closedComp);
+  render();
+}
+
+/* ---------- mode ---------- */
+$("mode").addEventListener("change", () => {
+  const layers = {}; for (const e of ENT) layers[e.layer] = 1;
+  const closedComp = Object.keys(layers).filter(l => l !== "0" && l !== "Defpoints" && ENT.some(e => e.layer === l && e.closed));
+  MODE = $("mode").value === "auto" ? (closedComp.length ? "layer" : "manual") : $("mode").value;
+  applyMode(); render();
+});
+function applyMode() {
+  const manual = MODE === "manual";
+  $("manualopts").style.display = manual ? "" : "none";
+  $("pickcard").style.display = manual ? "" : "none";
+  if (manual && ENT.length) buildWall();
+}
+
+/* ---------- axis ---------- */
+$("axisAuto").onclick = autoAxis;
+$("axis").addEventListener("change", () => { AXIS = parseFloat($("axis").value) || 0; render(); });
+$("side").addEventListener("change", render);
+$("res").addEventListener("change", () => { if (MODE === "manual") { buildWall(); render(); } });
+$("seal").addEventListener("change", () => { if (MODE === "manual") { buildWall(); render(); } });
+function autoAxis() {
+  if (!BOUNDS) return;
+  // prefer a near-vertical LINE with large span, nearest to mid-x
+  const mid = (BOUNDS.minX + BOUNDS.maxX) / 2;
+  let best = null, bestd = 1e9;
+  for (const e of ENT) {
+    if (e.type === "LINE" && e.pts.length === 2) {
+      const [a, b] = e.pts;
+      if (Math.abs(a[0] - b[0]) < 0.5 && Math.abs(b[1] - a[1]) > (BOUNDS.maxY - BOUNDS.minY) * 0.3) {
+        const x = (a[0] + b[0]) / 2, d = Math.abs(x - mid);
+        if (d < bestd) { bestd = d; best = x; }
+      }
+    }
+  }
+  if (best != null) AXIS = best;                         // drawn centreline
+  else if (BOUNDS.minX >= -1e-6) AXIS = 0;               // half-section drawn to +x side
+  else AXIS = mid;                                        // fallback
+  $("axis").value = AXIS.toFixed(2);
+  render();
+}
+
+/* ---------- measurement raster ---------- */
+function buildWall() {
+  if (!BOUNDS) return;
+  const worldW = BOUNDS.maxX - BOUNDS.minX, worldH = BOUNDS.maxY - BOUNDS.minY;
+  PAD = Math.max(worldW, worldH) * 0.03;
+  const target = Math.max(600, Math.min(4000, parseInt($("res").value) || 1600));
+  PPMM = target / (worldW + 2 * PAD);
+  W = Math.round((worldW + 2 * PAD) * PPMM);
+  H = Math.round((worldH + 2 * PAD) * PPMM);
+  const MAXPX = 12e6;
+  if (W * H > MAXPX) { const s = Math.sqrt(MAXPX / (W * H)); PPMM *= s; W = Math.round(W * s); H = Math.round(H * s); }
+  const seal = Math.max(1, Math.min(9, parseInt($("seal").value) || 3));
+  const off = document.createElement("canvas"); off.width = W; off.height = H;
+  const octx = off.getContext("2d");
+  octx.fillStyle = "#fff"; octx.fillRect(0, 0, W, H);
+  octx.strokeStyle = "#000"; octx.lineWidth = seal; octx.lineJoin = "round"; octx.lineCap = "round";
+  for (const e of ENT) {
+    octx.beginPath();
+    e.pts.forEach((p, i) => { const X = w2sx(p[0]), Y = w2sy(p[1]); i ? octx.lineTo(X, Y) : octx.moveTo(X, Y); });
+    octx.stroke();
+  }
+  const img = octx.getImageData(0, 0, W, H).data;
+  WALL = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) WALL[i] = img[i * 4] < 128 ? 1 : 0;
+  cv.width = W; cv.height = H;
+}
+
+/* ---------- picking ---------- */
+$("startPick").onclick = () => {
+  const nm = $("compName").value.trim().toUpperCase();
+  if (!nm) { alert("Enter a component name first."); return; }
+  let idx = COMPS.findIndex(c => c.name === nm);
+  if (idx < 0) { COMPS.push({ name: nm, color: PALETTE[COMPS.length % PALETTE.length], mask: new Uint8Array(W * H), area: 0 }); idx = COMPS.length - 1; }
+  CURRENT = idx;
+  $("picking").innerHTML = `Picking into <b>${nm}</b> — click inside its regions. <a href="#" id="stopPick">done</a>`;
+  $("stopPick").onclick = (ev) => { ev.preventDefault(); CURRENT = -1; $("picking").textContent = ""; };
+  renderComps();
+};
+cv.addEventListener("click", (ev) => {
+  if (MODE !== "manual" || CURRENT < 0 || !WALL) return;
+  const rect = cv.getBoundingClientRect();
+  const px = Math.round((ev.clientX - rect.left) / rect.width * W);
+  const py = Math.round((ev.clientY - rect.top) / rect.height * H);
+  const seal = Math.max(1, Math.min(9, parseInt($("seal").value) || 3));
+  let region = floodFill(WALL, W, H, px, py);
+  const filled = region.reduce((a, v) => a + v, 0);
+  if (filled === 0) return;
+  if (filled > W * H * 0.6) { if (!confirm("That region is huge (likely the whole background leaked through a gap). Add anyway?")) return; }
+  region = growRegion(region, W, H, Math.floor(seal / 2));
+  const c = COMPS[CURRENT];
+  for (let i = 0; i < region.length; i++) if (region[i]) c.mask[i] = 1;
+  rebuildTint(); recompArea(c); renderComps(); render();
+});
+function recompArea(c) {
+  const st = regionStats(c.mask, W, H, (x, y) => [s2wx(x), s2wy(y)], 1 / (PPMM * PPMM), AXIS);
+  c.area = st ? st.area : 0;
+}
+function rebuildTint() {
+  TINT = document.createElement("canvas"); TINT.width = W; TINT.height = H;
+  const id = TINT.getContext("2d").createImageData(W, H);
+  for (const c of COMPS) {
+    const col = hexRGB(c.color);
+    for (let i = 0; i < c.mask.length; i++) if (c.mask[i]) {
+      id.data[i * 4] = col[0]; id.data[i * 4 + 1] = col[1]; id.data[i * 4 + 2] = col[2]; id.data[i * 4 + 3] = 120;
+    }
+  }
+  TINT.getContext("2d").putImageData(id, 0, 0);
+}
+function renderComps() {
+  const box = $("comps"); box.innerHTML = "";
+  COMPS.forEach((c, i) => {
+    const d = document.createElement("div"); d.className = "comp";
+    d.innerHTML = `<span class="pill" style="background:${c.color}"></span><span class="nm">${c.name}</span>` +
+      `<span class="muted">${c.area.toFixed(0)} mm²</span>`;
+    const del = document.createElement("button"); del.className = "sec"; del.textContent = "✕";
+    del.onclick = () => { COMPS.splice(i, 1); if (CURRENT === i) CURRENT = -1; rebuildTint(); renderComps(); render(); };
+    d.appendChild(del); box.appendChild(d);
+  });
+}
+
+/* ---------- render ---------- */
+function render() {
+  if (!BOUNDS) return;
+  if (MODE === "manual" && (!W || cv.width !== W)) buildWall();
+  if (MODE !== "manual") { const worldW = BOUNDS.maxX - BOUNDS.minX, worldH = BOUNDS.maxY - BOUNDS.minY;
+    PAD = Math.max(worldW, worldH) * 0.03; PPMM = 900 / (worldW + 2 * PAD);
+    W = Math.round((worldW + 2 * PAD) * PPMM); H = Math.round((worldH + 2 * PAD) * PPMM); cv.width = W; cv.height = H; }
+  ctx.fillStyle = getBG(); ctx.fillRect(0, 0, W, H);
+  // side shading (manual)
+  if (MODE === "manual") {
+    const side = $("side").value, ax = w2sx(AXIS);
+    ctx.fillStyle = "rgba(128,128,128,0.10)";
+    if (side === "right") ctx.fillRect(0, 0, ax, H);
+    else if (side === "left") ctx.fillRect(ax, 0, W - ax, H);
+  }
+  // tint (manual picks)
+  if (MODE === "manual" && TINT) ctx.drawImage(TINT, 0, 0);
+  // layer-mode filled polygons
+  if (MODE === "layer") drawLayerFills();
+  // curves
+  ctx.strokeStyle = MODE === "manual" ? "rgba(120,140,160,0.85)" : "rgba(120,140,160,0.5)";
+  ctx.lineWidth = 1;
+  for (const e of ENT) {
+    ctx.beginPath();
+    e.pts.forEach((p, i) => { const X = w2sx(p[0]), Y = w2sy(p[1]); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
+    ctx.stroke();
+  }
+  // axis
+  const ax = w2sx(AXIS);
+  ctx.strokeStyle = "#0a84ff"; ctx.setLineDash([6, 5]); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(ax, 0); ctx.lineTo(ax, H); ctx.stroke(); ctx.setLineDash([]);
+}
+function getBG() { return getComputedStyle(document.body).backgroundColor; }
+function drawLayerFills() {
+  const res = layerComponents();
+  res.forEach((r, i) => {
+    ctx.fillStyle = hexA(PALETTE[i % PALETTE.length], 0.25);
+    for (const loop of r.loops) {
+      ctx.beginPath();
+      loop.forEach((p, j) => { const X = w2sx(p[0]), Y = w2sy(p[1]); j ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
+      ctx.closePath(); ctx.fill();
+    }
+  });
+}
+
+/* ---------- layer-mode analysis ---------- */
+function layerComponents() {
+  const byLayer = {};
+  for (const e of ENT) if (e.closed && e.layer !== "0" && e.layer !== "Defpoints")
+    (byLayer[e.layer] = byLayer[e.layer] || []).push(e.pts);
+  return Object.keys(byLayer).map(name => ({ name, loops: byLayer[name] }));
+}
+function combineLoops(name, loops, axis, sg) {
+  // largest loop = outer; loops whose centroid is inside outer = holes (subtract)
+  const info = loops.map(pts => { const [cx, cy, a] = polyCentroid(pts); return { pts, cx, cy, a }; });
+  info.sort((p, q) => q.a - p.a);
+  const outer = info[0];
+  let area = outer.a, sx = outer.cx * outer.a, sy = outer.cy * outer.a, r3 = r3Moment(outer.pts, axis);
+  let blen = boundaryLen(outer.pts);
+  for (let i = 1; i < info.length; i++) {
+    area -= info[i].a; sx -= info[i].cx * info[i].a; sy -= info[i].cy * info[i].a;
+    r3 -= r3Moment(info[i].pts, axis); blen += boundaryLen(info[i].pts);
+  }
+  const cx = sx / area, cy = sy / area, d = Math.abs(cx - axis);
+  const volume_cm3 = 2 * Math.PI * d * area / 1000, weight = volume_cm3 * sg;
+  const polar = 2 * Math.PI * (sg / 1000) * Math.abs(r3);
+  return { component: name, area_mm2: area, centroid_x: cx, centroid_y: cy, centroid_distance_mm: d,
+    volume_cm3, weight_g: weight, surface_area_mm2: 2 * Math.PI * d * blen,
+    polar_MOI: polar, radius_of_gyration_mm: weight > 0 ? Math.sqrt(polar / weight) : 0, sg };
+}
+function boundaryLen(pts) { let L = 0; for (let i = 0; i < pts.length - 1; i++) L += Math.hypot(pts[i+1][0]-pts[i][0], pts[i+1][1]-pts[i][1]); return L; }
+
+/* ---------- SG table ---------- */
+function seedSG(compLayers) {
+  const names = new Set(Object.keys(DEFAULT_SG));
+  compLayers.forEach(l => names.add(l));
+  SG = {}; [...names].sort().forEach(n => SG[n] = DEFAULT_SG[n] != null ? DEFAULT_SG[n] : 1.10);
+  const t = $("sgtab"); t.innerHTML = "";
+  for (const n of Object.keys(SG)) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${n}</td><td><input type="number" step="0.01" value="${SG[n]}" data-k="${n}"></td>`;
+    t.appendChild(tr);
+  }
+  t.querySelectorAll("input").forEach(inp => inp.addEventListener("change", () => { SG[inp.dataset.k] = parseFloat(inp.value) || 1.10; }));
+}
+function sgFor(name) { return SG[name.toUpperCase()] != null ? SG[name.toUpperCase()] : 1.10; }
+
+/* ---------- compute ---------- */
+$("compute").onclick = () => {
+  AXIS = parseFloat($("axis").value) || 0;
+  let rows = [], warns = [];
+  if (MODE === "layer") {
+    const comps = layerComponents();
+    if (!comps.length) { warns.push("No closed component layers found — switch to Manual pick."); }
+    rows = comps.map(c => combineLoops(c.name, c.loops, AXIS, sgFor(c.name)));
+  } else {
+    if (!COMPS.length) { warns.push("No components picked yet."); }
+    for (const c of COMPS) {
+      const st = regionStats(c.mask, W, H, (x, y) => [s2wx(x), s2wy(y)], 1 / (PPMM * PPMM), AXIS);
+      if (!st) continue;
+      const crosses = (st.minx - AXIS) < -1e-6 && (st.maxx - AXIS) > 1e-6;
+      if (crosses) warns.push(`${c.name}: region crosses the axis — pick on ONE side only.`);
+      rows.push({ component: c.name, ...physicsFromRegion(st, AXIS, sgFor(c.name)) });
+    }
+  }
+  const total = rows.reduce((a, r) => a + r.weight_g, 0);
+  rows.forEach(r => r.pct = total ? r.weight_g / total * 100 : 0);
+  $("warns").innerHTML = warns.join("<br>");
+  showResults(rows, total);
+  window.__rows = rows;
+};
+
+function showResults(rows, total) {
+  const cols = [["component","Component"],["area_mm2","Area mm²"],["centroid_distance_mm","CG dist mm"],
+    ["volume_cm3","Vol cm³"],["weight_g","Weight g"],["surface_area_mm2","Surface mm²"],["polar_MOI","Polar MOI"],["pct","% wt"]];
+  let h = `<div class="card"><h2>Results (${MODE === "layer" ? "exact vector" : "raster pick"})</h2>`;
+  h += `<div class="row" style="margin-bottom:8px"><span class="tag">Total weight: <b>${total.toFixed(1)} g</b></span>` +
+       `<span class="tag">Total polar MOI: <b>${rows.reduce((a,r)=>a+r.polar_MOI,0).toExponential(3)}</b></span>` +
+       `<button class="sec" id="csv" style="flex:0 0 auto">Download CSV</button></div>`;
+  h += "<table><tr>" + cols.map(c => `<th>${c[1]}</th>`).join("") + "</tr>";
+  for (const r of rows) h += "<tr>" + cols.map(c => `<td>${fmt(r[c[0]])}</td>`).join("") + "</tr>";
+  h += "</table></div>";
+  // weight bar chart
+  const wmax = Math.max(1, ...rows.map(r => r.weight_g));
+  h += `<div class="card"><h2>Weight by component (g)</h2>`;
+  rows.forEach((r, i) => { h += `<div class="barrow"><span class="lab">${r.component}</span>` +
+    `<span class="bar" style="width:${(r.weight_g/wmax*260).toFixed(0)}px;background:${PALETTE[i%PALETTE.length]}"></span>` +
+    `<span class="muted">${r.weight_g.toFixed(0)}</span></div>`; });
+  h += `</div>`;
+  const mmax = Math.max(1, ...rows.map(r => r.polar_MOI));
+  h += `<div class="card"><h2>Polar MOI by component</h2>`;
+  rows.forEach((r, i) => { h += `<div class="barrow"><span class="lab">${r.component}</span>` +
+    `<span class="bar" style="width:${(r.polar_MOI/mmax*260).toFixed(0)}px;background:${PALETTE[i%PALETTE.length]}"></span>` +
+    `<span class="muted">${r.polar_MOI.toExponential(2)}</span></div>`; });
+  h += `</div>`;
+  $("results").innerHTML = h;
+  $("csv").onclick = () => downloadCSV(rows);
+}
+function downloadCSV(rows) {
+  const keys = ["component","area_mm2","centroid_x","centroid_y","centroid_distance_mm","volume_cm3","weight_g","surface_area_mm2","polar_MOI","radius_of_gyration_mm","sg","pct"];
+  const lines = [keys.join(",")].concat(rows.map(r => keys.map(k => (typeof r[k] === "number" ? r[k] : (r[k] ?? ""))).join(",")));
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = "tyre_results.csv"; a.click();
+}
+
+/* ---------- helpers ---------- */
+function fmt(v) { if (typeof v !== "number") return v ?? ""; if (Math.abs(v) >= 1e5) return v.toExponential(3); return v.toFixed(2); }
+function hexRGB(h) { h = h.replace("#",""); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; }
+function hexA(h, a) { const c = hexRGB(h); return `rgba(${c[0]},${c[1]},${c[2]},${a})`; }
+
+/* ---------- synthetic demos ---------- */
+function poly(layer, pts, closed) { return { layer, type: "LWPOLYLINE", pts: closed ? pts.concat([pts[0]]) : pts, closed: !!closed }; }
+function demoLayers() {
+  // reuse a couple of components as straight-edge closed loops (no bulges needed for demo)
+  return [
+    poly("TREAD", [[150,300],[230,300],[230,318],[150,318]], true),
+    poly("BELT-1", [[152,292],[228,292],[228,299],[152,299]], true),
+    poly("SIDEWALL", [[150,300],[172,150],[160,150],[146,300]], true),
+    poly("APEX", [[160,118],[170,118],[163,175]], true),
+    poly("BEAD", [[160,108],[170,108],[170,118],[160,118]], true),
+  ];
+}
+function demoRaw() {
+  // full symmetric section, all on layer 0, OPEN line segments + centreline
+  const segs = [];
+  const rect = (x0,y0,x1,y1) => { [[[x0,y0],[x1,y0]],[[x1,y0],[x1,y1]],[[x1,y1],[x0,y1]],[[x0,y1],[x0,y0]]]
+    .forEach(s => segs.push({ layer:"0", type:"LINE", pts:s, closed:false })); };
+  rect(120,40,150,55); rect(122,20,148,38); rect(125,0,145,18);
+  rect(50,40,80,55); rect(52,20,78,38); rect(55,0,75,18);
+  segs.push({ layer:"0", type:"LINE", pts:[[100,-8],[100,63]], closed:false });
+  return segs;
+}
+
+/* test/debug hooks (harmless; used by automated checks) */
+window.__dbg = () => ({ MODE, W, H, ent: ENT.length, axis: AXIS, ppmm: PPMM, pad: PAD,
+  bounds: BOUNDS, comps: COMPS.map(c => ({ n: c.name, a: c.area })), wall: WALL ? WALL.length : 0 });
+window.__clickWorld = (wx, wy) => {
+  const r = cv.getBoundingClientRect();
+  const px = (wx - BOUNDS.minX + PAD) * PPMM, py = (BOUNDS.maxY + PAD - wy) * PPMM;
+  return { x: r.left + px / cv.width * r.width, y: r.top + py / cv.height * r.height };
+};
+
+/* boot */
+seedSG([]);
+
+</script>
+</body>
+</html>
