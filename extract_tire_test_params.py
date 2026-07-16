@@ -7,11 +7,15 @@ Layout expected in each source file (on the first sheet):
     B2:B21    -> parameter values
 The file name (without extension) is used as the column label.
 
+Which files are considered:
+    Only Excel files inside subfolders named "input" (case-insensitive) are
+    targeted; anything elsewhere in the tree is ignored.
+
 Passing criteria:
     A file is valid only if its parameter names in A2:A10 match the expected
     set. The file name itself is not checked. The expected set is either
     EXPECTED_PARAMS (if filled in) or, otherwise, the A2:A10 signature shared
-    by the majority of files found under the parent folder.
+    by the majority of the targeted files.
 
 How to use:
     1. Keep this script anywhere you like (only ONE copy needed).
@@ -34,6 +38,10 @@ from openpyxl import load_workbook, Workbook
 # Rows to read (1-based, matching Excel). A2:A21 / B2:B21 -> rows 2..21.
 FIRST_DATA_ROW = 2
 LAST_DATA_ROW = 21
+
+# Only folders with this name (case-insensitive) are searched for test
+# files; Excel files anywhere else in the tree are ignored.
+TARGET_FOLDER_NAME = "input"
 
 # Passing criteria: the parameter names in this range must match the
 # expected set for the file to count as valid.
@@ -259,6 +267,9 @@ def main():
     # --- Pass 1: read every candidate file once, cache the result. ---
     folder_entries = {}  # folder -> [(path, (label, key_names, params) | None, exc | None)]
     for dirpath, _dirnames, _filenames in os.walk(parent):
+        # Only look inside folders named "input".
+        if os.path.basename(os.path.normpath(dirpath)).lower() != TARGET_FOLDER_NAME:
+            continue
         candidates = list_candidate_files(dirpath)
         if not candidates:
             continue
