@@ -1,0 +1,816 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tyre Cross-Section Analysis — Single-Layer Region Tool</title>
+<style>
+:root{--bg:#0e1620;--panel:#172431;--panel2:#111c27;--ink:#e8eef4;--mut:#9fb0c0;--line:#2c3d4d;--accent:#4C78A8;--good:#39a65a;--bad:#e15b5a;--warn:#e8a33d}
+@media(prefers-color-scheme:light){:root{--bg:#f4f7fa;--panel:#fff;--panel2:#f7f9fb;--ink:#17212b;--mut:#607080;--line:#d9e1e8}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif}button,input,select,textarea{font:inherit}button,input,select,textarea{color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:6px 8px}button{cursor:pointer}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button:hover{filter:brightness(1.08)}button:disabled{opacity:.4;cursor:not-allowed}.active{outline:2px solid #77b7ff;outline-offset:-1px}header{height:54px;padding:10px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px}header h1{font-size:17px;margin:0}header .sub{color:var(--mut);font-size:12px}#layout{display:grid;grid-template-columns:355px 1fr;height:calc(100vh - 54px)}aside{padding:12px;overflow:auto;border-right:1px solid var(--line)}main{min-width:0;display:grid;grid-template-rows:minmax(460px,62vh) auto;overflow:auto}.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:10px}.card h2{margin:0 0 8px;color:var(--mut);font-size:12px;letter-spacing:.06em;text-transform:uppercase}.row{display:flex;gap:7px;align-items:center}.row>*{min-width:0;flex:1}.row .auto{flex:0 0 auto}.stack>*+*{margin-top:7px}label{display:block;color:var(--mut);font-size:12px;margin:6px 0 3px}input[type=file]{width:100%;padding:5px}input[type=number],input[type=text],select,textarea{width:100%}.hint{font-size:12px;color:var(--mut);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px}.toolbar{display:flex;gap:5px;flex-wrap:wrap}.toolbar button{padding:5px 8px}.toolbar .spacer{flex:1}.status{font-size:12px;color:var(--mut);padding-top:6px}.status.ok,.good{color:var(--good)}.status.bad,.warn{color:var(--warn)}#cvwrap{position:relative;margin:12px 12px 0;min-height:440px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}#cv{display:block;width:100%;height:100%;touch-action:none}#hoverInfo{position:absolute;left:8px;bottom:8px;right:8px;padding:5px 8px;border-radius:6px;background:rgba(0,0,0,.55);color:#eaf2f8;font-size:11px;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.comp{display:flex;align-items:center;gap:5px;border-bottom:1px solid var(--line);padding:4px 2px}.comp.selected{background:rgba(76,120,168,.15)}.pill{width:11px;height:11px;border-radius:3px;flex:0 0 auto}.namebtn{background:none;border:0;padding:3px;text-align:left;flex:1;font-weight:600}.tiny{padding:2px 6px;background:var(--panel2)}.muted{color:var(--mut);font-size:12px}#progress{font-size:12px;margin-top:7px}.sgtab{width:100%;border-collapse:collapse}.sgtab td{padding:3px}.sgtab td:first-child{width:65%}.sgtab input{padding:4px 6px}#results{padding:12px}.summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}.summary span{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:6px 10px}.resultgrid{display:grid;grid-template-columns:minmax(600px,2fr) minmax(260px,1fr);gap:10px}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:6px 7px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}.rowwarn{background:rgba(232,163,61,.12)}.alert{border:1px solid var(--warn);background:rgba(232,163,61,.1);padding:8px;border-radius:8px;margin-bottom:10px}.barrow{display:grid;grid-template-columns:90px minmax(10px,260px) 90px;gap:6px;align-items:center;margin:5px 0;font-size:12px}.barrow i{height:14px;border-radius:3px}.barrow b{font-weight:500;color:var(--mut)}.testpass,.testfail{padding:8px;border-radius:8px;font-size:12px}.testpass{border:1px solid var(--good);background:rgba(57,166,90,.1)}.testfail{border:1px solid var(--bad);background:rgba(225,91,90,.1)}textarea{min-height:55px;resize:vertical}.grabbing{cursor:grabbing!important}@media(max-width:1000px){#layout{grid-template-columns:310px 1fr}.resultgrid{grid-template-columns:1fr}}@media(max-width:760px){#layout{display:block;height:auto}aside{border-right:0}main{grid-template-rows:500px auto}#cvwrap{height:480px}.resultgrid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><h1>Tyre Cross-Section Analysis</h1><span class="sub">Single-layer DXF · vector region detection · manual component assignment · local browser processing</span></header>
+<div id="layout">
+<aside>
+  <div class="card stack">
+    <h2>1 · Load drawing</h2>
+    <input type="file" id="file" accept=".dxf">
+    <div class="row"><button id="demo">Load validation geometry</button><button id="runTest">Run validation</button></div>
+    <div id="status" class="status">Load a single-layer DXF or the validation geometry.</div>
+  </div>
+
+  <div class="card stack">
+    <h2>2 · Region extraction</h2>
+    <label>Extraction method</label>
+    <select id="extractMode"><option value="vector">Vector polygonisation — recommended</option><option value="raster">Raster fallback — approximate</option></select>
+    <label>Gap / endpoint repair tolerance</label>
+    <div class="row"><select id="tolPreset"><option value="0.01">Strict · 0.01 mm</option><option value="0.05" selected>Normal · 0.05 mm</option><option value="0.1">Relaxed · 0.10 mm</option><option value="custom">Custom</option></select><div id="tolCustomWrap"><input type="number" id="tolCustom" value="0.05" min="0.001" step="0.01"></div></div>
+    <div id="rasterOpts"><label>Raster resolution and seal width</label><div class="row"><input type="number" id="rasterRes" value="1400" min="600" max="3000" step="100"><input type="number" id="seal" value="3" min="1" max="11" step="1"></div></div>
+    <button id="extract" class="primary">Detect enclosed regions</button>
+    <div id="diagnostics" class="hint">No drawing loaded.</div>
+  </div>
+
+  <div class="card stack">
+    <h2>3 · Axis and working half</h2>
+    <label>Rotation axis X (mm)</label><div class="row"><input type="number" id="axis" value="0" step="0.1"><button id="axisAuto" class="auto">Auto</button></div>
+    <label>Work on</label><select id="side"><option value="auto">Auto-select populated half</option><option value="right" selected>Right half</option><option value="left">Left half</option><option value="both">Both — viewing only</option></select>
+    <div class="hint">Volume calculations require each selected component to stay on one side of the rotation axis.</div>
+  </div>
+
+  <div class="card stack">
+    <h2>4 · View navigation</h2>
+    <div class="toolbar"><button data-nav="select">Select</button><button data-nav="pan">Pan</button><button data-nav="box">Box zoom</button><button id="zoomIn">＋</button><button id="zoomOut">−</button><button id="fit">Fit</button></div>
+    <div class="muted">Mouse wheel: zoom · middle/right drag or Space+drag: pan.</div>
+  </div>
+
+  <div class="card stack">
+    <h2>5 · Assign components</h2>
+    <div class="hint">Create or select a component, then click every enclosed region belonging to it. A component may contain several separate regions.</div>
+    <div class="row"><input id="compName" type="text" placeholder="e.g. TREAD"><button id="addComp" class="auto primary">Add</button></div>
+    <div id="activeLabel" class="muted">No active component</div>
+    <div class="toolbar"><button data-action="assign">Assign</button><button data-action="ignore">Ignore</button><button data-action="erase">Unassign</button><span class="spacer"></span><button id="undo">Undo</button><button id="redo">Redo</button></div><label class="row" style="justify-content:flex-start"><input id="previewPick" type="checkbox" checked style="width:auto;flex:0 0 auto"> <span>Preview raster picks before accepting</span></label><div id="previewBar" class="hint" style="display:none"><span id="previewText"></span><div class="row" style="margin-top:6px"><button id="acceptPreview" class="primary">Accept</button><button id="cancelPreview">Cancel</button></div></div>
+    <div id="components"></div><div id="progress"></div>
+  </div>
+
+  <div class="card stack">
+    <h2>6 · Specific gravity (g/cm³)</h2>
+    <table id="sgtab" class="sgtab"></table>
+  </div>
+
+  <div class="card stack">
+    <h2>7 · Save, transfer, calculate</h2>
+    <label>Project notes</label><textarea id="notes" placeholder="Design iteration, tyre size, assumptions…"></textarea>
+    <button id="saveProject">Save assignment project</button>
+    <label>Load or transfer an earlier project</label><input type="file" id="projectFile" accept=".json,.tyreproject.json">
+    <label class="row" style="justify-content:flex-start"><input id="highResFinal" type="checkbox" checked style="width:auto;flex:0 0 auto"> <span>High-resolution final raster recomputation</span></label><div class="row"><button id="compute" class="primary">Compute results</button><button id="csv">Export CSV</button></div>
+    <div id="testReport"></div>
+  </div>
+</aside>
+<main>
+  <div id="cvwrap"><canvas id="cv"></canvas><div id="hoverInfo"></div></div>
+  <div id="results"></div>
+</main>
+</div>
+<script>
+(function(global){
+"use strict";
+
+const EPS = 1e-9;
+const F = Number.parseFloat;
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+
+function parseDXF(text){
+  const lines=text.split(/\r\n|\r|\n/), pairs=[];
+  for(let i=0;i+1<lines.length;i+=2){
+    const code=parseInt(lines[i].trim(),10);
+    if(Number.isNaN(code)){i-=1;continue;}
+    pairs.push([code,lines[i+1].trim()]);
+  }
+  let start=0;
+  for(let i=0;i<pairs.length;i++) if(pairs[i][0]===2&&pairs[i][1]==="ENTITIES"){start=i+1;break;}
+  const raw=[]; let cur=null;
+  for(let i=start;i<pairs.length;i++){
+    const [code,val]=pairs[i];
+    if(code===0){
+      if(val==="ENDSEC"||val==="EOF"){if(cur)raw.push(cur);break;}
+      if(cur)raw.push(cur);
+      cur={type:val,codes:[]};
+    }else if(cur) cur.codes.push([code,val]);
+  }
+  // Assemble legacy POLYLINE/VERTEX/SEQEND chains.
+  const out=[];
+  for(let i=0;i<raw.length;i++){
+    const e=raw[i];
+    if(e.type!=="POLYLINE"){ if(e.type!=="VERTEX"&&e.type!=="SEQEND") out.push(e); continue; }
+    const verts=[];
+    let j=i+1;
+    while(j<raw.length&&raw[j].type!=="SEQEND"){
+      if(raw[j].type==="VERTEX") verts.push(raw[j]);
+      j++;
+    }
+    out.push({type:"POLYLINE_CHAIN",codes:e.codes,vertices:verts});
+    i=j;
+  }
+  return out;
+}
+function collect(codes){const m={};for(const [c,v] of codes)(m[c]=m[c]||[]).push(v);return m;}
+
+function flattenArc(cx,cy,r,a0deg,a1deg,tol=0.01){
+  let a0=a0deg*Math.PI/180,a1=a1deg*Math.PI/180;
+  while(a1<=a0)a1+=2*Math.PI;
+  const sweep=a1-a0;
+  let dtheta=2*Math.acos(clamp(1-tol/Math.max(r,EPS),-1,1));
+  if(!Number.isFinite(dtheta)||dtheta<1e-5)dtheta=sweep/16;
+  const n=Math.max(2,Math.ceil(sweep/dtheta)), pts=[];
+  for(let i=0;i<=n;i++){const a=a0+sweep*i/n;pts.push([cx+r*Math.cos(a),cy+r*Math.sin(a)]);}
+  return pts;
+}
+function flattenBulge(p0,p1,b,tol=0.01){
+  if(Math.abs(b)<1e-12)return [p0,p1];
+  const dx=p1[0]-p0[0],dy=p1[1]-p0[1],c=Math.hypot(dx,dy);
+  if(c<EPS)return [p0,p1];
+  const theta=4*Math.atan(b);
+  const mx=(p0[0]+p1[0])/2,my=(p0[1]+p1[1])/2;
+  const nx=-dy/c,ny=dx/c;
+  const off=c*(1-b*b)/(4*b);
+  const cx=mx+nx*off,cy=my+ny*off;
+  const r=Math.hypot(p0[0]-cx,p0[1]-cy);
+  const a0=Math.atan2(p0[1]-cy,p0[0]-cx);
+  let dtheta=2*Math.acos(clamp(1-tol/Math.max(r,EPS),-1,1));
+  if(!Number.isFinite(dtheta)||dtheta<1e-5)dtheta=Math.abs(theta)/16;
+  const n=Math.max(1,Math.ceil(Math.abs(theta)/dtheta)),pts=[];
+  for(let i=0;i<=n;i++){const a=a0+theta*i/n;pts.push([cx+r*Math.cos(a),cy+r*Math.sin(a)]);}
+  return pts;
+}
+function flattenEllipse(cx,cy,mx,my,ratio,t0,t1,tol=0.01){
+  const maj=Math.hypot(mx,my),vx=-my*ratio,vy=mx*ratio;
+  let a0=t0,a1=t1;while(a1<=a0)a1+=2*Math.PI;
+  const sweep=a1-a0;
+  let dt=2*Math.acos(clamp(1-tol/Math.max(maj,EPS),-1,1));
+  if(!Number.isFinite(dt)||dt<1e-5)dt=0.05;
+  const n=Math.max(12,Math.ceil(sweep/dt)),pts=[];
+  for(let i=0;i<=n;i++){const t=a0+sweep*i/n,ct=Math.cos(t),st=Math.sin(t);pts.push([cx+mx*ct+vx*st,cy+my*ct+vy*st]);}
+  return pts;
+}
+function flattenSpline(ctrl, knots, degree, weights, tol = 0.01) {
+  const n = ctrl.length - 1;
+  if (n < 1) return ctrl.slice();
+  degree = Math.max(1, Math.min(degree || 3, n));
+  if (!knots || knots.length !== n + degree + 2) {
+    knots = [];
+    for (let i = 0; i <= degree; i++) knots.push(0);
+    const inner = n - degree;
+    for (let i = 1; i <= inner; i++) knots.push(i / (inner + 1));
+    for (let i = 0; i <= degree; i++) knots.push(1);
+  }
+  const w = weights && weights.length === ctrl.length ? weights : ctrl.map(() => 1);
+  const u0 = knots[degree], u1 = knots[n + 1];
+  const findSpan = u => {
+    if (u >= knots[n + 1]) return n;
+    let lo = degree, hi = n + 1, mid = (lo + hi) >> 1;
+    while (u < knots[mid] || u >= knots[mid + 1]) { if (u < knots[mid]) hi = mid; else lo = mid; mid = (lo + hi) >> 1; }
+    return mid;
+  };
+  const evalAt = u => {
+    const span = findSpan(u), Nf = new Array(degree + 1).fill(0), left = new Array(degree + 1), right = new Array(degree + 1);
+    Nf[0] = 1;
+    for (let j = 1; j <= degree; j++) {
+      left[j] = u - knots[span + 1 - j]; right[j] = knots[span + j] - u;
+      let saved = 0;
+      for (let r = 0; r < j; r++) { const den = right[r + 1] + left[j - r], tmp = Nf[r] / (Math.abs(den) < EPS ? EPS : den); Nf[r] = saved + right[r + 1] * tmp; saved = left[j - r] * tmp; }
+      Nf[j] = saved;
+    }
+    let x = 0, y = 0, ws = 0;
+    for (let i = 0; i <= degree; i++) { const idx = span - degree + i, wi = w[idx] * Nf[i]; x += wi * ctrl[idx][0]; y += wi * ctrl[idx][1]; ws += wi; }
+    return [x / ws, y / ws];
+  };
+  // Seed at distinct knot values (so no span is skipped), then subdivide each
+  // span until the chord error is below tol.
+  const seeds = [];
+  for (let i = degree; i <= n + 1; i++) {
+    const u = knots[i];
+    if (!seeds.length || u - seeds[seeds.length - 1] > 1e-12) seeds.push(u);
+  }
+  if (seeds[0] > u0) seeds.unshift(u0);
+  if (seeds[seeds.length - 1] < u1) seeds.push(u1);
+  const out = [evalAt(seeds[0])];
+  const chordDev = (pm, p0, p1) => {
+    const dx = p1[0] - p0[0], dy = p1[1] - p0[1], l2 = dx * dx + dy * dy;
+    if (l2 < 1e-24) return Math.hypot(pm[0] - p0[0], pm[1] - p0[1]);
+    let t = ((pm[0] - p0[0]) * dx + (pm[1] - p0[1]) * dy) / l2; t = Math.max(0, Math.min(1, t));
+    return Math.hypot(pm[0] - p0[0] - t * dx, pm[1] - p0[1] - t * dy);
+  };
+  const rec = (ua, pa, ub, pb, depth) => {
+    const um = (ua + ub) / 2, pm = evalAt(um);
+    // Deviation checked at 1/4, 1/2 and 3/4 — a midpoint-only test misses
+    // curvature spikes that sit off-centre (tangency tips).
+    const q1 = evalAt(ua + (ub - ua) * 0.25), q3 = evalAt(ua + (ub - ua) * 0.75);
+    const dev = Math.max(chordDev(pm, pa, pb), chordDev(q1, pa, pb), chordDev(q3, pa, pb));
+    if (depth >= 22 || (dev <= tol && depth >= 2)) { out.push(q1, pm, q3, pb); return; }
+    rec(ua, pa, um, pm, depth + 1); rec(um, pm, ub, pb, depth + 1);
+  };
+  for (let i = 0; i < seeds.length - 1; i++) {
+    const pa = evalAt(seeds[i]), pb = evalAt(seeds[i + 1]);
+    rec(seeds[i], pa, seeds[i + 1], pb, 0);
+  }
+  return out;
+}
+function simplifyCollinear(pts,tol=1e-8){
+  if(pts.length<3)return pts.slice();const out=[pts[0]];
+  for(let i=1;i<pts.length-1;i++){
+    const a=out[out.length-1],b=pts[i],c=pts[i+1],cross=Math.abs((b[0]-a[0])*(c[1]-b[1])-(b[1]-a[1])*(c[0]-b[0]));
+    const scale=Math.hypot(b[0]-a[0],b[1]-a[1])+Math.hypot(c[0]-b[0],c[1]-b[1]);
+    if(cross>tol*Math.max(scale,1))out.push(b);
+  }out.push(pts[pts.length-1]);return out;
+}
+
+function entityToPolyline(ent,tol=0.01){
+  const m=collect(ent.codes||[]),T=ent.type,layer=m[8]?.[0]||"0";let pts=null,closed=false;
+  if(T==="LINE")pts=[[F(m[10][0]),F(m[20][0])],[F(m[11][0]),F(m[21][0])]];
+  else if(T==="LWPOLYLINE"){
+    const flags=m[70]?parseInt(m[70][0],10):0;closed=!!(flags&1);const verts=[];let cur=null;
+    for(const [code,val] of ent.codes){if(code===10){if(cur)verts.push(cur);cur=[F(val),null,0];}else if(code===20&&cur)cur[1]=F(val);else if(code===42&&cur)cur[2]=F(val);}if(cur)verts.push(cur);
+    pts=[];const count=closed?verts.length:verts.length-1;
+    for(let i=0;i<count;i++){const a=verts[i],b=verts[(i+1)%verts.length],seg=flattenBulge([a[0],a[1]],[b[0],b[1]],a[2]||0,tol);for(let k=i?1:0;k<seg.length;k++)pts.push(seg[k]);}
+    if(closed&&!samePoint(pts[0],pts[pts.length-1],tol*0.1))pts.push(pts[0].slice());
+  }else if(T==="POLYLINE_CHAIN"){
+    const flags=m[70]?parseInt(m[70][0],10):0;closed=!!(flags&1);const verts=ent.vertices.map(v=>{const q=collect(v.codes);return [F(q[10][0]),F(q[20][0]),q[42]?F(q[42][0]):0];});pts=[];const count=closed?verts.length:verts.length-1;
+    for(let i=0;i<count;i++){const a=verts[i],b=verts[(i+1)%verts.length],seg=flattenBulge([a[0],a[1]],[b[0],b[1]],a[2],tol);for(let k=i?1:0;k<seg.length;k++)pts.push(seg[k]);}
+    if(closed&&!samePoint(pts[0],pts[pts.length-1],tol*0.1))pts.push(pts[0].slice());
+  }else if(T==="ARC")pts=flattenArc(F(m[10][0]),F(m[20][0]),F(m[40][0]),F(m[50][0]),F(m[51][0]),tol);
+  else if(T==="CIRCLE"){pts=flattenArc(F(m[10][0]),F(m[20][0]),F(m[40][0]),0,360,tol);closed=true;}
+  else if(T==="ELLIPSE"){pts=flattenEllipse(F(m[10][0]),F(m[20][0]),F(m[11][0]),F(m[21][0]),F(m[40][0]),m[41]?F(m[41][0]):0,m[42]?F(m[42][0]):2*Math.PI,tol);closed=true;}
+  else if(T==="SPLINE"){
+    const cx=m[10]||[],cy=m[20]||[],ctrl=[];for(let i=0;i<Math.min(cx.length,cy.length);i++)ctrl.push([F(cx[i]),F(cy[i])]);
+    if(ctrl.length>=2){pts=flattenSpline(ctrl,(m[40]||[]).map(F),m[71]?parseInt(m[71][0],10):3,m[41]?m[41].map(F):null,tol);const flags=m[70]?parseInt(m[70][0],10):0;closed=!!(flags&1);if(closed&&!samePoint(pts[0],pts[pts.length-1],tol))pts.push(pts[0].slice());}
+  }
+  if(!pts||pts.length<2||pts.some(p=>!Number.isFinite(p[0])||!Number.isFinite(p[1])))return null;
+  return {layer,type:T,pts,closed};
+}
+function loadEntities(text,tol=0.01){return parseDXF(text).map(e=>entityToPolyline(e,tol)).filter(Boolean);}
+function samePoint(a,b,tol=1e-9){return Math.hypot(a[0]-b[0],a[1]-b[1])<=tol;}
+function boundsOfEntities(ents){let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;for(const e of ents)for(const p of e.pts){minX=Math.min(minX,p[0]);maxX=Math.max(maxX,p[0]);minY=Math.min(minY,p[1]);maxY=Math.max(maxY,p[1]);}return {minX,minY,maxX,maxY,width:maxX-minX,height:maxY-minY};}
+function entitiesToSegments(ents){const s=[];for(const e of ents)for(let i=0;i<e.pts.length-1;i++){const a=e.pts[i],b=e.pts[i+1];if(Math.hypot(b[0]-a[0],b[1]-a[1])>EPS)s.push({a:a.slice(),b:b.slice(),source:e.type});}return s;}
+
+class PointRegistry{
+  constructor(tol){this.tol=Math.max(tol,1e-8);this.cell=this.tol;this.grid=new Map();this.points=[];}
+  key(ix,iy){return ix+","+iy;}
+  getOrCreate(p){const ix=Math.floor(p[0]/this.cell),iy=Math.floor(p[1]/this.cell);let best=-1,bd=this.tol;
+    for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){const arr=this.grid.get(this.key(ix+dx,iy+dy));if(!arr)continue;for(const id of arr){const q=this.points[id],d=Math.hypot(q[0]-p[0],q[1]-p[1]);if(d<=bd){bd=d;best=id;}}}
+    if(best>=0)return best;const id=this.points.length;this.points.push([p[0],p[1]]);const k=this.key(ix,iy);if(!this.grid.has(k))this.grid.set(k,[]);this.grid.get(k).push(id);return id;}
+}
+function segBBox(s,pad=0){return {minX:Math.min(s.a[0],s.b[0])-pad,maxX:Math.max(s.a[0],s.b[0])+pad,minY:Math.min(s.a[1],s.b[1])-pad,maxY:Math.max(s.a[1],s.b[1])+pad};}
+function spatialPairs(segments,cellSize,pad=0){
+  const grid=new Map(),pairSet=new Set(),pairs=[];cellSize=Math.max(cellSize,1e-6);
+  const key=(x,y)=>x+","+y;
+  segments.forEach((s,i)=>{const b=segBBox(s,pad),x0=Math.floor(b.minX/cellSize),x1=Math.floor(b.maxX/cellSize),y0=Math.floor(b.minY/cellSize),y1=Math.floor(b.maxY/cellSize);for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++){const k=key(x,y),arr=grid.get(k)||[];for(const j of arr){const a=Math.min(i,j),bb=Math.max(i,j),pk=a+":"+bb;if(!pairSet.has(pk)){pairSet.add(pk);pairs.push([a,bb]);}}arr.push(i);grid.set(k,arr);}});
+  return pairs;
+}
+function pointSegProjection(p,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],l2=dx*dx+dy*dy;if(l2<EPS)return {t:0,p:a.slice(),d:Math.hypot(p[0]-a[0],p[1]-a[1])};const t=((p[0]-a[0])*dx+(p[1]-a[1])*dy)/l2,q=[a[0]+t*dx,a[1]+t*dy];return {t,p:q,d:Math.hypot(p[0]-q[0],p[1]-q[1])};}
+function segmentIntersections(sa,sb,tol){
+  const p=sa.a,r=[sa.b[0]-sa.a[0],sa.b[1]-sa.a[1]],q=sb.a,s=[sb.b[0]-sb.a[0],sb.b[1]-sb.a[1]];
+  const la=Math.max(Math.hypot(r[0],r[1]),EPS),lb=Math.max(Math.hypot(s[0],s[1]),EPS),taTol=tol/la,tbTol=tol/lb;
+  const cross=(u,v)=>u[0]*v[1]-u[1]*v[0],rxs=cross(r,s),qp=[q[0]-p[0],q[1]-p[1]],qpxr=cross(qp,r),out=[];
+  if(Math.abs(rxs)>EPS){const t=cross(qp,s)/rxs,u=cross(qp,r)/rxs;if(t>=-taTol&&t<=1+taTol&&u>=-tbTol&&u<=1+tbTol)out.push({ta:clamp(t,0,1),tb:clamp(u,0,1),p:[p[0]+t*r[0],p[1]+t*r[1]]});}
+  else if(Math.abs(qpxr)<=tol*(la+1)){
+    const candidates=[[sa.a,0,"a"],[sa.b,1,"a"],[sb.a,0,"b"],[sb.b,1,"b"]];
+    for(const [pt,tOwn,own] of candidates){if(own==="a"){const pr=pointSegProjection(pt,sb.a,sb.b);if(pr.t>=-tbTol&&pr.t<=1+tbTol&&pr.d<=tol)out.push({ta:tOwn,tb:clamp(pr.t,0,1),p:pt.slice()});}else{const pr=pointSegProjection(pt,sa.a,sa.b);if(pr.t>=-taTol&&pr.t<=1+taTol&&pr.d<=tol)out.push({ta:clamp(pr.t,0,1),tb:tOwn,p:pt.slice()});}}
+  }
+  return out;
+}
+
+function preparePlanarGraph(entities,tol=0.05){
+  const raw=entitiesToSegments(entities),b=boundsOfEntities(entities),diag=Math.hypot(b.width,b.height)||1;
+  const reg0=new PointRegistry(tol);const snapped=raw.map(s=>{const ia=reg0.getOrCreate(s.a),ib=reg0.getOrCreate(s.b);return {a:reg0.points[ia],b:reg0.points[ib]};}).filter(s=>!samePoint(s.a,s.b,tol*0.05));
+  const splits=snapped.map(()=>[0,1]);
+  const cell=Math.max(diag/80,tol*5);const pairs=spatialPairs(snapped,cell,tol);
+  for(const [i,j] of pairs){const A=snapped[i],B=snapped[j];const ba=segBBox(A,tol),bb=segBBox(B,tol);if(ba.maxX<bb.minX||bb.maxX<ba.minX||ba.maxY<bb.minY||bb.maxY<ba.minY)continue;for(const hit of segmentIntersections(A,B,tol)){splits[i].push(hit.ta);splits[j].push(hit.tb);}}
+  // Endpoint-to-segment near misses (T-junction repair): project and snap the endpoint onto the segment.
+  for(const [i,j] of pairs){const A=snapped[i],B=snapped[j],la=Math.max(Math.hypot(A.b[0]-A.a[0],A.b[1]-A.a[1]),EPS),lb=Math.max(Math.hypot(B.b[0]-B.a[0],B.b[1]-B.a[1]),EPS),taTol=tol/la,tbTol=tol/lb;
+    for(const pt of [A.a,A.b]){const pr=pointSegProjection(pt,B.a,B.b);if(pr.t>tbTol&&pr.t<1-tbTol&&pr.d<=tol){pt[0]=pr.p[0];pt[1]=pr.p[1];splits[j].push(pr.t);}}
+    for(const pt of [B.a,B.b]){const pr=pointSegProjection(pt,A.a,A.b);if(pr.t>taTol&&pr.t<1-taTol&&pr.d<=tol){pt[0]=pr.p[0];pt[1]=pr.p[1];splits[i].push(pr.t);}}
+  }
+  const reg=new PointRegistry(tol*0.25),edges=[],edgeSet=new Set();
+  snapped.forEach((s,i)=>{const ts=[...splits[i]].sort((a,c)=>a-c).filter((v,k,a)=>k===0||Math.abs(v-a[k-1])>1e-8);for(let k=0;k<ts.length-1;k++){const t0=ts[k],t1=ts[k+1];if(t1-t0<1e-10)continue;const p0=[s.a[0]+(s.b[0]-s.a[0])*t0,s.a[1]+(s.b[1]-s.a[1])*t0],p1=[s.a[0]+(s.b[0]-s.a[0])*t1,s.a[1]+(s.b[1]-s.a[1])*t1];const a=reg.getOrCreate(p0),bb=reg.getOrCreate(p1);if(a===bb)continue;const key=a<bb?a+":"+bb:bb+":"+a;if(!edgeSet.has(key)){edgeSet.add(key);edges.push({a,b:bb,key});}}});
+  const degree=new Array(reg.points.length).fill(0);edges.forEach(e=>{degree[e.a]++;degree[e.b]++;});
+  const openNodeIds=degree.map((d,i)=>d===1?i:-1).filter(i=>i>=0);
+  return {nodes:reg.points,edges,openNodeIds,bounds:b,rawSegmentCount:raw.length,snappedSegmentCount:snapped.length,pairChecks:pairs.length,tolerance:tol};
+}
+
+function signedArea(loop){let a=0;for(let i=0;i<loop.length;i++){const p=loop[i],q=loop[(i+1)%loop.length];a+=p[0]*q[1]-q[0]*p[1];}return a/2;}
+function loopCentroid(loop){let a2=0,cx=0,cy=0;for(let i=0;i<loop.length;i++){const p=loop[i],q=loop[(i+1)%loop.length],cr=p[0]*q[1]-q[0]*p[1];a2+=cr;cx+=(p[0]+q[0])*cr;cy+=(p[1]+q[1])*cr;}const a=a2/2;if(Math.abs(a)<EPS)return {area:0,cx:loop[0][0],cy:loop[0][1]};return {area:Math.abs(a),signed:a,cx:cx/(3*a2),cy:cy/(3*a2)};}
+function pointInLoop(p,loop){let inside=false;for(let i=0,j=loop.length-1;i<loop.length;j=i++){const a=loop[i],b=loop[j];const intersect=((a[1]>p[1])!==(b[1]>p[1]))&&(p[0]<(b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1]+0.0)+a[0]);if(intersect)inside=!inside;}return inside;}
+function loopBBox(loop){let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;for(const p of loop){minX=Math.min(minX,p[0]);maxX=Math.max(maxX,p[0]);minY=Math.min(minY,p[1]);maxY=Math.max(maxY,p[1]);}return {minX,minY,maxX,maxY};}
+function canonicalCycle(ids){let a=ids.slice();if(a.length&&a[0]===a[a.length-1])a.pop();const n=a.length;let best=null;for(const arr of [a,a.slice().reverse()])for(let s=0;s<n;s++){const r=[];for(let i=0;i<n;i++)r.push(arr[(s+i)%n]);const k=r.join(",");if(best===null||k<best)best=k;}return best;}
+function polygonizeGraph(graph,minArea=1e-5){
+  const {nodes,edges}=graph,outgoing=nodes.map(()=>[]),half=[];
+  edges.forEach((e,ei)=>{const h0={from:e.a,to:e.b,edge:ei,rev:null,used:false},h1={from:e.b,to:e.a,edge:ei,rev:null,used:false};const i0=half.length,i1=i0+1;h0.rev=i1;h1.rev=i0;half.push(h0,h1);outgoing[e.a].push(i0);outgoing[e.b].push(i1);});
+  outgoing.forEach(arr=>arr.sort((i,j)=>Math.atan2(nodes[half[i].to][1]-nodes[half[i].from][1],nodes[half[i].to][0]-nodes[half[i].from][0])-Math.atan2(nodes[half[j].to][1]-nodes[half[j].from][1],nodes[half[j].to][0]-nodes[half[j].from][0])));
+  // Robust rotation-system traversal: precompute each half-edge's successor so
+  // every half-edge belongs to exactly one face — no mid-walk bail-outs that
+  // waste half-edges and absorb faces into neighbours.
+  const pos=new Map();outgoing.forEach(arr=>arr.forEach((h,k)=>pos.set(h,k)));
+  const nxt=new Int32Array(half.length);
+  for(let h=0;h<half.length;h++){const arr=outgoing[half[h].to],k=pos.get(half[h].rev);nxt[h]=arr[(k-1+arr.length)%arr.length];}
+  const cycles=[];
+  for(let start=0;start<half.length;start++){
+    if(half[start].used)continue;
+    let cur=start;const ids=[],edgeIds=[];
+    while(!half[cur].used){half[cur].used=true;ids.push(half[cur].from);edgeIds.push(half[cur].edge);cur=nxt[cur];}
+    if(cur!==start||ids.length<3)continue;
+    const loop=ids.map(id=>nodes[id]),a=signedArea(loop);if(a<=minArea)continue;
+    const c=loopCentroid(loop);cycles.push({ids,edgeIds,loop,area:c.area,cx:c.cx,cy:c.cy,bbox:loopBBox(loop),parent:-1,children:[]});
+  }
+  // Nesting hierarchy for disconnected closed loops.
+  for(let i=0;i<cycles.length;i++){
+    let parent=-1,pa=Infinity;const p=[cycles[i].cx,cycles[i].cy];
+    for(let j=0;j<cycles.length;j++){if(i===j||cycles[j].area<=cycles[i].area)continue;const b=cycles[j].bbox;if(p[0]<b.minX||p[0]>b.maxX||p[1]<b.minY||p[1]>b.maxY)continue;if(pointInLoop(p,cycles[j].loop)&&cycles[j].area<pa){parent=j;pa=cycles[j].area;}}
+    cycles[i].parent=parent;if(parent>=0)cycles[parent].children.push(i);
+  }
+  const regions=[];
+  cycles.forEach((cy,i)=>{
+    const holes=cy.children.map(k=>cycles[k]);let area=cy.area,sx=cy.cx*cy.area,sy=cy.cy*cy.area;
+    for(const h of holes){area-=h.area;sx-=h.cx*h.area;sy-=h.cy*h.area;}
+    if(area<=minArea)return;
+    const boundary=[];
+    const addCycleEdges=c=>{for(let k=0;k<c.ids.length;k++){const a=c.ids[k],b=c.ids[(k+1)%c.ids.length],key=a<b?a+":"+b:b+":"+a;boundary.push({a,b,key,p0:nodes[a],p1:nodes[b]});}};
+    addCycleEdges(cy);holes.forEach(addCycleEdges);
+    const id="R"+(regions.length+1);
+    regions.push({id,outer:cy.loop,outerIds:cy.ids.slice(),holes:holes.map(h=>h.loop),holeIds:holes.map(h=>h.ids.slice()),area,cx:sx/area,cy:sy/area,bbox:cy.bbox,boundaryEdges:boundary,assigned:null,ignored:false,source:"vector"});
+  });
+  regions.sort((a,b)=>b.area-a.area);regions.forEach((r,i)=>r.id="R"+(i+1));
+  return {regions,cycles};
+}
+function pointInRegion(p,r){if(!pointInLoop(p,r.outer))return false;for(const h of r.holes)if(pointInLoop(p,h))return false;return true;}
+function findRegionAt(regions,p){let best=null;for(const r of regions){if(p[0]<r.bbox.minX||p[0]>r.bbox.maxX||p[1]<r.bbox.minY||p[1]>r.bbox.maxY)continue;if(pointInRegion(p,r)&&(!best||r.area<best.area))best=r;}return best;}
+
+function integralR3Loop(loop,axisX){
+  // Green's theorem: ∫∫ |x-a|^3 dA = ∮ F(x) dy, where F' = |x-a|^3.
+  // On a segment, integrate F(x(t))*dy exactly by splitting at x=a.
+  const F4=u=>Math.sign(u)*Math.pow(Math.abs(u),4)/4;
+  let total=0;
+  for(let i=0;i<loop.length;i++){
+    const p=loop[i],q=loop[(i+1)%loop.length],u0=p[0]-axisX,u1=q[0]-axisX,dy=q[1]-p[1],du=u1-u0;
+    if(Math.abs(du)<EPS){total+=dy*F4(u0);continue;}
+    // integral_0^1 F4(u0+t du) dt = [|u|^5/20]_{u0}^{u1}/du (derivative |u|^5/5 = sign(u)|u|^4)
+    const G=u=>Math.pow(Math.abs(u),5)/20;
+    total+=dy*(G(u1)-G(u0))/du;
+  }
+  return Math.abs(total);
+}
+function regionR3(r,axisX){let v=integralR3Loop(r.outer,axisX);for(const h of r.holes)v-=integralR3Loop(h,axisX);return Math.abs(v);}
+function regionSignature(r,bounds){const d=Math.hypot(bounds.width,bounds.height)||1;return {id:r.id,cx:r.cx,cy:r.cy,area:r.area,ncx:(r.cx-bounds.minX)/d,ncy:(r.cy-bounds.minY)/d,na:r.area/(d*d),bbox:r.bbox};}
+function componentMetrics(name,regions,axisX,sg=1.1){
+  if(!regions.length)return null;let area=0,sx=0,sy=0,radialFirst=0,r3=0,minX=Infinity,maxX=-Infinity;const edgeCount=new Map(),edgeObj=new Map();
+  for(const r of regions){area+=r.area;sx+=r.cx*r.area;sy+=r.cy*r.area;radialFirst+=Math.abs(r.cx-axisX)*r.area;r3+=regionR3(r,axisX);minX=Math.min(minX,r.bbox.minX);maxX=Math.max(maxX,r.bbox.maxX);for(const e of r.boundaryEdges){edgeCount.set(e.key,(edgeCount.get(e.key)||0)+1);edgeObj.set(e.key,e);}}
+  let blen=0,bx=0;for(const [k,n] of edgeCount)if(n%2===1){const e=edgeObj.get(k),L=Math.hypot(e.p1[0]-e.p0[0],e.p1[1]-e.p0[1]);blen+=L;bx+=L*(e.p0[0]+e.p1[0])/2;}
+  const cx=sx/area,cy=sy/area,d=radialFirst/area,volume_cm3=2*Math.PI*radialFirst/1000,weight_g=volume_cm3*sg,boundaryCx=blen?bx/blen:cx,surface_area_mm2=2*Math.PI*Math.abs(boundaryCx-axisX)*blen,polar_MOI=2*Math.PI*(sg/1000)*r3;
+  const crosses=minX<axisX-EPS&&maxX>axisX+EPS;
+  return {component:name,area_mm2:area,centroid_x:cx,centroid_y:cy,centroid_distance_mm:d,volume_cm3,weight_g,surface_area_mm2,polar_MOI,radius_of_gyration_mm:weight_g>0?Math.sqrt(polar_MOI/weight_g):0,sg,pct:0,axis_crossing:crosses,region_count:regions.length,boundary_length_mm:blen,boundary_centroid_x:boundaryCx};
+}
+
+function fnv1a(text){let h=0x811c9dc5;for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,0x01000193);}return (h>>>0).toString(16).padStart(8,"0");}
+function transferAssignments(project,regions,bounds){
+  const saved=project.regions||[],used=new Set(),matches=[];const diag=Math.hypot(bounds.width,bounds.height)||1;
+  // exact signature id first when fingerprint matches
+  if(project.fingerprint&&project.fingerprint===project.currentFingerprint){for(const s of saved){const r=regions.find(x=>x.id===s.id);if(r){matches.push({saved:s,region:r,cost:0});used.add(r.id);}}}
+  for(const s of saved){if(matches.some(m=>m.saved===s))continue;let best=null,bc=Infinity;for(const r of regions){if(used.has(r.id))continue;const dist=Math.hypot(r.cx-s.cx,r.cy-s.cy)/diag,ar=Math.abs(Math.log(Math.max(r.area,EPS)/Math.max(s.area,EPS))),cost=dist*3+ar*0.8;if(cost<bc){bc=cost;best=r;}}if(best&&bc<0.35){matches.push({saved:s,region:best,cost:bc});used.add(best.id);}}
+  for(const m of matches){m.region.assigned=m.saved.assigned||null;m.region.ignored=!!m.saved.ignored;}
+  return matches;
+}
+
+function makeDemoEntities(){
+  const segs=[];const line=(a,b)=>segs.push({layer:"0",type:"LINE",pts:[a,b],closed:false});
+  const rect=(x0,y0,x1,y1,gapTop=0)=>{line([x0,y0],[x1,y0]);line([x1,y0],[x1,y1]);line([x1-gapTop,y1],[x0,y1]);line([x0,y1],[x0,y0]);};
+  rect(100,180,160,200,0.03); // closes with normal 0.05 tolerance
+  rect(105,165,155,175,0);
+  rect(120,75,140,155,0);
+  rect(125,50,140,70,0);
+  line([0,40],[0,210]);
+  return segs;
+}
+function demoExpected(){return {
+  TREAD:{area:1200,cx:130,cy:190},BELT:{area:500,cx:130,cy:170},SIDEWALL:{area:1600,cx:130,cy:115},BEAD:{area:300,cx:132.5,cy:60}
+};}
+
+function preparePlanarGraphV2(entities, tol = 0.05) {
+  const REG = 1e-6, EPSN = 1e-9;
+
+  const _same = (a, b, t) => Math.hypot(a[0] - b[0], a[1] - b[1]) <= t;
+  const _proj = (p, a, b) => {
+    const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
+    if (l2 < 1e-18) return { t: 0, p: [a[0], a[1]], d: Math.hypot(p[0] - a[0], p[1] - a[1]) };
+    const t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2;
+    const q = [a[0] + t * dx, a[1] + t * dy];
+    return { t, p: q, d: Math.hypot(p[0] - q[0], p[1] - q[1]) };
+  };
+  const _bbox = (s, pad) => ({ minX: Math.min(s.a[0], s.b[0]) - pad, maxX: Math.max(s.a[0], s.b[0]) + pad,
+                               minY: Math.min(s.a[1], s.b[1]) - pad, maxY: Math.max(s.a[1], s.b[1]) + pad });
+
+  // bounds
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const e of entities) for (const p of e.pts) {
+    minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]);
+    minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]);
+  }
+  const bounds = { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+  const diag = Math.hypot(bounds.width, bounds.height) || 1;
+
+  // 1 — deep-copied chains (interior vertices are immutable from here on)
+  const chains = entities.map(e => ({
+    pts: e.pts.map(p => [p[0], p[1]]),
+    closed: e.closed || _same(e.pts[0], e.pts[e.pts.length - 1], REG),
+  })).filter(c => c.pts.length >= 2);
+
+  // 2a — endpoint healing, but ONLY for truly open endpoints.
+  // Curves are often drawn as chains of short pieces whose junction endpoints
+  // already coincide exactly; those junctions are CLOSED and must never be
+  // moved. (Welding junction points of one chain onto a parallel chain is what
+  // produced zigzag bridges that cut/merged faces.)
+  const ends = [];
+  chains.forEach(c => { if (!c.closed) { ends.push(c.pts[0]); ends.push(c.pts[c.pts.length - 1]); } });
+  const isOpen = ends.map((p, i) => {
+    for (let j = 0; j < ends.length; j++) {
+      if (j !== i && _same(p, ends[j], REG)) return false;   // has an exact partner: closed junction
+    }
+    return true;
+  });
+  const openEnds = ends.filter((_, i) => isOpen[i]);
+  // open-to-open pair healing (small drawing gaps)
+  for (let i = 0; i < openEnds.length; i++) for (let j = i + 1; j < openEnds.length; j++) {
+    const p = openEnds[i], q = openEnds[j], d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+    if (d > REG && d <= tol) { const mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2; p[0] = q[0] = mx; p[1] = q[1] = my; }
+  }
+  // open-to-closed-junction healing (an open tip meant to land on a junction)
+  for (let i = 0; i < openEnds.length; i++) {
+    const p = openEnds[i];
+    let best = null, bd = tol;
+    for (let j = 0; j < ends.length; j++) {
+      if (ends[j] === p || isOpen[j]) continue;
+      const d = Math.hypot(p[0] - ends[j][0], p[1] - ends[j][1]);
+      if (d > REG && d < bd) { bd = d; best = ends[j]; }
+    }
+    if (best) { p[0] = best[0]; p[1] = best[1]; }
+  }
+
+  // 2b — endpoint-to-curve healing (T-junctions), landing point inserted
+  const segsOf = [];
+  chains.forEach((c, ci) => { for (let k = 0; k < c.pts.length - 1; k++) segsOf.push({ ci, k, a: c.pts[k], b: c.pts[k + 1] }); });
+  // cell must be >= tol so the +-1 neighbourhood covers the search radius;
+  // floor at diag/500 so strict tolerances don't explode the grid.
+  const cell = Math.max(tol * 4, diag / 500), grid = new Map(), gkey = (x, y) => x + "," + y;
+  segsOf.forEach((s, idx) => {
+    const bb = _bbox(s, tol);
+    for (let x = Math.floor(bb.minX / cell); x <= Math.floor(bb.maxX / cell); x++)
+      for (let y = Math.floor(bb.minY / cell); y <= Math.floor(bb.maxY / cell); y++) {
+        const k = gkey(x, y); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(idx);
+      }
+  });
+  const inserts = new Map();
+  // still-open endpoints only (2a may have closed some)
+  const stillOpen = openEnds.filter(p => {
+    let n = 0;
+    for (const q of ends) if (q !== p && _same(p, q, REG)) n++;
+    return n === 0;
+  });
+  for (const p of stillOpen) {
+    const gx = Math.floor(p[0] / cell), gy = Math.floor(p[1] / cell);
+    let best = null, bd = tol;
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      const arr = grid.get(gkey(gx + dx, gy + dy)); if (!arr) continue;
+      for (const idx of arr) {
+        const s = segsOf[idx];
+        if (s.a === p || s.b === p) continue;
+        const la = Math.max(Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]), 1e-12);
+        const pr = _proj(p, s.a, s.b);
+        if (pr.t <= REG / la || pr.t >= 1 - REG / la) continue;  // lands on a vertex — registry merges it
+        if (pr.d > REG && pr.d <= bd) { bd = pr.d; best = { idx, pr }; }
+      }
+    }
+    if (best) {
+      p[0] = best.pr.p[0]; p[1] = best.pr.p[1];
+      if (!inserts.has(best.idx)) inserts.set(best.idx, []);
+      inserts.get(best.idx).push({ t: best.pr.t, p: [p[0], p[1]] });
+    }
+  }
+  const byChain = new Map();
+  for (const [idx, list] of inserts) {
+    const s = segsOf[idx];
+    if (!byChain.has(s.ci)) byChain.set(s.ci, []);
+    byChain.get(s.ci).push({ k: s.k, list });
+  }
+  for (const [ci, entries] of byChain) {
+    entries.sort((a, b) => b.k - a.k);
+    for (const { k, list } of entries) {
+      list.sort((a, b) => a.t - b.t);
+      chains[ci].pts.splice(k + 1, 0, ...list.map(x => x.p));
+    }
+  }
+
+  // 3 — explode to segments, node crossings exactly
+  const raw = [];
+  chains.forEach(c => {
+    for (let k = 0; k < c.pts.length - 1; k++) {
+      const a = c.pts[k], b = c.pts[k + 1];
+      if (Math.hypot(b[0] - a[0], b[1] - a[1]) > REG) raw.push({ a: [a[0], a[1]], b: [b[0], b[1]] });
+    }
+  });
+  // spatial pairs
+  const ncell = Math.max(diag / 150, 1e-6), ngrid = new Map(), pairSet = new Set(), pairs = [];
+  raw.forEach((s, i) => {
+    const bb = _bbox(s, 1e-7);
+    for (let x = Math.floor(bb.minX / ncell); x <= Math.floor(bb.maxX / ncell); x++)
+      for (let y = Math.floor(bb.minY / ncell); y <= Math.floor(bb.maxY / ncell); y++) {
+        const k = gkey(x, y), arr = ngrid.get(k) || [];
+        for (const j of arr) { const a = Math.min(i, j), b = Math.max(i, j), pk = a + ":" + b; if (!pairSet.has(pk)) { pairSet.add(pk); pairs.push([a, b]); } }
+        arr.push(i); ngrid.set(k, arr);
+      }
+  });
+  // splits[i] holds {t, p} entries; p (optional) overrides the split point so
+  // welded contacts land EXACTLY on the touching vertex.
+  const splits = raw.map(() => [{ t: 0, p: null }, { t: 1, p: null }]);
+  const cross = (u, v) => u[0] * v[1] - u[1] * v[0];
+  // Contact welding epsilon: tangent contacts between curves surface as a
+  // vertex of one polyline passing within ~drawing precision of the other.
+  // 1 µm is far below any real inter-curve gauge, so welding is safe.
+  const CONTACT = 5e-5;
+  for (const [i, j] of pairs) {
+    const A = raw[i], B = raw[j];
+    const ba = _bbox(A, CONTACT), bb2 = _bbox(B, CONTACT);
+    if (ba.maxX < bb2.minX || bb2.maxX < ba.minX || ba.maxY < bb2.minY || bb2.maxY < ba.minY) continue;
+    const r = [A.b[0] - A.a[0], A.b[1] - A.a[1]], s = [B.b[0] - B.a[0], B.b[1] - B.a[1]];
+    const rxs = cross(r, s), qp = [B.a[0] - A.a[0], B.a[1] - A.a[1]];
+    if (Math.abs(rxs) > EPSN) {
+      const t = cross(qp, s) / rxs, u = cross(qp, r) / rxs;
+      if (t > 1e-9 && t < 1 - 1e-9 && u >= -1e-9 && u <= 1 + 1e-9) splits[i].push({ t, p: null });
+      if (u > 1e-9 && u < 1 - 1e-9 && t >= -1e-9 && t <= 1 + 1e-9) splits[j].push({ t: u, p: null });
+    } else if (Math.abs(cross(qp, r)) <= EPSN * (Math.hypot(r[0], r[1]) + 1)) {
+      // collinear overlap: split each at the other's interior endpoints
+      for (const pt of [B.a, B.b]) { const pr = _proj(pt, A.a, A.b); if (pr.d <= REG && pr.t > 1e-9 && pr.t < 1 - 1e-9) splits[i].push({ t: pr.t, p: [pt[0], pt[1]] }); }
+      for (const pt of [A.a, A.b]) { const pr = _proj(pt, B.a, B.b); if (pr.d <= REG && pr.t > 1e-9 && pr.t < 1 - 1e-9) splits[j].push({ t: pr.t, p: [pt[0], pt[1]] }); }
+    }
+    // Tangent contact welding: a vertex of one polyline lying within CONTACT of
+    // the other's interior splits it AT THE VERTEX POSITION, so the node
+    // registry fuses the two curves at the touch point. Without this, tangent
+    // contacts (ply tips, islands kissing a boundary) stay topologically open
+    // and faces merge.
+    for (const pt of [B.a, B.b]) {
+      const pr = _proj(pt, A.a, A.b);
+      if (pr.d <= CONTACT && pr.t > 1e-7 && pr.t < 1 - 1e-7 && !_same(pt, A.a, CONTACT) && !_same(pt, A.b, CONTACT)) splits[i].push({ t: pr.t, p: [pt[0], pt[1]] });
+    }
+    for (const pt of [A.a, A.b]) {
+      const pr = _proj(pt, B.a, B.b);
+      if (pr.d <= CONTACT && pr.t > 1e-7 && pr.t < 1 - 1e-7 && !_same(pt, B.a, CONTACT) && !_same(pt, B.b, CONTACT)) splits[j].push({ t: pr.t, p: [pt[0], pt[1]] });
+    }
+  }
+
+  // 4 — node registry (fp-noise tolerance) + edge dedupe
+  const rcell = Math.max(REG, 1e-7), rgrid = new Map(), points = [];
+  const getNode = (p) => {
+    const ix = Math.floor(p[0] / rcell), iy = Math.floor(p[1] / rcell);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      const arr = rgrid.get(gkey(ix + dx, iy + dy)); if (!arr) continue;
+      for (const id of arr) if (_same(points[id], p, REG)) return id;
+    }
+    const id = points.length; points.push([p[0], p[1]]);
+    const k = gkey(ix, iy); if (!rgrid.has(k)) rgrid.set(k, []); rgrid.get(k).push(id);
+    return id;
+  };
+  const edges = [], edgeSet = new Set();
+  raw.forEach((s, i) => {
+    const ts = [...splits[i]].sort((a, b) => a.t - b.t).filter((v, k, arr) => k === 0 || v.t - arr[k - 1].t > 1e-10);
+    const ptAt = (e) => e.p ? e.p : [s.a[0] + (s.b[0] - s.a[0]) * e.t, s.a[1] + (s.b[1] - s.a[1]) * e.t];
+    for (let k = 0; k < ts.length - 1; k++) {
+      const na = getNode(ptAt(ts[k])), nb = getNode(ptAt(ts[k + 1]));
+      if (na === nb) continue;
+      const key = na < nb ? na + ":" + nb : nb + ":" + na;
+      if (!edgeSet.has(key)) { edgeSet.add(key); edges.push({ a: na, b: nb, key }); }
+    }
+  });
+  const degree = new Array(points.length).fill(0);
+  edges.forEach(e => { degree[e.a]++; degree[e.b]++; });
+  const openNodeIds = degree.map((d, i) => d === 1 ? i : -1).filter(i => i >= 0);
+  return { nodes: points, edges, openNodeIds, bounds,
+           rawSegmentCount: raw.length, snappedSegmentCount: raw.length,
+           pairChecks: pairs.length, tolerance: tol };
+}
+
+const api={parseDXF,loadEntities,entityToPolyline,flattenArc,flattenBulge,flattenEllipse,flattenSpline,boundsOfEntities,entitiesToSegments,preparePlanarGraph:preparePlanarGraphV2,polygonizeGraph,pointInLoop,pointInRegion,findRegionAt,signedArea,loopCentroid,integralR3Loop,regionR3,componentMetrics,regionSignature,fnv1a,transferAssignments,makeDemoEntities,demoExpected};
+if(typeof module!=="undefined"&&module.exports)module.exports=api;global.TyreEngine=api;
+})(typeof window!=="undefined"?window:globalThis);
+
+(function(){
+"use strict";
+const E=window.TyreEngine,$=id=>document.getElementById(id);
+const PALETTE=["#4C78A8","#F58518","#54A24B","#E45756","#72B7B2","#B279A2","#EECA3B","#9D755D","#BAB0AC","#FF9DA6","#6F4E7C","#59A14F"];
+const DEFAULT_SG={TREAD:1.15,SIDEWALL:1.10,APEX:1.12,INNERLINER:1.20,"BELT-1":1.30,"BELT-2":1.30,BELT:1.30,"PLY-1":1.25,"PLY-2":1.25,PLY:1.25,BEAD:7.85,"BEAD-FILLER":1.12,CHAFER:1.18};
+
+let ENT=[],BOUNDS=null,GRAPH=null,REGIONS=[],FINGERPRINT="",FILE_NAME="",DXF_TEXT="";
+let MODE="vector",AXIS=0,SIDE="right",TOL=0.05,ACTIVE=null,ACTION="assign",COMPONENTS=[],SG={...DEFAULT_SG},HOVER=null,PENDING=null;
+let undoStack=[],redoStack=[],results=[];
+let raster=null;
+let view={cx:0,cy:0,scale:1},navMode="select",drag=null,spaceDown=false;
+const cv=$("cv"),ctx=cv.getContext("2d"),wrap=$("cvwrap");
+
+function escapeHtml(s){return String(s).replace(/[&<>\"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function fmt(v,d=2){if(v==null||!Number.isFinite(v))return "—";if(Math.abs(v)>=1e6)return v.toExponential(3);return v.toFixed(d);}
+function download(name,text,type="application/json"){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
+function colorFor(name){let i=COMPONENTS.indexOf(name);if(i<0)i=0;return PALETTE[i%PALETTE.length];}
+function hexA(h,a){const n=parseInt(h.slice(1),16);return `rgba(${n>>16},${(n>>8)&255},${n&255},${a})`;}
+function currentTol(){const preset=$("tolPreset").value;return preset==="custom"?Math.max(0.001,parseFloat($("tolCustom").value)||0.05):parseFloat(preset);}
+
+function setStatus(msg,kind=""){const el=$("status");el.textContent=msg;el.className="status "+kind;}
+function resizeCanvas(){const r=wrap.getBoundingClientRect(),dpr=Math.max(1,window.devicePixelRatio||1);cv.width=Math.max(300,Math.round(r.width*dpr));cv.height=Math.max(300,Math.round(r.height*dpr));cv.style.width=r.width+"px";cv.style.height=r.height+"px";ctx.setTransform(dpr,0,0,dpr,0,0);render();}
+new ResizeObserver(resizeCanvas).observe(wrap);
+function cssSize(){return {w:cv.clientWidth||900,h:cv.clientHeight||700};}
+function w2s(p){const {w,h}=cssSize();return [(p[0]-view.cx)*view.scale+w/2,h/2-(p[1]-view.cy)*view.scale];}
+function s2w(x,y){const {w,h}=cssSize();return [view.cx+(x-w/2)/view.scale,view.cy-(y-h/2)/view.scale];}
+function fitView(){if(!BOUNDS)return;const {w,h}=cssSize(),pad=30;view.cx=(BOUNDS.minX+BOUNDS.maxX)/2;view.cy=(BOUNDS.minY+BOUNDS.maxY)/2;view.scale=Math.max(0.01,Math.min((w-2*pad)/Math.max(BOUNDS.width,1),(h-2*pad)/Math.max(BOUNDS.height,1)));render();}
+function zoomAt(factor,sx,sy){if(!BOUNDS)return;const before=s2w(sx,sy);view.scale=Math.max(0.01,Math.min(5000,view.scale*factor));const after=s2w(sx,sy);view.cx+=before[0]-after[0];view.cy+=before[1]-after[1];render();}
+function panPixels(dx,dy){view.cx-=dx/view.scale;view.cy+=dy/view.scale;render();}
+
+function parseAndSet(text,name){
+  try{
+    setStatus("Reading DXF…");DXF_TEXT=text;FILE_NAME=name;FINGERPRINT=E.fnv1a(text);TOL=currentTol();results=[];$("results").innerHTML="";$("testReport").innerHTML="";
+    ENT=E.loadEntities(text,0.005);if(!ENT.length)throw new Error("No supported DXF curves were found.");
+    BOUNDS=E.boundsOfEntities(ENT);autoAxis();extractRegions();fitView();setStatus(`${name}: ${ENT.length} curves loaded.` ,"ok");
+  }catch(err){console.error(err);setStatus("Could not read DXF: "+err.message,"bad");alert("Could not read DXF: "+err.message);}
+}
+$("file").addEventListener("change",e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>parseAndSet(r.result,f.name);r.readAsText(f,"latin1");});
+
+function loadDemo(autoAssign=true){
+  ENT=E.makeDemoEntities();BOUNDS=E.boundsOfEntities(ENT);results=[];$("results").innerHTML="";FILE_NAME="single_layer_validation_geometry.dxf";DXF_TEXT="synthetic-demo-v2";FINGERPRINT=E.fnv1a(DXF_TEXT);AXIS=0;$("axis").value="0.00";MODE="vector";$("extractMode").value="vector";TOL=currentTol();extractRegions();fitView();
+  if(autoAssign){const exp=E.demoExpected();for(const r of REGIONS){let best=null,bd=Infinity;for(const [name,v] of Object.entries(exp)){const d=Math.hypot(r.cx-v.cx,r.cy-v.cy)+Math.abs(r.area-v.area);if(d<bd){bd=d;best=name;}}if(best){ensureComponent(best);r.assigned=best;}}
+    ACTIVE="TREAD";renderAll();computeResults();runDemoCheck();}
+  setStatus("Validation geometry loaded and assigned.","ok");
+}
+$("demo").onclick=()=>loadDemo(true);
+
+function autoAxis(){if(!BOUNDS)return;const mid=(BOUNDS.minX+BOUNDS.maxX)/2;let best=null,bestSpan=-Infinity,bestMid=Infinity;for(const e of ENT){if(e.type==="LINE"&&e.pts.length===2){const a=e.pts[0],b=e.pts[1],span=Math.abs(b[1]-a[1]);if(Math.abs(a[0]-b[0])<=Math.max(TOL,0.5)&&span>BOUNDS.height*0.3){const x=(a[0]+b[0])/2,md=Math.abs(x-mid);if(span>bestSpan+TOL||(Math.abs(span-bestSpan)<=TOL&&md<bestMid)){bestSpan=span;bestMid=md;best=x;}}}}AXIS=best!=null?best:(BOUNDS.minX>=-TOL?0:mid);$("axis").value=AXIS.toFixed(2);}
+$("axisAuto").onclick=()=>{autoAxis();render();updateDiagnostics();};
+$("axis").addEventListener("change",()=>{AXIS=parseFloat($("axis").value)||0;render();updateDiagnostics();});
+$("side").addEventListener("change",()=>{SIDE=$("side").value;render();updateProgress();});
+function effectiveSide(){
+  if(SIDE!=="auto")return SIDE;
+  let left=0,right=0;for(const r of REGIONS){if(r.cx<AXIS)left+=r.area;else right+=r.area;}
+  return right>=left?"right":"left";
+}
+
+function extractRegions(){
+  if(!ENT.length)return;MODE=$("extractMode").value;TOL=currentTol();setStatus(MODE==="vector"?"Building vector planar network…":"Building raster fallback regions…");
+  const previous=snapshotAssignments();
+  if(MODE==="vector"){
+    GRAPH=E.preparePlanarGraph(ENT,TOL);const out=E.polygonizeGraph(GRAPH,Math.max(0.2,TOL*TOL*0.02));REGIONS=out.regions;raster=null;
+  }else buildRasterRegions(null,true);
+  restoreBySimilarity(previous);undoStack=[];redoStack=[];renderAll();updateDiagnostics();setStatus(`${REGIONS.length} enclosed regions detected using ${MODE} extraction.`,REGIONS.length?"ok":"bad");
+}
+$("extract").onclick=extractRegions;
+$("extractMode").addEventListener("change",()=>{$("rasterOpts").style.display=$("extractMode").value==="raster"?"":"none";});
+$("tolPreset").addEventListener("change",()=>{$("tolCustomWrap").style.display=$("tolPreset").value==="custom"?"":"none";});
+
+function contourFromPixels(pix,pixSet,w,h,ppm,pad){
+  const edges=[];const add=(a,b)=>edges.push({a,b});
+  for(const q of pix){const y=Math.floor(q/w),x=q-y*w;
+    if(!pixSet.has(q-w))add([x,y],[x+1,y]);
+    if(!pixSet.has(q+1)||x===w-1)add([x+1,y],[x+1,y+1]);
+    if(!pixSet.has(q+w))add([x+1,y+1],[x,y+1]);
+    if(!pixSet.has(q-1)||x===0)add([x,y+1],[x,y]);
+  }
+  const key=p=>p[0]+","+p[1],from=new Map();edges.forEach((e,i)=>{const k=key(e.a);if(!from.has(k))from.set(k,[]);from.get(k).push(i);});
+  const used=new Uint8Array(edges.length),loops=[];
+  for(let i=0;i<edges.length;i++){if(used[i])continue;let cur=i,loop=[],guard=0;while(!used[cur]&&guard++<edges.length+5){used[cur]=1;const e=edges[cur];loop.push(e.a);const arr=from.get(key(e.b))||[];let nxt=arr.find(j=>!used[j]);if(nxt==null){if(key(e.b)===key(loop[0]))break;else{loop=[];break;}}cur=nxt;}if(loop.length>=3)loops.push(loop);}
+  const toWorld=p=>[BOUNDS.minX-pad+p[0]/ppm,BOUNDS.maxY+pad-p[1]/ppm];
+  const simplify=loop=>{const pts=loop.map(toWorld),out=[];for(let i=0;i<pts.length;i++){const a=pts[(i-1+pts.length)%pts.length],b=pts[i],c=pts[(i+1)%pts.length],cr=(b[0]-a[0])*(c[1]-b[1])-(b[1]-a[1])*(c[0]-b[0]);if(Math.abs(cr)>1e-12)out.push(b);}return out.length>=3?out:pts;};
+  const worldLoops=loops.map(simplify).filter(x=>x.length>=3).sort((a,b)=>Math.abs(E.signedArea(b))-Math.abs(E.signedArea(a)));
+  const outer=worldLoops[0]||[],holes=worldLoops.slice(1).filter(h=>E.pointInLoop(h[0],outer));
+  const boundaryEdges=[];for(const loop of [outer,...holes])for(let i=0;i<loop.length;i++){const p0=loop[i],p1=loop[(i+1)%loop.length],k0=p0[0].toFixed(8)+","+p0[1].toFixed(8),k1=p1[0].toFixed(8)+","+p1[1].toFixed(8),ek=k0<k1?k0+":"+k1:k1+":"+k0;boundaryEdges.push({key:ek,p0,p1});}
+  return {outer,holes,boundaryEdges};
+}
+function rasterEstimate(res,seal){
+  const pad=Math.max(BOUNDS.width,BOUNDS.height)*.03,ppmm=res/(BOUNDS.width+2*pad),w=Math.max(10,Math.round((BOUNDS.width+2*pad)*ppmm)),h=Math.max(10,Math.round((BOUNDS.height+2*pad)*ppmm));
+  if(w*h>5e6)return null;const off=document.createElement("canvas");off.width=w;off.height=h;const c=off.getContext("2d");c.fillStyle="#fff";c.fillRect(0,0,w,h);c.strokeStyle="#000";c.lineWidth=seal;c.lineJoin="round";c.lineCap="round";const wx=x=>(x-BOUNDS.minX+pad)*ppmm,wy=y=>(BOUNDS.maxY+pad-y)*ppmm;
+  for(const e of ENT){c.beginPath();e.pts.forEach((p,i)=>i?c.lineTo(wx(p[0]),wy(p[1])):c.moveTo(wx(p[0]),wy(p[1])));c.stroke();}const data=c.getImageData(0,0,w,h).data,wall=new Uint8Array(w*h),seen=new Uint8Array(w*h);for(let i=0;i<w*h;i++)wall[i]=data[i*4]<128?1:0;
+  let totalPix=0,count=0;const stack=[];for(let sy=0;sy<h;sy++)for(let sx=0;sx<w;sx++){const idx=sy*w+sx;if(wall[idx]||seen[idx])continue;let n=0,touch=false;seen[idx]=1;stack.push(idx);while(stack.length){const q=stack.pop(),y=Math.floor(q/w),x=q-y*w;n++;if(x===0||y===0||x===w-1||y===h-1)touch=true;for(const z of [q-1,q+1,q-w,q+w]){if(z<0||z>=w*h)continue;const zy=Math.floor(z/w),zx=z-zy*w;if(Math.abs(zx-x)+Math.abs(zy-y)!==1)continue;if(!wall[z]&&!seen[z]){seen[z]=1;stack.push(z);}}}if(!touch&&n>=8){totalPix+=n;count++;}}
+  return {area:totalPix/(ppmm*ppmm),count};
+}
+function buildRasterRegions(targetRes=null,doConvergence=true){
+  const res=Math.max(600,Math.min(3000,targetRes||parseInt($("rasterRes").value)||1400)),seal=Math.max(1,Math.min(11,parseInt($("seal").value)||3));
+  const pad=Math.max(BOUNDS.width,BOUNDS.height)*0.03,ppmm=res/(BOUNDS.width+2*pad),W=Math.round((BOUNDS.width+2*pad)*ppmm),H=Math.round((BOUNDS.height+2*pad)*ppmm),maxPx=9e6;
+  let scale=1;if(W*H>maxPx)scale=Math.sqrt(maxPx/(W*H));const w=Math.max(10,Math.round(W*scale)),h=Math.max(10,Math.round(H*scale)),ppm=ppmm*scale;
+  const off=document.createElement("canvas");off.width=w;off.height=h;const c=off.getContext("2d");c.fillStyle="#fff";c.fillRect(0,0,w,h);c.strokeStyle="#000";c.lineWidth=seal;c.lineJoin="round";c.lineCap="round";
+  const wx=x=>(x-BOUNDS.minX+pad)*ppm,wy=y=>(BOUNDS.maxY+pad-y)*ppm;
+  for(const e of ENT){c.beginPath();e.pts.forEach((p,i)=>i?c.lineTo(wx(p[0]),wy(p[1])):c.moveTo(wx(p[0]),wy(p[1])));c.stroke();}
+  const data=c.getImageData(0,0,w,h).data,wall=new Uint8Array(w*h),labels=new Int32Array(w*h);labels.fill(-1);for(let i=0;i<w*h;i++)wall[i]=data[i*4]<128?1:0;
+  const regs=[];let label=0;const stack=[];
+  for(let sy=0;sy<h;sy++)for(let sx=0;sx<w;sx++){const idx=sy*w+sx;if(wall[idx]||labels[idx]>=0)continue;let count=0,sumx=0,sumy=0,minx=w,maxx=0,miny=h,maxy=0,touch=false;const pix=[];stack.push(idx);labels[idx]=-2;
+    while(stack.length){const q=stack.pop(),y=Math.floor(q/w),x=q-y*w;pix.push(q);count++;sumx+=x;sumy+=y;minx=Math.min(minx,x);maxx=Math.max(maxx,x);miny=Math.min(miny,y);maxy=Math.max(maxy,y);if(x===0||y===0||x===w-1||y===h-1)touch=true;for(const n of [q-1,q+1,q-w,q+w]){if(n<0||n>=w*h)continue;const ny=Math.floor(n/w),nx=n-ny*w;if(Math.abs(nx-x)+Math.abs(ny-y)!==1)continue;if(!wall[n]&&labels[n]===-1){labels[n]=-2;stack.push(n);}}}
+    if(touch||count<8){for(const q of pix)labels[q]=-3;continue;}for(const q of pix)labels[q]=label;
+    const pxArea=1/(ppm*ppm),cx=BOUNDS.minX-pad+(sumx/count+0.5)/ppm,cy=BOUNDS.maxY+pad-(sumy/count+0.5)/ppm,contour=contourFromPixels(pix,new Set(pix),w,h,ppm,pad);
+    regs.push({id:"R"+(label+1),assigned:null,ignored:false,source:"raster",label,area:count*pxArea,cx,cy,bbox:{minX:BOUNDS.minX-pad+minx/ppm,maxX:BOUNDS.minX-pad+(maxx+1)/ppm,minY:BOUNDS.maxY+pad-(maxy+1)/ppm,maxY:BOUNDS.maxY+pad-miny/ppm},pixelCount:count,...contour});label++;
+  }
+  regs.sort((a,b)=>b.area-a.area);regs.forEach((r,i)=>r.id="R"+(i+1));
+  raster={off,wall,labels,w,h,ppm,pad,regions:regs,res,seal,convergencePct:null,secondaryCount:null};REGIONS=regs;GRAPH=null;
+  if(doConvergence){const secondary=rasterEstimate(Math.max(600,Math.round(res*.75)),Math.max(1,Math.round(seal*.75))),primaryArea=regs.reduce((s,r)=>s+r.area,0);if(secondary&&primaryArea>0){raster.convergencePct=Math.abs(primaryArea-secondary.area)/primaryArea*100;raster.secondaryCount=secondary.count;}}
+}
+function snapshotAssignments(){return REGIONS.map(r=>({id:r.id,cx:r.cx,cy:r.cy,area:r.area,bbox:r.bbox,feature:BOUNDS?regionFeature(r):null,assigned:r.assigned,ignored:r.ignored}));}
+function restoreBySimilarity(saved){if(!saved?.length)return;const used=new Set(),diag=Math.hypot(BOUNDS.width,BOUNDS.height)||1;for(const s of saved){if(!s.assigned&&!s.ignored)continue;let best=null,bc=Infinity;for(const r of REGIONS){if(used.has(r.id))continue;const rf=regionFeature(r),sf=s.feature||{},aspectCost=sf.aspect?Math.abs(Math.log(Math.max(rf.aspect,1e-9)/Math.max(sf.aspect,1e-9))):0;let neighCost=0;if(sf.neighbors?.length){const n=Math.min(sf.neighbors.length,rf.neighbors.length);for(let i=0;i<n;i++)neighCost+=Math.abs(sf.neighbors[i]-rf.neighbors[i]);neighCost/=Math.max(n,1);}const cost=3*Math.hypot(r.cx-s.cx,r.cy-s.cy)/diag+0.8*Math.abs(Math.log(Math.max(r.area,1e-9)/Math.max(s.area,1e-9)))+.35*aspectCost+.5*neighCost;if(cost<bc){bc=cost;best=r;}}if(best&&bc<0.35){best.assigned=s.assigned;best.ignored=s.ignored;used.add(best.id);if(s.assigned)ensureComponent(s.assigned);}}}
+
+function regionAllowed(r){const side=effectiveSide();if(side==="both")return true;if(side==="right")return r.cx>=AXIS-TOL;return r.cx<=AXIS+TOL;}
+function getRegionAtWorld(p){if(MODE==="vector")return E.findRegionAt(REGIONS,p);if(!raster)return null;const x=Math.floor((p[0]-BOUNDS.minX+raster.pad)*raster.ppm),y=Math.floor((BOUNDS.maxY+raster.pad-p[1])*raster.ppm);if(x<0||y<0||x>=raster.w||y>=raster.h)return null;const lab=raster.labels[y*raster.w+x];return lab>=0?raster.regions.find(r=>r.label===lab)||null:null;}
+
+function ensureComponent(name){name=name.trim().toUpperCase();if(!name)return null;if(!COMPONENTS.includes(name))COMPONENTS.push(name);if(SG[name]==null)SG[name]=DEFAULT_SG[name]??1.10;return name;}
+$("addComp").onclick=()=>{const n=ensureComponent($("compName").value);if(!n)return;ACTIVE=n;$("compName").value="";renderAll();};
+$("compName").addEventListener("keydown",e=>{if(e.key==="Enter")$("addComp").click();});
+function setAction(a){ACTION=a;document.querySelectorAll("[data-action]").forEach(b=>b.classList.toggle("active",b.dataset.action===a));}
+document.querySelectorAll("[data-action]").forEach(b=>b.onclick=()=>setAction(b.dataset.action));setAction("assign");
+
+function pushUndo(){undoStack.push(snapshotAssignments());if(undoStack.length>100)undoStack.shift();redoStack=[];updateUndoButtons();}
+function restoreSnapshot(s){const map=new Map(s.map(x=>[x.id,x]));for(const r of REGIONS){const x=map.get(r.id);r.assigned=x?.assigned||null;r.ignored=!!x?.ignored;}renderAll();}
+function updateUndoButtons(){$("undo").disabled=!undoStack.length;$("redo").disabled=!redoStack.length;}
+$("undo").onclick=()=>{if(!undoStack.length)return;redoStack.push(snapshotAssignments());restoreSnapshot(undoStack.pop());updateUndoButtons();};
+$("redo").onclick=()=>{if(!redoStack.length)return;undoStack.push(snapshotAssignments());restoreSnapshot(redoStack.pop());updateUndoButtons();};
+
+function applyRegionAction(r){if(!r||!regionAllowed(r))return;if(ACTION==="assign"&&!ACTIVE){alert("Create or select a component first.");return;}pushUndo();if(ACTION==="assign"){r.assigned=ACTIVE;r.ignored=false;}else if(ACTION==="ignore"){r.assigned=null;r.ignored=true;}else{r.assigned=null;r.ignored=false;}PENDING=null;$("previewBar").style.display="none";renderAll();}
+function chooseRegion(r){if(!r||!regionAllowed(r))return;if(MODE==="raster"&&$("previewPick").checked){PENDING=r;$("previewText").textContent=`${r.id}: ${r.area.toFixed(2)} mm² → ${ACTION}${ACTION==="assign"&&ACTIVE?" to "+ACTIVE:""}`;$("previewBar").style.display="";render();}else applyRegionAction(r);}
+$("acceptPreview").onclick=()=>{if(PENDING)applyRegionAction(PENDING);};$("cancelPreview").onclick=()=>{PENDING=null;$("previewBar").style.display="none";render();};
+
+function renderComponents(){const box=$("components");box.innerHTML="";for(const n of COMPONENTS){const regs=REGIONS.filter(r=>r.assigned===n),d=document.createElement("div");d.className="comp "+(ACTIVE===n?"selected":"");d.innerHTML=`<span class="pill" style="background:${colorFor(n)}"></span><button class="namebtn" title="Select component">${escapeHtml(n)}</button><span class="muted">${regs.length} region${regs.length===1?"":"s"}</span><button class="tiny rename" title="Rename">✎</button><button class="tiny clear" title="Clear assignments">○</button><button class="tiny del" title="Delete component">×</button>`;
+    d.querySelector(".namebtn").onclick=()=>{ACTIVE=n;setAction("assign");renderAll();};
+    d.querySelector(".rename").onclick=()=>{const nn=prompt("New component name",n);if(!nn)return;const u=ensureComponent(nn);pushUndo();for(const r of REGIONS)if(r.assigned===n)r.assigned=u;const i=COMPONENTS.indexOf(n);if(i>=0)COMPONENTS.splice(i,1);if(ACTIVE===n)ACTIVE=u;renderAll();};
+    d.querySelector(".clear").onclick=()=>{pushUndo();for(const r of REGIONS)if(r.assigned===n)r.assigned=null;renderAll();};
+    d.querySelector(".del").onclick=()=>{pushUndo();for(const r of REGIONS)if(r.assigned===n)r.assigned=null;COMPONENTS=COMPONENTS.filter(x=>x!==n);if(ACTIVE===n)ACTIVE=COMPONENTS[0]||null;renderAll();};box.appendChild(d);}
+  $("activeLabel").textContent=ACTIVE?`Active: ${ACTIVE}`:"No active component";
+}
+function renderSG(){const t=$("sgtab");t.innerHTML="";for(const n of COMPONENTS){const tr=document.createElement("tr");tr.innerHTML=`<td>${escapeHtml(n)}</td><td><input type="number" min="0.01" step="0.01" value="${SG[n]??1.1}" data-name="${escapeHtml(n)}"></td>`;t.appendChild(tr);}t.querySelectorAll("input").forEach(i=>i.onchange=()=>SG[i.dataset.name]=parseFloat(i.value)||1.1);}
+function updateProgress(){const eligible=REGIONS.filter(regionAllowed),assigned=eligible.filter(r=>r.assigned),ignored=eligible.filter(r=>r.ignored),un=eligible.filter(r=>!r.assigned&&!r.ignored);$("progress").innerHTML=`<b>${assigned.length}</b> assigned · <b>${ignored.length}</b> ignored · <b>${un.length}</b> unassigned`;}
+function renderAll(){renderComponents();renderSG();updateProgress();render();}
+
+function drawLoop(loop,fill,stroke,line=1){ctx.beginPath();loop.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.closePath();if(fill){ctx.fillStyle=fill;ctx.fill("evenodd");}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=line;ctx.stroke();}}
+function drawRegion(r,fill,stroke){if(!r.outer?.length)return;ctx.beginPath();for(const loop of [r.outer,...(r.holes||[])]){loop.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.closePath();}if(fill){ctx.fillStyle=fill;ctx.fill("evenodd");}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke();}}
+function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=getComputedStyle(document.body).getPropertyValue("--panel");ctx.fillRect(0,0,w,h);if(!BOUNDS)return;
+  // excluded half shading
+  const ax=w2s([AXIS,0])[0],side=effectiveSide();ctx.fillStyle="rgba(120,130,140,.10)";if(side==="right")ctx.fillRect(0,0,ax,h);else if(side==="left")ctx.fillRect(ax,0,w-ax,h);
+  if(MODE==="raster"&&raster){const p0=w2s([BOUNDS.minX-raster.pad,BOUNDS.maxY+raster.pad]),p1=w2s([BOUNDS.maxX+raster.pad,BOUNDS.minY-raster.pad]);ctx.globalAlpha=.12;ctx.drawImage(raster.off,p0[0],p0[1],p1[0]-p0[0],p1[1]-p0[1]);ctx.globalAlpha=1;}
+  for(const r of REGIONS){let fill=null;if(r===PENDING)fill="rgba(255,215,80,.42)";else if(r.assigned)fill=hexA(colorFor(r.assigned),.35);else if(r.ignored)fill="rgba(130,130,130,.22)";else if(HOVER===r)fill="rgba(255,255,255,.16)";if(fill)drawRegion(r,fill,(HOVER===r||r===PENDING)?"#fff":null);}
+  // raw curves
+  ctx.strokeStyle="rgba(145,165,185,.72)";ctx.lineWidth=1;for(const e of ENT){ctx.beginPath();e.pts.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.stroke();}
+  // axis
+  ctx.strokeStyle="#0a84ff";ctx.lineWidth=1.5;ctx.setLineDash([7,5]);ctx.beginPath();ctx.moveTo(ax,0);ctx.lineTo(ax,h);ctx.stroke();ctx.setLineDash([]);
+  // open endpoints diagnostics
+  if(MODE==="vector"&&GRAPH){ctx.fillStyle="#E45756";for(const id of GRAPH.openNodeIds){const p=GRAPH.nodes[id];if(Math.abs(p[0]-AXIS)<=TOL*2)continue;const s=w2s(p);ctx.beginPath();ctx.arc(s[0],s[1],4,0,Math.PI*2);ctx.fill();}}
+  if(drag?.type==="box"){ctx.strokeStyle="#55aaff";ctx.fillStyle="rgba(85,170,255,.12)";ctx.setLineDash([5,4]);const x=Math.min(drag.x0,drag.x1),y=Math.min(drag.y0,drag.y1),ww=Math.abs(drag.x1-drag.x0),hh=Math.abs(drag.y1-drag.y0);ctx.fillRect(x,y,ww,hh);ctx.strokeRect(x,y,ww,hh);ctx.setLineDash([]);}
+}
+
+cv.addEventListener("wheel",e=>{e.preventDefault();const r=cv.getBoundingClientRect();zoomAt(e.deltaY<0?1.18:1/1.18,e.clientX-r.left,e.clientY-r.top);},{passive:false});
+cv.addEventListener("contextmenu",e=>e.preventDefault());
+cv.addEventListener("mousedown",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;const pan=navMode==="pan"||spaceDown||e.button===1||e.button===2;if(pan){drag={type:"pan",x0:x,y0:y,lastX:x,lastY:y};cv.classList.add("grabbing");}else if(navMode==="box"){drag={type:"box",x0:x,y0:y,x1:x,y1:y};}else if(e.button===0){const reg=getRegionAtWorld(s2w(x,y));chooseRegion(reg);}});
+window.addEventListener("mousemove",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;if(drag?.type==="pan"){panPixels(x-drag.lastX,y-drag.lastY);drag.lastX=x;drag.lastY=y;return;}if(drag?.type==="box"){drag.x1=x;drag.y1=y;render();return;}if(x<0||y<0||x>r.width||y>r.height)return;const p=s2w(x,y),reg=getRegionAtWorld(p);if(reg!==HOVER){HOVER=reg;render();}updateHover(p,reg);});
+window.addEventListener("mouseup",e=>{if(drag?.type==="box"){const dx=Math.abs(drag.x1-drag.x0),dy=Math.abs(drag.y1-drag.y0);if(dx>8&&dy>8){const a=s2w(Math.min(drag.x0,drag.x1),Math.max(drag.y0,drag.y1)),b=s2w(Math.max(drag.x0,drag.x1),Math.min(drag.y0,drag.y1)),{w,h}=cssSize();view.cx=(a[0]+b[0])/2;view.cy=(a[1]+b[1])/2;view.scale=Math.min((w-30)/Math.abs(b[0]-a[0]),(h-30)/Math.abs(b[1]-a[1]));}navMode="select";syncNav();}drag=null;cv.classList.remove("grabbing");render();});
+window.addEventListener("keydown",e=>{if(e.code==="Space"){spaceDown=true;e.preventDefault();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"){e.preventDefault();$("undo").click();}});window.addEventListener("keyup",e=>{if(e.code==="Space")spaceDown=false;});
+function updateHover(p,r){const el=$("hoverInfo");if(!BOUNDS){el.textContent="";return;}let s=`x ${p[0].toFixed(2)} · y ${p[1].toFixed(2)}`;if(r)s+=` | ${r.id} · area ${r.area.toFixed(2)} mm² · CG (${r.cx.toFixed(2)}, ${r.cy.toFixed(2)}) · axis dist ${Math.abs(r.cx-AXIS).toFixed(2)} mm · ${r.assigned|| (r.ignored?"ignored":"unassigned")}`;el.textContent=s;}
+function setNav(n){navMode=n;syncNav();}
+function syncNav(){document.querySelectorAll("[data-nav]").forEach(b=>b.classList.toggle("active",b.dataset.nav===navMode));cv.style.cursor=navMode==="pan"?"grab":navMode==="box"?"crosshair":"default";}
+document.querySelectorAll("[data-nav]").forEach(b=>b.onclick=()=>setNav(b.dataset.nav));$("zoomIn").onclick=()=>{const {w,h}=cssSize();zoomAt(1.3,w/2,h/2);};$("zoomOut").onclick=()=>{const {w,h}=cssSize();zoomAt(1/1.3,w/2,h/2);};$("fit").onclick=fitView;syncNav();
+
+function updateDiagnostics(){const el=$("diagnostics");if(!BOUNDS){el.textContent="No drawing loaded.";return;}if(MODE==="vector"&&GRAPH){const open=GRAPH.openNodeIds.filter(id=>Math.abs(GRAPH.nodes[id][0]-AXIS)>TOL*2);el.innerHTML=`${GRAPH.rawSegmentCount} flattened segments · ${GRAPH.edges.length} cleaned edges · ${REGIONS.length} enclosed regions · <span class="${open.length?'warn':'good'}">${open.length} unresolved open endpoint${open.length===1?'':'s'}</span>. Red dots mark unresolved endpoints.`;}else{const conv=raster?.convergencePct;el.innerHTML=`Raster fallback: ${REGIONS.length} enclosed pixel regions at ${raster?.res||"—"} px. Pixel boundaries were converted to selectable polygons. ${conv==null?"Convergence not evaluated.":`Resolution check: <span class="${conv>1?"warn":"good"}">${conv.toFixed(2)}% area difference</span> and ${raster.secondaryCount} regions at the secondary resolution.`}`;}}
+
+function rasterMetrics(name,regs,sg){
+  const selected=new Set(regs.map(r=>r.label)),{w,h,labels,ppm,pad}=raster,pxA=1/(ppm*ppm),pxL=1/ppm;let area=0,sx=0,sy=0,rf=0,r3=0,bL=0,bx=0,minX=Infinity,maxX=-Infinity;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const lab=labels[y*w+x];if(!selected.has(lab))continue;const wx=BOUNDS.minX-pad+(x+.5)/ppm,wy=BOUNDS.maxY+pad-(y+.5)/ppm,d=Math.abs(wx-AXIS);area+=pxA;sx+=wx*pxA;sy+=wy*pxA;rf+=d*pxA;r3+=d*d*d*pxA;minX=Math.min(minX,wx);maxX=Math.max(maxX,wx);const neigh=[[x-1,y,wx-pxL/2],[x+1,y,wx+pxL/2],[x,y-1,wx],[x,y+1,wx]];for(const [nx,ny,mx] of neigh){if(nx<0||ny<0||nx>=w||ny>=h||!selected.has(labels[ny*w+nx])){bL+=pxL;bx+=mx*pxL;}}}
+  const cx=sx/area,cy=sy/area,d=rf/area,vol=2*Math.PI*rf/1000,wt=vol*sg,boundaryCx=bL?bx/bL:cx,surf=2*Math.PI*Math.abs(boundaryCx-AXIS)*bL,polar=2*Math.PI*(sg/1000)*r3;return {component:name,area_mm2:area,centroid_x:cx,centroid_y:cy,centroid_distance_mm:d,volume_cm3:vol,weight_g:wt,surface_area_mm2:surf,polar_MOI:polar,radius_of_gyration_mm:Math.sqrt(polar/wt),sg,pct:0,axis_crossing:minX<AXIS&&maxX>AXIS,region_count:regs.length,boundary_length_mm:bL,boundary_centroid_x:boundaryCx};
+}
+function computeResults(){
+  if(MODE==="raster"&&raster&&$("highResFinal").checked){const target=Math.min(3000,Math.max(raster.res,Math.round((parseInt($("rasterRes").value)||1400)*1.5)));if(target>raster.res){const saved=snapshotAssignments();buildRasterRegions(target,false);restoreBySimilarity(saved);updateDiagnostics();renderAll();setStatus(`Raster results recomputed at ${target} px for final calculation.`,"ok");}}
+  AXIS=parseFloat($("axis").value)||0;results=[];for(const n of COMPONENTS){const regs=REGIONS.filter(r=>r.assigned===n);if(!regs.length)continue;results.push(MODE==="vector"?E.componentMetrics(n,regs,AXIS,SG[n]||1.1):rasterMetrics(n,regs,SG[n]||1.1));}
+  const total=results.reduce((s,r)=>s+r.weight_g,0);results.forEach(r=>r.pct=total?r.weight_g/total*100:0);showResults(total);return results;
+}
+$("compute").onclick=computeResults;
+function showResults(total){let h=`<div class="summary"><span>Total weight <b>${fmt(total,1)} g</b></span><span>Total polar MOI <b>${fmt(results.reduce((s,r)=>s+r.polar_MOI,0))}</b></span><span>Assigned components <b>${results.length}</b></span></div>`;
+  if(results.some(r=>r.axis_crossing))h+=`<div class="alert">One or more selected components cross the rotation axis. Pappus-derived results for those components should not be trusted.</div>`;
+  h+=`<div class="resultgrid"><div class="card"><h2>Component results</h2><div class="tablewrap"><table><thead><tr><th>Component</th><th>Regions</th><th>Area mm²</th><th>CG dist mm</th><th>Volume cm³</th><th>Weight g</th><th>Surface mm²</th><th>Polar MOI</th><th>RoG mm</th><th>% wt</th></tr></thead><tbody>`;
+  for(const r of results)h+=`<tr class="${r.axis_crossing?'rowwarn':''}"><td>${escapeHtml(r.component)}</td><td>${r.region_count}</td><td>${fmt(r.area_mm2)}</td><td>${fmt(r.centroid_distance_mm)}</td><td>${fmt(r.volume_cm3)}</td><td>${fmt(r.weight_g)}</td><td>${fmt(r.surface_area_mm2)}</td><td>${fmt(r.polar_MOI)}</td><td>${fmt(r.radius_of_gyration_mm)}</td><td>${fmt(r.pct)}</td></tr>`;
+  h+=`</tbody></table></div></div><div class="card"><h2>Weight by component</h2>`;const max=Math.max(1,...results.map(r=>r.weight_g));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.weight_g/max)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.weight_g,1)} g</b></div>`;h+=`</div><div class="card"><h2>Polar MOI by component</h2>`;const mm=Math.max(1,...results.map(r=>r.polar_MOI));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.polar_MOI/mm)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.polar_MOI)}</b></div>`;h+=`</div></div>`;$("results").innerHTML=h;}
+$("csv").onclick=()=>{if(!results.length)computeResults();const keys=["component","region_count","area_mm2","centroid_x","centroid_y","centroid_distance_mm","volume_cm3","weight_g","surface_area_mm2","boundary_length_mm","boundary_centroid_x","polar_MOI","radius_of_gyration_mm","sg","pct","axis_crossing"],rows=[keys.join(","),...results.map(r=>keys.map(k=>r[k]??"").join(","))];download((FILE_NAME||"tyre").replace(/\.dxf$/i,"")+"_results.csv",rows.join("\n"),"text/csv");};
+
+function regionFeature(r,list=REGIONS){const d=Math.hypot(BOUNDS.width,BOUNDS.height)||1,w=Math.max(r.bbox.maxX-r.bbox.minX,1e-9),h=Math.max(r.bbox.maxY-r.bbox.minY,1e-9),neighbors=list.filter(x=>x!==r).map(x=>Math.hypot(x.cx-r.cx,x.cy-r.cy)/d).sort((a,b)=>a-b).slice(0,3);return {aspect:w/h,neighbors};}
+function projectObject(){return {version:2,tool:"Tyre Cross-Section Analysis",fileName:FILE_NAME,fingerprint:FINGERPRINT,axisX:AXIS,side:SIDE,mode:MODE,tolerance:TOL,components:COMPONENTS,specificGravity:SG,notes:$("notes").value,regions:REGIONS.map(r=>({id:r.id,cx:r.cx,cy:r.cy,area:r.area,bbox:r.bbox,feature:regionFeature(r),assigned:r.assigned,ignored:r.ignored,source:r.source}))};}
+$("saveProject").onclick=()=>download((FILE_NAME||"tyre").replace(/\.dxf$/i,"")+".tyreproject.json",JSON.stringify(projectObject(),null,2));
+$("projectFile").addEventListener("change",e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{try{const p=JSON.parse(rd.result);importProject(p);}catch(err){alert("Could not load project: "+err.message);}};rd.readAsText(f);});
+function importProject(p){if(!REGIONS.length){alert("Load the corresponding DXF before importing a project.");return;}pushUndo();COMPONENTS=[...(p.components||[])];SG={...DEFAULT_SG,...(p.specificGravity||{})};$("notes").value=p.notes||"";if(Number.isFinite(p.axisX)){AXIS=p.axisX;$("axis").value=AXIS.toFixed(2);}if(p.side){SIDE=p.side;$("side").value=SIDE;}const diag=Math.hypot(BOUNDS.width,BOUNDS.height)||1,used=new Set();let matched=0;
+  for(const s of p.regions||[]){if(!s.assigned&&!s.ignored)continue;let best=null,bc=Infinity;for(const r of REGIONS){if(used.has(r.id))continue;let cost;if(p.fingerprint===FINGERPRINT&&r.id===s.id)cost=0;else{const rf=regionFeature(r),sf=s.feature||{},aspectCost=sf.aspect?Math.abs(Math.log(Math.max(rf.aspect,1e-9)/Math.max(sf.aspect,1e-9))):0;let neighCost=0;if(sf.neighbors?.length){const n=Math.min(sf.neighbors.length,rf.neighbors.length);for(let i=0;i<n;i++)neighCost+=Math.abs(sf.neighbors[i]-rf.neighbors[i]);neighCost/=Math.max(n,1);}cost=3*Math.hypot(r.cx-s.cx,r.cy-s.cy)/diag+.8*Math.abs(Math.log(Math.max(r.area,1e-9)/Math.max(s.area,1e-9)))+.35*aspectCost+.5*neighCost;}if(cost<bc){bc=cost;best=r;}}if(best&&bc<.35){best.assigned=s.assigned||null;best.ignored=!!s.ignored;used.add(best.id);matched++;}}
+  renderAll();updateDiagnostics();setStatus(`${matched} saved region assignments transferred from ${escapeHtml(p.fileName||"project")}.`,"ok");}
+
+function runDemoCheck(){const exp=E.demoExpected(),rows=computeResults();let ok=true,lines=[];for(const [name,v] of Object.entries(exp)){const r=rows.find(x=>x.component===name),aok=r&&Math.abs(r.area_mm2-v.area)<.5,cok=r&&Math.abs(r.centroid_x-v.cx)<.02;ok=ok&&aok&&cok;lines.push(`${name}: area ${r?fmt(r.area_mm2):"missing"} / ${v.area}, CGx ${r?fmt(r.centroid_x):"missing"} / ${v.cx} — ${aok&&cok?"PASS":"FAIL"}`);}$("testReport").innerHTML=`<div class="${ok?'testpass':'testfail'}"><b>Validation geometry: ${ok?'PASS':'FAIL'}</b><br>${lines.join("<br>")}</div>`;return ok;}
+$("runTest").onclick=()=>{if(FILE_NAME!=="single_layer_validation_geometry.dxf")loadDemo(true);else runDemoCheck();};
+
+// boot
+$("rasterOpts").style.display="none";$("tolCustomWrap").style.display="none";renderAll();updateUndoButtons();resizeCanvas();
+window.__tyreDebug=()=>({mode:MODE,file:FILE_NAME,entities:ENT.length,regions:REGIONS.length,open:GRAPH?GRAPH.openNodeIds.length:null,components:COMPONENTS.slice(),regionStates:REGIONS.map(r=>({id:r.id,assigned:r.assigned,ignored:r.ignored,area:r.area,hasContour:!!r.outer?.length})),results:results.map(r=>({...r})),axis:AXIS,tolerance:TOL,raster:raster?{res:raster.res,convergencePct:raster.convergencePct,secondaryCount:raster.secondaryCount}:null});
+window.__loadDemo=()=>loadDemo(true);window.__runDemoCheck=runDemoCheck;window.__projectObject=projectObject;window.__importProject=importProject;window.__chooseRegion=id=>{const r=REGIONS.find(x=>x.id===id);chooseRegion(r);};window.__view=()=>({...view});
+})();
+
+</script>
+</body>
+</html>
