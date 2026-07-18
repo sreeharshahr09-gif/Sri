@@ -40,13 +40,22 @@
   </div>
 
   <div class="card stack">
-    <h2>4 · View navigation</h2>
+    <h2>4 · Edit drawing</h2>
+    <div class="hint">Red dots are open curve ends. Delete construction / reference lines that came with the DXF, and bridge real gaps in the tyre profile, then regions are re-detected automatically (existing assignments are preserved).</div>
+    <div class="toolbar"><button id="editDelete">Select curves</button><button id="editBridge">Bridge gap</button></div>
+    <div class="toolbar"><button id="deleteSel" disabled>Delete selected</button><button id="editUndo" disabled>Undo edit</button><button id="editRedo" disabled>Redo edit</button></div>
+    <div id="editStatus" class="muted">Editing off.</div>
+    <button id="exportDxf">Export edited DXF</button>
+  </div>
+
+  <div class="card stack">
+    <h2>5 · View navigation</h2>
     <div class="toolbar"><button data-nav="select">Select</button><button data-nav="pan">Pan</button><button data-nav="box">Box zoom</button><button id="zoomIn">＋</button><button id="zoomOut">−</button><button id="fit">Fit</button></div>
     <div class="muted">Mouse wheel: zoom · middle/right drag or Space+drag: pan.</div>
   </div>
 
   <div class="card stack">
-    <h2>5 · Assign components</h2>
+    <h2>6 · Assign components</h2>
     <div class="hint">Create or select a component, then click every enclosed region belonging to it. A component may contain several separate regions.</div>
     <div class="row"><input id="compName" type="text" placeholder="e.g. TREAD"><button id="addComp" class="auto primary">Add</button></div>
     <div id="activeLabel" class="muted">No active component</div>
@@ -55,12 +64,12 @@
   </div>
 
   <div class="card stack">
-    <h2>6 · Specific gravity (g/cm³)</h2>
+    <h2>7 · Specific gravity (g/cm³)</h2>
     <table id="sgtab" class="sgtab"></table>
   </div>
 
   <div class="card stack">
-    <h2>7 · Save, transfer, calculate</h2>
+    <h2>8 · Save, transfer, calculate</h2>
     <label>Project notes</label><textarea id="notes" placeholder="Design iteration, tyre size, assumptions…"></textarea>
     <button id="saveProject">Save assignment project</button>
     <label>Load or transfer an earlier project</label><input type="file" id="projectFile" accept=".json,.tyreproject.json">
@@ -634,14 +643,14 @@ function panPixels(dx,dy){view.cx-=dx/view.scale;view.cy+=dy/view.scale;render()
 function parseAndSet(text,name){
   try{
     setStatus("Reading DXF…");DXF_TEXT=text;FILE_NAME=name;FINGERPRINT=E.fnv1a(text);TOL=currentTol();results=[];$("results").innerHTML="";$("testReport").innerHTML="";
-    ENT=E.loadEntities(text,0.005);if(!ENT.length)throw new Error("No supported DXF curves were found.");
+    ENT=E.loadEntities(text,0.005);if(typeof resetEdit==="function")resetEdit();if(!ENT.length)throw new Error("No supported DXF curves were found.");
     BOUNDS=E.boundsOfEntities(ENT);autoAxis();extractRegions();fitView();setStatus(`${name}: ${ENT.length} curves loaded.` ,"ok");
   }catch(err){console.error(err);setStatus("Could not read DXF: "+err.message,"bad");alert("Could not read DXF: "+err.message);}
 }
 $("file").addEventListener("change",e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>parseAndSet(r.result,f.name);r.readAsText(f,"latin1");});
 
 function loadDemo(autoAssign=true){
-  ENT=E.makeDemoEntities();BOUNDS=E.boundsOfEntities(ENT);results=[];$("results").innerHTML="";FILE_NAME="single_layer_validation_geometry.dxf";DXF_TEXT="synthetic-demo-v2";FINGERPRINT=E.fnv1a(DXF_TEXT);AXIS=0;$("axis").value="0.00";MODE="vector";$("extractMode").value="vector";TOL=currentTol();extractRegions();fitView();
+  ENT=E.makeDemoEntities();if(typeof resetEdit==="function")resetEdit();BOUNDS=E.boundsOfEntities(ENT);results=[];$("results").innerHTML="";FILE_NAME="single_layer_validation_geometry.dxf";DXF_TEXT="synthetic-demo-v2";FINGERPRINT=E.fnv1a(DXF_TEXT);AXIS=0;$("axis").value="0.00";MODE="vector";$("extractMode").value="vector";TOL=currentTol();extractRegions();fitView();
   if(autoAssign){const exp=E.demoExpected();for(const r of REGIONS){let best=null,bd=Infinity;for(const [name,v] of Object.entries(exp)){const d=Math.hypot(r.cx-v.cx,r.cy-v.cy)+Math.abs(r.area-v.area);if(d<bd){bd=d;best=name;}}if(best){ensureComponent(best);r.assigned=best;}}
     ACTIVE="TREAD";renderAll();computeResults();runDemoCheck();}
   setStatus("Validation geometry loaded and assigned.","ok");
@@ -756,6 +765,12 @@ function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=get
   for(const r of REGIONS){let fill=null;if(r===PENDING)fill="rgba(255,215,80,.42)";else if(r.assigned)fill=hexA(colorFor(r.assigned),.35);else if(r.ignored)fill="rgba(130,130,130,.22)";else if(HOVER===r)fill="rgba(255,255,255,.16)";if(fill)drawRegion(r,fill,(HOVER===r||r===PENDING)?"#fff":null);}
   // raw curves
   ctx.strokeStyle="rgba(145,165,185,.72)";ctx.lineWidth=1;for(const e of ENT){ctx.beginPath();e.pts.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.stroke();}
+  // edit highlights
+  if(typeof EDIT!=="undefined"){
+    if(EDIT.mode==="delete"&&HOVER_ENT&&!EDIT.selected.has(HOVER_ENT)){ctx.strokeStyle="#e8a33d";ctx.lineWidth=2.5;ctx.beginPath();HOVER_ENT.pts.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.stroke();}
+    if(EDIT.selected.size){ctx.strokeStyle="#ff4d4d";ctx.lineWidth=2.5;for(const e of EDIT.selected){ctx.beginPath();e.pts.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.stroke();}}
+    if(EDIT.bridgeA){const s=w2s(EDIT.bridgeA);ctx.strokeStyle="#2ea043";ctx.lineWidth=2;ctx.beginPath();ctx.arc(s[0],s[1],8,0,Math.PI*2);ctx.stroke();}
+  }
   // axis
   ctx.strokeStyle="#0a84ff";ctx.lineWidth=1.5;ctx.setLineDash([7,5]);ctx.beginPath();ctx.moveTo(ax,0);ctx.lineTo(ax,h);ctx.stroke();ctx.setLineDash([]);
   // open endpoints diagnostics
@@ -765,16 +780,70 @@ function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=get
 
 cv.addEventListener("wheel",e=>{e.preventDefault();const r=cv.getBoundingClientRect();zoomAt(e.deltaY<0?1.18:1/1.18,e.clientX-r.left,e.clientY-r.top);},{passive:false});
 cv.addEventListener("contextmenu",e=>e.preventDefault());
-cv.addEventListener("mousedown",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;const pan=navMode==="pan"||spaceDown||e.button===1||e.button===2;if(pan){drag={type:"pan",x0:x,y0:y,lastX:x,lastY:y};cv.classList.add("grabbing");}else if(navMode==="box"){drag={type:"box",x0:x,y0:y,x1:x,y1:y};}else if(e.button===0){const reg=getRegionAtWorld(s2w(x,y));chooseRegion(reg);}});
-window.addEventListener("mousemove",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;if(drag?.type==="pan"){panPixels(x-drag.lastX,y-drag.lastY);drag.lastX=x;drag.lastY=y;return;}if(drag?.type==="box"){drag.x1=x;drag.y1=y;render();return;}if(x<0||y<0||x>r.width||y>r.height)return;const p=s2w(x,y),reg=getRegionAtWorld(p);if(reg!==HOVER){HOVER=reg;render();}updateHover(p,reg);});
+cv.addEventListener("mousedown",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;const pan=navMode==="pan"||spaceDown||e.button===1||e.button===2;if(pan){drag={type:"pan",x0:x,y0:y,lastX:x,lastY:y};cv.classList.add("grabbing");}else if(navMode==="box"){drag={type:"box",x0:x,y0:y,x1:x,y1:y};}else if(e.button===0&&EDIT.mode==="delete"){const ent=entityAt(s2w(x,y));if(ent){if(EDIT.selected.has(ent))EDIT.selected.delete(ent);else EDIT.selected.add(ent);syncEditUI();render();}}
+  else if(e.button===0&&EDIT.mode==="bridge"){const q=nearestOpenEnd(s2w(x,y));if(q){if(!EDIT.bridgeA){EDIT.bridgeA=q;}else if(Math.hypot(q[0]-EDIT.bridgeA[0],q[1]-EDIT.bridgeA[1])>1e-9){pushEditUndo();ENT=ENT.concat([{layer:"0",type:"LINE",pts:[[EDIT.bridgeA[0],EDIT.bridgeA[1]],[q[0],q[1]]],closed:false}]);afterEdit("Gap bridged; regions re-detected.");}syncEditUI();render();}}
+  else if(e.button===0){const reg=getRegionAtWorld(s2w(x,y));chooseRegion(reg);}});
+window.addEventListener("mousemove",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;if(drag?.type==="pan"){panPixels(x-drag.lastX,y-drag.lastY);drag.lastX=x;drag.lastY=y;return;}if(drag?.type==="box"){drag.x1=x;drag.y1=y;render();return;}if(x<0||y<0||x>r.width||y>r.height)return;const p=s2w(x,y);
+  if(EDIT.mode==="delete"){const he=entityAt(p);if(he!==HOVER_ENT){HOVER_ENT=he;render();}updateHover(p,null);return;}
+  if(EDIT.mode==="bridge"){updateHover(p,null);return;}
+  const reg=getRegionAtWorld(p);if(reg!==HOVER){HOVER=reg;render();}updateHover(p,reg);});
 window.addEventListener("mouseup",e=>{if(drag?.type==="box"){const dx=Math.abs(drag.x1-drag.x0),dy=Math.abs(drag.y1-drag.y0);if(dx>8&&dy>8){const a=s2w(Math.min(drag.x0,drag.x1),Math.max(drag.y0,drag.y1)),b=s2w(Math.max(drag.x0,drag.x1),Math.min(drag.y0,drag.y1)),{w,h}=cssSize();view.cx=(a[0]+b[0])/2;view.cy=(a[1]+b[1])/2;view.scale=Math.min((w-30)/Math.abs(b[0]-a[0]),(h-30)/Math.abs(b[1]-a[1]));}navMode="select";syncNav();}drag=null;cv.classList.remove("grabbing");render();});
-window.addEventListener("keydown",e=>{if(e.code==="Space"){spaceDown=true;e.preventDefault();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"){e.preventDefault();$("undo").click();}});window.addEventListener("keyup",e=>{if(e.code==="Space")spaceDown=false;});
+window.addEventListener("keydown",e=>{if(e.code==="Space"){spaceDown=true;e.preventDefault();}
+if((e.key==="Delete"||e.key==="Backspace")&&EDIT.selected.size&&!/INPUT|TEXTAREA/.test(document.activeElement?.tagName)){e.preventDefault();$("deleteSel").click();}
+if(e.key==="Escape"){EDIT.mode=null;EDIT.selected.clear();EDIT.bridgeA=null;HOVER_ENT=null;syncEditUI();render();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"){e.preventDefault();$("undo").click();}});window.addEventListener("keyup",e=>{if(e.code==="Space")spaceDown=false;});
 function updateHover(p,r){const el=$("hoverInfo");if(!BOUNDS){el.textContent="";return;}let s=`x ${p[0].toFixed(2)} · y ${p[1].toFixed(2)}`;if(r)s+=` | ${r.id} · area ${r.area.toFixed(2)} mm² · CG (${r.cx.toFixed(2)}, ${r.cy.toFixed(2)}) · axis dist ${Math.abs(r.cx-AXIS).toFixed(2)} mm · ${r.assigned|| (r.ignored?"ignored":"unassigned")}`;el.textContent=s;}
+/* ---------------- drawing editing ---------------- */
+const EDIT={mode:null,selected:new Set(),bridgeA:null,undo:[],redo:[]};
+let HOVER_ENT=null;
+function resetEdit(){EDIT.mode=null;EDIT.selected.clear();EDIT.bridgeA=null;EDIT.undo=[];EDIT.redo=[];HOVER_ENT=null;syncEditUI();}
+function syncEditUI(){
+  $("editDelete").classList.toggle("active",EDIT.mode==="delete");
+  $("editBridge").classList.toggle("active",EDIT.mode==="bridge");
+  $("deleteSel").disabled=!EDIT.selected.size;
+  $("deleteSel").textContent=EDIT.selected.size?`Delete selected (${EDIT.selected.size})`:"Delete selected";
+  $("editUndo").disabled=!EDIT.undo.length;$("editRedo").disabled=!EDIT.redo.length;
+  $("editStatus").textContent=EDIT.mode==="delete"
+    ?"Click curves to select (click again to unselect). Delete key or the button removes them."
+    :EDIT.mode==="bridge"?(EDIT.bridgeA?"Now click the second open end (red dot).":"Click the first open end (red dot).")
+    :"Editing off.";
+}
+function setEditMode(m){EDIT.mode=EDIT.mode===m?null:m;EDIT.bridgeA=null;if(EDIT.mode!=="delete"){EDIT.selected.clear();HOVER_ENT=null;}syncEditUI();render();}
+$("editDelete").onclick=()=>setEditMode("delete");
+$("editBridge").onclick=()=>setEditMode("bridge");
+function afterEdit(msg){EDIT.selected.clear();EDIT.bridgeA=null;HOVER_ENT=null;extractRegions();syncEditUI();if(msg)setStatus(msg,"ok");}
+function pushEditUndo(){EDIT.undo.push(ENT.slice());if(EDIT.undo.length>50)EDIT.undo.shift();EDIT.redo=[];}
+$("deleteSel").onclick=()=>{if(!EDIT.selected.size)return;pushEditUndo();ENT=ENT.filter(e=>!EDIT.selected.has(e));afterEdit("Curves deleted; regions re-detected.");};
+$("editUndo").onclick=()=>{if(!EDIT.undo.length)return;EDIT.redo.push(ENT.slice());ENT=EDIT.undo.pop();afterEdit("Edit undone.");};
+$("editRedo").onclick=()=>{if(!EDIT.redo.length)return;EDIT.undo.push(ENT.slice());ENT=EDIT.redo.pop();afterEdit("Edit redone.");};
+function distToSeg(p,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],l2=dx*dx+dy*dy;let t=l2>0?((p[0]-a[0])*dx+(p[1]-a[1])*dy)/l2:0;t=Math.max(0,Math.min(1,t));return Math.hypot(p[0]-a[0]-t*dx,p[1]-a[1]-t*dy);}
+function entityAt(p,tolPx=6){const tolW=tolPx/view.scale;let best=null,bd=tolW;
+  for(const e of ENT){const bb=e.__bb||(e.__bb=(()=>{let x0=1/0,y0=1/0,x1=-1/0,y1=-1/0;for(const q of e.pts){x0=Math.min(x0,q[0]);x1=Math.max(x1,q[0]);y0=Math.min(y0,q[1]);y1=Math.max(y1,q[1]);}return {x0,y0,x1,y1};})());
+    if(p[0]<bb.x0-tolW||p[0]>bb.x1+tolW||p[1]<bb.y0-tolW||p[1]>bb.y1+tolW)continue;
+    for(let i=0;i<e.pts.length-1;i++){const d=distToSeg(p,e.pts[i],e.pts[i+1]);if(d<bd){bd=d;best=e;}}}
+  return best;}
+function nearestOpenEnd(p,tolPx=12){if(!GRAPH)return null;const tolW=tolPx/view.scale;let best=null,bd=tolW;
+  for(const id of GRAPH.openNodeIds){const q=GRAPH.nodes[id];const d=Math.hypot(q[0]-p[0],q[1]-p[1]);if(d<bd){bd=d;best=q;}}
+  return best;}
+function exportDXF(){
+  const L=[];const push=(c,v)=>{L.push(String(c));L.push(String(v));};
+  push(0,"SECTION");push(2,"ENTITIES");
+  for(const e of ENT){
+    let pts=e.pts;
+    if(e.closed&&pts.length>2&&Math.hypot(pts[0][0]-pts[pts.length-1][0],pts[0][1]-pts[pts.length-1][1])<1e-9)pts=pts.slice(0,-1);
+    push(0,"POLYLINE");push(8,e.layer||"0");push(66,1);push(70,e.closed?1:0);
+    for(const p of pts){push(0,"VERTEX");push(8,e.layer||"0");push(10,p[0].toFixed(8));push(20,p[1].toFixed(8));push(30,"0.0");}
+    push(0,"SEQEND");
+  }
+  push(0,"ENDSEC");push(0,"EOF");
+  download((FILE_NAME||"drawing").replace(/\.dxf$/i,"")+"_edited.dxf",L.join("\n"),"application/dxf");
+  setStatus("Edited DXF exported (curves are written as fine polylines).","ok");
+}
+$("exportDxf").onclick=exportDXF;
 function setNav(n){navMode=n;syncNav();}
 function syncNav(){document.querySelectorAll("[data-nav]").forEach(b=>b.classList.toggle("active",b.dataset.nav===navMode));cv.style.cursor=navMode==="pan"?"grab":navMode==="box"?"crosshair":"default";}
 document.querySelectorAll("[data-nav]").forEach(b=>b.onclick=()=>setNav(b.dataset.nav));$("zoomIn").onclick=()=>{const {w,h}=cssSize();zoomAt(1.3,w/2,h/2);};$("zoomOut").onclick=()=>{const {w,h}=cssSize();zoomAt(1/1.3,w/2,h/2);};$("fit").onclick=fitView;syncNav();
 
-function updateDiagnostics(){const el=$("diagnostics");if(!BOUNDS){el.textContent="No drawing loaded.";return;}if(MODE==="vector"&&GRAPH){const open=GRAPH.openNodeIds.filter(id=>Math.abs(GRAPH.nodes[id][0]-AXIS)>TOL*2);el.innerHTML=`${GRAPH.rawSegmentCount} flattened segments · ${GRAPH.edges.length} cleaned edges · ${REGIONS.length} enclosed regions · <span class="${open.length?'warn':'good'}">${open.length} unresolved open endpoint${open.length===1?'':'s'}</span>. Red dots mark unresolved endpoints.`;}else{const conv=raster?.convergencePct;el.innerHTML=`Raster fallback: ${REGIONS.length} enclosed pixel regions at ${raster?.res||"—"} px. Pixel boundaries were converted to selectable polygons. ${conv==null?"Convergence not evaluated.":`Resolution check: <span class="${conv>1?"warn":"good"}">${conv.toFixed(2)}% area difference</span> and ${raster.secondaryCount} regions at the secondary resolution.`}`;}}
+function updateDiagnostics(){const el=$("diagnostics");if(!BOUNDS){el.textContent="No drawing loaded.";return;}if(MODE==="vector"&&GRAPH){const open=GRAPH.openNodeIds.filter(id=>Math.abs(GRAPH.nodes[id][0]-AXIS)>TOL*2);el.innerHTML=`${GRAPH.rawSegmentCount} flattened segments · ${GRAPH.edges.length} cleaned edges · ${REGIONS.length} enclosed regions · <span class="${open.length?'warn':'good'}">${open.length} unresolved open endpoint${open.length===1?'':'s'}</span>. Red dots mark unresolved endpoints — use the Edit drawing card to delete construction lines or bridge real gaps.`;}else{const conv=raster?.convergencePct;el.innerHTML=`Raster fallback: ${REGIONS.length} enclosed pixel regions at ${raster?.res||"—"} px. Pixel boundaries were converted to selectable polygons. ${conv==null?"Convergence not evaluated.":`Resolution check: <span class="${conv>1?"warn":"good"}">${conv.toFixed(2)}% area difference</span> and ${raster.secondaryCount} regions at the secondary resolution.`}`;}}
 
 function rasterMetrics(name,regs,sg){
   const selected=new Set(regs.map(r=>r.label)),{w,h,labels,ppm,pad}=raster,pxA=1/(ppm*ppm),pxL=1/ppm;let area=0,sx=0,sy=0,rf=0,r3=0,bL=0,bx=0,minX=Infinity,maxX=-Infinity;
@@ -808,7 +877,7 @@ $("runTest").onclick=()=>{if(FILE_NAME!=="single_layer_validation_geometry.dxf")
 // boot
 $("rasterOpts").style.display="none";$("tolCustomWrap").style.display="none";renderAll();updateUndoButtons();resizeCanvas();
 window.__tyreDebug=()=>({mode:MODE,file:FILE_NAME,entities:ENT.length,regions:REGIONS.length,open:GRAPH?GRAPH.openNodeIds.length:null,components:COMPONENTS.slice(),regionStates:REGIONS.map(r=>({id:r.id,assigned:r.assigned,ignored:r.ignored,area:r.area,hasContour:!!r.outer?.length})),results:results.map(r=>({...r})),axis:AXIS,tolerance:TOL,raster:raster?{res:raster.res,convergencePct:raster.convergencePct,secondaryCount:raster.secondaryCount}:null});
-window.__loadDemo=()=>loadDemo(true);window.__runDemoCheck=runDemoCheck;window.__projectObject=projectObject;window.__importProject=importProject;window.__chooseRegion=id=>{const r=REGIONS.find(x=>x.id===id);chooseRegion(r);};window.__view=()=>({...view});
+window.__edit={EDIT,setEditMode,entityAt,nearestOpenEnd,exportDXF};window.__loadDemo=()=>loadDemo(true);window.__runDemoCheck=runDemoCheck;window.__projectObject=projectObject;window.__importProject=importProject;window.__chooseRegion=id=>{const r=REGIONS.find(x=>x.id===id);chooseRegion(r);};window.__view=()=>({...view});
 })();
 
 </script>
