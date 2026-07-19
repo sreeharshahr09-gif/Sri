@@ -340,9 +340,29 @@ function polygonizeGraph(graph,minArea=1e-5){
     const c=loopCentroid(loop);cycles.push({ids,edgeIds,loop,area:c.area,cx:c.cx,cy:c.cy,bbox:loopBBox(loop),parent:-1,children:[]});
   }
   // Nesting hierarchy for disconnected closed loops.
+  // BUG FIX: a centroid-in-polygon test is not sufficient to decide "i is a
+  // hole of j" -- a thin curved/S-shaped band's shoelace-weighted centroid can
+  // fall numerically inside a totally unrelated NEIGHBOURING band's boundary
+  // even though the two bands do not actually nest. That false containment
+  // made unrelated adjacent bands get subtracted from each other, producing
+  // regions whose outer+hole rings partially overlap -- which is exactly what
+  // rendered as a self-crossing "bowtie" highlight. A true hole's ENTIRE
+  // boundary must lie inside the candidate parent, not just its centroid.
+  function fullyInside(innerLoop,outerLoop,outerBBox){
+    for(const p of innerLoop){
+      if(p[0]<outerBBox.minX-1e-6||p[0]>outerBBox.maxX+1e-6||p[1]<outerBBox.minY-1e-6||p[1]>outerBBox.maxY+1e-6)return false;
+      if(!pointInLoop(p,outerLoop))return false;
+    }
+    return true;
+  }
   for(let i=0;i<cycles.length;i++){
-    let parent=-1,pa=Infinity;const p=[cycles[i].cx,cycles[i].cy];
-    for(let j=0;j<cycles.length;j++){if(i===j||cycles[j].area<=cycles[i].area)continue;const b=cycles[j].bbox;if(p[0]<b.minX||p[0]>b.maxX||p[1]<b.minY||p[1]>b.maxY)continue;if(pointInLoop(p,cycles[j].loop)&&cycles[j].area<pa){parent=j;pa=cycles[j].area;}}
+    let parent=-1,pa=Infinity;
+    for(let j=0;j<cycles.length;j++){
+      if(i===j||cycles[j].area<=cycles[i].area)continue;
+      const b=cycles[j].bbox;
+      if(cycles[i].bbox.minX<b.minX-1e-6||cycles[i].bbox.maxX>b.maxX+1e-6||cycles[i].bbox.minY<b.minY-1e-6||cycles[i].bbox.maxY>b.maxY+1e-6)continue;
+      if(fullyInside(cycles[i].loop,cycles[j].loop,b)&&cycles[j].area<pa){parent=j;pa=cycles[j].area;}
+    }
     cycles[i].parent=parent;if(parent>=0)cycles[parent].children.push(i);
   }
   const regions=[];
@@ -573,7 +593,7 @@ function preparePlanarGraphV2(entities, tol = 0.05) {
   // Contact welding epsilon: tangent contacts between curves surface as a
   // vertex of one polyline passing within ~drawing precision of the other.
   // 1 µm is far below any real inter-curve gauge, so welding is safe.
-  const CONTACT = REG;
+  const CONTACT = 8e-5;
   for (const [i, j] of pairs) {
     const A = raw[i], B = raw[j];
     const ba = _bbox(A, CONTACT), bb2 = _bbox(B, CONTACT);
@@ -811,14 +831,18 @@ function renderAll(){renderComponents();renderSG();updateProgress();if(typeof up
 
 function drawLoop(loop,fill,stroke,line=1){ctx.beginPath();loop.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.closePath();if(fill){ctx.fillStyle=fill;ctx.fill("evenodd");}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=line;ctx.stroke();}}
 function drawRegion(r,fill,stroke){if(!r.outer?.length)return;ctx.beginPath();for(const loop of [r.outer,...(r.holes||[])]){loop.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.closePath();}if(fill){ctx.fillStyle=fill;ctx.fill("evenodd");}if(stroke){ctx.strokeStyle=stroke;ctx.stroke();}}
+function drawOuterRing(r,stroke,width){if(!r.outer?.length)return;ctx.save();ctx.strokeStyle=stroke;ctx.lineWidth=width;ctx.beginPath();r.outer.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.closePath();ctx.stroke();ctx.restore();}
 function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=getComputedStyle(document.body).getPropertyValue("--panel");ctx.fillRect(0,0,w,h);if(!BOUNDS)return;
   // excluded half shading
   const ax=w2s([AXIS,0])[0],side=effectiveSide();ctx.fillStyle="rgba(120,130,140,.10)";if(side==="right")ctx.fillRect(0,0,ax,h);else if(side==="left")ctx.fillRect(ax,0,w-ax,h);
   if(MODE==="raster"&&raster){const p0=w2s([BOUNDS.minX-raster.pad,BOUNDS.maxY+raster.pad]),p1=w2s([BOUNDS.maxX+raster.pad,BOUNDS.minY-raster.pad]);ctx.globalAlpha=.12;ctx.drawImage(raster.off,p0[0],p0[1],p1[0]-p0[0],p1[1]-p0[1]);ctx.globalAlpha=1;}
-  for(const r of REGIONS){let fill=null;if(r===PENDING)fill="rgba(255,215,80,.42)";else if(r.assigned)fill=hexA(colorFor(r.assigned),.35);else if(r.ignored)fill="rgba(130,130,130,.22)";else if(HOVER===r)fill="rgba(255,255,255,.16)";if(fill)drawRegion(r,fill,(HOVER===r||r===PENDING)?"#fff":null);}
-  // hovered component: outline every region of that component
-  if(HOVER&&HOVER.assigned){const col=colorFor(HOVER.assigned);ctx.save();ctx.lineWidth=3;ctx.strokeStyle=col;for(const r of REGIONS)if(r.assigned===HOVER.assigned)drawRegion(r,null,col);ctx.restore();}
-  else if(HOVER){ctx.save();ctx.lineWidth=2.5;drawRegion(HOVER,null,"#77b7ff");ctx.restore();}
+  for(const r of REGIONS){let fill=null;if(r===PENDING)fill="rgba(255,215,80,.42)";else if(r.assigned)fill=hexA(colorFor(r.assigned),.35);else if(r.ignored)fill="rgba(130,130,130,.22)";if(fill)drawRegion(r,fill,r===PENDING?"#fff":null);}
+  // hovered highlight: FILL the exact selectable area (holes stay unfilled via
+  // even-odd), stroke only the outer ring — hole outlines and shared neighbour
+  // boundaries are never stroked, so only what a click would select lights up.
+  if(HOVER&&HOVER.assigned){const col=colorFor(HOVER.assigned);
+    for(const r of REGIONS)if(r.assigned===HOVER.assigned){drawRegion(r,hexA(col,.28),null);drawOuterRing(r,col,2.5);}}
+  else if(HOVER){drawRegion(HOVER,"rgba(119,183,255,.30)",null);drawOuterRing(HOVER,"#77b7ff",2.5);}
   // raw curves
   ctx.strokeStyle="rgba(145,165,185,.72)";ctx.lineWidth=1;for(const e of ENT){ctx.beginPath();e.pts.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.stroke();}
   // edit highlights
@@ -847,7 +871,7 @@ window.addEventListener("mouseup",e=>{if(drag?.type==="box"){const dx=Math.abs(d
 window.addEventListener("keydown",e=>{if(e.code==="Space"){spaceDown=true;e.preventDefault();}
 if((e.key==="Delete"||e.key==="Backspace")&&EDIT.selected.size&&!/INPUT|TEXTAREA/.test(document.activeElement?.tagName)){e.preventDefault();$("deleteSel").click();}
 if(e.key==="Escape"){EDIT.mode=null;EDIT.selected.clear();EDIT.bridgeA=null;HOVER_ENT=null;syncEditUI();render();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"){e.preventDefault();$("undo").click();}});window.addEventListener("keyup",e=>{if(e.code==="Space")spaceDown=false;});
-function updateHover(p,r){const el=$("hoverInfo");if(!BOUNDS){el.textContent="";return;}let s=`x ${p[0].toFixed(2)} · y ${p[1].toFixed(2)}`;if(r)s+=` | ${r.id} · area ${r.area.toFixed(2)} mm² · CG (${r.cx.toFixed(2)}, ${r.cy.toFixed(2)}) · axis dist ${Math.abs(r.cx-AXIS).toFixed(2)} mm · ${r.assigned|| (r.ignored?"ignored":"unassigned")}`;el.textContent=s;}
+function updateHover(p,r){const el=$("hoverInfo");if(!BOUNDS){el.textContent="";return;}let s=`x ${p[0].toFixed(2)} · y ${p[1].toFixed(2)}`;if(r)s+=` | ${r.id} · area ${r.area.toFixed(2)} mm² · CG (${r.cx.toFixed(2)}, ${r.cy.toFixed(2)}) · axis dist ${Math.abs(r.cx-AXIS).toFixed(2)} mm · ${r.assigned|| (r.ignored?"ignored":"unassigned")}${r.holes&&r.holes.length?` · ${r.holes.length} hole${r.holes.length===1?"":"s"} excluded`:""}`;el.textContent=s;}
 /* ---------------- quality checks ---------------- */
 let QC_OPEN_IDX=0;
 function openEndPoints(){if(!GRAPH)return [];return GRAPH.openNodeIds.map(i=>GRAPH.nodes[i]).filter(p=>Math.abs(p[0]-AXIS)>TOL*2);}
@@ -969,7 +993,8 @@ $("runTest").onclick=()=>{if(FILE_NAME!=="single_layer_validation_geometry.dxf")
 // boot
 $("rasterOpts").style.display="none";$("tolCustomWrap").style.display="none";renderAll();updateUndoButtons();resizeCanvas();
 window.__tyreDebug=()=>({mode:MODE,file:FILE_NAME,entities:ENT.length,regions:REGIONS.length,open:GRAPH?GRAPH.openNodeIds.length:null,components:COMPONENTS.slice(),regionStates:REGIONS.map(r=>({id:r.id,assigned:r.assigned,ignored:r.ignored,area:r.area,hasContour:!!r.outer?.length})),results:results.map(r=>({...r})),axis:AXIS,tolerance:TOL,raster:raster?{res:raster.res,convergencePct:raster.convergencePct,secondaryCount:raster.secondaryCount}:null});
-window.__edit={EDIT,setEditMode,entityAt,nearestOpenEnd,exportDXF};window.__loadDemo=()=>loadDemo(true);window.__runDemoCheck=runDemoCheck;window.__projectObject=projectObject;window.__importProject=importProject;window.__chooseRegion=id=>{const r=REGIONS.find(x=>x.id===id);chooseRegion(r);};window.__view=()=>({...view});
+window.__edit={EDIT,setEditMode,entityAt,nearestOpenEnd,exportDXF};window.__allRegions=()=>REGIONS.map(r=>({id:r.id,area:r.area,cx:r.cx,cy:r.cy,bbox:r.bbox,assigned:r.assigned,outer:r.outer,holes:r.holes}));
+window.__loadDemo=()=>loadDemo(true);window.__runDemoCheck=runDemoCheck;window.__projectObject=projectObject;window.__importProject=importProject;window.__chooseRegion=id=>{const r=REGIONS.find(x=>x.id===id);chooseRegion(r);};window.__view=()=>({...view});
 })();
 
 </script>
