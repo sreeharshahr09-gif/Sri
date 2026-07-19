@@ -412,7 +412,10 @@ function demoExpected(){return {
 };}
 
 function preparePlanarGraphV2(entities, tol = 0.05) {
-  const REG = 1e-6, EPSN = 1e-9;
+  // REG = drawing-precision coincidence: junction gaps below this fuse in the
+  // node registry directly (no geometry moves). Far below vertex spacing, so
+  // curves never chain-collapse.
+  const REG = 2e-5, EPSN = 1e-9;
 
   const _same = (a, b, t) => Math.hypot(a[0] - b[0], a[1] - b[1]) <= t;
   const _proj = (p, a, b) => {
@@ -454,10 +457,29 @@ function preparePlanarGraphV2(entities, tol = 0.05) {
     return true;
   });
   const openEnds = ends.filter((_, i) => isOpen[i]);
-  // open-to-open pair healing (small drawing gaps)
-  for (let i = 0; i < openEnds.length; i++) for (let j = i + 1; j < openEnds.length; j++) {
-    const p = openEnds[i], q = openEnds[j], d = Math.hypot(p[0] - q[0], p[1] - q[1]);
-    if (d > REG && d <= tol) { const mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2; p[0] = q[0] = mx; p[1] = q[1] = my; }
+  // open-to-open pair healing: MUTUAL-nearest matching only. (A first-found
+  // pairing welded groove tips to the wrong neighbours whenever several open
+  // ends sat within the tolerance of each other.)
+  for (let round = 0; round < 4; round++) {
+    const nearest = openEnds.map(p => {
+      let bi = -1, bd = tol;
+      openEnds.forEach((q, j) => {
+        if (q === p) return;
+        const d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+        if (d > REG && d < bd) { bd = d; bi = j; }
+      });
+      return bi;
+    });
+    let merged = false;
+    for (let i = 0; i < openEnds.length; i++) {
+      const j = nearest[i];
+      if (j > i && nearest[j] === i) {
+        const p = openEnds[i], q = openEnds[j];
+        const mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2;
+        p[0] = q[0] = mx; p[1] = q[1] = my; merged = true;
+      }
+    }
+    if (!merged) break;
   }
   // open-to-closed-junction healing (an open tip meant to land on a junction)
   for (let i = 0; i < openEnds.length; i++) {
@@ -551,7 +573,7 @@ function preparePlanarGraphV2(entities, tol = 0.05) {
   // Contact welding epsilon: tangent contacts between curves surface as a
   // vertex of one polyline passing within ~drawing precision of the other.
   // 1 µm is far below any real inter-curve gauge, so welding is safe.
-  const CONTACT = 5e-5;
+  const CONTACT = REG;
   for (const [i, j] of pairs) {
     const A = raw[i], B = raw[j];
     const ba = _bbox(A, CONTACT), bb2 = _bbox(B, CONTACT);
@@ -649,14 +671,25 @@ function panPixels(dx,dy){view.cx-=dx/view.scale;view.cy+=dy/view.scale;render()
 
 let DUPES_REMOVED=0;
 function dedupeEntities(list){
-  const seen=new Set();const out=[];let removed=0;const r=v=>Math.round(v*1e5)/1e5;
+  // strict: a curve is a duplicate only if it is pointwise identical (within
+  // 1e-9 mm) to an already-kept curve, forwards or reversed. A rounded-key
+  // comparison is not safe: near-identical-but-different curves must be kept.
+  const out=[];let removed=0;
   for(const e of list){
-    const a=e.pts[0],b=e.pts[e.pts.length-1],m=e.pts[Math.floor(e.pts.length/2)];
-    let len=0;for(let i=0;i<e.pts.length-1;i++)len+=Math.hypot(e.pts[i+1][0]-e.pts[i][0],e.pts[i+1][1]-e.pts[i][1]);
-    const k1=`${e.type}|${r(a[0])},${r(a[1])}|${r(b[0])},${r(b[1])}|${r(m[0])},${r(m[1])}|${r(len)}`;
-    const k2=`${e.type}|${r(b[0])},${r(b[1])}|${r(a[0])},${r(a[1])}|${r(m[0])},${r(m[1])}|${r(len)}`;
-    if(seen.has(k1)||seen.has(k2)){removed++;continue;}
-    seen.add(k1);out.push(e);
+    let dup=false;
+    for(const o of out){
+      if(o.type!==e.type||o.pts.length!==e.pts.length)continue;
+      let same=true,rsame=true;
+      const step=Math.max(1,Math.floor(e.pts.length/12));
+      for(let i=0;i<e.pts.length;i+=step){
+        const a=e.pts[i],b=o.pts[i],c=o.pts[o.pts.length-1-i];
+        if(Math.hypot(a[0]-b[0],a[1]-b[1])>1e-9)same=false;
+        if(Math.hypot(a[0]-c[0],a[1]-c[1])>1e-9)rsame=false;
+        if(!same&&!rsame)break;
+      }
+      if(same||rsame){dup=true;break;}
+    }
+    if(dup)removed++;else out.push(e);
   }
   DUPES_REMOVED=removed;return out;
 }
