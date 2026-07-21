@@ -61,7 +61,8 @@
   <div class="card stack">
     <h2>6 · Assign components</h2>
     <div class="hint">Click a region in the drawing and pick its component from the popup. A component may contain several separate regions. The list below manages names (✎ rename · ○ clear · × delete).</div>
-    <div class="row"><input id="compName" type="text" placeholder="e.g. TREAD"><button id="addComp" class="auto primary">Add</button></div>
+    <div class="row"><select id="compCatalog"><option value="">— choose component —</option><option value="__custom__">Other / custom name…</option></select><button id="addComp" class="auto primary">Add</button></div>
+    <div id="compCustomWrap" style="display:none;margin-top:6px"><input id="compName" type="text" placeholder="Custom component name…"></div>
     <div id="activeLabel" class="muted">No active component</div>
     <div class="toolbar"><button data-action="assign">Assign</button><button data-action="ignore">Ignore</button><button data-action="erase">Unassign</button><span class="spacer"></span><button id="undo">Undo</button><button id="redo">Redo</button></div><label class="row" style="justify-content:flex-start"><input id="previewPick" type="checkbox" checked style="width:auto;flex:0 0 auto"> <span>Preview raster picks before accepting</span></label><div id="previewBar" class="hint" style="display:none"><span id="previewText"></span><div class="row" style="margin-top:6px"><button id="acceptPreview" class="primary">Accept</button><button id="cancelPreview">Cancel</button></div></div>
     <button id="autoAssign" style="display:none">Auto-assign components from base variant</button>
@@ -678,7 +679,21 @@ if(typeof module!=="undefined"&&module.exports)module.exports=api;global.TyreEng
 "use strict";
 const E=window.TyreEngine,$=id=>document.getElementById(id);
 const PALETTE=["#4C78A8","#F58518","#54A24B","#E45756","#72B7B2","#B279A2","#EECA3B","#9D755D","#BAB0AC","#FF9DA6","#6F4E7C","#59A14F"];
-const DEFAULT_SG={TREAD:1.15,SIDEWALL:1.10,APEX:1.12,INNERLINER:1.20,"BELT-1":1.30,"BELT-2":1.30,BELT:1.30,"PLY-1":1.25,"PLY-2":1.25,PLY:1.25,BEAD:7.85,"BEAD-FILLER":1.12,CHAFER:1.18};
+// Standard TBR (Truck & Bus Radial) component catalog, in typical build-up
+// order, with placeholder specific gravities (g/cm3). Steel-reinforced
+// layers (belts, body ply, bead) use composite SG -- see project notes --
+// not plain-rubber SG; replace with your compound spec sheet values.
+const TBR_CATALOG=[
+  ["TREAD",1.15],["UNDER TREAD",1.13],["SHOULDER CUSHION",1.14],
+  ["SIDEWALL",1.10],["RIM CUSHION",1.15],
+  ["PROTECTOR BELT",2.40],["BELT EDGE CUSHION",1.20],
+  ["WORKING BELT-1",2.60],["WORKING BELT-2",2.60],["TRANSITION BELT",2.20],
+  ["BODY PLY",1.25],["INNER LINER",1.20],
+  ["HARD APEX",1.15],["SOFT APEX",1.10],
+  ["BEAD",7.85],["BEAD CUSHION",1.12],["FLIPPER",1.20],
+  ["CHAFER",1.18],
+];
+const DEFAULT_SG=Object.fromEntries(TBR_CATALOG);
 
 let ENT=[],BOUNDS=null,GRAPH=null,REGIONS=[],FINGERPRINT="",FILE_NAME="",DXF_TEXT="";
 let MODE="vector",AXIS=0,SIDE="right",TOL=0.05,ACTIVE=null,ACTION="assign",COMPONENTS=[],SG={...DEFAULT_SG},HOVER=null,PENDING=null;
@@ -823,7 +838,24 @@ function regionAllowed(r){const side=effectiveSide();if(side==="both")return tru
 function getRegionAtWorld(p){if(MODE==="vector")return E.findRegionAt(REGIONS,p);if(!raster)return null;const x=Math.floor((p[0]-BOUNDS.minX+raster.pad)*raster.ppm),y=Math.floor((BOUNDS.maxY+raster.pad-p[1])*raster.ppm);if(x<0||y<0||x>=raster.w||y>=raster.h)return null;const lab=raster.labels[y*raster.w+x];return lab>=0?raster.regions.find(r=>r.label===lab)||null:null;}
 
 function ensureComponent(name){name=name.trim().toUpperCase();if(!name)return null;if(!COMPONENTS.includes(name))COMPONENTS.push(name);if(SG[name]==null)SG[name]=DEFAULT_SG[name]??1.10;return name;}
-$("addComp").onclick=()=>{const n=ensureComponent($("compName").value);if(!n)return;ACTIVE=n;$("compName").value="";setAction("assign");renderAll();};
+function refreshCompCatalogSelect(){
+  const sel=$("compCatalog");if(!sel)return;const cur=sel.value;
+  sel.innerHTML='<option value="">— choose component —</option>'+catalogOptionsHtml()+'<option value="__custom__">Other / custom name…</option>';
+  if([...sel.options].some(o=>o.value===cur))sel.value=cur;
+}
+$("compCatalog").addEventListener("change",()=>{
+  const v=$("compCatalog").value;
+  $("compCustomWrap").style.display=v==="__custom__"?"":"none";
+  if(v==="__custom__")$("compName").focus();
+});
+$("addComp").onclick=()=>{
+  const v=$("compCatalog").value;
+  if(!v)return;
+  const nm=v==="__custom__"?$("compName").value:v;
+  const n=ensureComponent(nm);if(!n)return;
+  ACTIVE=n;$("compName").value="";$("compCatalog").value="";$("compCustomWrap").style.display="none";
+  setAction("assign");renderAll();
+};
 $("compName").addEventListener("keydown",e=>{if(e.key==="Enter")$("addComp").click();});
 function setAction(a){ACTION=a;if(typeof EDIT!=="undefined"&&EDIT.mode){EDIT.mode=null;EDIT.bridgeA=null;HOVER_ENT=null;syncEditUI();render();}navMode="select";syncNav();document.querySelectorAll("[data-action]").forEach(b=>b.classList.toggle("active",b.dataset.action===a));}
 document.querySelectorAll("[data-action]").forEach(b=>b.onclick=()=>setAction(b.dataset.action));setAction("assign");
@@ -846,7 +878,7 @@ function renderComponents(){const box=$("components");box.innerHTML="";for(const
     d.querySelector(".rename").onclick=()=>{const nn=prompt("New component name",n);if(!nn)return;const u=ensureComponent(nn);pushUndo();for(const r of REGIONS)if(r.assigned===n)r.assigned=u;const i=COMPONENTS.indexOf(n);if(i>=0)COMPONENTS.splice(i,1);if(ACTIVE===n)ACTIVE=u;renderAll();};
     d.querySelector(".clear").onclick=()=>{pushUndo();for(const r of REGIONS)if(r.assigned===n)r.assigned=null;renderAll();};
     d.querySelector(".del").onclick=()=>{pushUndo();for(const r of REGIONS)if(r.assigned===n)r.assigned=null;COMPONENTS=COMPONENTS.filter(x=>x!==n);if(ACTIVE===n)ACTIVE=COMPONENTS[0]||null;renderAll();};box.appendChild(d);}
-  $("activeLabel").textContent=ACTIVE?`Active: ${ACTIVE}`:"No active component";updateOverlayComp();
+  $("activeLabel").textContent=ACTIVE?`Active: ${ACTIVE}`:"No active component";updateOverlayComp();refreshCompCatalogSelect();
 }
 function renderSG(){const t=$("sgtab");t.innerHTML="";for(const n of COMPONENTS){const tr=document.createElement("tr");tr.innerHTML=`<td>${escapeHtml(n)}</td><td><input type="number" min="0.01" step="0.01" value="${SG[n]??1.1}" data-name="${escapeHtml(n)}"></td>`;t.appendChild(tr);}t.querySelectorAll("input").forEach(i=>i.onchange=()=>SG[i.dataset.name]=parseFloat(i.value)||1.1);}
 function updateProgress(){const eligible=REGIONS.filter(regionAllowed),assigned=eligible.filter(r=>r.assigned),ignored=eligible.filter(r=>r.ignored),un=eligible.filter(r=>!r.assigned&&!r.ignored);$("progress").innerHTML=`<b>${assigned.length}</b> assigned · <b>${ignored.length}</b> ignored · <b>${un.length}</b> unassigned`;}
@@ -1020,23 +1052,42 @@ $("autoAssign").onclick=()=>{pushUndo();const n=autoAssignFromBase();setStatus(n
 let lastClickScreen={x:200,y:200};
 function hidePop(){const p=$("assignPop");if(p)p.style.display="none";}
 function assignRegionTo(r,name){pushUndo();const n=ensureComponent(name);if(!n)return;r.assigned=n;r.ignored=false;ACTIVE=n;renderAll();}
+function catalogOptionsHtml(){
+  // catalog entries not already used in this project, in catalog order
+  const used=new Set(COMPONENTS);
+  let h="";
+  for(const [name] of TBR_CATALOG)if(!used.has(name))h+=`<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`;
+  return h;
+}
 function showAssignPop(r){
   const pop=$("assignPop");if(!pop)return;
   let h=`<div class="muted" style="margin-bottom:6px">${r.id} · ${r.area.toFixed(1)} mm²${r.assigned?` · now: <b>${escapeHtml(r.assigned)}</b>`:""}</div>`;
   if(COMPONENTS.length){
-    h+='<div style="display:flex;flex-direction:column;gap:3px;max-height:170px;overflow:auto">';
+    h+='<div class="muted" style="margin:2px 0 3px">Already used in this project</div>';
+    h+='<div style="display:flex;flex-direction:column;gap:3px;max-height:150px;overflow:auto">';
     for(const n of COMPONENTS)h+=`<button class="popComp" data-name="${escapeHtml(n)}" style="display:flex;align-items:center;gap:7px;text-align:left"><span class="pill" style="background:${colorFor(n)}"></span>${escapeHtml(n)}</button>`;
     h+='</div>';
   }
-  h+='<div class="row" style="margin-top:6px"><input id="popNew" type="text" placeholder="New component…"><button id="popAdd" class="auto primary">Add</button></div>';
-  h+=`<div class="row" style="margin-top:6px"><button id="popIgnore" title="Mark as not a component (air/void)">Ignore</button>${(r.assigned||r.ignored)?'<button id="popClear">Clear</button>':''}<button id="popCancel">Cancel</button></div>`;
+  const catOpts=catalogOptionsHtml();
+  h+='<div class="muted" style="margin:8px 0 3px">Add from TBR component list</div>';
+  h+=`<div class="row"><select id="popCatalog"><option value="">— choose —</option>${catOpts}<option value="__custom__">Other / custom name…</option></select><button id="popAddCat" class="auto primary">Add</button></div>`;
+  h+='<div id="popCustomWrap" style="display:none;margin-top:6px"><input id="popNew" type="text" placeholder="Custom component name…"></div>';
+  h+=`<div class="row" style="margin-top:8px"><button id="popIgnore" title="Mark as not a component (air/void)">Ignore</button>${(r.assigned||r.ignored)?'<button id="popClear">Clear</button>':''}<button id="popCancel">Cancel</button></div>`;
   pop.innerHTML=h;pop.style.display="block";
   const wr=wrap.getBoundingClientRect(),pw=pop.offsetWidth,ph=pop.offsetHeight;
   pop.style.left=Math.max(6,Math.min(lastClickScreen.x+12,wr.width-pw-6))+"px";
   pop.style.top=Math.max(6,Math.min(lastClickScreen.y+12,wr.height-ph-6))+"px";
   pop.querySelectorAll(".popComp").forEach(b=>b.onclick=()=>{assignRegionTo(r,b.dataset.name);hidePop();});
-  $("popAdd").onclick=()=>{const nm=$("popNew").value;if(!nm.trim())return;assignRegionTo(r,nm);hidePop();};
-  $("popNew").addEventListener("keydown",ev=>{if(ev.key==="Enter")$("popAdd").click();ev.stopPropagation();});
+  const sel=$("popCatalog"),customWrap=$("popCustomWrap"),customInput=$("popNew");
+  sel.addEventListener("change",()=>{customWrap.style.display=sel.value==="__custom__"?"":"none";if(sel.value==="__custom__")customInput.focus();});
+  $("popAddCat").onclick=()=>{
+    const v=sel.value;
+    if(!v)return;
+    const nm=v==="__custom__"?customInput.value:v;
+    if(!nm||!nm.trim())return;
+    assignRegionTo(r,nm);hidePop();
+  };
+  if(customInput)customInput.addEventListener("keydown",ev=>{if(ev.key==="Enter")$("popAddCat").click();ev.stopPropagation();});
   $("popIgnore").onclick=()=>{pushUndo();r.assigned=null;r.ignored=true;hidePop();renderAll();};
   const pc=$("popClear");if(pc)pc.onclick=()=>{pushUndo();r.assigned=null;r.ignored=false;hidePop();renderAll();};
   $("popCancel").onclick=hidePop;
