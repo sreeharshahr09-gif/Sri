@@ -42,7 +42,7 @@
   <div class="card stack">
     <h2>4 · Edit drawing</h2>
     <div class="hint">Red dots are open curve ends. Delete construction / reference lines that came with the DXF, and bridge real gaps in the tyre profile, then regions are re-detected automatically (existing assignments are preserved).</div>
-    <div class="toolbar"><button id="editDelete">Select curves</button><button id="editBridge">Bridge gap</button></div>
+    <div class="toolbar"><button id="editDelete">Select curves</button><button id="editBridge">Bridge gap</button><button id="editExtend" title="Extend an un-terminated curve tangentially until it meets the next curve">Extend to curve</button></div>
     <div class="toolbar"><button id="deleteSel" disabled>Delete selected</button><button id="editUndo" disabled>Undo edit</button><button id="editRedo" disabled>Redo edit</button></div>
     <div id="editStatus" class="muted">Editing off.</div>
     <button id="exportDxf">Export edited DXF</button>
@@ -97,6 +97,7 @@
   <div id="navOverlay" style="position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:5;background:rgba(20,30,40,.55);padding:4px;border-radius:8px">
     <button data-nav="select" title="Select regions">Select</button><button data-nav="pan" title="Pan">Pan</button><button data-nav="box" title="Box zoom">Box</button><button data-nav="measure" title="Measure distance between two points">Measure</button><button id="zoomIn">＋</button><button id="zoomOut">−</button><button id="fit">Fit</button>
   </div>
+  <div id="hoverTip" style="position:absolute;display:none;z-index:8;pointer-events:none;background:rgba(10,20,30,.93);color:#eaf2f8;border:1px solid var(--line);border-radius:7px;padding:5px 9px;font-size:12px;max-width:230px;box-shadow:0 4px 14px rgba(0,0,0,.4)"></div>
   <div id="assignPop" style="position:absolute;display:none;z-index:9;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px;min-width:200px;max-width:260px;box-shadow:0 8px 28px rgba(0,0,0,.5)"></div>
   <div id="hoverInfo"></div></div>
   <div id="results"></div>
@@ -882,7 +883,8 @@ function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=get
 
 cv.addEventListener("wheel",e=>{e.preventDefault();const r=cv.getBoundingClientRect();zoomAt(e.deltaY<0?1.18:1/1.18,e.clientX-r.left,e.clientY-r.top);},{passive:false});
 cv.addEventListener("contextmenu",e=>e.preventDefault());
-cv.addEventListener("mousedown",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;lastClickScreen={x,y};hidePop();const pan=navMode==="pan"||spaceDown||e.button===1||e.button===2;if(pan){drag={type:"pan",x0:x,y0:y,lastX:x,lastY:y};cv.classList.add("grabbing");}else if(navMode==="box"){drag={type:"box",x0:x,y0:y,x1:x,y1:y};}else if(e.button===0&&navMode==="measure"){const p=snapPoint(s2w(x,y));if(!MEASURE.p1||MEASURE.p2)MEASURE={p1:p,p2:null,temp:null};else MEASURE.p2=p;render();}else if(VIEW_MODE!=="single"){/* overlay: only nav+measure active */}else if(e.button===0&&EDIT.mode==="delete"){const ent=entityAt(s2w(x,y));if(ent){if(EDIT.selected.has(ent))EDIT.selected.delete(ent);else EDIT.selected.add(ent);syncEditUI();render();}}
+cv.addEventListener("mousedown",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;lastClickScreen={x,y};hidePop();{const t=$("hoverTip");if(t)t.style.display="none";}const pan=navMode==="pan"||spaceDown||e.button===1||e.button===2;if(pan){drag={type:"pan",x0:x,y0:y,lastX:x,lastY:y};cv.classList.add("grabbing");}else if(navMode==="box"){drag={type:"box",x0:x,y0:y,x1:x,y1:y};}else if(e.button===0&&navMode==="measure"){const p=snapPoint(s2w(x,y));if(!MEASURE.p1||MEASURE.p2)MEASURE={p1:p,p2:null,temp:null};else MEASURE.p2=p;render();}else if(VIEW_MODE!=="single"){/* overlay: only nav+measure active */}else if(e.button===0&&EDIT.mode==="delete"){const ent=entityAt(s2w(x,y));if(ent){if(EDIT.selected.has(ent))EDIT.selected.delete(ent);else EDIT.selected.add(ent);syncEditUI();render();}}
+  else if(e.button===0&&EDIT.mode==="extend"){extendAtPoint(s2w(x,y));}
   else if(e.button===0&&EDIT.mode==="bridge"){const q=nearestOpenEnd(s2w(x,y));if(q){if(!EDIT.bridgeA){EDIT.bridgeA=q;}else if(Math.hypot(q[0]-EDIT.bridgeA[0],q[1]-EDIT.bridgeA[1])>1e-9){pushEditUndo();ENT=ENT.concat([{layer:"0",type:"LINE",pts:[[EDIT.bridgeA[0],EDIT.bridgeA[1]],[q[0],q[1]]],closed:false}]);afterEdit("Gap bridged; regions re-detected.");}syncEditUI();render();}}
   else if(e.button===0){const reg=getRegionAtWorld(s2w(x,y));chooseRegion(reg);}});
 window.addEventListener("mousemove",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;if(drag?.type==="pan"){panPixels(x-drag.lastX,y-drag.lastY);drag.lastX=x;drag.lastY=y;return;}if(drag?.type==="box"){drag.x1=x;drag.y1=y;render();return;}if(x<0||y<0||x>r.width||y>r.height)return;const p=s2w(x,y);
@@ -890,7 +892,19 @@ window.addEventListener("mousemove",e=>{const r=cv.getBoundingClientRect(),x=e.c
   if(VIEW_MODE!=="single"){updateHover(p,null);return;}
   if(EDIT.mode==="delete"){const he=entityAt(p);if(he!==HOVER_ENT){HOVER_ENT=he;render();}updateHover(p,null);return;}
   if(EDIT.mode==="bridge"){updateHover(p,null);return;}
-  const reg=getRegionAtWorld(p);if(reg!==HOVER){HOVER=reg;render();}updateHover(p,reg);});
+  const reg=getRegionAtWorld(p);if(reg!==HOVER){HOVER=reg;render();}updateHover(p,reg);
+  const tip=$("hoverTip");
+  if(reg&&navMode==="select"&&!EDIT.mode&&!drag){
+    tip.innerHTML=reg.assigned
+      ?`<span class="pill" style="display:inline-block;vertical-align:middle;background:${colorFor(reg.assigned)}"></span> <b>${escapeHtml(reg.assigned)}</b><br><span style="opacity:.75">${reg.id} · ${reg.area.toFixed(1)} mm² · click to reassign</span>`
+      :`<b>Unassigned</b><br><span style="opacity:.75">${reg.id} · ${reg.area.toFixed(1)} mm² · click to assign</span>`;
+    tip.style.display="block";
+    const wr=wrap.getBoundingClientRect();
+    tip.style.left=Math.min(x+16,wr.width-tip.offsetWidth-8)+"px";
+    tip.style.top=Math.max(6,y-tip.offsetHeight-12)+"px";
+  }else tip.style.display="none";
+  });
+cv.addEventListener("mouseleave",()=>{const t=$("hoverTip");if(t)t.style.display="none";});
 window.addEventListener("mouseup",e=>{if(drag?.type==="box"){const dx=Math.abs(drag.x1-drag.x0),dy=Math.abs(drag.y1-drag.y0);if(dx>8&&dy>8){const a=s2w(Math.min(drag.x0,drag.x1),Math.max(drag.y0,drag.y1)),b=s2w(Math.max(drag.x0,drag.x1),Math.min(drag.y0,drag.y1)),{w,h}=cssSize();view.cx=(a[0]+b[0])/2;view.cy=(a[1]+b[1])/2;view.scale=Math.min((w-30)/Math.abs(b[0]-a[0]),(h-30)/Math.abs(b[1]-a[1]));}navMode="select";syncNav();}drag=null;cv.classList.remove("grabbing");render();});
 window.addEventListener("keydown",e=>{if(e.code==="Space"){spaceDown=true;e.preventDefault();}
 if((e.key==="Delete"||e.key==="Backspace")&&EDIT.selected.size&&!/INPUT|TEXTAREA/.test(document.activeElement?.tagName)){e.preventDefault();$("deleteSel").click();}
@@ -1077,30 +1091,42 @@ function updateOverlayComp(){
 }
 
 /* ---------------- variant comparison ---------------- */
+let RES_SORT={key:null,dir:1},CMP_METRIC="weight_g",CMP_SORT={col:"name",dir:1},LAST_TOTAL=0;
+const CMP_METRICS={weight_g:"Weight (g)",area_mm2:"Area (mm²)",volume_cm3:"Volume (cm³)",centroid_distance_mm:"CG dist (mm)",surface_area_mm2:"Surface (mm²)",polar_MOI:"Polar MOI (g·mm²)",radius_of_gyration_mm:"RoG (mm)",pct:"% of tyre weight"};
+function sortArrow(active,dir){return active?(dir>0?" ▲":" ▼"):"";}
 function variantResultsList(){
   return VARIANTS.map((v,i)=>({name:v.name,i,results:(i===CUR?results:(v.results||[]))})).filter(x=>x.results&&x.results.length);
 }
 function comparisonHTML(){
   const list=variantResultsList();
   if(list.length<2)return "";
+  const mk=CMP_METRIC,label=CMP_METRICS[mk]||mk;
   const comps=[...new Set(list.flatMap(x=>x.results.map(r=>r.component)))];
   const get=(x,c)=>x.results.find(r=>r.component===c);
   const base=list.find(x=>x.i===0)||list[0];
-  let h='<div class="card" style="margin-top:10px"><h2>Variant comparison — weight (g)</h2><div class="tablewrap"><table><thead><tr><th>Component</th>';
-  for(const x of list)h+=`<th colspan="2">${escapeHtml(x.name)}${x.i===base.i?" ·base":""}</th>`;
+  // sorting
+  const rows=comps.slice();
+  if(CMP_SORT.col==="name")rows.sort((a,b)=>CMP_SORT.dir*a.localeCompare(b));
+  else{const li=list[CMP_SORT.col]; if(li)rows.sort((a,b)=>{const ra=get(li,a),rb=get(li,b);return CMP_SORT.dir*(((ra?ra[mk]:-Infinity))-((rb?rb[mk]:-Infinity)));});}
+  let h='<div class="card" style="margin-top:10px"><h2>Variant comparison</h2>';
+  h+='<div class="row" style="margin-bottom:8px"><label style="margin:0;flex:0 0 auto">Compare by</label><select id="cmpMetric">';
+  for(const k in CMP_METRICS)h+=`<option value="${k}"${k===mk?" selected":""}>${CMP_METRICS[k]}</option>`;
+  h+='</select></div><div class="tablewrap"><table><thead><tr>';
+  h+=`<th data-ck="name" style="cursor:pointer" title="Sort">Component${sortArrow(CMP_SORT.col==="name",CMP_SORT.dir)}</th>`;
+  list.forEach((x,li)=>{h+=`<th colspan="2" data-ck="${li}" style="cursor:pointer" title="Sort by this variant">${escapeHtml(x.name)}${x.i===base.i?" ·base":""}${sortArrow(CMP_SORT.col===li,CMP_SORT.dir)}</th>`;});
   h+='</tr></thead><tbody>';
-  for(const c of comps){
+  for(const c of rows){
     const b=get(base,c);h+=`<tr><td>${escapeHtml(c)}</td>`;
-    for(const x of list){const r=get(x,c);const d=(r&&b)?r.weight_g-b.weight_g:null;
-      h+=`<td>${r?fmt(r.weight_g,1):"—"}</td><td style="color:${x.i===base.i?"var(--mut)":d==null?"var(--mut)":d<0?"var(--good)":"var(--bad)"}">${x.i===base.i?"·":d==null?"—":(d>=0?"+":"")+fmt(d,1)}</td>`;}
+    for(const x of list){const r=get(x,c);const d=(r&&b)?r[mk]-b[mk]:null;
+      h+=`<td>${r?fmt(r[mk],mk==="polar_MOI"?0:2):"—"}</td><td style="color:${x.i===base.i?"var(--mut)":d==null?"var(--mut)":d<0?"var(--good)":"var(--bad)"}">${x.i===base.i?"·":d==null?"—":(d>=0?"+":"")+fmt(d,mk==="polar_MOI"?0:2)}</td>`;}
     h+='</tr>';
   }
-  const bt=base.results.reduce((s,r)=>s+r.weight_g,0);
+  const bt=base.results.reduce((s,r)=>s+(r[mk]||0),0);
   h+='<tr style="font-weight:600;border-top:2px solid var(--line)"><td>TOTAL</td>';
-  for(const x of list){const t=x.results.reduce((s,r)=>s+r.weight_g,0);const d=t-bt;
-    h+=`<td>${fmt(t,1)}</td><td style="color:${x.i===base.i?"var(--mut)":d<0?"var(--good)":"var(--bad)"}">${x.i===base.i?"·":(d>=0?"+":"")+fmt(d,1)}</td>`;}
+  for(const x of list){const t=x.results.reduce((s,r)=>s+(r[mk]||0),0);const d=t-bt;
+    h+=`<td>${fmt(t,mk==="polar_MOI"?0:2)}</td><td style="color:${x.i===base.i?"var(--mut)":d<0?"var(--good)":"var(--bad)"}">${x.i===base.i?"·":(d>=0?"+":"")+fmt(d,mk==="polar_MOI"?0:2)}</td>`;}
   h+='</tr></tbody></table></div>';
-  h+='<div class="muted" style="margin-top:6px">Green = lighter than base · red = heavier. Same table logic applies per component.</div>';
+  h+=`<div class="muted" style="margin-top:6px">Comparing <b>${label}</b> · green = lower than base, red = higher · click a column header to sort.</div>`;
   h+='<div class="row" style="margin-top:8px"><button id="compareCsv">Export comparison CSV</button></div></div>';
   return h;
 }
@@ -1121,6 +1147,44 @@ $("computeAll").onclick=()=>{
   switchVariant(orig);
   setStatus(`Computed results for ${done} variant${done===1?"":"s"}.`,"ok");
 };
+
+/* ---------------- extend-to-curve repair ---------------- */
+function rayHit(p,d,excludeEnt,maxDist){
+  let best=null;
+  for(const e of ENT){
+    if(e===excludeEnt)continue;
+    for(let i=0;i<e.pts.length-1;i++){
+      const a=e.pts[i],b=e.pts[i+1];
+      const rx=d[0],ry=d[1],sx=b[0]-a[0],sy=b[1]-a[1];
+      const den=rx*sy-ry*sx;if(Math.abs(den)<1e-12)continue;
+      const qx=a[0]-p[0],qy=a[1]-p[1];
+      const t=(qx*sy-qy*sx)/den, u=(qx*ry-qy*rx)/den;
+      if(t>1e-9&&t<=maxDist&&u>=-1e-9&&u<=1+1e-9){if(!best||t<best.t)best={t,pt:[p[0]+rx*t,p[1]+ry*t]};}
+    }
+  }
+  return best;
+}
+function extendAtPoint(clickW){
+  const open=nearestOpenEnd(clickW,14);
+  if(!open){setStatus("Click near a red open end to extend that curve.","bad");return;}
+  let bestEnt=null,bestEndIdx=0,bd=0.6;
+  for(const e of ENT){
+    const a=e.pts[0],z=e.pts[e.pts.length-1];
+    const da=Math.hypot(a[0]-open[0],a[1]-open[1]),dz=Math.hypot(z[0]-open[0],z[1]-open[1]);
+    if(da<bd){bd=da;bestEnt=e;bestEndIdx=0;}
+    if(dz<bd){bd=dz;bestEnt=e;bestEndIdx=1;}
+  }
+  if(!bestEnt){setStatus("Could not identify the curve owning this open end.","bad");return;}
+  const pts=bestEnt.pts;
+  const p=bestEndIdx?pts[pts.length-1]:pts[0];
+  const q=bestEndIdx?pts[pts.length-2]:pts[1];
+  let dx=p[0]-q[0],dy=p[1]-q[1];const L=Math.hypot(dx,dy)||1;dx/=L;dy/=L;
+  const hit=rayHit(p,[dx,dy],bestEnt,15);
+  if(!hit){setStatus("No curve found within 15 mm along this curve's own direction — use Bridge gap instead.","bad");return;}
+  pushEditUndo();
+  ENT=ENT.concat([{layer:"0",type:"LINE",pts:[[p[0],p[1]],[hit.pt[0],hit.pt[1]]],closed:false}]);
+  afterEdit(`Curve extended ${hit.t.toFixed(2)} mm tangentially to meet the next curve; regions re-detected.`);
+}
 
 /* ---------------- quality checks ---------------- */
 let QC_OPEN_IDX=0;
@@ -1168,14 +1232,17 @@ function syncEditUI(){
   $("deleteSel").disabled=!EDIT.selected.size;
   $("deleteSel").textContent=EDIT.selected.size?`Delete selected (${EDIT.selected.size})`:"Delete selected";
   $("editUndo").disabled=!EDIT.undo.length;$("editRedo").disabled=!EDIT.redo.length;
+  $("editExtend").classList.toggle("active",EDIT.mode==="extend");
   $("editStatus").textContent=EDIT.mode==="delete"
     ?"Click curves to select (click again to unselect). Delete key or the button removes them."
     :EDIT.mode==="bridge"?(EDIT.bridgeA?"Now click the second open end (red dot).":"Click the first open end (red dot).")
+    :EDIT.mode==="extend"?"Click a red open end — the curve is extended along its own direction until it meets the next curve."
     :"Editing off.";
 }
 function setEditMode(m){EDIT.mode=EDIT.mode===m?null:m;EDIT.bridgeA=null;if(EDIT.mode!=="delete"){EDIT.selected.clear();HOVER_ENT=null;}if(EDIT.mode){navMode="select";syncNav();}syncEditUI();render();}
 $("editDelete").onclick=()=>setEditMode("delete");
 $("editBridge").onclick=()=>setEditMode("bridge");
+$("editExtend").onclick=()=>setEditMode("extend");
 function afterEdit(msg){EDIT.selected.clear();EDIT.bridgeA=null;HOVER_ENT=null;extractRegions();syncEditUI();if(msg)setStatus(msg,"ok");}
 function pushEditUndo(){EDIT.undo.push(ENT.slice());if(EDIT.undo.length>50)EDIT.undo.shift();EDIT.redo=[];}
 $("deleteSel").onclick=()=>{if(!EDIT.selected.size)return;pushEditUndo();ENT=ENT.filter(e=>!EDIT.selected.has(e));afterEdit("Curves deleted; regions re-detected.");};
@@ -1222,11 +1289,29 @@ function computeResults(){
   const total=results.reduce((s,r)=>s+r.weight_g,0);results.forEach(r=>r.pct=total?r.weight_g/total*100:0);VARIANTS[CUR].results=results;showResults(total);return results;
 }
 $("compute").onclick=computeResults;
-function showResults(total){let h=`<div class="summary"><span>Total weight <b>${fmt(total,1)} g</b></span><span>Total polar MOI <b>${fmt(results.reduce((s,r)=>s+r.polar_MOI,0))}</b></span><span>Assigned components <b>${results.length}</b></span></div>`;
+function showResults(total){LAST_TOTAL=total;let h=`<div class="summary"><span>Total weight <b>${fmt(total,1)} g</b></span><span>Total polar MOI <b>${fmt(results.reduce((s,r)=>s+r.polar_MOI,0))}</b></span><span>Assigned components <b>${results.length}</b></span></div>`;
   if(results.some(r=>r.axis_crossing))h+=`<div class="alert">One or more selected components cross the rotation axis. Pappus-derived results for those components should not be trusted.</div>`;
-  h+=`<div class="resultgrid"><div class="card"><h2>Component results</h2><div class="tablewrap"><table><thead><tr><th>Component</th><th>Regions</th><th>Area mm²</th><th>CG dist mm</th><th>Volume cm³</th><th>Weight g</th><th>Surface mm²</th><th>Polar MOI</th><th>RoG mm</th><th>% wt</th></tr></thead><tbody>`;
-  for(const r of results)h+=`<tr class="${r.axis_crossing?'rowwarn':''}"><td>${escapeHtml(r.component)}</td><td>${r.region_count}</td><td>${fmt(r.area_mm2)}</td><td>${fmt(r.centroid_distance_mm)}</td><td>${fmt(r.volume_cm3)}</td><td>${fmt(r.weight_g)}</td><td>${fmt(r.surface_area_mm2)}</td><td>${fmt(r.polar_MOI)}</td><td>${fmt(r.radius_of_gyration_mm)}</td><td>${fmt(r.pct)}</td></tr>`;
-  h+=`</tbody></table></div></div><div class="card"><h2>Weight by component</h2>`;const max=Math.max(1,...results.map(r=>r.weight_g));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.weight_g/max)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.weight_g,1)} g</b></div>`;h+=`</div><div class="card"><h2>Polar MOI by component</h2>`;const mm=Math.max(1,...results.map(r=>r.polar_MOI));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.polar_MOI/mm)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.polar_MOI)}</b></div>`;h+=`</div></div>`;h+=comparisonHTML();$("results").innerHTML=h;const cbtn=$("compareCsv");if(cbtn)cbtn.onclick=exportComparisonCsv;}
+  const RCOLS=[["component","Component"],["region_count","Regions"],["area_mm2","Area mm²"],["centroid_distance_mm","CG dist mm"],["volume_cm3","Volume cm³"],["weight_g","Weight g"],["surface_area_mm2","Surface mm²"],["polar_MOI","Polar MOI"],["radius_of_gyration_mm","RoG mm"],["pct","% wt"]];
+  h+=`<div class="resultgrid"><div class="card"><h2>Component results</h2><div class="tablewrap"><table><thead><tr>`;
+  for(const [k,lab] of RCOLS)h+=`<th data-sk="${k}" style="cursor:pointer" title="Sort">${lab}${sortArrow(RES_SORT.key===k,RES_SORT.dir)}</th>`;
+  h+=`</tr></thead><tbody>`;
+  let rrows=results.slice();
+  if(RES_SORT.key){const k=RES_SORT.key;rrows.sort((a,b)=>{const va=a[k],vb=b[k];return RES_SORT.dir*(typeof va==="string"?va.localeCompare(vb):(va-vb));});}
+  for(const r of rrows)h+=`<tr class="${r.axis_crossing?'rowwarn':''}"><td>${escapeHtml(r.component)}</td><td>${r.region_count}</td><td>${fmt(r.area_mm2)}</td><td>${fmt(r.centroid_distance_mm)}</td><td>${fmt(r.volume_cm3)}</td><td>${fmt(r.weight_g)}</td><td>${fmt(r.surface_area_mm2)}</td><td>${fmt(r.polar_MOI)}</td><td>${fmt(r.radius_of_gyration_mm)}</td><td>${fmt(r.pct)}</td></tr>`;
+  h+=`</tbody></table></div></div><div class="card"><h2>Weight by component</h2>`;const max=Math.max(1,...results.map(r=>r.weight_g));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.weight_g/max)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.weight_g,1)} g</b></div>`;h+=`</div><div class="card"><h2>Polar MOI by component</h2>`;const mm=Math.max(1,...results.map(r=>r.polar_MOI));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.polar_MOI/mm)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.polar_MOI)}</b></div>`;h+=`</div></div>`;h+=comparisonHTML();$("results").innerHTML=h;
+  const cbtn=$("compareCsv");if(cbtn)cbtn.onclick=exportComparisonCsv;
+  document.querySelectorAll("#results th[data-sk]").forEach(th=>th.onclick=()=>{
+    const k=th.dataset.sk;
+    if(RES_SORT.key===k)RES_SORT.dir=-RES_SORT.dir;else{RES_SORT.key=k;RES_SORT.dir=(k==="component")?1:-1;}
+    showResults(LAST_TOTAL);
+  });
+  document.querySelectorAll("#results th[data-ck]").forEach(th=>th.onclick=()=>{
+    const c=th.dataset.ck==="name"?"name":parseInt(th.dataset.ck,10);
+    if(CMP_SORT.col===c)CMP_SORT.dir=-CMP_SORT.dir;else{CMP_SORT.col=c;CMP_SORT.dir=(c==="name")?1:-1;}
+    showResults(LAST_TOTAL);
+  });
+  const ms=$("cmpMetric");if(ms)ms.onchange=()=>{CMP_METRIC=ms.value;showResults(LAST_TOTAL);};
+}
 $("csv").onclick=()=>{if(!results.length)computeResults();const keys=["component","region_count","area_mm2","centroid_x","centroid_y","centroid_distance_mm","volume_cm3","weight_g","surface_area_mm2","boundary_length_mm","boundary_centroid_x","polar_MOI","radius_of_gyration_mm","sg","pct","axis_crossing"],rows=[keys.join(","),...results.map(r=>keys.map(k=>r[k]??"").join(","))];download((FILE_NAME||"tyre").replace(/\.dxf$/i,"")+"_results.csv",rows.join("\n"),"text/csv");};
 
 function regionFeature(r,list=REGIONS){const d=Math.hypot(BOUNDS.width,BOUNDS.height)||1,w=Math.max(r.bbox.maxX-r.bbox.minX,1e-9),h=Math.max(r.bbox.maxY-r.bbox.minY,1e-9),neighbors=list.filter(x=>x!==r).map(x=>Math.hypot(x.cx-r.cx,x.cy-r.cy)/d).sort((a,b)=>a-b).slice(0,3);return {aspect:w/h,neighbors};}
