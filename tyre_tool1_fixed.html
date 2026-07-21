@@ -7,7 +7,7 @@
 <style>
 :root{--bg:#0e1620;--panel:#172431;--panel2:#111c27;--ink:#e8eef4;--mut:#9fb0c0;--line:#2c3d4d;--accent:#4C78A8;--good:#39a65a;--bad:#e15b5a;--warn:#e8a33d}
 @media(prefers-color-scheme:light){:root{--bg:#f4f7fa;--panel:#fff;--panel2:#f7f9fb;--ink:#17212b;--mut:#607080;--line:#d9e1e8}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif}button,input,select,textarea{font:inherit}button,input,select,textarea{color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:6px 8px}button{cursor:pointer}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button:hover{filter:brightness(1.08)}button:disabled{opacity:.4;cursor:not-allowed}.active{outline:2px solid #77b7ff;outline-offset:-1px}header{height:54px;padding:10px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px}header h1{font-size:17px;margin:0}header .sub{color:var(--mut);font-size:12px}#layout{display:grid;grid-template-columns:355px 1fr;height:calc(100vh - 54px)}aside{padding:12px;overflow:auto;border-right:1px solid var(--line)}main{min-width:0;display:grid;grid-template-rows:minmax(460px,62vh) auto;overflow:auto}.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:10px}.card h2{margin:0 0 8px;color:var(--mut);font-size:12px;letter-spacing:.06em;text-transform:uppercase}.row{display:flex;gap:7px;align-items:center}.row>*{min-width:0;flex:1}.row .auto{flex:0 0 auto}.stack>*+*{margin-top:7px}label{display:block;color:var(--mut);font-size:12px;margin:6px 0 3px}input[type=file]{width:100%;padding:5px}input[type=number],input[type=text],select,textarea{width:100%}.hint{font-size:12px;color:var(--mut);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px}.toolbar{display:flex;gap:5px;flex-wrap:wrap}.toolbar button{padding:5px 8px}.toolbar .spacer{flex:1}.status{font-size:12px;color:var(--mut);padding-top:6px}.status.ok,.good{color:var(--good)}.status.bad,.warn{color:var(--warn)}#cvwrap{position:relative;margin:12px 12px 0;min-height:440px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}#cv{display:block;width:100%;height:100%;touch-action:none}#hoverInfo{position:absolute;left:8px;bottom:8px;right:8px;padding:5px 8px;border-radius:6px;background:rgba(0,0,0,.55);color:#eaf2f8;font-size:11px;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.comp{display:flex;align-items:center;gap:5px;border-bottom:1px solid var(--line);padding:4px 2px}.comp.selected{background:rgba(76,120,168,.15)}.pill{width:11px;height:11px;border-radius:3px;flex:0 0 auto}.namebtn{background:none;border:0;padding:3px;text-align:left;flex:1;font-weight:600}.tiny{padding:2px 6px;background:var(--panel2)}.muted{color:var(--mut);font-size:12px}#progress{font-size:12px;margin-top:7px}.sgtab{width:100%;border-collapse:collapse}.sgtab td{padding:3px}.sgtab td:first-child{width:65%}.sgtab input{padding:4px 6px}#results{padding:12px}.summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}.summary span{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:6px 10px}.resultgrid{display:grid;grid-template-columns:minmax(600px,2fr) minmax(260px,1fr);gap:10px}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:6px 7px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}.rowwarn{background:rgba(232,163,61,.12)}.alert{border:1px solid var(--warn);background:rgba(232,163,61,.1);padding:8px;border-radius:8px;margin-bottom:10px}.barrow{display:grid;grid-template-columns:90px minmax(10px,260px) 90px;gap:6px;align-items:center;margin:5px 0;font-size:12px}.barrow i{height:14px;border-radius:3px}.barrow b{font-weight:500;color:var(--mut)}.testpass,.testfail{padding:8px;border-radius:8px;font-size:12px}.testpass{border:1px solid var(--good);background:rgba(57,166,90,.1)}.testfail{border:1px solid var(--bad);background:rgba(225,91,90,.1)}textarea{min-height:55px;resize:vertical}.grabbing{cursor:grabbing!important}@media(max-width:1000px){#layout{grid-template-columns:310px 1fr}.resultgrid{grid-template-columns:1fr}}@media(max-width:760px){#layout{display:block;height:auto}aside{border-right:0}main{grid-template-rows:500px auto}#cvwrap{height:480px}.resultgrid{grid-template-columns:1fr}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif}button,input,select,textarea{font:inherit}button,input,select,textarea{color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:6px 8px}button{cursor:pointer}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button:hover{filter:brightness(1.08)}button:disabled{opacity:.4;cursor:not-allowed}.active{outline:2px solid #77b7ff;outline-offset:-1px}header{height:54px;padding:10px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px}header h1{font-size:17px;margin:0}header .sub{color:var(--mut);font-size:12px}#layout{display:grid;grid-template-columns:355px 1fr;height:calc(100vh - 54px)}aside{padding:12px;overflow:auto;border-right:1px solid var(--line)}main{min-width:0;display:grid;grid-template-rows:auto minmax(420px,58vh) auto;overflow:auto}.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:10px}.card h2{margin:0 0 8px;color:var(--mut);font-size:12px;letter-spacing:.06em;text-transform:uppercase}.row{display:flex;gap:7px;align-items:center}.row>*{min-width:0;flex:1}.row .auto{flex:0 0 auto}.stack>*+*{margin-top:7px}label{display:block;color:var(--mut);font-size:12px;margin:6px 0 3px}input[type=file]{width:100%;padding:5px}input[type=number],input[type=text],select,textarea{width:100%}.hint{font-size:12px;color:var(--mut);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px}.toolbar{display:flex;gap:5px;flex-wrap:wrap}.toolbar button{padding:5px 8px}.toolbar .spacer{flex:1}.status{font-size:12px;color:var(--mut);padding-top:6px}.status.ok,.good{color:var(--good)}.status.bad,.warn{color:var(--warn)}#cvwrap{position:relative;margin:12px 12px 0;min-height:440px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}#cv{display:block;width:100%;height:100%;touch-action:none}#hoverInfo{position:absolute;left:8px;bottom:8px;right:8px;padding:5px 8px;border-radius:6px;background:rgba(0,0,0,.55);color:#eaf2f8;font-size:11px;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.comp{display:flex;align-items:center;gap:5px;border-bottom:1px solid var(--line);padding:4px 2px}.comp.selected{background:rgba(76,120,168,.15)}.pill{width:11px;height:11px;border-radius:3px;flex:0 0 auto}.namebtn{background:none;border:0;padding:3px;text-align:left;flex:1;font-weight:600}.tiny{padding:2px 6px;background:var(--panel2)}.muted{color:var(--mut);font-size:12px}#progress{font-size:12px;margin-top:7px}.sgtab{width:100%;border-collapse:collapse}.sgtab td{padding:3px}.sgtab td:first-child{width:65%}.sgtab input{padding:4px 6px}#results{padding:12px}.summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}.summary span{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:6px 10px}.resultgrid{display:grid;grid-template-columns:minmax(600px,2fr) minmax(260px,1fr);gap:10px}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:6px 7px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}.rowwarn{background:rgba(232,163,61,.12)}.alert{border:1px solid var(--warn);background:rgba(232,163,61,.1);padding:8px;border-radius:8px;margin-bottom:10px}.barrow{display:grid;grid-template-columns:90px minmax(10px,260px) 90px;gap:6px;align-items:center;margin:5px 0;font-size:12px}.barrow i{height:14px;border-radius:3px}.barrow b{font-weight:500;color:var(--mut)}.testpass,.testfail{padding:8px;border-radius:8px;font-size:12px}.testpass{border:1px solid var(--good);background:rgba(57,166,90,.1)}.testfail{border:1px solid var(--bad);background:rgba(225,91,90,.1)}textarea{min-height:55px;resize:vertical}.grabbing{cursor:grabbing!important}@media(max-width:1000px){#layout{grid-template-columns:310px 1fr}.resultgrid{grid-template-columns:1fr}}@media(max-width:760px){#layout{display:block;height:auto}aside{border-right:0}main{grid-template-rows:auto 480px auto}#cvwrap{height:480px}.resultgrid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -59,10 +59,11 @@
 
   <div class="card stack">
     <h2>6 · Assign components</h2>
-    <div class="hint">Create or select a component, then click every enclosed region belonging to it. A component may contain several separate regions.</div>
+    <div class="hint">Click a region in the drawing and pick its component from the popup. A component may contain several separate regions. The list below manages names (✎ rename · ○ clear · × delete).</div>
     <div class="row"><input id="compName" type="text" placeholder="e.g. TREAD"><button id="addComp" class="auto primary">Add</button></div>
     <div id="activeLabel" class="muted">No active component</div>
     <div class="toolbar"><button data-action="assign">Assign</button><button data-action="ignore">Ignore</button><button data-action="erase">Unassign</button><span class="spacer"></span><button id="undo">Undo</button><button id="redo">Redo</button></div><label class="row" style="justify-content:flex-start"><input id="previewPick" type="checkbox" checked style="width:auto;flex:0 0 auto"> <span>Preview raster picks before accepting</span></label><div id="previewBar" class="hint" style="display:none"><span id="previewText"></span><div class="row" style="margin-top:6px"><button id="acceptPreview" class="primary">Accept</button><button id="cancelPreview">Cancel</button></div></div>
+    <button id="autoAssign" style="display:none">Auto-assign components from base variant</button>
     <div id="components"></div><div id="progress"></div>
   </div>
 
@@ -76,15 +77,27 @@
     <label>Project notes</label><textarea id="notes" placeholder="Design iteration, tyre size, assumptions…"></textarea>
     <button id="saveProject">Save assignment project</button>
     <label>Load or transfer an earlier project</label><input type="file" id="projectFile" accept=".json,.tyreproject.json">
-    <label class="row" style="justify-content:flex-start"><input id="highResFinal" type="checkbox" checked style="width:auto;flex:0 0 auto"> <span>High-resolution final raster recomputation</span></label><div class="row"><button id="compute" class="primary">Compute results</button><button id="csv">Export CSV</button></div>
+    <label class="row" style="justify-content:flex-start"><input id="highResFinal" type="checkbox" checked style="width:auto;flex:0 0 auto"> <span>High-resolution final raster recomputation</span></label><div class="row"><button id="compute" class="primary">Compute results</button><button id="computeAll">Compute all variants</button><button id="csv">Export CSV</button></div>
     <div id="testReport"></div>
   </div>
 </aside>
 <main>
+  <div id="variantBar" style="display:flex;gap:6px;align-items:center;margin:10px 12px 0;flex-wrap:wrap">
+    <div id="variantTabs" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+    <button id="addVariant" class="tiny" title="Load another design variant for comparison">＋ Add variant</button>
+    <input type="file" id="variantFile" accept=".dxf" style="display:none">
+    <span style="flex:1"></span>
+    <div class="toolbar">
+      <button id="viewSingle" class="active" title="Work on the current variant">Single</button>
+      <button id="viewOverlay" title="Overlay all variants">Overlay</button>
+      <select id="overlayComp" style="display:none;max-width:170px"><option value="__all__">All curves</option></select>
+    </div>
+  </div>
   <div id="cvwrap"><canvas id="cv"></canvas>
   <div id="navOverlay" style="position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:5;background:rgba(20,30,40,.55);padding:4px;border-radius:8px">
-    <button data-nav="select" title="Select regions">Select</button><button data-nav="pan" title="Pan">Pan</button><button data-nav="box" title="Box zoom">Box</button><button id="zoomIn">＋</button><button id="zoomOut">−</button><button id="fit">Fit</button>
+    <button data-nav="select" title="Select regions">Select</button><button data-nav="pan" title="Pan">Pan</button><button data-nav="box" title="Box zoom">Box</button><button data-nav="measure" title="Measure distance between two points">Measure</button><button id="zoomIn">＋</button><button id="zoomOut">−</button><button id="fit">Fit</button>
   </div>
+  <div id="assignPop" style="position:absolute;display:none;z-index:9;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px;min-width:200px;max-width:260px;box-shadow:0 8px 28px rgba(0,0,0,.5)"></div>
   <div id="hoverInfo"></div></div>
   <div id="results"></div>
 </main>
@@ -717,7 +730,12 @@ function parseAndSet(text,name){
   try{
     setStatus("Reading DXF…");DXF_TEXT=text;FILE_NAME=name;FINGERPRINT=E.fnv1a(text);TOL=currentTol();results=[];$("results").innerHTML="";$("testReport").innerHTML="";
     ENT=dedupeEntities(E.loadEntities(text,0.005));if(typeof resetEdit==="function")resetEdit();if(!ENT.length)throw new Error("No supported DXF curves were found.");
-    BOUNDS=E.boundsOfEntities(ENT);autoAxis();extractRegions();fitView();setStatus(`${name}: ${ENT.length} curves loaded${DUPES_REMOVED?` (${DUPES_REMOVED} duplicate curves removed)`:""}.`,"ok");
+    BOUNDS=E.boundsOfEntities(ENT);autoAxis();extractRegions();fitView();
+    if(/^Variant \d+$/.test(VARIANTS[CUR].name))VARIANTS[CUR].name=name.replace(/\.dxf$/i,"").slice(0,20);
+    let autoMsg="";
+    if(CUR>0&&(VARIANTS[0].regions||[]).some(r=>r.assigned)){const n=autoAssignFromBase();if(n)autoMsg=` · ${n} regions auto-assigned from ${VARIANTS[0].name}`;}
+    saveCur();renderTabs();
+    setStatus(`${name}: ${ENT.length} curves loaded${DUPES_REMOVED?` (${DUPES_REMOVED} duplicate curves removed)`:""}${autoMsg}.`,"ok");
   }catch(err){console.error(err);setStatus("Could not read DXF: "+err.message,"bad");alert("Could not read DXF: "+err.message);}
 }
 $("file").addEventListener("change",e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>parseAndSet(r.result,f.name);r.readAsText(f,"latin1");});
@@ -815,7 +833,10 @@ $("undo").onclick=()=>{if(!undoStack.length)return;redoStack.push(snapshotAssign
 $("redo").onclick=()=>{if(!redoStack.length)return;undoStack.push(snapshotAssignments());restoreSnapshot(redoStack.pop());updateUndoButtons();};
 
 function applyRegionAction(r){if(!r||!regionAllowed(r))return;if(ACTION==="assign"&&!ACTIVE){alert("Create or select a component first.");return;}pushUndo();if(ACTION==="assign"){r.assigned=ACTIVE;r.ignored=false;}else if(ACTION==="ignore"){r.assigned=null;r.ignored=true;}else{r.assigned=null;r.ignored=false;}PENDING=null;$("previewBar").style.display="none";renderAll();}
-function chooseRegion(r){if(!r)return;if(!regionAllowed(r)){setStatus(`${r.id} is on the excluded half — change "Work on" in section 3 to select it.`,"bad");return;}if(MODE==="raster"&&$("previewPick").checked){PENDING=r;$("previewText").textContent=`${r.id}: ${r.area.toFixed(2)} mm² → ${ACTION}${ACTION==="assign"&&ACTIVE?" to "+ACTIVE:""}`;$("previewBar").style.display="";render();}else applyRegionAction(r);}
+function chooseRegion(r){if(!r)return;if(!regionAllowed(r)){setStatus(`${r.id} is on the excluded half — change "Work on" in section 3 to select it.`,"bad");return;}
+  if(MODE==="raster"&&$("previewPick").checked){PENDING=r;$("previewText").textContent=`${r.id}: ${r.area.toFixed(2)} mm² → ${ACTION}${ACTION==="assign"&&ACTIVE?" to "+ACTIVE:""}`;$("previewBar").style.display="";render();return;}
+  if(ACTION==="assign"&&MODE==="vector"){showAssignPop(r);return;}
+  applyRegionAction(r);}
 $("acceptPreview").onclick=()=>{if(PENDING)applyRegionAction(PENDING);};$("cancelPreview").onclick=()=>{PENDING=null;$("previewBar").style.display="none";render();};
 
 function renderComponents(){const box=$("components");box.innerHTML="";for(const n of COMPONENTS){const regs=REGIONS.filter(r=>r.assigned===n),d=document.createElement("div");d.className="comp "+(ACTIVE===n?"selected":"");d.innerHTML=`<span class="pill" style="background:${colorFor(n)}"></span><button class="namebtn" title="Select component">${escapeHtml(n)}</button><span class="muted">${regs.length} region${regs.length===1?"":"s"}</span><button class="tiny rename" title="Rename">✎</button><button class="tiny clear" title="Clear assignments">○</button><button class="tiny del" title="Delete component">×</button>`;
@@ -823,7 +844,7 @@ function renderComponents(){const box=$("components");box.innerHTML="";for(const
     d.querySelector(".rename").onclick=()=>{const nn=prompt("New component name",n);if(!nn)return;const u=ensureComponent(nn);pushUndo();for(const r of REGIONS)if(r.assigned===n)r.assigned=u;const i=COMPONENTS.indexOf(n);if(i>=0)COMPONENTS.splice(i,1);if(ACTIVE===n)ACTIVE=u;renderAll();};
     d.querySelector(".clear").onclick=()=>{pushUndo();for(const r of REGIONS)if(r.assigned===n)r.assigned=null;renderAll();};
     d.querySelector(".del").onclick=()=>{pushUndo();for(const r of REGIONS)if(r.assigned===n)r.assigned=null;COMPONENTS=COMPONENTS.filter(x=>x!==n);if(ACTIVE===n)ACTIVE=COMPONENTS[0]||null;renderAll();};box.appendChild(d);}
-  $("activeLabel").textContent=ACTIVE?`Active: ${ACTIVE}`:"No active component";
+  $("activeLabel").textContent=ACTIVE?`Active: ${ACTIVE}`:"No active component";updateOverlayComp();
 }
 function renderSG(){const t=$("sgtab");t.innerHTML="";for(const n of COMPONENTS){const tr=document.createElement("tr");tr.innerHTML=`<td>${escapeHtml(n)}</td><td><input type="number" min="0.01" step="0.01" value="${SG[n]??1.1}" data-name="${escapeHtml(n)}"></td>`;t.appendChild(tr);}t.querySelectorAll("input").forEach(i=>i.onchange=()=>SG[i.dataset.name]=parseFloat(i.value)||1.1);}
 function updateProgress(){const eligible=REGIONS.filter(regionAllowed),assigned=eligible.filter(r=>r.assigned),ignored=eligible.filter(r=>r.ignored),un=eligible.filter(r=>!r.assigned&&!r.ignored);$("progress").innerHTML=`<b>${assigned.length}</b> assigned · <b>${ignored.length}</b> ignored · <b>${un.length}</b> unassigned`;}
@@ -832,7 +853,7 @@ function renderAll(){renderComponents();renderSG();updateProgress();if(typeof up
 function drawLoop(loop,fill,stroke,line=1){ctx.beginPath();loop.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.closePath();if(fill){ctx.fillStyle=fill;ctx.fill("evenodd");}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=line;ctx.stroke();}}
 function drawRegion(r,fill,stroke){if(!r.outer?.length)return;ctx.beginPath();for(const loop of [r.outer,...(r.holes||[])]){loop.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.closePath();}if(fill){ctx.fillStyle=fill;ctx.fill("evenodd");}if(stroke){ctx.strokeStyle=stroke;ctx.stroke();}}
 function drawOuterRing(r,stroke,width){if(!r.outer?.length)return;ctx.save();ctx.strokeStyle=stroke;ctx.lineWidth=width;ctx.beginPath();r.outer.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.closePath();ctx.stroke();ctx.restore();}
-function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=getComputedStyle(document.body).getPropertyValue("--panel");ctx.fillRect(0,0,w,h);if(!BOUNDS)return;
+function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=getComputedStyle(document.body).getPropertyValue("--panel");ctx.fillRect(0,0,w,h);if(VIEW_MODE==="overlay"){renderOverlay();return;}if(!BOUNDS)return;
   // excluded half shading
   const ax=w2s([AXIS,0])[0],side=effectiveSide();ctx.fillStyle="rgba(120,130,140,.10)";if(side==="right")ctx.fillRect(0,0,ax,h);else if(side==="left")ctx.fillRect(ax,0,w-ax,h);
   if(MODE==="raster"&&raster){const p0=w2s([BOUNDS.minX-raster.pad,BOUNDS.maxY+raster.pad]),p1=w2s([BOUNDS.maxX+raster.pad,BOUNDS.minY-raster.pad]);ctx.globalAlpha=.12;ctx.drawImage(raster.off,p0[0],p0[1],p1[0]-p0[0],p1[1]-p0[1]);ctx.globalAlpha=1;}
@@ -856,22 +877,251 @@ function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=get
   // open endpoints diagnostics
   if(MODE==="vector"&&GRAPH){ctx.fillStyle="#E45756";for(const id of GRAPH.openNodeIds){const p=GRAPH.nodes[id];if(Math.abs(p[0]-AXIS)<=TOL*2)continue;const s=w2s(p);ctx.beginPath();ctx.arc(s[0],s[1],4,0,Math.PI*2);ctx.fill();}}
   if(drag?.type==="box"){ctx.strokeStyle="#55aaff";ctx.fillStyle="rgba(85,170,255,.12)";ctx.setLineDash([5,4]);const x=Math.min(drag.x0,drag.x1),y=Math.min(drag.y0,drag.y1),ww=Math.abs(drag.x1-drag.x0),hh=Math.abs(drag.y1-drag.y0);ctx.fillRect(x,y,ww,hh);ctx.strokeRect(x,y,ww,hh);ctx.setLineDash([]);}
+  drawMeasure();
 }
 
 cv.addEventListener("wheel",e=>{e.preventDefault();const r=cv.getBoundingClientRect();zoomAt(e.deltaY<0?1.18:1/1.18,e.clientX-r.left,e.clientY-r.top);},{passive:false});
 cv.addEventListener("contextmenu",e=>e.preventDefault());
-cv.addEventListener("mousedown",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;const pan=navMode==="pan"||spaceDown||e.button===1||e.button===2;if(pan){drag={type:"pan",x0:x,y0:y,lastX:x,lastY:y};cv.classList.add("grabbing");}else if(navMode==="box"){drag={type:"box",x0:x,y0:y,x1:x,y1:y};}else if(e.button===0&&EDIT.mode==="delete"){const ent=entityAt(s2w(x,y));if(ent){if(EDIT.selected.has(ent))EDIT.selected.delete(ent);else EDIT.selected.add(ent);syncEditUI();render();}}
+cv.addEventListener("mousedown",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;lastClickScreen={x,y};hidePop();const pan=navMode==="pan"||spaceDown||e.button===1||e.button===2;if(pan){drag={type:"pan",x0:x,y0:y,lastX:x,lastY:y};cv.classList.add("grabbing");}else if(navMode==="box"){drag={type:"box",x0:x,y0:y,x1:x,y1:y};}else if(e.button===0&&navMode==="measure"){const p=snapPoint(s2w(x,y));if(!MEASURE.p1||MEASURE.p2)MEASURE={p1:p,p2:null,temp:null};else MEASURE.p2=p;render();}else if(VIEW_MODE!=="single"){/* overlay: only nav+measure active */}else if(e.button===0&&EDIT.mode==="delete"){const ent=entityAt(s2w(x,y));if(ent){if(EDIT.selected.has(ent))EDIT.selected.delete(ent);else EDIT.selected.add(ent);syncEditUI();render();}}
   else if(e.button===0&&EDIT.mode==="bridge"){const q=nearestOpenEnd(s2w(x,y));if(q){if(!EDIT.bridgeA){EDIT.bridgeA=q;}else if(Math.hypot(q[0]-EDIT.bridgeA[0],q[1]-EDIT.bridgeA[1])>1e-9){pushEditUndo();ENT=ENT.concat([{layer:"0",type:"LINE",pts:[[EDIT.bridgeA[0],EDIT.bridgeA[1]],[q[0],q[1]]],closed:false}]);afterEdit("Gap bridged; regions re-detected.");}syncEditUI();render();}}
   else if(e.button===0){const reg=getRegionAtWorld(s2w(x,y));chooseRegion(reg);}});
 window.addEventListener("mousemove",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;if(drag?.type==="pan"){panPixels(x-drag.lastX,y-drag.lastY);drag.lastX=x;drag.lastY=y;return;}if(drag?.type==="box"){drag.x1=x;drag.y1=y;render();return;}if(x<0||y<0||x>r.width||y>r.height)return;const p=s2w(x,y);
+  if(navMode==="measure"&&MEASURE.p1&&!MEASURE.p2){MEASURE.temp=snapPoint(p);render();updateHover(p,null);return;}
+  if(VIEW_MODE!=="single"){updateHover(p,null);return;}
   if(EDIT.mode==="delete"){const he=entityAt(p);if(he!==HOVER_ENT){HOVER_ENT=he;render();}updateHover(p,null);return;}
   if(EDIT.mode==="bridge"){updateHover(p,null);return;}
   const reg=getRegionAtWorld(p);if(reg!==HOVER){HOVER=reg;render();}updateHover(p,reg);});
 window.addEventListener("mouseup",e=>{if(drag?.type==="box"){const dx=Math.abs(drag.x1-drag.x0),dy=Math.abs(drag.y1-drag.y0);if(dx>8&&dy>8){const a=s2w(Math.min(drag.x0,drag.x1),Math.max(drag.y0,drag.y1)),b=s2w(Math.max(drag.x0,drag.x1),Math.min(drag.y0,drag.y1)),{w,h}=cssSize();view.cx=(a[0]+b[0])/2;view.cy=(a[1]+b[1])/2;view.scale=Math.min((w-30)/Math.abs(b[0]-a[0]),(h-30)/Math.abs(b[1]-a[1]));}navMode="select";syncNav();}drag=null;cv.classList.remove("grabbing");render();});
 window.addEventListener("keydown",e=>{if(e.code==="Space"){spaceDown=true;e.preventDefault();}
 if((e.key==="Delete"||e.key==="Backspace")&&EDIT.selected.size&&!/INPUT|TEXTAREA/.test(document.activeElement?.tagName)){e.preventDefault();$("deleteSel").click();}
-if(e.key==="Escape"){EDIT.mode=null;EDIT.selected.clear();EDIT.bridgeA=null;HOVER_ENT=null;syncEditUI();render();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"){e.preventDefault();$("undo").click();}});window.addEventListener("keyup",e=>{if(e.code==="Space")spaceDown=false;});
+if(e.key==="Escape"){EDIT.mode=null;EDIT.selected.clear();EDIT.bridgeA=null;HOVER_ENT=null;hidePop();MEASURE={p1:null,p2:null,temp:null};syncEditUI();render();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"){e.preventDefault();$("undo").click();}});window.addEventListener("keyup",e=>{if(e.code==="Space")spaceDown=false;});
 function updateHover(p,r){const el=$("hoverInfo");if(!BOUNDS){el.textContent="";return;}let s=`x ${p[0].toFixed(2)} · y ${p[1].toFixed(2)}`;if(r)s+=` | ${r.id} · area ${r.area.toFixed(2)} mm² · CG (${r.cx.toFixed(2)}, ${r.cy.toFixed(2)}) · axis dist ${Math.abs(r.cx-AXIS).toFixed(2)} mm · ${r.assigned|| (r.ignored?"ignored":"unassigned")}${r.holes&&r.holes.length?` · ${r.holes.length} hole${r.holes.length===1?"":"s"} excluded`:""}`;el.textContent=s;}
+/* ---------------- variants ---------------- */
+const VCOLORS=["#9fb0c0","#4C78A8","#F58518","#54A24B","#E45756","#B279A2","#72B7B2","#EECA3B","#9D755D","#FF9DA6"];
+function newVariant(name){return {name,fileName:"",dxfText:"",fingerprint:"",ents:[],bounds:null,graph:null,regions:[],raster:null,mode:"vector",axis:0,side:"right",dupes:0,results:[],undoStack:[],redoStack:[]};}
+let VARIANTS=[newVariant("Variant 1")],CUR=0,VIEW_MODE="single";
+function saveCur(){const v=VARIANTS[CUR];if(!v)return;Object.assign(v,{ents:ENT,bounds:BOUNDS,graph:GRAPH,regions:REGIONS,fingerprint:FINGERPRINT,fileName:FILE_NAME,dxfText:DXF_TEXT,mode:MODE,axis:AXIS,side:SIDE,raster,results,undoStack,redoStack,dupes:DUPES_REMOVED});}
+function loadCur(i){CUR=i;const v=VARIANTS[i];
+  ENT=v.ents||[];BOUNDS=v.bounds||null;GRAPH=v.graph||null;REGIONS=v.regions||[];FINGERPRINT=v.fingerprint||"";FILE_NAME=v.fileName||"";DXF_TEXT=v.dxfText||"";
+  MODE=v.mode||"vector";AXIS=v.axis||0;SIDE=v.side||"right";raster=v.raster||null;results=v.results||[];undoStack=v.undoStack||[];redoStack=v.redoStack||[];DUPES_REMOVED=v.dupes||0;
+  $("axis").value=(+AXIS).toFixed(2);$("side").value=SIDE;$("extractMode").value=MODE;
+  if(typeof resetEdit==="function")resetEdit();HOVER=null;PENDING=null;hidePop();
+  renderTabs();renderAll();updateDiagnostics();updateUndoButtons();
+  if(BOUNDS)fitView();else render();
+  setStatus(v.fileName?`${v.name}: ${v.fileName} (${ENT.length} curves).`:`${v.name}: no drawing loaded yet — use "Load drawing" on the left.`);
+}
+function switchVariant(i){if(i===CUR)return;saveCur();loadCur(i);}
+function removeVariant(i){
+  if(i===0){alert("The base variant cannot be removed.");return;}
+  if(!confirm(`Remove ${VARIANTS[i].name}?`))return;
+  const wasCur=CUR===i;saveCur();
+  VARIANTS.splice(i,1);
+  if(CUR>i)CUR--;
+  if(wasCur)loadCur(Math.min(CUR,VARIANTS.length-1));else{renderTabs();render();}
+}
+function renderTabs(){
+  const bar=$("variantTabs");if(!bar)return;bar.innerHTML="";
+  VARIANTS.forEach((v,i)=>{
+    const b=document.createElement("button");b.className="tiny"+(i===CUR?" active":"");
+    b.style.borderLeft="4px solid "+(i===0?"#9fb0c0":VCOLORS[i%VCOLORS.length]);
+    b.textContent=(i===0?"★ ":"")+v.name;b.title=(v.fileName||"no drawing")+" — double-click to rename";
+    b.onclick=()=>switchVariant(i);
+    b.ondblclick=()=>{const nn=prompt("Variant name",v.name);if(nn){v.name=nn.trim().slice(0,24)||v.name;renderTabs();}};
+    if(i>0){const x=document.createElement("span");x.textContent=" ✕";x.style.opacity=".55";x.title="Remove variant";
+      x.onclick=(ev)=>{ev.stopPropagation();removeVariant(i);};b.appendChild(x);}
+    bar.appendChild(b);
+  });
+  const aa=$("autoAssign");if(aa)aa.style.display=CUR>0?"":"none";
+}
+$("addVariant").onclick=()=>{$("variantFile").value="";$("variantFile").click();};
+$("variantFile").addEventListener("change",e=>{
+  const f=e.target.files[0];if(!f)return;
+  saveCur();VARIANTS.push(newVariant("Variant "+(VARIANTS.length+1)));loadCur(VARIANTS.length-1);
+  const rd=new FileReader();rd.onload=()=>parseAndSet(rd.result,f.name);rd.readAsText(f,"latin1");
+});
+
+/* ---------------- auto-assign from base ---------------- */
+function normFeat(r,axis,bounds){const d=Math.hypot(bounds.width,bounds.height)||1;
+  return {u:(r.cx-axis)/d,v:(r.cy-bounds.minY)/d,a:r.area/(d*d),
+          asp:Math.max(r.bbox.maxX-r.bbox.minX,1e-9)/Math.max(r.bbox.maxY-r.bbox.minY,1e-9)};}
+function autoAssignFromBase(){
+  if(CUR===0)return 0;const base=VARIANTS[0];
+  if(!base.bounds||!(base.regions||[]).some(r=>r.assigned))return 0;
+  const src=base.regions.filter(r=>r.assigned);
+  const pairs=[];
+  for(const s of src){const sf=normFeat(s,base.axis,base.bounds);
+    for(const t of REGIONS){
+      if(t.assigned||t.ignored)continue;
+      const tf2=normFeat(t,AXIS,BOUNDS);
+      const cost=4*Math.hypot(tf2.u-sf.u,tf2.v-sf.v)
+        +0.8*Math.abs(Math.log(Math.max(tf2.a,1e-12)/Math.max(sf.a,1e-12)))
+        +0.3*Math.abs(Math.log(Math.max(tf2.asp,1e-9)/Math.max(sf.asp,1e-9)));
+      if(cost<0.35)pairs.push({s,t,cost});
+    }}
+  pairs.sort((a,b)=>a.cost-b.cost);
+  const su=new Set(),tu=new Set();let n=0;
+  for(const p of pairs){if(su.has(p.s)||tu.has(p.t))continue;su.add(p.s);tu.add(p.t);
+    p.t.assigned=p.s.assigned;p.t.ignored=false;ensureComponent(p.s.assigned);n++;}
+  if(n)renderAll();
+  return n;
+}
+$("autoAssign").onclick=()=>{pushUndo();const n=autoAssignFromBase();setStatus(n?`${n} regions auto-assigned from ${VARIANTS[0].name}.`:"No confident matches found — assign manually.",n?"ok":"bad");};
+
+/* ---------------- click-first assignment popup ---------------- */
+let lastClickScreen={x:200,y:200};
+function hidePop(){const p=$("assignPop");if(p)p.style.display="none";}
+function assignRegionTo(r,name){pushUndo();const n=ensureComponent(name);if(!n)return;r.assigned=n;r.ignored=false;ACTIVE=n;renderAll();}
+function showAssignPop(r){
+  const pop=$("assignPop");if(!pop)return;
+  let h=`<div class="muted" style="margin-bottom:6px">${r.id} · ${r.area.toFixed(1)} mm²${r.assigned?` · now: <b>${escapeHtml(r.assigned)}</b>`:""}</div>`;
+  if(COMPONENTS.length){
+    h+='<div style="display:flex;flex-direction:column;gap:3px;max-height:170px;overflow:auto">';
+    for(const n of COMPONENTS)h+=`<button class="popComp" data-name="${escapeHtml(n)}" style="display:flex;align-items:center;gap:7px;text-align:left"><span class="pill" style="background:${colorFor(n)}"></span>${escapeHtml(n)}</button>`;
+    h+='</div>';
+  }
+  h+='<div class="row" style="margin-top:6px"><input id="popNew" type="text" placeholder="New component…"><button id="popAdd" class="auto primary">Add</button></div>';
+  h+=`<div class="row" style="margin-top:6px"><button id="popIgnore" title="Mark as not a component (air/void)">Ignore</button>${(r.assigned||r.ignored)?'<button id="popClear">Clear</button>':''}<button id="popCancel">Cancel</button></div>`;
+  pop.innerHTML=h;pop.style.display="block";
+  const wr=wrap.getBoundingClientRect(),pw=pop.offsetWidth,ph=pop.offsetHeight;
+  pop.style.left=Math.max(6,Math.min(lastClickScreen.x+12,wr.width-pw-6))+"px";
+  pop.style.top=Math.max(6,Math.min(lastClickScreen.y+12,wr.height-ph-6))+"px";
+  pop.querySelectorAll(".popComp").forEach(b=>b.onclick=()=>{assignRegionTo(r,b.dataset.name);hidePop();});
+  $("popAdd").onclick=()=>{const nm=$("popNew").value;if(!nm.trim())return;assignRegionTo(r,nm);hidePop();};
+  $("popNew").addEventListener("keydown",ev=>{if(ev.key==="Enter")$("popAdd").click();ev.stopPropagation();});
+  $("popIgnore").onclick=()=>{pushUndo();r.assigned=null;r.ignored=true;hidePop();renderAll();};
+  const pc=$("popClear");if(pc)pc.onclick=()=>{pushUndo();r.assigned=null;r.ignored=false;hidePop();renderAll();};
+  $("popCancel").onclick=hidePop;
+}
+
+/* ---------------- measure tool ---------------- */
+let MEASURE={p1:null,p2:null,temp:null};
+function snapPoint(p){
+  if(GRAPH&&GRAPH.nodes){let best=null,bd=10/view.scale;
+    for(const q of GRAPH.nodes){const d=Math.hypot(q[0]-p[0],q[1]-p[1]);if(d<bd){bd=d;best=q;}}
+    if(best)return [best[0],best[1]];}
+  return [p[0],p[1]];
+}
+function drawMeasure(){
+  const a=MEASURE.p1,b=MEASURE.p2||MEASURE.temp;
+  if(!a)return;
+  const s1=w2s(a);
+  ctx.save();
+  ctx.fillStyle="#e8a33d";ctx.beginPath();ctx.arc(s1[0],s1[1],4,0,Math.PI*2);ctx.fill();
+  if(b){
+    const s2=w2s(b);
+    ctx.strokeStyle="#e8a33d";ctx.lineWidth=1.6;ctx.setLineDash([6,4]);
+    ctx.beginPath();ctx.moveTo(s1[0],s1[1]);ctx.lineTo(s2[0],s2[1]);ctx.stroke();ctx.setLineDash([]);
+    ctx.beginPath();ctx.arc(s2[0],s2[1],4,0,Math.PI*2);ctx.fill();
+    const dist=Math.hypot(b[0]-a[0],b[1]-a[1]);
+    const label=`${dist.toFixed(2)} mm  (Δx ${(b[0]-a[0]).toFixed(2)}, Δy ${(b[1]-a[1]).toFixed(2)})`;
+    const mx=(s1[0]+s2[0])/2,my=(s1[1]+s2[1])/2;
+    ctx.font="12px system-ui";const tw=ctx.measureText(label).width;
+    ctx.fillStyle="rgba(0,0,0,.72)";ctx.fillRect(mx-tw/2-6,my-22,tw+12,18);
+    ctx.fillStyle="#ffd98a";ctx.fillText(label,mx-tw/2,my-9);
+  }
+  ctx.restore();
+}
+
+/* ---------------- overlay mode ---------------- */
+function variantView(i){const v=VARIANTS[i];
+  return i===CUR?{ents:ENT,regions:REGIONS,axis:AXIS,bounds:BOUNDS,name:v.name}
+               :{ents:v.ents||[],regions:v.regions||[],axis:v.axis||0,bounds:v.bounds,name:v.name};}
+function variantOffset(vv){
+  const b0=variantView(0);
+  if(!vv.bounds||!b0.bounds)return [0,0];
+  return [b0.axis-vv.axis,((b0.bounds.minY+b0.bounds.maxY)/2)-((vv.bounds.minY+vv.bounds.maxY)/2)];
+}
+function renderOverlay(){
+  const comp=$("overlayComp").value;
+  const {w,h}=cssSize();
+  for(let i=0;i<VARIANTS.length;i++){
+    const vv=variantView(i);if(!vv.bounds)continue;
+    const [dx,dy]=variantOffset(vv);
+    const col=i===0?"#9fb0c0":VCOLORS[i%VCOLORS.length];
+    if(comp==="__all__"){
+      ctx.strokeStyle=i===0?"rgba(159,176,192,.75)":hexA(col,.85);
+      ctx.lineWidth=i===0?1:1.25;
+      for(const e of vv.ents){ctx.beginPath();e.pts.forEach((p,k)=>{const s=w2s([p[0]+dx,p[1]+dy]);k?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.stroke();}
+    }else{
+      for(const r of vv.regions){
+        if(r.assigned!==comp)continue;
+        ctx.beginPath();
+        for(const loop of [r.outer,...(r.holes||[])]){loop.forEach((p,k)=>{const s=w2s([p[0]+dx,p[1]+dy]);k?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.closePath();}
+        ctx.fillStyle=hexA(col,i===0?0.13:0.20);ctx.fill("evenodd");
+        ctx.strokeStyle=col;ctx.lineWidth=i===0?2.2:1.5;ctx.stroke();
+      }
+    }
+  }
+  const b0=variantView(0);
+  if(b0.bounds){const ax=w2s([b0.axis,0])[0];
+    ctx.strokeStyle="#0a84ff";ctx.lineWidth=1.2;ctx.setLineDash([7,5]);
+    ctx.beginPath();ctx.moveTo(ax,0);ctx.lineTo(ax,h);ctx.stroke();ctx.setLineDash([]);}
+  let ly=12;
+  ctx.font="11px system-ui";
+  for(let i=0;i<VARIANTS.length;i++){
+    const vv=variantView(i);if(!vv.bounds)continue;
+    const col=i===0?"#9fb0c0":VCOLORS[i%VCOLORS.length];
+    ctx.fillStyle=col;ctx.fillRect(12,ly,10,10);
+    ctx.fillStyle=getComputedStyle(document.body).getPropertyValue("--ink");
+    ctx.fillText(vv.name+(i===0?" (base)":""),27,ly+9);ly+=16;
+  }
+  drawMeasure();
+}
+$("viewSingle").onclick=()=>{VIEW_MODE="single";$("viewSingle").classList.add("active");$("viewOverlay").classList.remove("active");$("overlayComp").style.display="none";hidePop();render();};
+$("viewOverlay").onclick=()=>{saveCur();VIEW_MODE="overlay";$("viewOverlay").classList.add("active");$("viewSingle").classList.remove("active");$("overlayComp").style.display="";hidePop();render();};
+$("overlayComp").onchange=()=>render();
+function updateOverlayComp(){
+  const oc=$("overlayComp");if(!oc)return;const cur=oc.value;
+  oc.innerHTML='<option value="__all__">All curves</option>'+COMPONENTS.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
+  if([...oc.options].some(o=>o.value===cur))oc.value=cur;
+}
+
+/* ---------------- variant comparison ---------------- */
+function variantResultsList(){
+  return VARIANTS.map((v,i)=>({name:v.name,i,results:(i===CUR?results:(v.results||[]))})).filter(x=>x.results&&x.results.length);
+}
+function comparisonHTML(){
+  const list=variantResultsList();
+  if(list.length<2)return "";
+  const comps=[...new Set(list.flatMap(x=>x.results.map(r=>r.component)))];
+  const get=(x,c)=>x.results.find(r=>r.component===c);
+  const base=list.find(x=>x.i===0)||list[0];
+  let h='<div class="card" style="margin-top:10px"><h2>Variant comparison — weight (g)</h2><div class="tablewrap"><table><thead><tr><th>Component</th>';
+  for(const x of list)h+=`<th colspan="2">${escapeHtml(x.name)}${x.i===base.i?" ·base":""}</th>`;
+  h+='</tr></thead><tbody>';
+  for(const c of comps){
+    const b=get(base,c);h+=`<tr><td>${escapeHtml(c)}</td>`;
+    for(const x of list){const r=get(x,c);const d=(r&&b)?r.weight_g-b.weight_g:null;
+      h+=`<td>${r?fmt(r.weight_g,1):"—"}</td><td style="color:${x.i===base.i?"var(--mut)":d==null?"var(--mut)":d<0?"var(--good)":"var(--bad)"}">${x.i===base.i?"·":d==null?"—":(d>=0?"+":"")+fmt(d,1)}</td>`;}
+    h+='</tr>';
+  }
+  const bt=base.results.reduce((s,r)=>s+r.weight_g,0);
+  h+='<tr style="font-weight:600;border-top:2px solid var(--line)"><td>TOTAL</td>';
+  for(const x of list){const t=x.results.reduce((s,r)=>s+r.weight_g,0);const d=t-bt;
+    h+=`<td>${fmt(t,1)}</td><td style="color:${x.i===base.i?"var(--mut)":d<0?"var(--good)":"var(--bad)"}">${x.i===base.i?"·":(d>=0?"+":"")+fmt(d,1)}</td>`;}
+  h+='</tr></tbody></table></div>';
+  h+='<div class="muted" style="margin-top:6px">Green = lighter than base · red = heavier. Same table logic applies per component.</div>';
+  h+='<div class="row" style="margin-top:8px"><button id="compareCsv">Export comparison CSV</button></div></div>';
+  return h;
+}
+function exportComparisonCsv(){
+  const list=variantResultsList();
+  const keys=["area_mm2","centroid_distance_mm","volume_cm3","weight_g","surface_area_mm2","polar_MOI","radius_of_gyration_mm"];
+  const rows=[["variant","component",...keys].join(",")];
+  for(const x of list)for(const r of x.results)rows.push([JSON.stringify(x.name),JSON.stringify(r.component),...keys.map(k=>r[k])].join(","));
+  download("tyre_variant_comparison.csv",rows.join("\n"),"text/csv");
+}
+$("computeAll").onclick=()=>{
+  const orig=CUR;let done=0;
+  for(let i=0;i<VARIANTS.length;i++){
+    const has=(i===CUR)?!!BOUNDS:!!VARIANTS[i].bounds;
+    if(!has)continue;
+    switchVariant(i);computeResults();done++;
+  }
+  switchVariant(orig);
+  setStatus(`Computed results for ${done} variant${done===1?"":"s"}.`,"ok");
+};
+
 /* ---------------- quality checks ---------------- */
 let QC_OPEN_IDX=0;
 function openEndPoints(){if(!GRAPH)return [];return GRAPH.openNodeIds.map(i=>GRAPH.nodes[i]).filter(p=>Math.abs(p[0]-AXIS)>TOL*2);}
@@ -956,7 +1206,7 @@ function exportDXF(){
 }
 $("exportDxf").onclick=exportDXF;
 function setNav(n){navMode=n;if(typeof EDIT!=="undefined"&&EDIT.mode){EDIT.mode=null;EDIT.bridgeA=null;HOVER_ENT=null;syncEditUI();}syncNav();render();}
-function syncNav(){document.querySelectorAll("[data-nav]").forEach(b=>b.classList.toggle("active",b.dataset.nav===navMode));cv.style.cursor=navMode==="pan"?"grab":navMode==="box"?"crosshair":"default";}
+function syncNav(){document.querySelectorAll("[data-nav]").forEach(b=>b.classList.toggle("active",b.dataset.nav===navMode));cv.style.cursor=navMode==="pan"?"grab":(navMode==="box"||navMode==="measure")?"crosshair":"default";}
 document.querySelectorAll("[data-nav]").forEach(b=>b.onclick=()=>setNav(b.dataset.nav));$("zoomIn").onclick=()=>{const {w,h}=cssSize();zoomAt(1.3,w/2,h/2);};$("zoomOut").onclick=()=>{const {w,h}=cssSize();zoomAt(1/1.3,w/2,h/2);};$("fit").onclick=fitView;syncNav();
 
 function updateDiagnostics(){const el=$("diagnostics");if(!BOUNDS){el.textContent="No drawing loaded.";return;}if(MODE==="vector"&&GRAPH){const open=GRAPH.openNodeIds.filter(id=>Math.abs(GRAPH.nodes[id][0]-AXIS)>TOL*2);el.innerHTML=`${GRAPH.rawSegmentCount} flattened segments · ${GRAPH.edges.length} cleaned edges · ${REGIONS.length} enclosed regions · <span class="${open.length?'warn':'good'}">${open.length} unresolved open endpoint${open.length===1?'':'s'}</span>. Red dots mark unresolved endpoints — use the Edit drawing card to delete construction lines or bridge real gaps.`;}else{const conv=raster?.convergencePct;el.innerHTML=`Raster fallback: ${REGIONS.length} enclosed pixel regions at ${raster?.res||"—"} px. Pixel boundaries were converted to selectable polygons. ${conv==null?"Convergence not evaluated.":`Resolution check: <span class="${conv>1?"warn":"good"}">${conv.toFixed(2)}% area difference</span> and ${raster.secondaryCount} regions at the secondary resolution.`}`;}}
@@ -969,14 +1219,14 @@ function rasterMetrics(name,regs,sg){
 function computeResults(){
   if(MODE==="raster"&&raster&&$("highResFinal").checked){const target=Math.min(3000,Math.max(raster.res,Math.round((parseInt($("rasterRes").value)||1400)*1.5)));if(target>raster.res){const saved=snapshotAssignments();buildRasterRegions(target,false);restoreBySimilarity(saved);updateDiagnostics();renderAll();setStatus(`Raster results recomputed at ${target} px for final calculation.`,"ok");}}
   AXIS=parseFloat($("axis").value)||0;results=[];for(const n of COMPONENTS){const regs=REGIONS.filter(r=>r.assigned===n);if(!regs.length)continue;results.push(MODE==="vector"?E.componentMetrics(n,regs,AXIS,SG[n]||1.1):rasterMetrics(n,regs,SG[n]||1.1));}
-  const total=results.reduce((s,r)=>s+r.weight_g,0);results.forEach(r=>r.pct=total?r.weight_g/total*100:0);showResults(total);return results;
+  const total=results.reduce((s,r)=>s+r.weight_g,0);results.forEach(r=>r.pct=total?r.weight_g/total*100:0);VARIANTS[CUR].results=results;showResults(total);return results;
 }
 $("compute").onclick=computeResults;
 function showResults(total){let h=`<div class="summary"><span>Total weight <b>${fmt(total,1)} g</b></span><span>Total polar MOI <b>${fmt(results.reduce((s,r)=>s+r.polar_MOI,0))}</b></span><span>Assigned components <b>${results.length}</b></span></div>`;
   if(results.some(r=>r.axis_crossing))h+=`<div class="alert">One or more selected components cross the rotation axis. Pappus-derived results for those components should not be trusted.</div>`;
   h+=`<div class="resultgrid"><div class="card"><h2>Component results</h2><div class="tablewrap"><table><thead><tr><th>Component</th><th>Regions</th><th>Area mm²</th><th>CG dist mm</th><th>Volume cm³</th><th>Weight g</th><th>Surface mm²</th><th>Polar MOI</th><th>RoG mm</th><th>% wt</th></tr></thead><tbody>`;
   for(const r of results)h+=`<tr class="${r.axis_crossing?'rowwarn':''}"><td>${escapeHtml(r.component)}</td><td>${r.region_count}</td><td>${fmt(r.area_mm2)}</td><td>${fmt(r.centroid_distance_mm)}</td><td>${fmt(r.volume_cm3)}</td><td>${fmt(r.weight_g)}</td><td>${fmt(r.surface_area_mm2)}</td><td>${fmt(r.polar_MOI)}</td><td>${fmt(r.radius_of_gyration_mm)}</td><td>${fmt(r.pct)}</td></tr>`;
-  h+=`</tbody></table></div></div><div class="card"><h2>Weight by component</h2>`;const max=Math.max(1,...results.map(r=>r.weight_g));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.weight_g/max)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.weight_g,1)} g</b></div>`;h+=`</div><div class="card"><h2>Polar MOI by component</h2>`;const mm=Math.max(1,...results.map(r=>r.polar_MOI));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.polar_MOI/mm)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.polar_MOI)}</b></div>`;h+=`</div></div>`;$("results").innerHTML=h;}
+  h+=`</tbody></table></div></div><div class="card"><h2>Weight by component</h2>`;const max=Math.max(1,...results.map(r=>r.weight_g));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.weight_g/max)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.weight_g,1)} g</b></div>`;h+=`</div><div class="card"><h2>Polar MOI by component</h2>`;const mm=Math.max(1,...results.map(r=>r.polar_MOI));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.polar_MOI/mm)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.polar_MOI)}</b></div>`;h+=`</div></div>`;h+=comparisonHTML();$("results").innerHTML=h;const cbtn=$("compareCsv");if(cbtn)cbtn.onclick=exportComparisonCsv;}
 $("csv").onclick=()=>{if(!results.length)computeResults();const keys=["component","region_count","area_mm2","centroid_x","centroid_y","centroid_distance_mm","volume_cm3","weight_g","surface_area_mm2","boundary_length_mm","boundary_centroid_x","polar_MOI","radius_of_gyration_mm","sg","pct","axis_crossing"],rows=[keys.join(","),...results.map(r=>keys.map(k=>r[k]??"").join(","))];download((FILE_NAME||"tyre").replace(/\.dxf$/i,"")+"_results.csv",rows.join("\n"),"text/csv");};
 
 function regionFeature(r,list=REGIONS){const d=Math.hypot(BOUNDS.width,BOUNDS.height)||1,w=Math.max(r.bbox.maxX-r.bbox.minX,1e-9),h=Math.max(r.bbox.maxY-r.bbox.minY,1e-9),neighbors=list.filter(x=>x!==r).map(x=>Math.hypot(x.cx-r.cx,x.cy-r.cy)/d).sort((a,b)=>a-b).slice(0,3);return {aspect:w/h,neighbors};}
@@ -991,9 +1241,17 @@ function runDemoCheck(){const exp=E.demoExpected(),rows=computeResults();let ok=
 $("runTest").onclick=()=>{if(FILE_NAME!=="single_layer_validation_geometry.dxf")loadDemo(true);else runDemoCheck();};
 
 // boot
-$("rasterOpts").style.display="none";$("tolCustomWrap").style.display="none";renderAll();updateUndoButtons();resizeCanvas();
+$("rasterOpts").style.display="none";$("tolCustomWrap").style.display="none";renderTabs();renderAll();updateUndoButtons();resizeCanvas();
 window.__tyreDebug=()=>({mode:MODE,file:FILE_NAME,entities:ENT.length,regions:REGIONS.length,open:GRAPH?GRAPH.openNodeIds.length:null,components:COMPONENTS.slice(),regionStates:REGIONS.map(r=>({id:r.id,assigned:r.assigned,ignored:r.ignored,area:r.area,hasContour:!!r.outer?.length})),results:results.map(r=>({...r})),axis:AXIS,tolerance:TOL,raster:raster?{res:raster.res,convergencePct:raster.convergencePct,secondaryCount:raster.secondaryCount}:null});
 window.__edit={EDIT,setEditMode,entityAt,nearestOpenEnd,exportDXF};window.__allRegions=()=>REGIONS.map(r=>({id:r.id,area:r.area,cx:r.cx,cy:r.cy,bbox:r.bbox,assigned:r.assigned,outer:r.outer,holes:r.holes}));
+window.__variants=()=>({cur:CUR,viewMode:VIEW_MODE,list:VARIANTS.map((v,i)=>({name:v.name,file:i===CUR?FILE_NAME:v.fileName,regions:(i===CUR?REGIONS:(v.regions||[])).length,assigned:(i===CUR?REGIONS:(v.regions||[])).filter(r=>r.assigned).length,results:((i===CUR?results:v.results)||[]).length}))});
+window.__addVariantFromText=(name,text,fname)=>{saveCur();VARIANTS.push(newVariant(name));loadCur(VARIANTS.length-1);parseAndSet(text,fname||name+".dxf");};
+window.__switchVariant=i=>switchVariant(i);
+window.__setViewMode=m=>{(m==="overlay"?$("viewOverlay"):$("viewSingle")).click();};
+window.__measure=(a,b)=>{MEASURE={p1:a,p2:b,temp:null};render();return Math.hypot(b[0]-a[0],b[1]-a[1]);};
+window.__autoAssignFromBase=autoAssignFromBase;
+window.__cmpDebug=()=>({cur:CUR,list:variantResultsList().map(x=>({i:x.i,n:x.results.length})),htmlLen:comparisonHTML().length});
+window.__assignRegion=(id,name)=>{const r=REGIONS.find(x=>x.id===id);if(r&&regionAllowed(r))assignRegionTo(r,name);};
 window.__loadDemo=()=>loadDemo(true);window.__runDemoCheck=runDemoCheck;window.__projectObject=projectObject;window.__importProject=importProject;window.__chooseRegion=id=>{const r=REGIONS.find(x=>x.id===id);chooseRegion(r);};window.__view=()=>({...view});
 })();
 
