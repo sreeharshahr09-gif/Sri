@@ -43,7 +43,8 @@
     <h2>4 · Edit drawing</h2>
     <div class="hint">Red dots are open curve ends. Delete construction / reference lines that came with the DXF, and bridge real gaps in the tyre profile, then regions are re-detected automatically (existing assignments are preserved).</div>
     <div class="toolbar"><button id="editDelete">Select curves</button><button id="editBridge">Bridge gap</button><button id="editExtend" title="Extend an un-terminated curve tangentially until it meets the next curve">Extend to curve</button></div>
-    <div class="toolbar"><button id="deleteSel" disabled>Delete selected</button><button id="editUndo" disabled>Undo edit</button><button id="editRedo" disabled>Redo edit</button></div>
+    <div class="toolbar"><button id="deleteSel" disabled>Delete selected</button><button id="cleanMicro" title="Delete dangling curves shorter than 0.2 mm — the invisible fragments that show up as lone red dots">Clean micro-fragments</button></div>
+    <div class="toolbar"><button id="editUndo" disabled>Undo edit</button><button id="editRedo" disabled>Redo edit</button></div>
     <div id="editStatus" class="muted">Editing off.</div>
     <button id="exportDxf">Export edited DXF</button>
   </div>
@@ -878,16 +879,31 @@ function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=get
   // open endpoints diagnostics
   if(MODE==="vector"&&GRAPH){ctx.fillStyle="#E45756";for(const id of GRAPH.openNodeIds){const p=GRAPH.nodes[id];if(Math.abs(p[0]-AXIS)<=TOL*2)continue;const s=w2s(p);ctx.beginPath();ctx.arc(s[0],s[1],4,0,Math.PI*2);ctx.fill();}}
   if(drag?.type==="box"){ctx.strokeStyle="#55aaff";ctx.fillStyle="rgba(85,170,255,.12)";ctx.setLineDash([5,4]);const x=Math.min(drag.x0,drag.x1),y=Math.min(drag.y0,drag.y1),ww=Math.abs(drag.x1-drag.x0),hh=Math.abs(drag.y1-drag.y0);ctx.fillRect(x,y,ww,hh);ctx.strokeRect(x,y,ww,hh);ctx.setLineDash([]);}
+  if(drag?.type==="selbox"){ctx.strokeStyle="#ff6b5e";ctx.fillStyle="rgba(255,107,94,.10)";ctx.setLineDash([5,4]);const x=Math.min(drag.x0,drag.x1),y=Math.min(drag.y0,drag.y1),ww=Math.abs(drag.x1-drag.x0),hh=Math.abs(drag.y1-drag.y0);ctx.fillRect(x,y,ww,hh);ctx.strokeRect(x,y,ww,hh);ctx.setLineDash([]);}
   drawMeasure();
 }
 
 cv.addEventListener("wheel",e=>{e.preventDefault();const r=cv.getBoundingClientRect();zoomAt(e.deltaY<0?1.18:1/1.18,e.clientX-r.left,e.clientY-r.top);},{passive:false});
 cv.addEventListener("contextmenu",e=>e.preventDefault());
-cv.addEventListener("mousedown",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;lastClickScreen={x,y};hidePop();{const t=$("hoverTip");if(t)t.style.display="none";}const pan=navMode==="pan"||spaceDown||e.button===1||e.button===2;if(pan){drag={type:"pan",x0:x,y0:y,lastX:x,lastY:y};cv.classList.add("grabbing");}else if(navMode==="box"){drag={type:"box",x0:x,y0:y,x1:x,y1:y};}else if(e.button===0&&navMode==="measure"){const p=snapPoint(s2w(x,y));if(!MEASURE.p1||MEASURE.p2)MEASURE={p1:p,p2:null,temp:null};else MEASURE.p2=p;render();}else if(VIEW_MODE!=="single"){/* overlay: only nav+measure active */}else if(e.button===0&&EDIT.mode==="delete"){const ent=entityAt(s2w(x,y));if(ent){if(EDIT.selected.has(ent))EDIT.selected.delete(ent);else EDIT.selected.add(ent);syncEditUI();render();}}
+cv.addEventListener("mousedown",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;lastClickScreen={x,y};hidePop();{const t=$("hoverTip");if(t)t.style.display="none";}const pan=navMode==="pan"||spaceDown||e.button===1||e.button===2;if(pan){drag={type:"pan",x0:x,y0:y,lastX:x,lastY:y};cv.classList.add("grabbing");}else if(navMode==="box"){drag={type:"box",x0:x,y0:y,x1:x,y1:y};}else if(e.button===0&&navMode==="measure"){const p=snapPoint(s2w(x,y));if(!MEASURE.p1||MEASURE.p2)MEASURE={p1:p,p2:null,temp:null};else MEASURE.p2=p;render();}else if(VIEW_MODE!=="single"){/* overlay: only nav+measure active */}else if(e.button===0&&EDIT.mode==="delete"){drag={type:"selbox",x0:x,y0:y,x1:x,y1:y};}
   else if(e.button===0&&EDIT.mode==="extend"){extendAtPoint(s2w(x,y));}
-  else if(e.button===0&&EDIT.mode==="bridge"){const q=nearestOpenEnd(s2w(x,y));if(q){if(!EDIT.bridgeA){EDIT.bridgeA=q;}else if(Math.hypot(q[0]-EDIT.bridgeA[0],q[1]-EDIT.bridgeA[1])>1e-9){pushEditUndo();ENT=ENT.concat([{layer:"0",type:"LINE",pts:[[EDIT.bridgeA[0],EDIT.bridgeA[1]],[q[0],q[1]]],closed:false}]);afterEdit("Gap bridged; regions re-detected.");}syncEditUI();render();}}
+  else if(e.button===0&&EDIT.mode==="bridge"){
+    const w0=s2w(x,y);
+    if(!EDIT.bridgeA){
+      const q=nearestOpenEnd(w0);
+      if(q){EDIT.bridgeA=q;setStatus("First end selected — now click the second red dot.","ok");}
+      else setStatus("No open end near that click — zoom in and click directly on a red dot.","bad");
+    }else{
+      let q=nearestOpenEnd(w0);
+      if(q&&Math.hypot(q[0]-EDIT.bridgeA[0],q[1]-EDIT.bridgeA[1])<1e-6)q=nearestOpenEnd(w0,14,EDIT.bridgeA);
+      if(!q)setStatus("No second open end near that click — zoom in and click the other red dot.","bad");
+      else if(Math.hypot(q[0]-EDIT.bridgeA[0],q[1]-EDIT.bridgeA[1])<1e-6)setStatus("Both clicks landed on the same open end. If two dots are stacked here it is a micro-fragment — use Clean micro-fragments first.","bad");
+      else{const d=Math.hypot(q[0]-EDIT.bridgeA[0],q[1]-EDIT.bridgeA[1]);pushEditUndo();ENT=ENT.concat([{layer:"0",type:"LINE",pts:[[EDIT.bridgeA[0],EDIT.bridgeA[1]],[q[0],q[1]]],closed:false}]);afterEdit(`Bridged ${d.toFixed(2)} mm gap; regions re-detected.`);}
+    }
+    syncEditUI();render();
+  }
   else if(e.button===0){const reg=getRegionAtWorld(s2w(x,y));chooseRegion(reg);}});
-window.addEventListener("mousemove",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;if(drag?.type==="pan"){panPixels(x-drag.lastX,y-drag.lastY);drag.lastX=x;drag.lastY=y;return;}if(drag?.type==="box"){drag.x1=x;drag.y1=y;render();return;}if(x<0||y<0||x>r.width||y>r.height)return;const p=s2w(x,y);
+window.addEventListener("mousemove",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;if(drag?.type==="pan"){panPixels(x-drag.lastX,y-drag.lastY);drag.lastX=x;drag.lastY=y;return;}if(drag?.type==="box"||drag?.type==="selbox"){drag.x1=x;drag.y1=y;render();return;}if(x<0||y<0||x>r.width||y>r.height)return;const p=s2w(x,y);
   if(navMode==="measure"&&MEASURE.p1&&!MEASURE.p2){MEASURE.temp=snapPoint(p);render();updateHover(p,null);return;}
   if(VIEW_MODE!=="single"){updateHover(p,null);return;}
   if(EDIT.mode==="delete"){const he=entityAt(p);if(he!==HOVER_ENT){HOVER_ENT=he;render();}updateHover(p,null);return;}
@@ -905,7 +921,26 @@ window.addEventListener("mousemove",e=>{const r=cv.getBoundingClientRect(),x=e.c
   }else tip.style.display="none";
   });
 cv.addEventListener("mouseleave",()=>{const t=$("hoverTip");if(t)t.style.display="none";});
-window.addEventListener("mouseup",e=>{if(drag?.type==="box"){const dx=Math.abs(drag.x1-drag.x0),dy=Math.abs(drag.y1-drag.y0);if(dx>8&&dy>8){const a=s2w(Math.min(drag.x0,drag.x1),Math.max(drag.y0,drag.y1)),b=s2w(Math.max(drag.x0,drag.x1),Math.min(drag.y0,drag.y1)),{w,h}=cssSize();view.cx=(a[0]+b[0])/2;view.cy=(a[1]+b[1])/2;view.scale=Math.min((w-30)/Math.abs(b[0]-a[0]),(h-30)/Math.abs(b[1]-a[1]));}navMode="select";syncNav();}drag=null;cv.classList.remove("grabbing");render();});
+window.addEventListener("mouseup",e=>{
+if(drag?.type==="selbox"){
+  const dx=Math.abs(drag.x1-drag.x0),dy=Math.abs(drag.y1-drag.y0);
+  if(dx<4&&dy<4){
+    const ent=entityAt(s2w(drag.x0,drag.y0));
+    if(ent){if(EDIT.selected.has(ent))EDIT.selected.delete(ent);else EDIT.selected.add(ent);}
+  }else{
+    const c1=s2w(Math.min(drag.x0,drag.x1),Math.min(drag.y0,drag.y1)),c2=s2w(Math.max(drag.x0,drag.x1),Math.max(drag.y0,drag.y1));
+    const minX=Math.min(c1[0],c2[0]),maxX=Math.max(c1[0],c2[0]),minY=Math.min(c1[1],c2[1]),maxY=Math.max(c1[1],c2[1]);
+    let n=0;
+    for(const e2 of ENT){
+      let inside=true;
+      for(const p of e2.pts){if(p[0]<minX||p[0]>maxX||p[1]<minY||p[1]>maxY){inside=false;break;}}
+      if(inside&&!EDIT.selected.has(e2)){EDIT.selected.add(e2);n++;}
+    }
+    setStatus(n?`${n} curve${n===1?"":"s"} added to the selection — Delete removes them.`:"No curves fully inside the box.",n?"ok":"bad");
+  }
+  drag=null;syncEditUI();render();return;
+}
+if(drag?.type==="box"){const dx=Math.abs(drag.x1-drag.x0),dy=Math.abs(drag.y1-drag.y0);if(dx>8&&dy>8){const a=s2w(Math.min(drag.x0,drag.x1),Math.max(drag.y0,drag.y1)),b=s2w(Math.max(drag.x0,drag.x1),Math.min(drag.y0,drag.y1)),{w,h}=cssSize();view.cx=(a[0]+b[0])/2;view.cy=(a[1]+b[1])/2;view.scale=Math.min((w-30)/Math.abs(b[0]-a[0]),(h-30)/Math.abs(b[1]-a[1]));}navMode="select";syncNav();}drag=null;cv.classList.remove("grabbing");render();});
 window.addEventListener("keydown",e=>{if(e.code==="Space"){spaceDown=true;e.preventDefault();}
 if((e.key==="Delete"||e.key==="Backspace")&&EDIT.selected.size&&!/INPUT|TEXTAREA/.test(document.activeElement?.tagName)){e.preventDefault();$("deleteSel").click();}
 if(e.key==="Escape"){EDIT.mode=null;EDIT.selected.clear();EDIT.bridgeA=null;HOVER_ENT=null;hidePop();MEASURE={p1:null,p2:null,temp:null};syncEditUI();render();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"){e.preventDefault();$("undo").click();}});window.addEventListener("keyup",e=>{if(e.code==="Space")spaceDown=false;});
@@ -1234,7 +1269,7 @@ function syncEditUI(){
   $("editUndo").disabled=!EDIT.undo.length;$("editRedo").disabled=!EDIT.redo.length;
   $("editExtend").classList.toggle("active",EDIT.mode==="extend");
   $("editStatus").textContent=EDIT.mode==="delete"
-    ?"Click curves to select (click again to unselect). Delete key or the button removes them."
+    ?"Click curves to select, or drag a box to select every curve fully inside it. Delete key or the button removes them."
     :EDIT.mode==="bridge"?(EDIT.bridgeA?"Now click the second open end (red dot).":"Click the first open end (red dot).")
     :EDIT.mode==="extend"?"Click a red open end — the curve is extended along its own direction until it meets the next curve."
     :"Editing off.";
@@ -1243,6 +1278,26 @@ function setEditMode(m){EDIT.mode=EDIT.mode===m?null:m;EDIT.bridgeA=null;if(EDIT
 $("editDelete").onclick=()=>setEditMode("delete");
 $("editBridge").onclick=()=>setEditMode("bridge");
 $("editExtend").onclick=()=>setEditMode("extend");
+const MICRO_LEN=0.2;
+function findMicroFragments(){
+  const doomed=new Set();
+  const opens=GRAPH?GRAPH.openNodeIds.map(id=>GRAPH.nodes[id]):[];
+  const isOpenNear=p=>{for(const q of opens)if(Math.hypot(q[0]-p[0],q[1]-p[1])<MICRO_LEN)return true;return false;};
+  for(const e of ENT){
+    if(e.closed)continue;
+    let len=0;for(let i=0;i<e.pts.length-1;i++)len+=Math.hypot(e.pts[i+1][0]-e.pts[i][0],e.pts[i+1][1]-e.pts[i][1]);
+    // (a) truly degenerate (invisible) OR (b) short with at least one dangling (open) end
+    if(len<1e-3){doomed.add(e);continue;}
+    if(len<MICRO_LEN&&(isOpenNear(e.pts[0])||isOpenNear(e.pts[e.pts.length-1])))doomed.add(e);
+  }
+  return doomed;
+}
+$("cleanMicro").onclick=()=>{
+  const doomed=findMicroFragments();
+  if(!doomed.size){setStatus(`No dangling micro-fragments (< ${MICRO_LEN} mm) found.`,"ok");return;}
+  pushEditUndo();ENT=ENT.filter(e=>!doomed.has(e));
+  afterEdit(`${doomed.size} micro-fragment${doomed.size===1?"":"s"} deleted; regions re-detected.`);
+};
 function afterEdit(msg){EDIT.selected.clear();EDIT.bridgeA=null;HOVER_ENT=null;extractRegions();syncEditUI();if(msg)setStatus(msg,"ok");}
 function pushEditUndo(){EDIT.undo.push(ENT.slice());if(EDIT.undo.length>50)EDIT.undo.shift();EDIT.redo=[];}
 $("deleteSel").onclick=()=>{if(!EDIT.selected.size)return;pushEditUndo();ENT=ENT.filter(e=>!EDIT.selected.has(e));afterEdit("Curves deleted; regions re-detected.");};
@@ -1254,8 +1309,10 @@ function entityAt(p,tolPx=6){const tolW=tolPx/view.scale;let best=null,bd=tolW;
     if(p[0]<bb.x0-tolW||p[0]>bb.x1+tolW||p[1]<bb.y0-tolW||p[1]>bb.y1+tolW)continue;
     for(let i=0;i<e.pts.length-1;i++){const d=distToSeg(p,e.pts[i],e.pts[i+1]);if(d<bd){bd=d;best=e;}}}
   return best;}
-function nearestOpenEnd(p,tolPx=12){if(!GRAPH)return null;const tolW=tolPx/view.scale;let best=null,bd=tolW;
-  for(const id of GRAPH.openNodeIds){const q=GRAPH.nodes[id];const d=Math.hypot(q[0]-p[0],q[1]-p[1]);if(d<bd){bd=d;best=q;}}
+function nearestOpenEnd(p,tolPx=12,exclude){if(!GRAPH)return null;const tolW=tolPx/view.scale;let best=null,bd=tolW;
+  for(const id of GRAPH.openNodeIds){const q=GRAPH.nodes[id];
+    if(exclude&&Math.hypot(q[0]-exclude[0],q[1]-exclude[1])<1e-6)continue;
+    const d=Math.hypot(q[0]-p[0],q[1]-p[1]);if(d<bd){bd=d;best=q;}}
   return best;}
 function exportDXF(){
   const L=[];const push=(c,v)=>{L.push(String(c));L.push(String(v));};
@@ -1335,6 +1392,8 @@ window.__switchVariant=i=>switchVariant(i);
 window.__setViewMode=m=>{(m==="overlay"?$("viewOverlay"):$("viewSingle")).click();};
 window.__measure=(a,b)=>{MEASURE={p1:a,p2:b,temp:null};render();return Math.hypot(b[0]-a[0],b[1]-a[1]);};
 window.__autoAssignFromBase=autoAssignFromBase;
+window.__entDump=()=>ENT.map((e,i)=>{let L=0;for(let k=0;k<e.pts.length-1;k++)L+=Math.hypot(e.pts[k+1][0]-e.pts[k][0],e.pts[k+1][1]-e.pts[k][1]);return {i,type:e.type,npts:e.pts.length,len:+L.toFixed(5),a:e.pts[0].map(v=>+v.toFixed(3)),z:e.pts[e.pts.length-1].map(v=>+v.toFixed(3))};});
+window.__openDump=()=>GRAPH?GRAPH.openNodeIds.map(id=>GRAPH.nodes[id].map(v=>+v.toFixed(3))):[];
 window.__cmpDebug=()=>({cur:CUR,list:variantResultsList().map(x=>({i:x.i,n:x.results.length})),htmlLen:comparisonHTML().length});
 window.__assignRegion=(id,name)=>{const r=REGIONS.find(x=>x.id===id);if(r&&regionAllowed(r))assignRegionTo(r,name);};
 window.__loadDemo=()=>loadDemo(true);window.__runDemoCheck=runDemoCheck;window.__projectObject=projectObject;window.__importProject=importProject;window.__chooseRegion=id=>{const r=REGIONS.find(x=>x.id===id);chooseRegion(r);};window.__view=()=>({...view});
