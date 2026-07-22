@@ -35,7 +35,8 @@
   <div class="card stack">
     <h2>3 · Rotation axis</h2>
     <label>Rotation axis Y (mm)</label><div class="row"><input type="number" id="axis" value="0" step="0.1"><button id="axisAuto" class="auto">Auto</button></div>
-    <div class="hint">The rotation axis is the wheel/hub centreline — a horizontal line, usually at Y = 0 in the DXF's own coordinates, below the visible tyre profile. Every point revolves around this line; its Y-distance from it is the true radius used for volume, weight and surface area. Volume calculations require each selected component to stay entirely on one side of it (all Y above, none crossing below).</div>
+    <label>Outer diameter — tread to tread (mm)</label><div class="row"><input type="number" id="odia" placeholder="e.g. 1113" step="0.1"><button id="odSet" class="auto">Set axis</button></div>
+    <div class="hint">The rotation axis is the wheel/hub centreline — a horizontal line below the visible profile. It need <b>not</b> be at Y = 0: DXFs are often exported at arbitrary coordinates. The robust way to place it is the <b>outer diameter</b> — the tread surface (highest points in the drawing) sits at radius OD/2, so entering OD sets the axis to <code>Y_tread − OD/2</code>, correct at any offset. Every point's Y-distance from this line is its true radius. Each component must stay entirely on one side (all Y above, none crossing below).</div>
   </div>
 
   <div class="card stack">
@@ -91,9 +92,15 @@
     <div class="toolbar">
       <button id="viewSingle" class="active" title="Work on the current variant">Single</button>
       <button id="viewOverlay" title="Overlay all variants">Overlay</button>
+      <button id="viewTyre" title="Revolve the section into the full 3D tyre">Full tyre</button>
       <select id="overlayComp" style="display:none;max-width:170px"><option value="__all__">All curves</option></select>
       <button id="overlayAll" style="display:none" class="tiny" title="Include every variant">All</button>
       <button id="overlayNone" style="display:none" class="tiny" title="Hide every variant">None</button>
+      <span id="tyreCtrls" style="display:none;gap:5px;align-items:center">
+        <button id="tyre3d" class="tiny active" title="3D revolved solid — drag to rotate">3D</button>
+        <button id="tyreFront" class="tiny" title="Front elevation with concentric component rings">Front</button>
+        <span id="tyreOD" class="muted" style="margin-left:2px"></span>
+      </span>
     </div>
   </div>
   <div id="cvwrap"><canvas id="cv"></canvas>
@@ -893,7 +900,7 @@ function renderAll(){renderComponents();renderSG();updateProgress();if(typeof up
 function drawLoop(loop,fill,stroke,line=1){ctx.beginPath();loop.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.closePath();if(fill){ctx.fillStyle=fill;ctx.fill("evenodd");}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=line;ctx.stroke();}}
 function drawRegion(r,fill,stroke){if(!r.outer?.length)return;ctx.beginPath();for(const loop of [r.outer,...(r.holes||[])]){loop.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.closePath();}if(fill){ctx.fillStyle=fill;ctx.fill("evenodd");}if(stroke){ctx.strokeStyle=stroke;ctx.stroke();}}
 function drawOuterRing(r,stroke,width){if(!r.outer?.length)return;ctx.save();ctx.strokeStyle=stroke;ctx.lineWidth=width;ctx.beginPath();r.outer.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.closePath();ctx.stroke();ctx.restore();}
-function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=getComputedStyle(document.body).getPropertyValue("--panel");ctx.fillRect(0,0,w,h);if(VIEW_MODE==="overlay"){renderOverlay();return;}if(!BOUNDS)return;
+function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=getComputedStyle(document.body).getPropertyValue("--panel");ctx.fillRect(0,0,w,h);if(VIEW_MODE==="overlay"){renderOverlay();return;}if(VIEW_MODE==="tyre"){renderTyre();return;}if(!BOUNDS)return;
   // rotation axis: horizontal line at Y=AXIS (the wheel/hub centreline)
   {const ay=w2s([0,AXIS])[1];if(ay>=-40&&ay<=h+40){ctx.save();ctx.strokeStyle="rgba(70,110,190,.85)";ctx.lineWidth=1.5;ctx.setLineDash([8,5]);ctx.beginPath();ctx.moveTo(0,ay);ctx.lineTo(w,ay);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle="rgba(70,110,190,.9)";ctx.font="11px ui-monospace,monospace";ctx.fillText(`rotation axis  Y = ${AXIS.toFixed(2)}`,8,ay-6);ctx.restore();}}
   if(MODE==="raster"&&raster){const p0=w2s([BOUNDS.minX-raster.pad,BOUNDS.maxY+raster.pad]),p1=w2s([BOUNDS.maxX+raster.pad,BOUNDS.minY-raster.pad]);ctx.globalAlpha=.12;ctx.drawImage(raster.off,p0[0],p0[1],p1[0]-p0[0],p1[1]-p0[1]);ctx.globalAlpha=1;}
@@ -921,7 +928,7 @@ function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=get
 
 cv.addEventListener("wheel",e=>{e.preventDefault();const r=cv.getBoundingClientRect();zoomAt(e.deltaY<0?1.18:1/1.18,e.clientX-r.left,e.clientY-r.top);},{passive:false});
 cv.addEventListener("contextmenu",e=>e.preventDefault());
-cv.addEventListener("mousedown",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;lastClickScreen={x,y};hidePop();{const t=$("hoverTip");if(t)t.style.display="none";}const pan=navMode==="pan"||spaceDown||e.button===1||e.button===2;if(pan){drag={type:"pan",x0:x,y0:y,lastX:x,lastY:y};cv.classList.add("grabbing");}else if(navMode==="box"){drag={type:"box",x0:x,y0:y,x1:x,y1:y};}else if(e.button===0&&navMode==="measure"){const p=snapPoint(s2w(x,y));if(!MEASURE.p1||MEASURE.p2)MEASURE={p1:p,p2:null,temp:null};else MEASURE.p2=p;render();}else if(VIEW_MODE!=="single"){/* overlay: only nav+measure active */}else if(e.button===0&&EDIT.mode==="delete"){drag={type:"selbox",x0:x,y0:y,x1:x,y1:y};}
+cv.addEventListener("mousedown",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;lastClickScreen={x,y};hidePop();{const t=$("hoverTip");if(t)t.style.display="none";}if(VIEW_MODE==="tyre"){if(TYRE_VIEW==="3d"&&e.button===0){drag={type:"tyrerot",x0:x,y0:y,yaw0:tyreCam.yaw,pitch0:tyreCam.pitch};cv.classList.add("grabbing");}return;}const pan=navMode==="pan"||spaceDown||e.button===1||e.button===2;if(pan){drag={type:"pan",x0:x,y0:y,lastX:x,lastY:y};cv.classList.add("grabbing");}else if(navMode==="box"){drag={type:"box",x0:x,y0:y,x1:x,y1:y};}else if(e.button===0&&navMode==="measure"){const p=snapPoint(s2w(x,y));if(!MEASURE.p1||MEASURE.p2)MEASURE={p1:p,p2:null,temp:null};else MEASURE.p2=p;render();}else if(VIEW_MODE!=="single"){/* overlay: only nav+measure active */}else if(e.button===0&&EDIT.mode==="delete"){drag={type:"selbox",x0:x,y0:y,x1:x,y1:y};}
   else if(e.button===0&&EDIT.mode==="extend"){extendAtPoint(s2w(x,y));}
   else if(e.button===0&&EDIT.mode==="bridge"){
     const w0=s2w(x,y);
@@ -939,7 +946,7 @@ cv.addEventListener("mousedown",e=>{const r=cv.getBoundingClientRect(),x=e.clien
     syncEditUI();render();
   }
   else if(e.button===0){const reg=getRegionAtWorld(s2w(x,y));chooseRegion(reg);}});
-window.addEventListener("mousemove",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;if(drag?.type==="pan"){panPixels(x-drag.lastX,y-drag.lastY);drag.lastX=x;drag.lastY=y;return;}if(drag?.type==="box"||drag?.type==="selbox"){drag.x1=x;drag.y1=y;render();return;}if(x<0||y<0||x>r.width||y>r.height)return;const p=s2w(x,y);
+window.addEventListener("mousemove",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;if(drag?.type==="tyrerot"){tyreCam.yaw=drag.yaw0+(x-drag.x0)*0.012;tyreCam.pitch=Math.max(-1.35,Math.min(1.35,drag.pitch0-(y-drag.y0)*0.012));render();return;}if(drag?.type==="pan"){panPixels(x-drag.lastX,y-drag.lastY);drag.lastX=x;drag.lastY=y;return;}if(drag?.type==="box"||drag?.type==="selbox"){drag.x1=x;drag.y1=y;render();return;}if(x<0||y<0||x>r.width||y>r.height)return;const p=s2w(x,y);
   if(navMode==="measure"&&MEASURE.p1&&!MEASURE.p2){MEASURE.temp=snapPoint(p);render();updateHover(p,null);return;}
   if(VIEW_MODE!=="single"){updateHover(p,null);return;}
   if(EDIT.mode==="delete"){const he=entityAt(p);if(he!==HOVER_ENT){HOVER_ENT=he;render();}updateHover(p,null);return;}
@@ -958,6 +965,7 @@ window.addEventListener("mousemove",e=>{const r=cv.getBoundingClientRect(),x=e.c
   });
 cv.addEventListener("mouseleave",()=>{const t=$("hoverTip");if(t)t.style.display="none";});
 window.addEventListener("mouseup",e=>{
+if(drag?.type==="tyrerot"){drag=null;cv.classList.remove("grabbing");render();return;}
 if(drag?.type==="selbox"){
   const dx=Math.abs(drag.x1-drag.x0),dy=Math.abs(drag.y1-drag.y0);
   if(dx<4&&dy<4){
@@ -1142,9 +1150,11 @@ function variantView(i){const v=VARIANTS[i];
   return i===CUR?{ents:ENT,regions:REGIONS,axis:AXIS,bounds:BOUNDS,name:v.name}
                :{ents:v.ents||[],regions:v.regions||[],axis:v.axis||0,bounds:v.bounds,name:v.name};}
 function variantOffset(vv){
+  // Align variants for overlay: match X-centre (mid-width) and the rotation
+  // axis Y, so equal radii and the tyre centreline line up across designs.
   const b0=variantView(0);
   if(!vv.bounds||!b0.bounds)return [0,0];
-  return [b0.axis-vv.axis,((b0.bounds.minY+b0.bounds.maxY)/2)-((vv.bounds.minY+vv.bounds.maxY)/2)];
+  return [((b0.bounds.minX+b0.bounds.maxX)/2)-((vv.bounds.minX+vv.bounds.maxX)/2),b0.axis-vv.axis];
 }
 function renderOverlay(){
   const comp=$("overlayComp").value;
@@ -1169,9 +1179,9 @@ function renderOverlay(){
     }
   }
   const b0=variantView(0);
-  if(b0.bounds){const ax=w2s([b0.axis,0])[0];
+  if(b0.bounds){const ay=w2s([0,b0.axis])[1];if(ay>=-20&&ay<=h+20){
     ctx.strokeStyle="#0a84ff";ctx.lineWidth=1.2;ctx.setLineDash([7,5]);
-    ctx.beginPath();ctx.moveTo(ax,0);ctx.lineTo(ax,h);ctx.stroke();ctx.setLineDash([]);}
+    ctx.beginPath();ctx.moveTo(0,ay);ctx.lineTo(w,ay);ctx.stroke();ctx.setLineDash([]);}}
   let ly=12;
   ctx.font="11px system-ui";
   let anyVisible=false;
@@ -1187,8 +1197,155 @@ function renderOverlay(){
   if(!anyVisible){ctx.fillStyle=getComputedStyle(document.body).getPropertyValue("--mut");ctx.fillText("No variants checked — tick a variant tab above to show it here.",12,ly+9);}
   drawMeasure();
 }
-$("viewSingle").onclick=()=>{VIEW_MODE="single";$("viewSingle").classList.add("active");$("viewOverlay").classList.remove("active");$("overlayComp").style.display="none";$("overlayAll").style.display="none";$("overlayNone").style.display="none";hidePop();renderTabs();render();};
-$("viewOverlay").onclick=()=>{saveCur();VIEW_MODE="overlay";$("viewOverlay").classList.add("active");$("viewSingle").classList.remove("active");$("overlayComp").style.display="";$("overlayAll").style.display="";$("overlayNone").style.display="";hidePop();renderTabs();render();};
+
+/* ---------------- full tyre visualization ---------------- */
+let TYRE_VIEW="3d", tyreCam={yaw:1.15, pitch:0.30}, OD=null;
+const TAU=2*Math.PI;
+// Tread/rim extents from the detected RUBBER regions, not raw entities — the
+// DXF's full-height construction line would otherwise poison min/max Y.
+function geomMaxY(){if(REGIONS.length){let m=-Infinity;for(const r of REGIONS)m=Math.max(m,r.bbox.maxY);return m;}return BOUNDS?BOUNDS.maxY:0;}
+function geomMinY(){if(REGIONS.length){let m=Infinity;for(const r of REGIONS)m=Math.min(m,r.bbox.minY);return m;}return BOUNDS?BOUNDS.minY:0;}
+function geomMidX(){if(REGIONS.length){let a=Infinity,b=-Infinity;for(const r of REGIONS){a=Math.min(a,r.bbox.minX);b=Math.max(b,r.bbox.maxX);}return (a+b)/2;}return BOUNDS?(BOUNDS.minX+BOUNDS.maxX)/2:0;}
+
+function calibrateFromOD(){
+  if(!BOUNDS){setStatus("Load a drawing first.","bad");return;}
+  const od=parseFloat($("odia").value);
+  if(!(od>0)){setStatus("Enter a positive outer diameter (tread-to-tread, mm).","bad");return;}
+  OD=od;AXIS=geomMaxY()-od/2;$("axis").value=AXIS.toFixed(2);
+  setStatus(`Axis placed from OD ${od} mm — tread surface now sits at radius ${(od/2).toFixed(1)} mm from the axis.`,"ok");
+  updateTyreOD();render();updateDiagnostics();
+}
+function updateTyreOD(){const el=$("tyreOD");if(!el)return;if(!BOUNDS){el.textContent="";return;}const od=(geomMaxY()-AXIS)*2;el.textContent=`OD ≈ ${od.toFixed(0)} mm · axis Y ${AXIS.toFixed(1)}`;}
+function tyreEmpty(msg){const {w,h}=cssSize();ctx.save();ctx.fillStyle=getComputedStyle(document.body).getPropertyValue("--mut");ctx.font="13px system-ui";ctx.textAlign="center";ctx.fillText(msg,w/2,h/2);ctx.restore();}
+
+// Union outer boundary of all regions (tread/sidewall/bead skin + inner-liner
+// cavity) = boundary edges that appear an odd number of times across regions
+// (shared internal edges cancel). Chained into closed loops for revolving.
+function tyreSilhouette(){
+  if(!REGIONS.length)return [];
+  const cnt=new Map(),obj=new Map();
+  for(const r of REGIONS)for(const e of r.boundaryEdges||[]){cnt.set(e.key,(cnt.get(e.key)||0)+1);obj.set(e.key,e);}
+  const segs=[];for(const [k,n] of cnt)if(n%2===1){const e=obj.get(k);segs.push([e.p0,e.p1]);}
+  if(!segs.length)return [];
+  const q=p=>p[0].toFixed(5)+","+p[1].toFixed(5);
+  const adj=new Map();for(const [a,b] of segs){const ka=q(a),kb=q(b);(adj.get(ka)||adj.set(ka,[]).get(ka)).push(b);(adj.get(kb)||adj.set(kb,[]).get(kb)).push(a);}
+  const used=new Set(),sk=(a,b)=>{const ka=q(a),kb=q(b);return ka<kb?ka+"|"+kb:kb+"|"+ka;};
+  const loops=[];
+  for(const [a0,b0] of segs){
+    if(used.has(sk(a0,b0)))continue;
+    const loop=[a0];let prev=a0,cur=b0;used.add(sk(a0,b0));let guard=0;
+    while(q(cur)!==q(a0)&&guard++<200000){
+      loop.push(cur);const nb=adj.get(q(cur))||[];let nxt=null;
+      for(const c of nb){if(q(c)===q(prev))continue;if(!used.has(sk(cur,c))){nxt=c;break;}}
+      if(!nxt)for(const c of nb){if(!used.has(sk(cur,c))){nxt=c;break;}}
+      if(!nxt)break;used.add(sk(cur,nxt));prev=cur;cur=nxt;
+    }
+    if(loop.length>=3)loops.push(loop);
+  }
+  // keep loops whose bbox diagonal is a meaningful fraction of the whole
+  const diag=Math.hypot(BOUNDS.width,BOUNDS.height)||1;
+  return loops.filter(lp=>{let mnx=Infinity,mxx=-Infinity,mny=Infinity,mxy=-Infinity;for(const p of lp){mnx=Math.min(mnx,p[0]);mxx=Math.max(mxx,p[0]);mny=Math.min(mny,p[1]);mxy=Math.max(mxy,p[1]);}return Math.hypot(mxx-mnx,mxy-mny)>0.12*diag;});
+}
+
+function revolvePt(a,r,th,cam){
+  const Ax=a,Ry=r*Math.cos(th),Rz=r*Math.sin(th);
+  const cy=Math.cos(cam.yaw),sy=Math.sin(cam.yaw);
+  const x1=Ax*cy+Rz*sy,y1=Ry,z1=-Ax*sy+Rz*cy;
+  const cp=Math.cos(cam.pitch),sp=Math.sin(cam.pitch);
+  return [x1,y1*cp-z1*sp,y1*sp+z1*cp];
+}
+function renderTyre3D(){
+  const {w,h}=cssSize();
+  const loops=tyreSilhouette();
+  if(!loops.length){tyreEmpty("Detect regions (section 2) first — nothing to revolve yet.");return;}
+  if(geomMaxY()-AXIS<=0){tyreEmpty("The rotation axis is above the tread. Set a valid axis or enter the outer diameter.");return;}
+  const xc=geomMidX();
+  const rotating=drag&&drag.type==="tyrerot";
+  const STEPS=rotating?30:56,dth=2*Math.PI/STEPS;
+  const decimate=lp=>{const maxN=88;if(lp.length<=maxN)return lp;const st=lp.length/maxN,out=[];for(let i=0;i<lp.length;i+=st)out.push(lp[Math.floor(i)]);return out;};
+  const L=(()=>{const l=[0.35,0.55,0.75],n=Math.hypot(l[0],l[1],l[2]);return [l[0]/n,l[1]/n,l[2]/n];})();
+  const faces=[];
+  for(const raw of loops){
+    const lp=decimate(raw),N=lp.length;
+    for(let i=0;i<N;i++){
+      const p0=lp[i],p1=lp[(i+1)%N];
+      const a0=p0[0]-xc,r0=p0[1]-AXIS,a1=p1[0]-xc,r1=p1[1]-AXIS;
+      if(r0<0&&r1<0)continue;
+      for(let j=0;j<STEPS;j++){
+        const t0=j*dth,t1=(j+1)*dth;
+        const A=revolvePt(a0,r0,t0,tyreCam),B=revolvePt(a1,r1,t0,tyreCam),C=revolvePt(a1,r1,t1,tyreCam),D=revolvePt(a0,r0,t1,tyreCam);
+        const ux=B[0]-A[0],uy=B[1]-A[1],uz=B[2]-A[2],vx=D[0]-A[0],vy=D[1]-A[1],vz=D[2]-A[2];
+        let nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;const nl=Math.hypot(nx,ny,nz)||1;
+        const diff=Math.abs((nx*L[0]+ny*L[1]+nz*L[2])/nl);
+        faces.push({pts:[A,B,C,D],t:0.30+0.70*diff,depth:(A[2]+B[2]+C[2]+D[2])/4});
+      }
+    }
+  }
+  if(!faces.length){tyreEmpty("Nothing to revolve.");return;}
+  faces.sort((f,g)=>f.depth-g.depth);
+  let mnx=Infinity,mxx=-Infinity,mny=Infinity,mxy=-Infinity;
+  for(const f of faces)for(const p of f.pts){if(p[0]<mnx)mnx=p[0];if(p[0]>mxx)mxx=p[0];if(p[1]<mny)mny=p[1];if(p[1]>mxy)mxy=p[1];}
+  const pad=70,sc=Math.min((w-2*pad)/((mxx-mnx)||1),(h-2*pad)/((mxy-mny)||1))*0.96;
+  const ox=w/2-((mnx+mxx)/2)*sc,oy=h/2+((mny+mxy)/2)*sc;
+  for(const f of faces){
+    ctx.beginPath();f.pts.forEach((p,k)=>{const X=ox+p[0]*sc,Y=oy-p[1]*sc;k?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});ctx.closePath();
+    const r=Math.round(34+150*f.t),g=Math.round(37+150*f.t),b=Math.round(44+150*f.t);
+    ctx.fillStyle=`rgb(${r},${g},${b})`;ctx.strokeStyle=ctx.fillStyle;ctx.lineWidth=0.6;ctx.fill();ctx.stroke();
+  }
+  // OD dimension across the diameter
+  const od=(geomMaxY()-AXIS)*2;
+  ctx.save();ctx.fillStyle="#59a2ff";ctx.font="13px ui-monospace,monospace";ctx.textAlign="center";
+  ctx.fillText(`OD = ${od.toFixed(0)} mm`,w/2,h-16);
+  ctx.textAlign="left";ctx.fillStyle=getComputedStyle(document.body).getPropertyValue("--mut");ctx.font="12px system-ui";
+  ctx.fillText("Drag to rotate — this is your cross-section revolved 360° around the axis.",14,20);ctx.restore();
+}
+
+function renderTyreFront(){
+  const {w,h}=cssSize();
+  if(!BOUNDS){tyreEmpty("Load a drawing first.");return;}
+  const Rout=geomMaxY()-AXIS,Rin=Math.max(0,geomMinY()-AXIS);
+  if(Rout<=0){tyreEmpty("The rotation axis is above the tread. Set a valid axis or enter the outer diameter.");return;}
+  const ink=getComputedStyle(document.body).getPropertyValue("--ink"),mut=getComputedStyle(document.body).getPropertyValue("--mut"),panel=getComputedStyle(document.body).getPropertyValue("--panel");
+  const legendX=w-236,cx=Math.min(w*0.42,(legendX-24)/2+8),cyc=h/2,pad=54;
+  const sc=Math.min((legendX-30)-pad,h-2*pad)/(2*Rout);
+  const RR=r=>r*sc;
+  ctx.save();
+  // base rubber disc
+  ctx.beginPath();ctx.arc(cx,cyc,RR(Rout),0,TAU);ctx.fillStyle="rgba(150,155,165,.16)";ctx.fill();
+  // component bands, widest span first so narrow layers stay visible on top
+  const comps=COMPONENTS.map(name=>{const regs=REGIONS.filter(r=>r.assigned===name);if(!regs.length)return null;let mn=Infinity,mx=-Infinity;for(const r of regs){mn=Math.min(mn,r.bbox.minY);mx=Math.max(mx,r.bbox.maxY);}return {name,r0:Math.max(0,mn-AXIS),r1:mx-AXIS};}).filter(Boolean).sort((a,b)=>(b.r1-b.r0)-(a.r1-a.r0));
+  for(const c of comps){
+    ctx.beginPath();ctx.arc(cx,cyc,RR(c.r1),0,TAU);ctx.arc(cx,cyc,RR(c.r0),0,TAU,true);
+    ctx.fillStyle=hexA(colorFor(c.name),.42);ctx.fill("evenodd");
+    ctx.strokeStyle=colorFor(c.name);ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(cx,cyc,RR(c.r1),0,TAU);ctx.stroke();
+    ctx.beginPath();ctx.arc(cx,cyc,RR(c.r0),0,TAU);ctx.stroke();
+  }
+  // rim hole
+  if(Rin>0){ctx.beginPath();ctx.arc(cx,cyc,RR(Rin),0,TAU);ctx.fillStyle=panel;ctx.fill();ctx.strokeStyle="rgba(150,150,160,.6)";ctx.setLineDash([4,4]);ctx.lineWidth=1;ctx.beginPath();ctx.arc(cx,cyc,RR(Rin),0,TAU);ctx.stroke();ctx.setLineDash([]);}
+  // OD circle + diameter dimension
+  ctx.beginPath();ctx.arc(cx,cyc,RR(Rout),0,TAU);ctx.strokeStyle="#59a2ff";ctx.lineWidth=1.7;ctx.stroke();
+  ctx.strokeStyle="#59a2ff";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(cx-RR(Rout),cyc);ctx.lineTo(cx+RR(Rout),cyc);ctx.stroke();
+  const od=Rout*2;ctx.fillStyle="#59a2ff";ctx.font="12px ui-monospace,monospace";ctx.textAlign="center";ctx.fillText(`OD = ${od.toFixed(1)} mm`,cx,cyc-7);
+  if(Rin>0){ctx.fillStyle=mut;ctx.fillText(`rim ⌀ ${(Rin*2).toFixed(1)} mm`,cx,cyc+16);}
+  ctx.textAlign="left";
+  // legend (clear of the nav toolbar at top-right)
+  let ly=Math.max(70,h*0.5-comps.length*14-30);ctx.font="12px system-ui";
+  ctx.fillStyle=ink;ctx.fillText("Layers, outer radius (mm):",legendX,ly);ly+=20;
+  if(!comps.length){ctx.fillStyle=mut;ctx.fillText("Assign components to see",legendX,ly);ctx.fillText("them as concentric bands.",legendX,ly+15);}
+  for(const c of comps){ctx.fillStyle=colorFor(c.name);ctx.fillRect(legendX,ly-10,11,11);ctx.fillStyle=ink;ctx.font="12px system-ui";ctx.fillText(c.name,legendX+17,ly);ctx.fillStyle=mut;ctx.font="11px ui-monospace,monospace";ctx.fillText(`${c.r0.toFixed(0)}–${c.r1.toFixed(0)} mm`,legendX+17,ly+12);ly+=28;}
+  ctx.restore();
+}
+
+function renderTyre(){updateTyreOD();if(TYRE_VIEW==="front")renderTyreFront();else renderTyre3D();}
+function setViewButtons(mode){for(const id of ["viewSingle","viewOverlay","viewTyre"])$(id).classList.remove("active");$(mode==="overlay"?"viewOverlay":mode==="tyre"?"viewTyre":"viewSingle").classList.add("active");const ov=mode==="overlay";$("overlayComp").style.display=ov?"":"none";$("overlayAll").style.display=ov?"":"none";$("overlayNone").style.display=ov?"":"none";$("tyreCtrls").style.display=mode==="tyre"?"inline-flex":"none";}
+$("viewSingle").onclick=()=>{VIEW_MODE="single";setViewButtons("single");hidePop();renderTabs();render();};
+$("viewOverlay").onclick=()=>{saveCur();VIEW_MODE="overlay";setViewButtons("overlay");hidePop();renderTabs();render();};
+$("viewTyre").onclick=()=>{if(VIEW_MODE==="single")saveCur();VIEW_MODE="tyre";setViewButtons("tyre");hidePop();updateTyreOD();renderTabs();render();};
+$("tyre3d").onclick=()=>{TYRE_VIEW="3d";$("tyre3d").classList.add("active");$("tyreFront").classList.remove("active");render();};
+$("tyreFront").onclick=()=>{TYRE_VIEW="front";$("tyreFront").classList.add("active");$("tyre3d").classList.remove("active");render();};
+$("odSet").onclick=calibrateFromOD;
+$("odia").addEventListener("keydown",e=>{if(e.key==="Enter")calibrateFromOD();});
 $("overlayAll").onclick=()=>{VARIANTS.forEach(v=>v.visible=true);renderTabs();render();};
 $("overlayNone").onclick=()=>{VARIANTS.forEach(v=>v.visible=false);renderTabs();render();};
 $("overlayComp").onchange=()=>render();
@@ -1462,7 +1619,11 @@ window.__edit={EDIT,setEditMode,entityAt,nearestOpenEnd,exportDXF};window.__allR
 window.__variants=()=>({cur:CUR,viewMode:VIEW_MODE,list:VARIANTS.map((v,i)=>({name:v.name,file:i===CUR?FILE_NAME:v.fileName,regions:(i===CUR?REGIONS:(v.regions||[])).length,assigned:(i===CUR?REGIONS:(v.regions||[])).filter(r=>r.assigned).length,results:((i===CUR?results:v.results)||[]).length}))});
 window.__addVariantFromText=(name,text,fname)=>{saveCur();VARIANTS.push(newVariant(name));loadCur(VARIANTS.length-1);parseAndSet(text,fname||name+".dxf");};
 window.__switchVariant=i=>switchVariant(i);
-window.__setViewMode=m=>{(m==="overlay"?$("viewOverlay"):$("viewSingle")).click();};
+window.__setViewMode=m=>{(m==="overlay"?$("viewOverlay"):m==="tyre"?$("viewTyre"):$("viewSingle")).click();};
+window.__tyre=()=>({view:TYRE_VIEW,cam:{...tyreCam},od:BOUNDS?(BOUNDS.maxY-AXIS)*2:null,axis:AXIS,loops:tyreSilhouette().length});
+window.__setOD=v=>{$("odia").value=v;calibrateFromOD();};
+window.__setTyreView=v=>{(v==="front"?$("tyreFront"):$("tyre3d")).click();};
+window.__setTyreCam=(yaw,pitch)=>{tyreCam.yaw=yaw;tyreCam.pitch=pitch;render();};
 window.__measure=(a,b)=>{MEASURE={p1:a,p2:b,temp:null};render();return Math.hypot(b[0]-a[0],b[1]-a[1]);};
 window.__autoAssignFromBase=autoAssignFromBase;
 window.__entDump=()=>ENT.map((e,i)=>{let L=0;for(let k=0;k<e.pts.length-1;k++)L+=Math.hypot(e.pts[k+1][0]-e.pts[k][0],e.pts[k+1][1]-e.pts[k][1]);return {i,type:e.type,npts:e.pts.length,len:+L.toFixed(5),a:e.pts[0].map(v=>+v.toFixed(3)),z:e.pts[e.pts.length-1].map(v=>+v.toFixed(3))};});
