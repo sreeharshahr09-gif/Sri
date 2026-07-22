@@ -61,6 +61,8 @@
   <div class="card stack">
     <h2>6 · Assign components</h2>
     <div class="hint">Click a region in the drawing and pick its component from the popup. A component may contain several separate regions. The list below manages names (✎ rename · ○ clear · × delete).</div>
+    <label class="row" style="justify-content:flex-start"><input id="mirrorAssign" type="checkbox" checked style="width:auto;flex:0 0 auto"> <span>Mirror each assignment to the matching region on the other half (assign once, both sides done)</span></label>
+    <button id="mirrorAll" class="tiny">Mirror all current assignments to the other half</button>
     <div class="row"><select id="compCatalog"><option value="">— choose component —</option><option value="__custom__">Other / custom name…</option></select><button id="addComp" class="auto primary">Add</button></div>
     <div id="compCustomWrap" style="display:none;margin-top:6px"><input id="compName" type="text" placeholder="Custom component name…"></div>
     <div id="activeLabel" class="muted">No active component</div>
@@ -879,12 +881,48 @@ function updateUndoButtons(){$("undo").disabled=!undoStack.length;$("redo").disa
 $("undo").onclick=()=>{if(!undoStack.length)return;redoStack.push(snapshotAssignments());restoreSnapshot(undoStack.pop());updateUndoButtons();};
 $("redo").onclick=()=>{if(!redoStack.length)return;undoStack.push(snapshotAssignments());restoreSnapshot(redoStack.pop());updateUndoButtons();};
 
-function applyRegionAction(r){if(!r)return;if(ACTION==="assign"&&!ACTIVE){alert("Create or select a component first.");return;}pushUndo();if(ACTION==="assign"){r.assigned=ACTIVE;r.ignored=false;}else if(ACTION==="ignore"){r.assigned=null;r.ignored=true;}else{r.assigned=null;r.ignored=false;}PENDING=null;$("previewBar").style.display="none";renderAll();}
+// --- mirror-symmetry helpers: the section is drawn as both mirror halves, so
+// assigning one region can auto-apply to its partner across the mid-width
+// centreline. This halves the clicking while keeping BOTH halves in the
+// calculation (each partner keeps its own real geometry).
+let MIRROR_ASSIGN=true;
+function mirrorLineX(){return geomMidX();}
+function mirrorPartner(r){
+  if(!r||REGIONS.length<2||!BOUNDS)return null;
+  const Xm=mirrorLineX(),diag=Math.hypot(BOUNDS.width,BOUNDS.height)||1;
+  if(Math.abs(r.cx-Xm)<0.02*diag)return null; // straddles the centreline → its own mirror
+  const tx=2*Xm-r.cx,ty=r.cy;let best=null,bc=Infinity;
+  for(const s of REGIONS){if(s===r)continue;
+    const cost=3*Math.hypot(s.cx-tx,s.cy-ty)/diag+0.8*Math.abs(Math.log(Math.max(s.area,1e-9)/Math.max(r.area,1e-9)));
+    if(cost<bc){bc=cost;best=s;}}
+  return (best&&bc<0.12)?best:null;
+}
+function applyRegionAction(r){if(!r)return;if(ACTION==="assign"&&!ACTIVE){alert("Create or select a component first.");return;}pushUndo();
+  const act=t=>{if(ACTION==="assign"){t.assigned=ACTIVE;t.ignored=false;}else if(ACTION==="ignore"){t.assigned=null;t.ignored=true;}else{t.assigned=null;t.ignored=false;}};
+  act(r);let mp=null;if(MIRROR_ASSIGN){mp=mirrorPartner(r);if(mp)act(mp);}
+  PENDING=null;$("previewBar").style.display="none";renderAll();
+  if(mp)setStatus(`${ACTION==="assign"?"Assigned":ACTION==="ignore"?"Ignored":"Cleared"} on both halves (mirrored ${r.id} ↔ ${mp.id}).`,"ok");}
 function chooseRegion(r){if(!r)return;
   if(MODE==="raster"&&$("previewPick").checked){PENDING=r;$("previewText").textContent=`${r.id}: ${r.area.toFixed(2)} mm² → ${ACTION}${ACTION==="assign"&&ACTIVE?" to "+ACTIVE:""}`;$("previewBar").style.display="";render();return;}
   if(ACTION==="assign"&&MODE==="vector"){showAssignPop(r);return;}
   applyRegionAction(r);}
 $("acceptPreview").onclick=()=>{if(PENDING)applyRegionAction(PENDING);};$("cancelPreview").onclick=()=>{PENDING=null;$("previewBar").style.display="none";render();};
+$("mirrorAssign").addEventListener("change",e=>{MIRROR_ASSIGN=e.target.checked;render();});
+function mirrorAllAssignments(){
+  if(!REGIONS.length){setStatus("Load a drawing and assign some components first.","bad");return;}
+  pushUndo();let n=0,skipped=0;
+  // snapshot current state so we mirror originals, not freshly-mirrored copies
+  const src=REGIONS.filter(r=>r.assigned||r.ignored).map(r=>({r,assigned:r.assigned,ignored:r.ignored}));
+  for(const {r,assigned,ignored} of src){
+    const p=mirrorPartner(r);if(!p)continue;
+    if(p.assigned===assigned&&p.ignored===ignored)continue;
+    if(p.assigned||p.ignored){skipped++;continue;} // don't overwrite an already-set partner
+    p.assigned=assigned;p.ignored=ignored;n++;
+  }
+  renderAll();
+  setStatus(n?`Mirrored ${n} assignment${n===1?"":"s"} to the other half${skipped?`; ${skipped} partner${skipped===1?"":"s"} already set were left as-is.`:"."}`:"Nothing new to mirror — the other half already matches.",n?"ok":"");
+}
+$("mirrorAll").onclick=mirrorAllAssignments;
 
 function renderComponents(){const box=$("components");box.innerHTML="";for(const n of COMPONENTS){const regs=REGIONS.filter(r=>r.assigned===n),d=document.createElement("div");d.className="comp "+(ACTIVE===n?"selected":"");d.innerHTML=`<span class="pill" style="background:${colorFor(n)}"></span><button class="namebtn" title="Select component">${escapeHtml(n)}</button><span class="muted">${regs.length} region${regs.length===1?"":"s"}</span><button class="tiny rename" title="Rename">✎</button><button class="tiny clear" title="Clear assignments">○</button><button class="tiny del" title="Delete component">×</button>`;
     d.querySelector(".namebtn").onclick=()=>{ACTIVE=n;setAction("assign");renderAll();};
@@ -903,6 +941,8 @@ function drawOuterRing(r,stroke,width){if(!r.outer?.length)return;ctx.save();ctx
 function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=getComputedStyle(document.body).getPropertyValue("--panel");ctx.fillRect(0,0,w,h);if(VIEW_MODE==="overlay"){renderOverlay();return;}if(VIEW_MODE==="tyre"){renderTyre();return;}if(!BOUNDS)return;
   // rotation axis: horizontal line at Y=AXIS (the wheel/hub centreline)
   {const ay=w2s([0,AXIS])[1];if(ay>=-40&&ay<=h+40){ctx.save();ctx.strokeStyle="rgba(70,110,190,.85)";ctx.lineWidth=1.5;ctx.setLineDash([8,5]);ctx.beginPath();ctx.moveTo(0,ay);ctx.lineTo(w,ay);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle="rgba(70,110,190,.9)";ctx.font="11px ui-monospace,monospace";ctx.fillText(`rotation axis  Y = ${AXIS.toFixed(2)}`,8,ay-6);ctx.restore();}}
+  // mirror centreline: faint vertical line at the mid-width, showing the symmetry used for auto-mirroring
+  if(MIRROR_ASSIGN&&REGIONS.length){const mx=w2s([mirrorLineX(),0])[0];ctx.save();ctx.strokeStyle="rgba(150,120,190,.5)";ctx.lineWidth=1;ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(mx,0);ctx.lineTo(mx,h);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle="rgba(150,120,190,.75)";ctx.font="10px ui-monospace,monospace";ctx.fillText("mirror centreline",mx+4,h-8);ctx.restore();}
   if(MODE==="raster"&&raster){const p0=w2s([BOUNDS.minX-raster.pad,BOUNDS.maxY+raster.pad]),p1=w2s([BOUNDS.maxX+raster.pad,BOUNDS.minY-raster.pad]);ctx.globalAlpha=.12;ctx.drawImage(raster.off,p0[0],p0[1],p1[0]-p0[0],p1[1]-p0[1]);ctx.globalAlpha=1;}
   for(const r of REGIONS){let fill=null;if(r===PENDING)fill="rgba(255,215,80,.42)";else if(r.assigned)fill=hexA(colorFor(r.assigned),.35);else if(r.ignored)fill="rgba(130,130,130,.22)";if(fill)drawRegion(r,fill,r===PENDING?"#fff":null);}
   // hovered highlight: FILL the exact selectable area (holes stay unfilled via
@@ -1074,7 +1114,7 @@ $("autoAssign").onclick=()=>{pushUndo();const n=autoAssignFromBase();setStatus(n
 /* ---------------- click-first assignment popup ---------------- */
 let lastClickScreen={x:200,y:200};
 function hidePop(){const p=$("assignPop");if(p)p.style.display="none";}
-function assignRegionTo(r,name){pushUndo();const n=ensureComponent(name);if(!n)return;r.assigned=n;r.ignored=false;ACTIVE=n;renderAll();}
+function assignRegionTo(r,name){pushUndo();const n=ensureComponent(name);if(!n)return;r.assigned=n;r.ignored=false;ACTIVE=n;let mp=null;if(MIRROR_ASSIGN){mp=mirrorPartner(r);if(mp){mp.assigned=n;mp.ignored=false;}}renderAll();if(mp)setStatus(`Assigned "${n}" to both halves (mirrored ${r.id} ↔ ${mp.id}).`,"ok");}
 function catalogOptionsHtml(){
   // catalog entries not already used in this project, in catalog order
   const used=new Set(COMPONENTS);
@@ -1630,6 +1670,10 @@ window.__entDump=()=>ENT.map((e,i)=>{let L=0;for(let k=0;k<e.pts.length-1;k++)L+
 window.__openDump=()=>GRAPH?GRAPH.openNodeIds.map(id=>GRAPH.nodes[id].map(v=>+v.toFixed(3))):[];
 window.__cmpDebug=()=>({cur:CUR,list:variantResultsList().map(x=>({i:x.i,n:x.results.length})),htmlLen:comparisonHTML().length});
 window.__assignRegion=(id,name)=>{const r=REGIONS.find(x=>x.id===id);if(r)assignRegionTo(r,name);};
+window.__mirror=()=>({on:MIRROR_ASSIGN,lineX:mirrorLineX()});
+window.__setMirror=v=>{MIRROR_ASSIGN=v;$("mirrorAssign").checked=v;render();};
+window.__mirrorPartner=id=>{const r=REGIONS.find(x=>x.id===id);const p=r?mirrorPartner(r):null;return p?p.id:null;};
+window.__mirrorAll=()=>mirrorAllAssignments();
 window.__loadDemo=()=>loadDemo(true);window.__runDemoCheck=runDemoCheck;window.__projectObject=projectObject;window.__importProject=importProject;window.__chooseRegion=id=>{const r=REGIONS.find(x=>x.id===id);chooseRegion(r);};window.__view=()=>({...view});
 })();
 
