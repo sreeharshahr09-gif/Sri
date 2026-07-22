@@ -93,6 +93,8 @@
       <button id="viewSingle" class="active" title="Work on the current variant">Single</button>
       <button id="viewOverlay" title="Overlay all variants">Overlay</button>
       <select id="overlayComp" style="display:none;max-width:170px"><option value="__all__">All curves</option></select>
+      <button id="overlayAll" style="display:none" class="tiny" title="Include every variant">All</button>
+      <button id="overlayNone" style="display:none" class="tiny" title="Hide every variant">None</button>
     </div>
   </div>
   <div id="cvwrap"><canvas id="cv"></canvas>
@@ -979,7 +981,7 @@ if(e.key==="Escape"){EDIT.mode=null;EDIT.selected.clear();EDIT.bridgeA=null;HOVE
 function updateHover(p,r){const el=$("hoverInfo");if(!BOUNDS){el.textContent="";return;}let s=`x ${p[0].toFixed(2)} · y ${p[1].toFixed(2)}`;if(r)s+=` | ${r.id} · area ${r.area.toFixed(2)} mm² · CG (${r.cx.toFixed(2)}, ${r.cy.toFixed(2)}) · axis dist ${Math.abs(r.cx-AXIS).toFixed(2)} mm · ${r.assigned|| (r.ignored?"ignored":"unassigned")}${r.holes&&r.holes.length?` · ${r.holes.length} hole${r.holes.length===1?"":"s"} excluded`:""}`;el.textContent=s;}
 /* ---------------- variants ---------------- */
 const VCOLORS=["#9fb0c0","#4C78A8","#F58518","#54A24B","#E45756","#B279A2","#72B7B2","#EECA3B","#9D755D","#FF9DA6"];
-function newVariant(name){return {name,fileName:"",dxfText:"",fingerprint:"",ents:[],bounds:null,graph:null,regions:[],raster:null,mode:"vector",axis:0,side:"right",dupes:0,results:[],undoStack:[],redoStack:[]};}
+function newVariant(name){return {name,fileName:"",dxfText:"",fingerprint:"",ents:[],bounds:null,graph:null,regions:[],raster:null,mode:"vector",axis:0,side:"right",dupes:0,results:[],undoStack:[],redoStack:[],visible:true};}
 let VARIANTS=[newVariant("Variant 1")],CUR=0,VIEW_MODE="single";
 function saveCur(){const v=VARIANTS[CUR];if(!v)return;Object.assign(v,{ents:ENT,bounds:BOUNDS,graph:GRAPH,regions:REGIONS,fingerprint:FINGERPRINT,fileName:FILE_NAME,dxfText:DXF_TEXT,mode:MODE,axis:AXIS,side:SIDE,raster,results,undoStack,redoStack,dupes:DUPES_REMOVED});}
 function loadCur(i){CUR=i;const v=VARIANTS[i];
@@ -1003,10 +1005,21 @@ function removeVariant(i){
 function renderTabs(){
   const bar=$("variantTabs");if(!bar)return;bar.innerHTML="";
   VARIANTS.forEach((v,i)=>{
-    const b=document.createElement("button");b.className="tiny"+(i===CUR?" active":"");
+    const b=document.createElement("button");b.className="tiny"+(i===CUR&&VIEW_MODE==="single"?" active":"");
     b.style.borderLeft="4px solid "+(i===0?"#9fb0c0":VCOLORS[i%VCOLORS.length]);
-    b.textContent=(i===0?"★ ":"")+v.name;b.title=(v.fileName||"no drawing")+" — double-click to rename";
-    b.onclick=()=>switchVariant(i);
+    b.style.display="inline-flex";b.style.alignItems="center";b.style.gap="5px";
+    if(VIEW_MODE==="overlay"){
+      const cb=document.createElement("input");cb.type="checkbox";cb.checked=v.visible!==false;
+      cb.style.width="auto";cb.style.flex="0 0 auto";cb.style.margin="0";
+      cb.title="Include this variant in the overlay";
+      cb.addEventListener("click",ev=>ev.stopPropagation());
+      cb.addEventListener("change",()=>{v.visible=cb.checked;b.style.opacity=cb.checked?"":".5";render();});
+      b.appendChild(cb);
+      if(v.visible===false)b.style.opacity=".5";
+    }
+    const label=document.createElement("span");label.textContent=(i===0?"★ ":"")+v.name;b.appendChild(label);
+    b.title=(v.fileName||"no drawing")+(VIEW_MODE==="overlay"?" — checkbox toggles overlay visibility; click name to make it the active variant":" — double-click to rename");
+    b.onclick=(ev)=>{if(ev.target.tagName==="INPUT")return;switchVariant(i);};
     b.ondblclick=()=>{const nn=prompt("Variant name",v.name);if(nn){v.name=nn.trim().slice(0,24)||v.name;renderTabs();}};
     if(i>0){const x=document.createElement("span");x.textContent=" ✕";x.style.opacity=".55";x.title="Remove variant";
       x.onclick=(ev)=>{ev.stopPropagation();removeVariant(i);};b.appendChild(x);}
@@ -1135,6 +1148,7 @@ function renderOverlay(){
   const comp=$("overlayComp").value;
   const {w,h}=cssSize();
   for(let i=0;i<VARIANTS.length;i++){
+    if(VARIANTS[i].visible===false)continue;
     const vv=variantView(i);if(!vv.bounds)continue;
     const [dx,dy]=variantOffset(vv);
     const col=i===0?"#9fb0c0":VCOLORS[i%VCOLORS.length];
@@ -1158,17 +1172,23 @@ function renderOverlay(){
     ctx.beginPath();ctx.moveTo(ax,0);ctx.lineTo(ax,h);ctx.stroke();ctx.setLineDash([]);}
   let ly=12;
   ctx.font="11px system-ui";
+  let anyVisible=false;
   for(let i=0;i<VARIANTS.length;i++){
+    if(VARIANTS[i].visible===false)continue;
     const vv=variantView(i);if(!vv.bounds)continue;
+    anyVisible=true;
     const col=i===0?"#9fb0c0":VCOLORS[i%VCOLORS.length];
     ctx.fillStyle=col;ctx.fillRect(12,ly,10,10);
     ctx.fillStyle=getComputedStyle(document.body).getPropertyValue("--ink");
     ctx.fillText(vv.name+(i===0?" (base)":""),27,ly+9);ly+=16;
   }
+  if(!anyVisible){ctx.fillStyle=getComputedStyle(document.body).getPropertyValue("--mut");ctx.fillText("No variants checked — tick a variant tab above to show it here.",12,ly+9);}
   drawMeasure();
 }
-$("viewSingle").onclick=()=>{VIEW_MODE="single";$("viewSingle").classList.add("active");$("viewOverlay").classList.remove("active");$("overlayComp").style.display="none";hidePop();render();};
-$("viewOverlay").onclick=()=>{saveCur();VIEW_MODE="overlay";$("viewOverlay").classList.add("active");$("viewSingle").classList.remove("active");$("overlayComp").style.display="";hidePop();render();};
+$("viewSingle").onclick=()=>{VIEW_MODE="single";$("viewSingle").classList.add("active");$("viewOverlay").classList.remove("active");$("overlayComp").style.display="none";$("overlayAll").style.display="none";$("overlayNone").style.display="none";hidePop();renderTabs();render();};
+$("viewOverlay").onclick=()=>{saveCur();VIEW_MODE="overlay";$("viewOverlay").classList.add("active");$("viewSingle").classList.remove("active");$("overlayComp").style.display="";$("overlayAll").style.display="";$("overlayNone").style.display="";hidePop();renderTabs();render();};
+$("overlayAll").onclick=()=>{VARIANTS.forEach(v=>v.visible=true);renderTabs();render();};
+$("overlayNone").onclick=()=>{VARIANTS.forEach(v=>v.visible=false);renderTabs();render();};
 $("overlayComp").onchange=()=>render();
 function updateOverlayComp(){
   const oc=$("overlayComp");if(!oc)return;const cur=oc.value;
