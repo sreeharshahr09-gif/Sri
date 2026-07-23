@@ -69,8 +69,6 @@
     <div id="activeLabel" class="muted">No active component</div>
     <div class="toolbar"><button data-action="assign">Assign</button><button data-action="ignore">Ignore</button><button data-action="erase">Unassign</button><span class="spacer"></span><button id="undo">Undo</button><button id="redo">Redo</button></div><label class="row" style="justify-content:flex-start"><input id="previewPick" type="checkbox" checked style="width:auto;flex:0 0 auto"> <span>Preview raster picks before accepting</span></label><div id="previewBar" class="hint" style="display:none"><span id="previewText"></span><div class="row" style="margin-top:6px"><button id="acceptPreview" class="primary">Accept</button><button id="cancelPreview">Cancel</button></div></div>
     <button id="autoAssign" style="display:none">Auto-assign components from base variant</button>
-    <div class="row"><button id="suggestBtn" title="Geometric first-draft: labels the landmark components (tread, belts, sidewall, bead) for you to review">Suggest assignments (draft)</button></div>
-    <div id="suggestBar" class="hint" style="display:none"><span id="suggestText"></span><div class="row" style="margin-top:6px"><button id="suggestAccept" class="primary">Accept draft</button><button id="suggestDiscard">Discard</button></div></div>
     <div id="components"></div><div id="progress"></div>
   </div>
 
@@ -112,7 +110,7 @@
   </div>
   <div id="cvwrap"><canvas id="cv"></canvas>
   <div id="navOverlay" style="position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:5;background:rgba(20,30,40,.55);padding:4px;border-radius:8px">
-    <button data-nav="select" title="Select regions">Select</button><button data-nav="pan" title="Pan">Pan</button><button data-nav="box" title="Box zoom">Box</button><button data-nav="measure" title="Measure distance between two points">Measure</button><button data-nav="move" title="Overlay: drag the active variant to reposition it">Move</button><button id="gridBtn" class="active" title="Toggle grid">Grid</button><button id="snapBtn" class="active" title="Snap the cursor to nearby vertices &amp; grid">Snap</button><button id="zoomIn">＋</button><button id="zoomOut">−</button><button id="fit">Fit</button>
+    <button data-nav="select" title="Select regions">Select</button><button data-nav="pan" title="Pan">Pan</button><button data-nav="box" title="Box zoom">Box</button><button data-nav="measure" title="Measure distance between two points">Measure</button><button data-nav="move" title="Overlay: drag the active variant to reposition it">Move</button><button id="gridBtn" class="active" title="Toggle grid">Grid</button><button id="snapBtn" title="Save a PNG snapshot of the viewer">📷 Snapshot</button><button id="zoomIn">＋</button><button id="zoomOut">−</button><button id="fit">Fit</button>
   </div>
   <div id="hoverTip" style="position:absolute;display:none;z-index:8;pointer-events:none;background:rgba(10,20,30,.93);color:#eaf2f8;border:1px solid var(--line);border-radius:7px;padding:5px 9px;font-size:12px;max-width:230px;box-shadow:0 4px 14px rgba(0,0,0,.4)"></div>
   <div id="assignPop" style="position:absolute;display:none;z-index:9;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px;min-width:200px;max-width:260px;box-shadow:0 8px 28px rgba(0,0,0,.5)"></div>
@@ -723,7 +721,7 @@ let MODE="vector",AXIS=0,TOL=0.05,ACTIVE=null,ACTION="assign",COMPONENTS=[],SG={
 let undoStack=[],redoStack=[],results=[];
 let raster=null;
 let view={cx:0,cy:0,scale:1},navMode="select",drag=null,spaceDown=false;
-let SHOW_GRID=true,SNAP=true,SNAP_HL=null,SUGGEST=null;
+let SHOW_GRID=true,SNAP=true,SNAP_HL=null;
 const cv=$("cv"),ctx=cv.getContext("2d"),wrap=$("cvwrap");
 
 function escapeHtml(s){return String(s).replace(/[&<>\"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -968,8 +966,6 @@ function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=get
     ctx.fillStyle="rgba(150,120,190,.8)";ctx.font="10px ui-monospace,monospace";ctx.fillText(SIDE==="both"?"centreline":`centreline · working ${SIDE} half (×2)`,mx+4,h-8);ctx.restore();}
   if(MODE==="raster"&&raster){const p0=w2s([BOUNDS.minX-raster.pad,BOUNDS.maxY+raster.pad]),p1=w2s([BOUNDS.maxX+raster.pad,BOUNDS.minY-raster.pad]);ctx.globalAlpha=.12;ctx.drawImage(raster.off,p0[0],p0[1],p1[0]-p0[0],p1[1]-p0[1]);ctx.globalAlpha=1;}
   for(const r of REGIONS){let fill=null;if(r===PENDING)fill="rgba(255,215,80,.42)";else if(r.assigned)fill=hexA(colorFor(r.assigned),.35);else if(r.ignored)fill="rgba(130,130,130,.22)";if(fill)drawRegion(r,fill,r===PENDING?"#fff":null);}
-  // draft suggestions preview (dashed outline + label)
-  if(SUGGEST){ctx.save();for(const s of SUGGEST){const r=REGIONS.find(x=>x.id===s.id);if(!r||!r.outer?.length)continue;const col=colorFor(s.name);drawRegion(r,hexA(col,.28),null);ctx.strokeStyle=col;ctx.lineWidth=1.4;ctx.setLineDash([5,3]);ctx.beginPath();r.outer.forEach((p,i)=>{const sc=w2s(p);i?ctx.lineTo(sc[0],sc[1]):ctx.moveTo(sc[0],sc[1]);});ctx.closePath();ctx.stroke();ctx.setLineDash([]);const c=w2s([r.cx,r.cy]);ctx.font="10px sans-serif";ctx.textAlign="center";ctx.lineWidth=3;ctx.strokeStyle="rgba(255,255,255,.85)";ctx.strokeText(s.name,c[0],c[1]);ctx.fillStyle="#111";ctx.fillText(s.name,c[0],c[1]);ctx.textAlign="left";}ctx.restore();}
   // hovered highlight: FILL the exact selectable area (holes stay unfilled via
   // even-odd), stroke only the outer ring — hole outlines and shared neighbour
   // boundaries are never stroked, so only what a click would select lights up.
@@ -1145,58 +1141,6 @@ $("autoAssign").onclick=()=>{pushUndo();const n=autoAssignFromBase();setStatus(n
 let lastClickScreen={x:200,y:200};
 function hidePop(){const p=$("assignPop");if(p)p.style.display="none";}
 function assignRegionTo(r,name){if(!sideAllowed(r)){setStatus(`${r.id} is on the excluded half — switch "Work on" in section 3 to assign it.`,"bad");return;}pushUndo();const n=ensureComponent(name);if(!n)return;r.assigned=n;r.ignored=false;ACTIVE=n;renderAll();}
-
-/* ---------------- automatic assignment (geometric first-draft) ----------------
-   Labels only the components a meridian section makes geometrically distinctive:
-   the thin wide bands under the crown are the belt package (ordered by radius),
-   the outermost solid regions are tread, the big mid-radius casing regions are
-   sidewall, and the compact innermost cluster is the bead. Everything it is not
-   confident about is left blank for the user. Always shown as a reviewable
-   preview — never committed silently. */
-function computeSuggestions(){
-  const regs=REGIONS.filter(r=>!r.assigned&&!r.ignored&&sideAllowed(r));
-  if(regs.length<3)return [];
-  let ymin=Infinity,ymax=-Infinity,amax=0;const C=centrelineX();
-  for(const r of REGIONS){if(r.ignored)continue;ymin=Math.min(ymin,r.bbox.minY);ymax=Math.max(ymax,r.bbox.maxY);amax=Math.max(amax,r.area);}
-  const H=Math.max(ymax-ymin,1e-6);
-  const feat=r=>{const w=r.bbox.maxX-r.bbox.minX,h=r.bbox.maxY-r.bbox.minY;return {rN:(r.cy-ymin)/H,ax:Math.abs(r.cx-C),aspect:w/Math.max(h,1e-6),band:Math.min(w,h)/Math.max(w,h,1e-6),areaN:r.area/amax};};
-  const isBand=f=>f.band<0.2&&f.aspect>3;
-  const label={};
-  // belt package: thin wide bands under the crown, ordered outward
-  const belts=regs.map(r=>({r,f:feat(r)})).filter(x=>isBand(x.f)&&x.f.rN>0.7).sort((a,b)=>b.f.rN-a.f.rN);
-  const beltNames=["WORKING BELT-1","WORKING BELT-2","TRANSITION BELT","PROTECTOR BELT","BELT EDGE CUSHION"];
-  let lvl=-1,lastRN=Infinity;
-  for(const x of belts){if(lastRN-x.f.rN>0.015){lvl++;lastRN=x.f.rN;}label[x.r.id]=beltNames[Math.min(lvl,beltNames.length-1)];}
-  for(const r of regs){if(label[r.id])continue;const f=feat(r);
-    if(!isBand(f)&&f.rN>=0.9){label[r.id]="TREAD";continue;}                 // outermost solid
-    if(f.rN<0.08&&isBand(f)){label[r.id]="CHAFER";continue;}                 // thin band at the bead base
-    if(f.rN<0.16&&f.band>0.3){label[r.id]="BEAD";continue;}                  // compact innermost
-    if(f.areaN>=0.35&&f.rN>=0.2&&f.rN<=0.78){label[r.id]="SIDEWALL";continue;} // big mid-radius casing
-  }
-  return Object.entries(label).map(([id,name])=>({id,name}));
-}
-function runSuggest(){
-  if(!REGIONS.length){setStatus("Detect regions first.","bad");return;}
-  const sug=computeSuggestions();
-  if(!sug.length){setStatus("Nothing confidently identifiable — assign manually, or use a labelled base variant / project.","bad");return;}
-  for(const s of sug)ensureComponent(s.name); // so preview draws in component colours
-  SUGGEST=sug;renderSG();renderComponents();
-  const names=[...new Set(sug.map(s=>s.name))];
-  $("suggestText").innerHTML=`<b>${sug.length}</b> regions drafted across <b>${names.length}</b> components (${names.map(escapeHtml).join(", ")}). Review the highlighted labels, then Accept or Discard. Regions it wasn't sure about are left blank.`;
-  $("suggestBar").style.display="";render();
-}
-function acceptSuggest(){
-  if(!SUGGEST)return;pushUndo();
-  for(const s of SUGGEST){const r=REGIONS.find(x=>x.id===s.id);if(r&&sideAllowed(r)){ensureComponent(s.name);r.assigned=s.name;r.ignored=false;}}
-  SUGGEST=null;$("suggestBar").style.display="none";renderAll();
-  setStatus("Draft assignments applied — please review and correct any before computing. Undo reverts them all.","ok");
-}
-function discardSuggest(){
-  if(!SUGGEST)return;SUGGEST=null;$("suggestBar").style.display="none";
-  // drop suggested components that ended up with no regions
-  COMPONENTS=COMPONENTS.filter(n=>REGIONS.some(r=>r.assigned===n));
-  renderSG();renderComponents();render();setStatus("Draft discarded.","");
-}
 function catalogOptionsHtml(){
   // catalog entries not already used in this project, in catalog order
   const used=new Set(COMPONENTS);
@@ -1506,29 +1450,68 @@ function updateOverlayComp(){
 }
 
 /* ---------------- variant comparison ---------------- */
-let RES_SORT={key:null,dir:1},CMP_METRIC="weight_g",CMP_SORT={col:"name",dir:1},LAST_TOTAL=0;
+let RES_SORT={key:null,dir:1},CMP_METRIC="weight_g",CMP_SORT={col:"name",dir:1},LAST_TOTAL=0,RESULT_TAB=0;
+const CHART_COLORS=["#4C78A8","#F58518","#54A24B","#E45756","#B279A2","#72B7B2","#EECA3B","#9D755D","#FF9DA6","#BAB0AC"];
+const variantColor=i=>CHART_COLORS[i%CHART_COLORS.length];
 const CMP_METRICS={weight_g:"Weight (g)",area_mm2:"Area (mm²)",volume_cm3:"Volume (cm³)",centroid_distance_mm:"CG dist (mm)",surface_area_mm2:"Surface (mm²)",polar_MOI:"Polar MOI (g·mm²)",radius_of_gyration_mm:"RoG (mm)",pct:"% of tyre weight"};
 function sortArrow(active,dir){return active?(dir>0?" ▲":" ▼"):"";}
 function variantResultsList(){
   return VARIANTS.map((v,i)=>({name:v.name,i,results:(i===CUR?results:(v.results||[]))})).filter(x=>x.results&&x.results.length);
 }
-// A full (non-sortable) component results table for one variant, with a totals row.
-function plainResultsTable(rows,title){
-  if(!rows||!rows.length)return `<div class="card"><h2>${escapeHtml(title)}</h2><div class="muted">No results computed for this variant — run “Compute all variants”.</div></div>`;
+// A full (non-sortable) component results table for one variant, with a totals row (table markup only).
+function resultsTableInner(rows){
+  if(!rows||!rows.length)return `<div class="muted">No results yet — click “Compute all variants”.</div>`;
+  const badge=r=>`${r.full_factor===2?' <span class="muted" title="doubled for the full tyre">×2</span>':''}${r.crosses_centreline?' <span class="warn">⚠</span>':''}${r.areal?' <span class="muted">kg/m²</span>':''}${(r.land_pct!=null&&r.land_pct<100)?` <span class="muted">land ${fmt(r.land_pct,0)}%</span>`:''}`;
   const RC=[["region_count","Regions"],["area_mm2","Area mm²"],["centroid_distance_mm","CG dist mm"],["volume_cm3","Volume cm³"],["weight_g","Weight g"],["surface_area_mm2","Surface mm²"],["polar_MOI","Polar MOI"],["radius_of_gyration_mm","RoG mm"],["pct","% wt"]];
-  let h=`<div class="card"><h2>${escapeHtml(title)}</h2><div class="tablewrap"><table><thead><tr><th>Component</th>`;
+  let h=`<div class="tablewrap"><table><thead><tr><th>Component</th>`;
   for(const [,l] of RC)h+=`<th>${l}</th>`;h+=`</tr></thead><tbody>`;
-  for(const r of rows)h+=`<tr class="${r.axis_crossing?'rowwarn':''}"><td>${escapeHtml(r.component)}${r.full_factor===2?' <span class="muted">×2</span>':''}${r.areal?' <span class="muted">kg/m²</span>':''}</td><td>${r.region_count}</td><td>${fmt(r.area_mm2)}</td><td>${fmt(r.centroid_distance_mm)}</td><td>${fmt(r.volume_cm3)}</td><td>${fmt(r.weight_g)}</td><td>${fmt(r.surface_area_mm2)}</td><td>${fmt(r.polar_MOI)}</td><td>${fmt(r.radius_of_gyration_mm)}</td><td>${fmt(r.pct)}</td></tr>`;
+  for(const r of rows)h+=`<tr class="${r.axis_crossing?'rowwarn':''}"><td>${escapeHtml(r.component)}${badge(r)}</td><td>${r.region_count}</td><td>${fmt(r.area_mm2)}</td><td>${fmt(r.centroid_distance_mm)}</td><td>${fmt(r.volume_cm3)}</td><td>${fmt(r.weight_g)}</td><td>${fmt(r.surface_area_mm2)}</td><td>${fmt(r.polar_MOI)}</td><td>${fmt(r.radius_of_gyration_mm)}</td><td>${fmt(r.pct)}</td></tr>`;
   const sum=k=>rows.reduce((s,r)=>s+(+r[k]||0),0);
   h+=`<tr style="font-weight:700;border-top:2px solid var(--mut)"><td>TOTAL</td><td>${rows.reduce((s,r)=>s+r.region_count,0)}</td><td>${fmt(sum('area_mm2'))}</td><td>—</td><td>${fmt(sum('volume_cm3'))}</td><td>${fmt(sum('weight_g'))}</td><td>${fmt(sum('surface_area_mm2'))}</td><td>${fmt(sum('polar_MOI'))}</td><td>—</td><td>${fmt(sum('pct'))}</td></tr>`;
-  return h+`</tbody></table></div></div>`;
+  return h+`</tbody></table></div>`;
 }
-function allVariantsHTML(){
+// A tab per design variant, the active tab showing that variant's own results table.
+function variantTabsResultsHTML(){
+  const items=VARIANTS.map((v,i)=>({i,name:v.name,has:(i===CUR?!!BOUNDS:!!v.bounds),results:(i===CUR?results:(v.results||[]))})).filter(x=>x.has);
+  if(!items.length)return "";
+  let active=RESULT_TAB;if(!items.some(x=>x.i===active))active=(items.some(x=>x.i===CUR)?CUR:items[0].i);
+  const cur=items.find(x=>x.i===active);
+  let h=`<div class="card" style="margin-top:12px"><div class="row" style="align-items:center;margin-bottom:8px"><h2 style="margin:0;flex:0 0 auto">Results by variant</h2>`;
+  if(items.length>1)h+=`<span class="muted" style="margin-left:10px">run “Compute all variants” to fill every tab</span>`;
+  h+=`</div><div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">`;
+  for(const x of items)h+=`<button class="tiny rtab${x.i===active?" active":""}" data-rt="${x.i}">${escapeHtml(x.name)}${x.i===0?" ·base":""}</button>`;
+  h+=`</div>`;
+  h+=resultsTableInner(cur.results);
+  return h+`</div>`;
+}
+// Vertical grouped bar chart: X = components, one coloured bar per variant, Y = the chosen metric.
+function comparisonChartHTML(){
   const list=variantResultsList();
-  if(list.length<2)return "";
-  let h=`<h2 style="color:var(--mut);font-size:12px;letter-spacing:.06em;text-transform:uppercase;margin:14px 0 6px">Component results — all variants</h2>`;
-  for(const x of list)h+=plainResultsTable(x.results,x.name+(x.i===0?" (base)":""));
-  return h;
+  const mk=CMP_METRIC;
+  const cs=getComputedStyle(document.body);
+  const cLine=(cs.getPropertyValue("--line")||"#2c3d4d").trim(),cMut=(cs.getPropertyValue("--mut")||"#9fb0c0").trim(),cInk=(cs.getPropertyValue("--ink")||"#e8eef4").trim();
+  let h=`<div class="card"><div class="row" style="margin-bottom:8px;align-items:center"><h2 style="margin:0;flex:0 0 auto">Variation comparison</h2><span style="flex:1"></span><label style="margin:0;flex:0 0 auto;color:var(--mut)">Variable</label><select id="cmpMetric" style="flex:0 0 auto;width:auto;max-width:210px">`;
+  for(const k in CMP_METRICS)h+=`<option value="${k}"${k===mk?" selected":""}>${CMP_METRICS[k]}</option>`;
+  h+=`</select></div>`;
+  const comps=[...new Set(list.flatMap(x=>x.results.map(r=>r.component)))];
+  if(!list.length||!comps.length)return h+`<div class="muted">Assign components and Compute results to see the chart.</div></div>`;
+  const get=(x,c)=>{const r=x.results.find(r=>r.component===c);return r?(+r[mk]||0):0;};
+  let maxV=0;for(const c of comps)for(const x of list)maxV=Math.max(maxV,get(x,c));maxV=maxV||1;
+  const p10=Math.pow(10,Math.floor(Math.log10(maxV))),n=maxV/p10,top=(n<=1?1:n<=2?2:n<=5?5:10)*p10;
+  const nComp=comps.length,nVar=list.length,chartH=280,padT=12,padB=96,padL=66,padR=14;
+  const groupW=Math.max(52,nVar*20+20),W=padL+nComp*groupW+padR,H=padT+chartH+padB;
+  const yOf=v=>padT+chartH-(v/top)*chartH;
+  let svg=`<div style="overflow-x:auto"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="system-ui,sans-serif" font-size="10">`;
+  for(let t=0;t<=5;t++){const v=top*t/5,yy=yOf(v);svg+=`<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W-padR}" y2="${yy.toFixed(1)}" stroke="${cLine}" opacity="0.7"/><text x="${padL-7}" y="${(yy+3).toFixed(1)}" text-anchor="end" fill="${cMut}">${fmt(v,top<10?2:0)}</text>`;}
+  comps.forEach((c,ci)=>{const gx=padL+ci*groupW,barW=(groupW-14)/nVar;
+    list.forEach((x,vi)=>{const v=get(x,c),bx=gx+7+vi*barW,bh=(v/top)*chartH,by=padT+chartH-bh;
+      svg+=`<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${Math.max(1,barW-2).toFixed(1)}" height="${Math.max(0,bh).toFixed(1)}" rx="1" fill="${variantColor(x.i)}"><title>${escapeHtml(x.name)} · ${escapeHtml(c)}: ${fmt(v)}</title></rect>`;});
+    const lx=gx+groupW/2,ly=padT+chartH+12;
+    svg+=`<text x="${lx}" y="${ly}" transform="rotate(38 ${lx} ${ly})" fill="${cInk}" text-anchor="start">${escapeHtml(c.length>18?c.slice(0,17)+"…":c)}</text>`;});
+  svg+=`<line x1="${padL}" y1="${padT+chartH}" x2="${W-padR}" y2="${padT+chartH}" stroke="${cMut}"/></svg></div>`;
+  let leg=`<div class="row" style="flex-wrap:wrap;gap:12px;margin-top:6px">`;
+  for(const x of list)leg+=`<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px"><span style="width:12px;height:12px;border-radius:2px;background:${variantColor(x.i)};display:inline-block"></span>${escapeHtml(x.name)}${x.i===0?" (base)":""}</span>`;
+  return h+svg+leg+`</div></div>`;
 }
 function comparisonHTML(){
   const list=variantResultsList();
@@ -1774,7 +1757,7 @@ function setNav(n){navMode=n;if(typeof EDIT!=="undefined"&&EDIT.mode){EDIT.mode=
 function syncNav(){document.querySelectorAll("[data-nav]").forEach(b=>b.classList.toggle("active",b.dataset.nav===navMode));cv.style.cursor=navMode==="pan"?"grab":navMode==="move"?"move":(navMode==="box"||navMode==="measure")?"crosshair":"default";}
 document.querySelectorAll("[data-nav]").forEach(b=>b.onclick=()=>setNav(b.dataset.nav));$("zoomIn").onclick=()=>{const {w,h}=cssSize();zoomAt(1.3,w/2,h/2);};$("zoomOut").onclick=()=>{const {w,h}=cssSize();zoomAt(1/1.3,w/2,h/2);};$("fit").onclick=fitView;syncNav();
 $("gridBtn").onclick=()=>{SHOW_GRID=!SHOW_GRID;$("gridBtn").classList.toggle("active",SHOW_GRID);render();};
-$("snapBtn").onclick=()=>{SNAP=!SNAP;$("snapBtn").classList.toggle("active",SNAP);if(!SNAP)SNAP_HL=null;render();};
+$("snapBtn").onclick=()=>{try{const a=document.createElement("a");a.href=cv.toDataURL("image/png");a.download=(FILE_NAME||"tyre").replace(/\.dxf$/i,"")+"_snapshot.png";a.click();setStatus("Snapshot saved as PNG.","ok");}catch(e){setStatus("Could not save snapshot: "+e.message,"bad");}};
 
 function updateDiagnostics(){const el=$("diagnostics");if(!BOUNDS){el.textContent="No drawing loaded.";return;}if(MODE==="vector"&&GRAPH){const open=GRAPH.openNodeIds.filter(id=>Math.abs(GRAPH.nodes[id][1]-AXIS)>TOL*2);el.innerHTML=`${GRAPH.rawSegmentCount} flattened segments · ${GRAPH.edges.length} cleaned edges · ${REGIONS.length} enclosed regions · <span class="${open.length?'warn':'good'}">${open.length} unresolved open endpoint${open.length===1?'':'s'}</span>. Red dots mark unresolved endpoints — use the Edit drawing card to delete construction lines or bridge real gaps.`;}else{const conv=raster?.convergencePct;el.innerHTML=`Raster fallback: ${REGIONS.length} enclosed pixel regions at ${raster?.res||"—"} px. Pixel boundaries were converted to selectable polygons. ${conv==null?"Convergence not evaluated.":`Resolution check: <span class="${conv>1?"warn":"good"}">${conv.toFixed(2)}% area difference</span> and ${raster.secondaryCount} regions at the secondary resolution.`}`;}}
 
@@ -1819,29 +1802,13 @@ function showResults(total){LAST_TOTAL=total;let h=`<div class="summary"><span>T
   const xed=results.filter(r=>r.crosses_centreline);
   if(xed.length)h+=`<div class="alert"><b>Crosses the centreline:</b> ${xed.map(r=>escapeHtml(r.component)).join(", ")} — counted once (not doubled). Verify this is intended; in a true half section nothing should cross the centreline.</div>`;
   if(results.some(r=>r.axis_crossing))h+=`<div class="alert">One or more selected components cross the rotation axis. Pappus-derived results for those components should not be trusted.</div>`;
-  const RCOLS=[["component","Component"],["region_count","Regions"],["area_mm2","Area mm²"],["centroid_distance_mm","CG dist mm"],["volume_cm3","Volume cm³"],["weight_g","Weight g"],["surface_area_mm2","Surface mm²"],["polar_MOI","Polar MOI"],["radius_of_gyration_mm","RoG mm"],["pct","% wt"]];
-  h+=`<div class="resultgrid"><div class="card"><h2>Component results</h2><div class="tablewrap"><table><thead><tr>`;
-  for(const [k,lab] of RCOLS)h+=`<th data-sk="${k}" style="cursor:pointer" title="Sort">${lab}${sortArrow(RES_SORT.key===k,RES_SORT.dir)}</th>`;
-  h+=`</tr></thead><tbody>`;
-  let rrows=results.slice();
-  if(RES_SORT.key){const k=RES_SORT.key;rrows.sort((a,b)=>{const va=a[k],vb=b[k];return RES_SORT.dir*(typeof va==="string"?va.localeCompare(vb):(va-vb));});}
-  const badge=r=>`${r.full_factor===2?' <span class="muted" title="side component doubled for the full tyre">×2</span>':''}${r.crosses_centreline?' <span class="warn" title="crosses centreline — counted once">⚠</span>':''}${r.areal?' <span class="muted" title="calendered — areal density kg/m²">kg/m²</span>':''}${(r.land_pct!=null&&r.land_pct<100)?` <span class="muted" title="tread land ratio">land ${fmt(r.land_pct,0)}%</span>`:''}`;
-  for(const r of rrows)h+=`<tr class="${r.axis_crossing?'rowwarn':''}"><td>${escapeHtml(r.component)}${badge(r)}</td><td>${r.region_count}</td><td>${fmt(r.area_mm2)}</td><td>${fmt(r.centroid_distance_mm)}</td><td>${fmt(r.volume_cm3)}</td><td>${fmt(r.weight_g)}</td><td>${fmt(r.surface_area_mm2)}</td><td>${fmt(r.polar_MOI)}</td><td>${fmt(r.radius_of_gyration_mm)}</td><td>${fmt(r.pct)}</td></tr>`;
-  {const sum=k=>results.reduce((s,r)=>s+(+r[k]||0),0);
-   h+=`<tr style="font-weight:700;border-top:2px solid var(--mut)"><td>TOTAL</td><td>${results.reduce((s,r)=>s+r.region_count,0)}</td><td>${fmt(sum('area_mm2'))}</td><td>—</td><td>${fmt(sum('volume_cm3'))}</td><td>${fmt(sum('weight_g'))}</td><td>${fmt(sum('surface_area_mm2'))}</td><td>${fmt(sum('polar_MOI'))}</td><td>—</td><td>${fmt(sum('pct'))}</td></tr>`;}
-  h+=`</tbody></table></div></div><div class="card"><h2>Weight by component</h2>`;const max=Math.max(1,...results.map(r=>r.weight_g));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.weight_g/max)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.weight_g,1)} g</b></div>`;h+=`</div><div class="card"><h2>Polar MOI by component</h2>`;const mm=Math.max(1,...results.map(r=>r.polar_MOI));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.polar_MOI/mm)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.polar_MOI)}</b></div>`;h+=`</div></div>`;h+=comparisonHTML();h+=allVariantsHTML();$("results").innerHTML=h;
-  const cbtn=$("compareCsv");if(cbtn)cbtn.onclick=exportComparisonCsv;
-  document.querySelectorAll("#results th[data-sk]").forEach(th=>th.onclick=()=>{
-    const k=th.dataset.sk;
-    if(RES_SORT.key===k)RES_SORT.dir=-RES_SORT.dir;else{RES_SORT.key=k;RES_SORT.dir=(k==="component")?1:-1;}
-    showResults(LAST_TOTAL);
-  });
-  document.querySelectorAll("#results th[data-ck]").forEach(th=>th.onclick=()=>{
-    const c=th.dataset.ck==="name"?"name":parseInt(th.dataset.ck,10);
-    if(CMP_SORT.col===c)CMP_SORT.dir=-CMP_SORT.dir;else{CMP_SORT.col=c;CMP_SORT.dir=(c==="name")?1:-1;}
-    showResults(LAST_TOTAL);
-  });
+  // graphical variation comparison (replaces the old component-results table) + weight bar + per-variant tabs
+  h+=comparisonChartHTML();
+  h+=`<div class="card"><h2>Weight by component</h2>`;const max=Math.max(1,...results.map(r=>r.weight_g));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.weight_g/max)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.weight_g,1)} g</b></div>`;h+=`</div>`;
+  h+=variantTabsResultsHTML();
+  $("results").innerHTML=h;
   const ms=$("cmpMetric");if(ms)ms.onchange=()=>{CMP_METRIC=ms.value;showResults(LAST_TOTAL);};
+  document.querySelectorAll("#results .rtab").forEach(bn=>bn.onclick=()=>{RESULT_TAB=+bn.dataset.rt;showResults(LAST_TOTAL);});
 }
 $("csv").onclick=()=>{if(!results.length)computeResults();const keys=["component","region_count","full_factor","density_unit","sg","land_pct","area_mm2","centroid_x","centroid_y","centroid_distance_mm","volume_cm3","weight_g","surface_area_mm2","boundary_length_mm","boundary_centroid_y","polar_MOI","radius_of_gyration_mm","pct","axis_crossing","crosses_centreline"],rows=[keys.join(","),...results.map(r=>keys.map(k=>r[k]??"").join(","))];download((FILE_NAME||"tyre").replace(/\.dxf$/i,"")+"_results.csv",rows.join("\n"),"text/csv");};
 
@@ -1872,12 +1839,9 @@ window.__measure=(a,b)=>{MEASURE={p1:a,p2:b,temp:null};render();return Math.hypo
 window.__autoAssignFromBase=autoAssignFromBase;
 window.__entDump=()=>ENT.map((e,i)=>{let L=0;for(let k=0;k<e.pts.length-1;k++)L+=Math.hypot(e.pts[k+1][0]-e.pts[k][0],e.pts[k+1][1]-e.pts[k][1]);return {i,type:e.type,npts:e.pts.length,len:+L.toFixed(5),a:e.pts[0].map(v=>+v.toFixed(3)),z:e.pts[e.pts.length-1].map(v=>+v.toFixed(3))};});
 window.__openDump=()=>GRAPH?GRAPH.openNodeIds.map(id=>GRAPH.nodes[id].map(v=>+v.toFixed(3))):[];
-window.__cmpDebug=()=>({cur:CUR,list:variantResultsList().map(x=>({i:x.i,n:x.results.length})),htmlLen:comparisonHTML().length});
+window.__cmpDebug=()=>({cur:CUR,list:variantResultsList().map(x=>({i:x.i,n:x.results.length})),chartLen:comparisonChartHTML().length,tabsLen:variantTabsResultsHTML().length,resultTab:RESULT_TAB});
+window.__setResultTab=i=>{RESULT_TAB=i;showResults(LAST_TOTAL);};
 $("pdfReport").onclick=openReport;
-$("suggestBtn").onclick=runSuggest;$("suggestAccept").onclick=acceptSuggest;$("suggestDiscard").onclick=discardSuggest;
-window.__suggest=()=>computeSuggestions();
-window.__runSuggest=()=>{runSuggest();return SUGGEST;};
-window.__acceptSuggest=()=>acceptSuggest();
 window.__reportHTML=()=>reportHTML();
 window.__profilesImage=()=>profilesImage();
 window.__setUnit=(name,unit)=>{UNIT[name]=unit;if(unit==="areal"&&SG[name]==null)SG[name]=CALENDERED_DEFAULTS[name]??4.0;renderSG();};
