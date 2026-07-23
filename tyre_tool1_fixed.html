@@ -33,10 +33,13 @@
   </div>
 
   <div class="card stack">
-    <h2>3 · Rotation axis</h2>
+    <h2>3 · Rotation axis &amp; working half</h2>
     <label>Rotation axis Y (mm)</label><div class="row"><input type="number" id="axis" value="0" step="0.1"><button id="axisAuto" class="auto">Auto</button></div>
     <label>Outer diameter — tread to tread (mm)</label><div class="row"><input type="number" id="odia" placeholder="e.g. 1113" step="0.1"><button id="odSet" class="auto">Set axis</button></div>
-    <div class="hint">The rotation axis is the wheel/hub centreline — a horizontal line below the visible profile. It need <b>not</b> be at Y = 0: DXFs are often exported at arbitrary coordinates. The robust way to place it is the <b>outer diameter</b> — the tread surface (highest points in the drawing) sits at radius OD/2, so entering OD sets the axis to <code>Y_tread − OD/2</code>, correct at any offset. Every point's Y-distance from this line is its true radius. Each component must stay entirely on one side (all Y above, none crossing below).</div>
+    <div class="hint">The rotation axis is the wheel/hub centreline — a horizontal line below the visible profile. It need <b>not</b> be at Y = 0: DXFs are often exported at arbitrary coordinates. The robust way to place it is the <b>outer diameter</b> — the tread surface (highest points in the drawing) sits at radius OD/2, so entering OD sets the axis to <code>Y_tread − OD/2</code>. Every point's Y-distance from this line is its true radius.</div>
+    <label>Work on</label><select id="side"><option value="both">Both halves — full section, count once</option><option value="left">Left half — assign left, double for full tyre</option><option value="right">Right half — assign right, double for full tyre</option></select>
+    <label>Section centreline X (mm)</label><div class="row"><input type="number" id="centre" step="0.1"><button id="centreAuto" class="auto">Auto</button></div>
+    <div class="hint" id="sideHint">Pick <b>Left</b> or <b>Right</b> when you work one half of the section (the common case): assign only that side and the tool <b>doubles</b> it for the full tyre. A component that crosses the centreline (e.g. the crown wrapping over the top) is counted once, and flagged. Pick <b>Both</b> when both halves are drawn and you want to assign each side yourself (e.g. asymmetric grooves) — everything is counted once.</div>
   </div>
 
   <div class="card stack">
@@ -61,8 +64,6 @@
   <div class="card stack">
     <h2>6 · Assign components</h2>
     <div class="hint">Click a region in the drawing and pick its component from the popup. A component may contain several separate regions. The list below manages names (✎ rename · ○ clear · × delete).</div>
-    <label class="row" style="justify-content:flex-start"><input id="mirrorAssign" type="checkbox" checked style="width:auto;flex:0 0 auto"> <span>Mirror each assignment to the matching region on the other half (assign once, both sides done)</span></label>
-    <button id="mirrorAll" class="tiny">Mirror all current assignments to the other half</button>
     <div class="row"><select id="compCatalog"><option value="">— choose component —</option><option value="__custom__">Other / custom name…</option></select><button id="addComp" class="auto primary">Add</button></div>
     <div id="compCustomWrap" style="display:none;margin-top:6px"><input id="compName" type="text" placeholder="Custom component name…"></div>
     <div id="activeLabel" class="muted">No active component</div>
@@ -424,10 +425,15 @@ function integralR3Loop(loop,axisY){
 }
 function regionR3(r,axisY){let v=integralR3Loop(r.outer,axisY);for(const h of r.holes)v-=integralR3Loop(h,axisY);return Math.abs(v);}
 function regionSignature(r,bounds){const d=Math.hypot(bounds.width,bounds.height)||1;return {id:r.id,cx:r.cx,cy:r.cy,area:r.area,ncx:(r.cx-bounds.minX)/d,ncy:(r.cy-bounds.minY)/d,na:r.area/(d*d),bbox:r.bbox};}
-function componentMetrics(name,regions,axisY,sg=1.1){
+function componentMetrics(name,regions,axisY,sg=1.1,centreX=null){
   if(!regions.length)return null;let area=0,sx=0,sy=0,radialFirst=0,r3=0,minY=Infinity,maxY=-Infinity;const edgeCount=new Map(),edgeObj=new Map();
   for(const r of regions){area+=r.area;sx+=r.cx*r.area;sy+=r.cy*r.area;radialFirst+=Math.abs(r.cy-axisY)*r.area;r3+=regionR3(r,axisY);minY=Math.min(minY,r.bbox.minY);maxY=Math.max(maxY,r.bbox.maxY);for(const e of r.boundaryEdges){edgeCount.set(e.key,(edgeCount.get(e.key)||0)+1);edgeObj.set(e.key,e);}}
-  let blen=0,by=0;for(const [k,n] of edgeCount)if(n%2===1){const e=edgeObj.get(k),L=Math.hypot(e.p1[0]-e.p0[0],e.p1[1]-e.p0[1]);blen+=L;by+=L*(e.p0[1]+e.p1[1])/2;}
+  // Surface: skip boundary edges lying on the mid-width centreline — when the
+  // full tyre is formed those faces butt against the mirror half and are not
+  // an external surface (a section split at the centreline would otherwise
+  // revolve its cut edge into a spurious internal disk).
+  const onCentre=e=>centreX!=null&&Math.abs(e.p0[0]-centreX)<0.05&&Math.abs(e.p1[0]-centreX)<0.05;
+  let blen=0,by=0;for(const [k,n] of edgeCount)if(n%2===1){const e=edgeObj.get(k);if(onCentre(e))continue;const L=Math.hypot(e.p1[0]-e.p0[0],e.p1[1]-e.p0[1]);blen+=L;by+=L*(e.p0[1]+e.p1[1])/2;}
   const cx=sx/area,cy=sy/area,d=radialFirst/area,volume_cm3=2*Math.PI*radialFirst/1000,weight_g=volume_cm3*sg,boundaryCy=blen?by/blen:cy,surface_area_mm2=2*Math.PI*Math.abs(boundaryCy-axisY)*blen,polar_MOI=2*Math.PI*(sg/1000)*r3;
   const crosses=minY<axisY-EPS&&maxY>axisY+EPS;
   return {component:name,area_mm2:area,centroid_x:cx,centroid_y:cy,centroid_distance_mm:d,volume_cm3,weight_g,surface_area_mm2,polar_MOI,radius_of_gyration_mm:weight_g>0?Math.sqrt(polar_MOI/weight_g):0,sg,pct:0,axis_crossing:crosses,region_count:regions.length,boundary_length_mm:blen,boundary_centroid_y:boundaryCy};
@@ -757,7 +763,7 @@ function parseAndSet(text,name){
   try{
     setStatus("Reading DXF…");DXF_TEXT=text;FILE_NAME=name;FINGERPRINT=E.fnv1a(text);TOL=currentTol();results=[];$("results").innerHTML="";$("testReport").innerHTML="";
     ENT=dedupeEntities(E.loadEntities(text,0.005));if(typeof resetEdit==="function")resetEdit();if(!ENT.length)throw new Error("No supported DXF curves were found.");
-    BOUNDS=E.boundsOfEntities(ENT);autoAxis();extractRegions();fitView();
+    BOUNDS=E.boundsOfEntities(ENT);autoAxis();extractRegions();CENTRE=NaN;$("centre").value=geomMidX().toFixed(2);fitView();
     if(/^Variant \d+$/.test(VARIANTS[CUR].name))VARIANTS[CUR].name=name.replace(/\.dxf$/i,"").slice(0,20);
     let autoMsg="";
     if(CUR>0&&(VARIANTS[0].regions||[]).some(r=>r.assigned)){const n=autoAssignFromBase();if(n)autoMsg=` · ${n} regions auto-assigned from ${VARIANTS[0].name}`;}
@@ -768,7 +774,7 @@ function parseAndSet(text,name){
 $("file").addEventListener("change",e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>parseAndSet(r.result,f.name);r.readAsText(f,"latin1");});
 
 function loadDemo(autoAssign=true){
-  ENT=E.makeDemoEntities();if(typeof resetEdit==="function")resetEdit();BOUNDS=E.boundsOfEntities(ENT);results=[];$("results").innerHTML="";FILE_NAME="single_layer_validation_geometry.dxf";DXF_TEXT="synthetic-demo-v2";FINGERPRINT=E.fnv1a(DXF_TEXT);AXIS=0;$("axis").value="0.00";MODE="vector";$("extractMode").value="vector";TOL=currentTol();extractRegions();fitView();
+  ENT=E.makeDemoEntities();if(typeof resetEdit==="function")resetEdit();BOUNDS=E.boundsOfEntities(ENT);results=[];$("results").innerHTML="";FILE_NAME="single_layer_validation_geometry.dxf";DXF_TEXT="synthetic-demo-v2";FINGERPRINT=E.fnv1a(DXF_TEXT);AXIS=0;$("axis").value="0.00";SIDE="both";$("side").value="both";CENTRE=NaN;MODE="vector";$("extractMode").value="vector";TOL=currentTol();extractRegions();$("centre").value=geomMidX().toFixed(2);fitView();
   if(autoAssign){const exp=E.demoExpected();for(const r of REGIONS){let best=null,bd=Infinity;for(const [name,v] of Object.entries(exp)){const d=Math.hypot(r.cx-v.cx,r.cy-v.cy)+Math.abs(r.area-v.area);if(d<bd){bd=d;best=name;}}if(best){ensureComponent(best);r.assigned=best;}}
     ACTIVE="TREAD";renderAll();computeResults();runDemoCheck();}
   setStatus("Validation geometry loaded and assigned.","ok");
@@ -881,48 +887,36 @@ function updateUndoButtons(){$("undo").disabled=!undoStack.length;$("redo").disa
 $("undo").onclick=()=>{if(!undoStack.length)return;redoStack.push(snapshotAssignments());restoreSnapshot(undoStack.pop());updateUndoButtons();};
 $("redo").onclick=()=>{if(!redoStack.length)return;undoStack.push(snapshotAssignments());restoreSnapshot(redoStack.pop());updateUndoButtons();};
 
-// --- mirror-symmetry helpers: the section is drawn as both mirror halves, so
-// assigning one region can auto-apply to its partner across the mid-width
-// centreline. This halves the clicking while keeping BOTH halves in the
-// calculation (each partner keeps its own real geometry).
-let MIRROR_ASSIGN=true;
-function mirrorLineX(){return geomMidX();}
-function mirrorPartner(r){
-  if(!r||REGIONS.length<2||!BOUNDS)return null;
-  const Xm=mirrorLineX(),diag=Math.hypot(BOUNDS.width,BOUNDS.height)||1;
-  if(Math.abs(r.cx-Xm)<0.02*diag)return null; // straddles the centreline → its own mirror
-  const tx=2*Xm-r.cx,ty=r.cy;let best=null,bc=Infinity;
-  for(const s of REGIONS){if(s===r)continue;
-    const cost=3*Math.hypot(s.cx-tx,s.cy-ty)/diag+0.8*Math.abs(Math.log(Math.max(s.area,1e-9)/Math.max(r.area,1e-9)));
-    if(cost<bc){bc=cost;best=s;}}
-  return (best&&bc<0.12)?best:null;
+// --- working half / section centreline ---
+// The tyre is symmetric about its mid-width centreline. Designers usually work
+// one half of the cut section; the tool computes the FULL tyre by doubling
+// that half. SIDE = both|left|right. CENTRE = the mid-width X (NaN => auto =
+// geomMidX). In left/right mode you assign only that half; the calculation
+// doubles side components and counts a centreline-crossing component once.
+let SIDE="both", CENTRE=NaN;
+function centrelineX(){return Number.isFinite(CENTRE)?CENTRE:geomMidX();}
+function crossesCentre(r){const C=centrelineX();return r.bbox.minX<C-1e-6&&r.bbox.maxX>C+1e-6;}
+function sideAllowed(r){if(SIDE==="both")return true;const C=centrelineX();
+  return SIDE==="left"?r.bbox.minX<C-1e-6:r.bbox.maxX>C+1e-6;}
+function componentMult(regs){ // full-tyre multiplier for one component
+  if(SIDE==="both")return 1;
+  return regs.some(crossesCentre)?1:2;
 }
-function applyRegionAction(r){if(!r)return;if(ACTION==="assign"&&!ACTIVE){alert("Create or select a component first.");return;}pushUndo();
-  const act=t=>{if(ACTION==="assign"){t.assigned=ACTIVE;t.ignored=false;}else if(ACTION==="ignore"){t.assigned=null;t.ignored=true;}else{t.assigned=null;t.ignored=false;}};
-  act(r);let mp=null;if(MIRROR_ASSIGN){mp=mirrorPartner(r);if(mp)act(mp);}
-  PENDING=null;$("previewBar").style.display="none";renderAll();
-  if(mp)setStatus(`${ACTION==="assign"?"Assigned":ACTION==="ignore"?"Ignored":"Cleared"} on both halves (mirrored ${r.id} ↔ ${mp.id}).`,"ok");}
+function autoCentre(){CENTRE=NaN;if(BOUNDS&&$("centre"))$("centre").value=geomMidX().toFixed(2);render();updateProgress();}
+function applyRegionAction(r){if(!r)return;
+  if(!sideAllowed(r)){setStatus(`${r.id} is on the excluded half — switch "Work on" in section 3 to assign it.`,"bad");return;}
+  if(ACTION==="assign"&&!ACTIVE){alert("Create or select a component first.");return;}pushUndo();
+  if(ACTION==="assign"){r.assigned=ACTIVE;r.ignored=false;}else if(ACTION==="ignore"){r.assigned=null;r.ignored=true;}else{r.assigned=null;r.ignored=false;}
+  PENDING=null;$("previewBar").style.display="none";renderAll();}
 function chooseRegion(r){if(!r)return;
+  if(!sideAllowed(r)){setStatus(`${r.id} is on the excluded half — switch "Work on" in section 3 to assign it.`,"bad");return;}
   if(MODE==="raster"&&$("previewPick").checked){PENDING=r;$("previewText").textContent=`${r.id}: ${r.area.toFixed(2)} mm² → ${ACTION}${ACTION==="assign"&&ACTIVE?" to "+ACTIVE:""}`;$("previewBar").style.display="";render();return;}
   if(ACTION==="assign"&&MODE==="vector"){showAssignPop(r);return;}
   applyRegionAction(r);}
 $("acceptPreview").onclick=()=>{if(PENDING)applyRegionAction(PENDING);};$("cancelPreview").onclick=()=>{PENDING=null;$("previewBar").style.display="none";render();};
-$("mirrorAssign").addEventListener("change",e=>{MIRROR_ASSIGN=e.target.checked;render();});
-function mirrorAllAssignments(){
-  if(!REGIONS.length){setStatus("Load a drawing and assign some components first.","bad");return;}
-  pushUndo();let n=0,skipped=0;
-  // snapshot current state so we mirror originals, not freshly-mirrored copies
-  const src=REGIONS.filter(r=>r.assigned||r.ignored).map(r=>({r,assigned:r.assigned,ignored:r.ignored}));
-  for(const {r,assigned,ignored} of src){
-    const p=mirrorPartner(r);if(!p)continue;
-    if(p.assigned===assigned&&p.ignored===ignored)continue;
-    if(p.assigned||p.ignored){skipped++;continue;} // don't overwrite an already-set partner
-    p.assigned=assigned;p.ignored=ignored;n++;
-  }
-  renderAll();
-  setStatus(n?`Mirrored ${n} assignment${n===1?"":"s"} to the other half${skipped?`; ${skipped} partner${skipped===1?"":"s"} already set were left as-is.`:"."}`:"Nothing new to mirror — the other half already matches.",n?"ok":"");
-}
-$("mirrorAll").onclick=mirrorAllAssignments;
+$("side").addEventListener("change",e=>{SIDE=e.target.value;render();updateProgress();});
+$("centre").addEventListener("change",e=>{const v=parseFloat(e.target.value);CENTRE=Number.isFinite(v)?v:NaN;render();updateProgress();});
+$("centreAuto").onclick=autoCentre;
 
 function renderComponents(){const box=$("components");box.innerHTML="";for(const n of COMPONENTS){const regs=REGIONS.filter(r=>r.assigned===n),d=document.createElement("div");d.className="comp "+(ACTIVE===n?"selected":"");d.innerHTML=`<span class="pill" style="background:${colorFor(n)}"></span><button class="namebtn" title="Select component">${escapeHtml(n)}</button><span class="muted">${regs.length} region${regs.length===1?"":"s"}</span><button class="tiny rename" title="Rename">✎</button><button class="tiny clear" title="Clear assignments">○</button><button class="tiny del" title="Delete component">×</button>`;
     d.querySelector(".namebtn").onclick=()=>{ACTIVE=n;setAction("assign");renderAll();};
@@ -941,8 +935,11 @@ function drawOuterRing(r,stroke,width){if(!r.outer?.length)return;ctx.save();ctx
 function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=getComputedStyle(document.body).getPropertyValue("--panel");ctx.fillRect(0,0,w,h);if(VIEW_MODE==="overlay"){renderOverlay();return;}if(VIEW_MODE==="tyre"){renderTyre();return;}if(!BOUNDS)return;
   // rotation axis: horizontal line at Y=AXIS (the wheel/hub centreline)
   {const ay=w2s([0,AXIS])[1];if(ay>=-40&&ay<=h+40){ctx.save();ctx.strokeStyle="rgba(70,110,190,.85)";ctx.lineWidth=1.5;ctx.setLineDash([8,5]);ctx.beginPath();ctx.moveTo(0,ay);ctx.lineTo(w,ay);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle="rgba(70,110,190,.9)";ctx.font="11px ui-monospace,monospace";ctx.fillText(`rotation axis  Y = ${AXIS.toFixed(2)}`,8,ay-6);ctx.restore();}}
-  // mirror centreline: faint vertical line at the mid-width, showing the symmetry used for auto-mirroring
-  if(MIRROR_ASSIGN&&REGIONS.length){const mx=w2s([mirrorLineX(),0])[0];ctx.save();ctx.strokeStyle="rgba(150,120,190,.5)";ctx.lineWidth=1;ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(mx,0);ctx.lineTo(mx,h);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle="rgba(150,120,190,.75)";ctx.font="10px ui-monospace,monospace";ctx.fillText("mirror centreline",mx+4,h-8);ctx.restore();}
+  // section centreline (vertical) + excluded-half shading when working one side
+  if(REGIONS.length){const mx=w2s([centrelineX(),0])[0];ctx.save();
+    if(SIDE!=="both"){ctx.fillStyle="rgba(120,130,140,.13)";if(SIDE==="left")ctx.fillRect(mx,0,w-mx,h);else ctx.fillRect(0,0,mx,h);}
+    ctx.strokeStyle="rgba(150,120,190,.6)";ctx.lineWidth=1;ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(mx,0);ctx.lineTo(mx,h);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle="rgba(150,120,190,.8)";ctx.font="10px ui-monospace,monospace";ctx.fillText(SIDE==="both"?"centreline":`centreline · working ${SIDE} half (×2)`,mx+4,h-8);ctx.restore();}
   if(MODE==="raster"&&raster){const p0=w2s([BOUNDS.minX-raster.pad,BOUNDS.maxY+raster.pad]),p1=w2s([BOUNDS.maxX+raster.pad,BOUNDS.minY-raster.pad]);ctx.globalAlpha=.12;ctx.drawImage(raster.off,p0[0],p0[1],p1[0]-p0[0],p1[1]-p0[1]);ctx.globalAlpha=1;}
   for(const r of REGIONS){let fill=null;if(r===PENDING)fill="rgba(255,215,80,.42)";else if(r.assigned)fill=hexA(colorFor(r.assigned),.35);else if(r.ignored)fill="rgba(130,130,130,.22)";if(fill)drawRegion(r,fill,r===PENDING?"#fff":null);}
   // hovered highlight: FILL the exact selectable area (holes stay unfilled via
@@ -1033,11 +1030,11 @@ function updateHover(p,r){const el=$("hoverInfo");if(!BOUNDS){el.textContent="";
 const VCOLORS=["#9fb0c0","#4C78A8","#F58518","#54A24B","#E45756","#B279A2","#72B7B2","#EECA3B","#9D755D","#FF9DA6"];
 function newVariant(name){return {name,fileName:"",dxfText:"",fingerprint:"",ents:[],bounds:null,graph:null,regions:[],raster:null,mode:"vector",axis:0,dupes:0,results:[],undoStack:[],redoStack:[],visible:true};}
 let VARIANTS=[newVariant("Variant 1")],CUR=0,VIEW_MODE="single";
-function saveCur(){const v=VARIANTS[CUR];if(!v)return;Object.assign(v,{ents:ENT,bounds:BOUNDS,graph:GRAPH,regions:REGIONS,fingerprint:FINGERPRINT,fileName:FILE_NAME,dxfText:DXF_TEXT,mode:MODE,axis:AXIS,raster,results,undoStack,redoStack,dupes:DUPES_REMOVED});}
+function saveCur(){const v=VARIANTS[CUR];if(!v)return;Object.assign(v,{ents:ENT,bounds:BOUNDS,graph:GRAPH,regions:REGIONS,fingerprint:FINGERPRINT,fileName:FILE_NAME,dxfText:DXF_TEXT,mode:MODE,axis:AXIS,side:SIDE,centre:CENTRE,raster,results,undoStack,redoStack,dupes:DUPES_REMOVED});}
 function loadCur(i){CUR=i;const v=VARIANTS[i];
   ENT=v.ents||[];BOUNDS=v.bounds||null;GRAPH=v.graph||null;REGIONS=v.regions||[];FINGERPRINT=v.fingerprint||"";FILE_NAME=v.fileName||"";DXF_TEXT=v.dxfText||"";
-  MODE=v.mode||"vector";AXIS=v.axis||0;raster=v.raster||null;results=v.results||[];undoStack=v.undoStack||[];redoStack=v.redoStack||[];DUPES_REMOVED=v.dupes||0;
-  $("axis").value=(+AXIS).toFixed(2);$("extractMode").value=MODE;
+  MODE=v.mode||"vector";AXIS=v.axis||0;SIDE=v.side||"both";CENTRE=("centre"in v)?v.centre:NaN;raster=v.raster||null;results=v.results||[];undoStack=v.undoStack||[];redoStack=v.redoStack||[];DUPES_REMOVED=v.dupes||0;
+  $("axis").value=(+AXIS).toFixed(2);$("extractMode").value=MODE;$("side").value=SIDE;$("centre").value=(BOUNDS?centrelineX():0).toFixed(2);
   if(typeof resetEdit==="function")resetEdit();HOVER=null;PENDING=null;hidePop();
   renderTabs();renderAll();updateDiagnostics();updateUndoButtons();
   if(BOUNDS)fitView();else render();
@@ -1114,7 +1111,7 @@ $("autoAssign").onclick=()=>{pushUndo();const n=autoAssignFromBase();setStatus(n
 /* ---------------- click-first assignment popup ---------------- */
 let lastClickScreen={x:200,y:200};
 function hidePop(){const p=$("assignPop");if(p)p.style.display="none";}
-function assignRegionTo(r,name){pushUndo();const n=ensureComponent(name);if(!n)return;r.assigned=n;r.ignored=false;ACTIVE=n;let mp=null;if(MIRROR_ASSIGN){mp=mirrorPartner(r);if(mp){mp.assigned=n;mp.ignored=false;}}renderAll();if(mp)setStatus(`Assigned "${n}" to both halves (mirrored ${r.id} ↔ ${mp.id}).`,"ok");}
+function assignRegionTo(r,name){if(!sideAllowed(r)){setStatus(`${r.id} is on the excluded half — switch "Work on" in section 3 to assign it.`,"bad");return;}pushUndo();const n=ensureComponent(name);if(!n)return;r.assigned=n;r.ignored=false;ACTIVE=n;renderAll();}
 function catalogOptionsHtml(){
   // catalog entries not already used in this project, in catalog order
   const used=new Set(COMPONENTS);
@@ -1296,10 +1293,14 @@ function revolvePt(a,r,th,cam){
 }
 function renderTyre3D(){
   const {w,h}=cssSize();
-  const loops=tyreSilhouette();
+  let loops=tyreSilhouette();
   if(!loops.length){tyreEmpty("Detect regions (section 2) first — nothing to revolve yet.");return;}
   if(geomMaxY()-AXIS<=0){tyreEmpty("The rotation axis is above the tread. Set a valid axis or enter the outer diameter.");return;}
-  const xc=geomMidX();
+  const xc=centrelineX();
+  // In half mode, if the drawing is genuinely one side of the centreline,
+  // mirror the silhouette so the revolve shows the FULL tyre width.
+  if(SIDE!=="both"){let mn=Infinity,mx=-Infinity;for(const lp of loops)for(const p of lp){if(p[0]<mn)mn=p[0];if(p[0]>mx)mx=p[0];}
+    if(mn>=xc-1||mx<=xc+1)loops=loops.concat(loops.map(lp=>lp.map(p=>[2*xc-p[0],p[1]])));}
   const rotating=drag&&drag.type==="tyrerot";
   const STEPS=rotating?30:56,dth=2*Math.PI/STEPS;
   const decimate=lp=>{const maxN=88;if(lp.length<=maxN)return lp;const st=lp.length/maxN,out=[];for(let i=0;i<lp.length;i+=st)out.push(lp[Math.floor(i)]);return out;};
@@ -1612,11 +1613,24 @@ function rasterMetrics(name,regs,sg){
 }
 function computeResults(){
   if(MODE==="raster"&&raster&&$("highResFinal").checked){const target=Math.min(3000,Math.max(raster.res,Math.round((parseInt($("rasterRes").value)||1400)*1.5)));if(target>raster.res){const saved=snapshotAssignments();buildRasterRegions(target,false);restoreBySimilarity(saved);updateDiagnostics();renderAll();setStatus(`Raster results recomputed at ${target} px for final calculation.`,"ok");}}
-  AXIS=parseFloat($("axis").value)||0;results=[];for(const n of COMPONENTS){const regs=REGIONS.filter(r=>r.assigned===n);if(!regs.length)continue;results.push(MODE==="vector"?E.componentMetrics(n,regs,AXIS,SG[n]||1.1):rasterMetrics(n,regs,SG[n]||1.1));}
+  AXIS=parseFloat($("axis").value)||0;const C=centrelineX();results=[];
+  for(const n of COMPONENTS){
+    let regs=REGIONS.filter(r=>r.assigned===n);
+    if(SIDE!=="both")regs=regs.filter(sideAllowed); // ignore stray other-side regions
+    if(!regs.length)continue;
+    const m=MODE==="vector"?E.componentMetrics(n,regs,AXIS,SG[n]||1.1,C):rasterMetrics(n,regs,SG[n]||1.1);
+    const M=componentMult(regs);
+    m.full_factor=M;m.crosses_centreline=(SIDE!=="both")&&regs.some(crossesCentre);
+    if(M!==1)for(const k of ["area_mm2","volume_cm3","weight_g","surface_area_mm2","polar_MOI","boundary_length_mm"])m[k]*=M;
+    results.push(m);
+  }
   const total=results.reduce((s,r)=>s+r.weight_g,0);results.forEach(r=>r.pct=total?r.weight_g/total*100:0);VARIANTS[CUR].results=results;showResults(total);return results;
 }
 $("compute").onclick=computeResults;
 function showResults(total){LAST_TOTAL=total;let h=`<div class="summary"><span>Total weight <b>${fmt(total,1)} g</b></span><span>Total polar MOI <b>${fmt(results.reduce((s,r)=>s+r.polar_MOI,0))}</b></span><span>Assigned components <b>${results.length}</b></span></div>`;
+  if(SIDE!=="both"){const dbl=results.filter(r=>r.full_factor===2).length;h+=`<div class="hint" style="margin-bottom:10px">Full-tyre figures from the <b>${SIDE} half</b>: ${dbl} side component${dbl===1?"":"s"} doubled (×2); centreline-crossing components counted once.</div>`;}
+  const xed=results.filter(r=>r.crosses_centreline);
+  if(xed.length)h+=`<div class="alert"><b>Crosses the centreline:</b> ${xed.map(r=>escapeHtml(r.component)).join(", ")} — counted once (not doubled). Verify this is intended; in a true half section nothing should cross the centreline.</div>`;
   if(results.some(r=>r.axis_crossing))h+=`<div class="alert">One or more selected components cross the rotation axis. Pappus-derived results for those components should not be trusted.</div>`;
   const RCOLS=[["component","Component"],["region_count","Regions"],["area_mm2","Area mm²"],["centroid_distance_mm","CG dist mm"],["volume_cm3","Volume cm³"],["weight_g","Weight g"],["surface_area_mm2","Surface mm²"],["polar_MOI","Polar MOI"],["radius_of_gyration_mm","RoG mm"],["pct","% wt"]];
   h+=`<div class="resultgrid"><div class="card"><h2>Component results</h2><div class="tablewrap"><table><thead><tr>`;
@@ -1624,7 +1638,7 @@ function showResults(total){LAST_TOTAL=total;let h=`<div class="summary"><span>T
   h+=`</tr></thead><tbody>`;
   let rrows=results.slice();
   if(RES_SORT.key){const k=RES_SORT.key;rrows.sort((a,b)=>{const va=a[k],vb=b[k];return RES_SORT.dir*(typeof va==="string"?va.localeCompare(vb):(va-vb));});}
-  for(const r of rrows)h+=`<tr class="${r.axis_crossing?'rowwarn':''}"><td>${escapeHtml(r.component)}</td><td>${r.region_count}</td><td>${fmt(r.area_mm2)}</td><td>${fmt(r.centroid_distance_mm)}</td><td>${fmt(r.volume_cm3)}</td><td>${fmt(r.weight_g)}</td><td>${fmt(r.surface_area_mm2)}</td><td>${fmt(r.polar_MOI)}</td><td>${fmt(r.radius_of_gyration_mm)}</td><td>${fmt(r.pct)}</td></tr>`;
+  for(const r of rrows)h+=`<tr class="${r.axis_crossing?'rowwarn':''}"><td>${escapeHtml(r.component)}${r.full_factor===2?' <span class="muted" title="side component doubled for the full tyre">×2</span>':''}${r.crosses_centreline?' <span class="warn" title="crosses centreline — counted once">⚠</span>':''}</td><td>${r.region_count}</td><td>${fmt(r.area_mm2)}</td><td>${fmt(r.centroid_distance_mm)}</td><td>${fmt(r.volume_cm3)}</td><td>${fmt(r.weight_g)}</td><td>${fmt(r.surface_area_mm2)}</td><td>${fmt(r.polar_MOI)}</td><td>${fmt(r.radius_of_gyration_mm)}</td><td>${fmt(r.pct)}</td></tr>`;
   h+=`</tbody></table></div></div><div class="card"><h2>Weight by component</h2>`;const max=Math.max(1,...results.map(r=>r.weight_g));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.weight_g/max)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.weight_g,1)} g</b></div>`;h+=`</div><div class="card"><h2>Polar MOI by component</h2>`;const mm=Math.max(1,...results.map(r=>r.polar_MOI));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.polar_MOI/mm)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.polar_MOI)}</b></div>`;h+=`</div></div>`;h+=comparisonHTML();$("results").innerHTML=h;
   const cbtn=$("compareCsv");if(cbtn)cbtn.onclick=exportComparisonCsv;
   document.querySelectorAll("#results th[data-sk]").forEach(th=>th.onclick=()=>{
@@ -1639,13 +1653,13 @@ function showResults(total){LAST_TOTAL=total;let h=`<div class="summary"><span>T
   });
   const ms=$("cmpMetric");if(ms)ms.onchange=()=>{CMP_METRIC=ms.value;showResults(LAST_TOTAL);};
 }
-$("csv").onclick=()=>{if(!results.length)computeResults();const keys=["component","region_count","area_mm2","centroid_x","centroid_y","centroid_distance_mm","volume_cm3","weight_g","surface_area_mm2","boundary_length_mm","boundary_centroid_y","polar_MOI","radius_of_gyration_mm","sg","pct","axis_crossing"],rows=[keys.join(","),...results.map(r=>keys.map(k=>r[k]??"").join(","))];download((FILE_NAME||"tyre").replace(/\.dxf$/i,"")+"_results.csv",rows.join("\n"),"text/csv");};
+$("csv").onclick=()=>{if(!results.length)computeResults();const keys=["component","region_count","full_factor","area_mm2","centroid_x","centroid_y","centroid_distance_mm","volume_cm3","weight_g","surface_area_mm2","boundary_length_mm","boundary_centroid_y","polar_MOI","radius_of_gyration_mm","sg","pct","axis_crossing","crosses_centreline"],rows=[keys.join(","),...results.map(r=>keys.map(k=>r[k]??"").join(","))];download((FILE_NAME||"tyre").replace(/\.dxf$/i,"")+"_results.csv",rows.join("\n"),"text/csv");};
 
 function regionFeature(r,list=REGIONS){const d=Math.hypot(BOUNDS.width,BOUNDS.height)||1,w=Math.max(r.bbox.maxX-r.bbox.minX,1e-9),h=Math.max(r.bbox.maxY-r.bbox.minY,1e-9),neighbors=list.filter(x=>x!==r).map(x=>Math.hypot(x.cx-r.cx,x.cy-r.cy)/d).sort((a,b)=>a-b).slice(0,3);return {aspect:w/h,neighbors};}
-function projectObject(){return {version:2,tool:"Tyre Cross-Section Analysis",fileName:FILE_NAME,fingerprint:FINGERPRINT,axisY:AXIS,mode:MODE,tolerance:TOL,components:COMPONENTS,specificGravity:SG,notes:$("notes").value,regions:REGIONS.map(r=>({id:r.id,cx:r.cx,cy:r.cy,area:r.area,bbox:r.bbox,feature:regionFeature(r),assigned:r.assigned,ignored:r.ignored,source:r.source}))};}
+function projectObject(){return {version:2,tool:"Tyre Cross-Section Analysis",fileName:FILE_NAME,fingerprint:FINGERPRINT,axisY:AXIS,side:SIDE,centre:Number.isFinite(CENTRE)?CENTRE:null,mode:MODE,tolerance:TOL,components:COMPONENTS,specificGravity:SG,notes:$("notes").value,regions:REGIONS.map(r=>({id:r.id,cx:r.cx,cy:r.cy,area:r.area,bbox:r.bbox,feature:regionFeature(r),assigned:r.assigned,ignored:r.ignored,source:r.source}))};}
 $("saveProject").onclick=()=>download((FILE_NAME||"tyre").replace(/\.dxf$/i,"")+".tyreproject.json",JSON.stringify(projectObject(),null,2));
 $("projectFile").addEventListener("change",e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{try{const p=JSON.parse(rd.result);importProject(p);}catch(err){alert("Could not load project: "+err.message);}};rd.readAsText(f);});
-function importProject(p){if(!REGIONS.length){alert("Load the corresponding DXF before importing a project.");return;}pushUndo();COMPONENTS=[...(p.components||[])];SG={...DEFAULT_SG,...(p.specificGravity||{})};$("notes").value=p.notes||"";const axv=Number.isFinite(p.axisY)?p.axisY:(Number.isFinite(p.axisX)?p.axisX:null);if(axv!=null){AXIS=axv;$("axis").value=AXIS.toFixed(2);}const diag=Math.hypot(BOUNDS.width,BOUNDS.height)||1,used=new Set();let matched=0;
+function importProject(p){if(!REGIONS.length){alert("Load the corresponding DXF before importing a project.");return;}pushUndo();COMPONENTS=[...(p.components||[])];SG={...DEFAULT_SG,...(p.specificGravity||{})};$("notes").value=p.notes||"";const axv=Number.isFinite(p.axisY)?p.axisY:(Number.isFinite(p.axisX)?p.axisX:null);if(axv!=null){AXIS=axv;$("axis").value=AXIS.toFixed(2);}if(p.side){SIDE=p.side;$("side").value=SIDE;}CENTRE=Number.isFinite(p.centre)?p.centre:NaN;$("centre").value=centrelineX().toFixed(2);const diag=Math.hypot(BOUNDS.width,BOUNDS.height)||1,used=new Set();let matched=0;
   for(const s of p.regions||[]){if(!s.assigned&&!s.ignored)continue;let best=null,bc=Infinity;for(const r of REGIONS){if(used.has(r.id))continue;let cost;if(p.fingerprint===FINGERPRINT&&r.id===s.id)cost=0;else{const rf=regionFeature(r),sf=s.feature||{},aspectCost=sf.aspect?Math.abs(Math.log(Math.max(rf.aspect,1e-9)/Math.max(sf.aspect,1e-9))):0;let neighCost=0;if(sf.neighbors?.length){const n=Math.min(sf.neighbors.length,rf.neighbors.length);for(let i=0;i<n;i++)neighCost+=Math.abs(sf.neighbors[i]-rf.neighbors[i]);neighCost/=Math.max(n,1);}cost=3*Math.hypot(r.cx-s.cx,r.cy-s.cy)/diag+.8*Math.abs(Math.log(Math.max(r.area,1e-9)/Math.max(s.area,1e-9)))+.35*aspectCost+.5*neighCost;}if(cost<bc){bc=cost;best=r;}}if(best&&bc<.35){best.assigned=s.assigned||null;best.ignored=!!s.ignored;used.add(best.id);matched++;}}
   renderAll();updateDiagnostics();setStatus(`${matched} saved region assignments transferred from ${escapeHtml(p.fileName||"project")}.`,"ok");}
 
@@ -1670,10 +1684,11 @@ window.__entDump=()=>ENT.map((e,i)=>{let L=0;for(let k=0;k<e.pts.length-1;k++)L+
 window.__openDump=()=>GRAPH?GRAPH.openNodeIds.map(id=>GRAPH.nodes[id].map(v=>+v.toFixed(3))):[];
 window.__cmpDebug=()=>({cur:CUR,list:variantResultsList().map(x=>({i:x.i,n:x.results.length})),htmlLen:comparisonHTML().length});
 window.__assignRegion=(id,name)=>{const r=REGIONS.find(x=>x.id===id);if(r)assignRegionTo(r,name);};
-window.__mirror=()=>({on:MIRROR_ASSIGN,lineX:mirrorLineX()});
-window.__setMirror=v=>{MIRROR_ASSIGN=v;$("mirrorAssign").checked=v;render();};
-window.__mirrorPartner=id=>{const r=REGIONS.find(x=>x.id===id);const p=r?mirrorPartner(r):null;return p?p.id:null;};
-window.__mirrorAll=()=>mirrorAllAssignments();
+window.__side=()=>({side:SIDE,centre:centrelineX()});
+window.__setSide=v=>{SIDE=v;$("side").value=v;render();updateProgress();};
+window.__setCentre=v=>{CENTRE=Number.isFinite(v)?v:NaN;if($("centre"))$("centre").value=centrelineX().toFixed(2);render();};
+window.__sideAllowed=id=>{const r=REGIONS.find(x=>x.id===id);return r?sideAllowed(r):null;};
+window.__setMirror=()=>{}; // retired; kept as no-op so older harnesses don't error
 window.__loadDemo=()=>loadDemo(true);window.__runDemoCheck=runDemoCheck;window.__projectObject=projectObject;window.__importProject=importProject;window.__chooseRegion=id=>{const r=REGIONS.find(x=>x.id===id);chooseRegion(r);};window.__view=()=>({...view});
 })();
 
