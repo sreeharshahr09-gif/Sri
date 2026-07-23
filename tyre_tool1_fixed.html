@@ -83,6 +83,7 @@
     <button id="saveProject">Save assignment project</button>
     <label>Load or transfer an earlier project</label><input type="file" id="projectFile" accept=".json,.tyreproject.json">
     <label class="row" style="justify-content:flex-start"><input id="highResFinal" type="checkbox" checked style="width:auto;flex:0 0 auto"> <span>High-resolution final raster recomputation</span></label><div class="row"><button id="compute" class="primary">Compute results</button><button id="computeAll">Compute all variants</button><button id="csv">Export CSV</button></div>
+    <div class="row"><button id="pdfReport">PDF report</button></div>
     <div id="testReport"></div>
   </div>
 </aside>
@@ -99,6 +100,7 @@
       <select id="overlayComp" style="display:none;max-width:170px"><option value="__all__">All curves</option></select>
       <button id="overlayAll" style="display:none" class="tiny" title="Include every variant">All</button>
       <button id="overlayNone" style="display:none" class="tiny" title="Hide every variant">None</button>
+      <button id="overlayReset" style="display:none" class="tiny" title="Clear all manual Move offsets">Reset positions</button>
       <span id="tyreCtrls" style="display:none;gap:5px;align-items:center">
         <button id="tyre3d" class="tiny active" title="3D revolved solid — drag to rotate">3D</button>
         <button id="tyreFront" class="tiny" title="Front elevation with concentric component rings">Front</button>
@@ -108,7 +110,7 @@
   </div>
   <div id="cvwrap"><canvas id="cv"></canvas>
   <div id="navOverlay" style="position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:5;background:rgba(20,30,40,.55);padding:4px;border-radius:8px">
-    <button data-nav="select" title="Select regions">Select</button><button data-nav="pan" title="Pan">Pan</button><button data-nav="box" title="Box zoom">Box</button><button data-nav="measure" title="Measure distance between two points">Measure</button><button id="zoomIn">＋</button><button id="zoomOut">−</button><button id="fit">Fit</button>
+    <button data-nav="select" title="Select regions">Select</button><button data-nav="pan" title="Pan">Pan</button><button data-nav="box" title="Box zoom">Box</button><button data-nav="measure" title="Measure distance between two points">Measure</button><button data-nav="move" title="Overlay: drag the active variant to reposition it">Move</button><button id="gridBtn" class="active" title="Toggle grid">Grid</button><button id="snapBtn" class="active" title="Snap the cursor to nearby vertices &amp; grid">Snap</button><button id="zoomIn">＋</button><button id="zoomOut">−</button><button id="fit">Fit</button>
   </div>
   <div id="hoverTip" style="position:absolute;display:none;z-index:8;pointer-events:none;background:rgba(10,20,30,.93);color:#eaf2f8;border:1px solid var(--line);border-radius:7px;padding:5px 9px;font-size:12px;max-width:230px;box-shadow:0 4px 14px rgba(0,0,0,.4)"></div>
   <div id="assignPop" style="position:absolute;display:none;z-index:9;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px;min-width:200px;max-width:260px;box-shadow:0 8px 28px rgba(0,0,0,.5)"></div>
@@ -710,12 +712,16 @@ const TBR_CATALOG=[
   ["CHAFER",1.18],
 ];
 const DEFAULT_SG=Object.fromEntries(TBR_CATALOG);
+// Calendered (sheet) components are specified by areal weight kg/m², not g/cm³.
+// Placeholder areal weights — adjust to your material spec.
+const CALENDERED_DEFAULTS={"BODY PLY":4.0,"WORKING BELT-1":4.6,"WORKING BELT-2":4.6,"PROTECTOR BELT":4.0,"TRANSITION BELT":4.0};
 
 let ENT=[],BOUNDS=null,GRAPH=null,REGIONS=[],FINGERPRINT="",FILE_NAME="",DXF_TEXT="";
-let MODE="vector",AXIS=0,TOL=0.05,ACTIVE=null,ACTION="assign",COMPONENTS=[],SG={...DEFAULT_SG},HOVER=null,PENDING=null;
+let MODE="vector",AXIS=0,TOL=0.05,ACTIVE=null,ACTION="assign",COMPONENTS=[],SG={...DEFAULT_SG},UNIT={},LAND={},HOVER=null,PENDING=null;
 let undoStack=[],redoStack=[],results=[];
 let raster=null;
 let view={cx:0,cy:0,scale:1},navMode="select",drag=null,spaceDown=false;
+let SHOW_GRID=true,SNAP=true,SNAP_HL=null;
 const cv=$("cv"),ctx=cv.getContext("2d"),wrap=$("cvwrap");
 
 function escapeHtml(s){return String(s).replace(/[&<>\"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -858,7 +864,13 @@ function restoreBySimilarity(saved){if(!saved?.length)return;const used=new Set(
 
 function getRegionAtWorld(p){if(MODE==="vector")return E.findRegionAt(REGIONS,p);if(!raster)return null;const x=Math.floor((p[0]-BOUNDS.minX+raster.pad)*raster.ppm),y=Math.floor((BOUNDS.maxY+raster.pad-p[1])*raster.ppm);if(x<0||y<0||x>=raster.w||y>=raster.h)return null;const lab=raster.labels[y*raster.w+x];return lab>=0?raster.regions.find(r=>r.label===lab)||null:null;}
 
-function ensureComponent(name){name=name.trim().toUpperCase();if(!name)return null;if(!COMPONENTS.includes(name))COMPONENTS.push(name);if(SG[name]==null)SG[name]=DEFAULT_SG[name]??1.10;return name;}
+function ensureComponent(name){name=name.trim().toUpperCase();if(!name)return null;if(!COMPONENTS.includes(name))COMPONENTS.push(name);
+  if(UNIT[name]==null){ // first time: pick unit and a matching default density (override any pre-seeded g/cm³ value for calendered sheets)
+    UNIT[name]=(name in CALENDERED_DEFAULTS)?"areal":"vol";
+    SG[name]=UNIT[name]==="areal"?(CALENDERED_DEFAULTS[name]??4.0):(SG[name]??DEFAULT_SG[name]??1.10);
+  }else if(SG[name]==null){SG[name]=UNIT[name]==="areal"?(CALENDERED_DEFAULTS[name]??4.0):(DEFAULT_SG[name]??1.10);}
+  if(LAND[name]==null)LAND[name]=100;
+  return name;}
 function refreshCompCatalogSelect(){
   const sel=$("compCatalog");if(!sel)return;const cur=sel.value;
   sel.innerHTML='<option value="">— choose component —</option>'+catalogOptionsHtml()+'<option value="__custom__">Other / custom name…</option>';
@@ -925,7 +937,18 @@ function renderComponents(){const box=$("components");box.innerHTML="";for(const
     d.querySelector(".del").onclick=()=>{pushUndo();for(const r of REGIONS)if(r.assigned===n)r.assigned=null;COMPONENTS=COMPONENTS.filter(x=>x!==n);if(ACTIVE===n)ACTIVE=COMPONENTS[0]||null;renderAll();};box.appendChild(d);}
   $("activeLabel").textContent=ACTIVE?`Active: ${ACTIVE}`:"No active component";updateOverlayComp();refreshCompCatalogSelect();
 }
-function renderSG(){const t=$("sgtab");t.innerHTML="";for(const n of COMPONENTS){const tr=document.createElement("tr");tr.innerHTML=`<td>${escapeHtml(n)}</td><td><input type="number" min="0.01" step="0.01" value="${SG[n]??1.1}" data-name="${escapeHtml(n)}"></td>`;t.appendChild(tr);}t.querySelectorAll("input").forEach(i=>i.onchange=()=>SG[i.dataset.name]=parseFloat(i.value)||1.1);}
+function renderSG(){const t=$("sgtab");t.innerHTML="";
+  const hd=document.createElement("tr");hd.innerHTML=`<th style="text-align:left">Component</th><th title="g/cm³ for solid rubber; kg/m² for a calendered sheet">Density</th><th>Unit</th><th title="Tread land ratio %: 100 = solid, lower = more groove void. Reduces revolved mass.">Land&nbsp;%</th>`;t.appendChild(hd);
+  for(const n of COMPONENTS){ensureComponent(n);const u=UNIT[n]||"vol",land=LAND[n]??100;
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${escapeHtml(n)}</td>`+
+      `<td><input type="number" min="0" step="0.01" value="${SG[n]??1.1}" class="sgval" data-name="${escapeHtml(n)}" style="width:62px"></td>`+
+      `<td><select class="sgunit" data-name="${escapeHtml(n)}" style="width:76px"><option value="vol"${u==="vol"?" selected":""}>g/cm³</option><option value="areal"${u==="areal"?" selected":""}>kg/m²</option></select></td>`+
+      `<td><input type="number" min="0" max="100" step="1" value="${land}" class="sgland" data-name="${escapeHtml(n)}" style="width:50px"></td>`;
+    t.appendChild(tr);}
+  t.querySelectorAll(".sgval").forEach(i=>i.onchange=()=>{SG[i.dataset.name]=Math.max(0,parseFloat(i.value)||0);});
+  t.querySelectorAll(".sgunit").forEach(s=>s.onchange=()=>{const n=s.dataset.name;UNIT[n]=s.value;SG[n]=s.value==="areal"?(CALENDERED_DEFAULTS[n]??4.0):(DEFAULT_SG[n]??1.1);renderSG();});
+  t.querySelectorAll(".sgland").forEach(i=>i.onchange=()=>{LAND[i.dataset.name]=Math.max(0,Math.min(100,parseFloat(i.value)||100));});}
 function updateProgress(){const eligible=REGIONS,assigned=eligible.filter(r=>r.assigned),ignored=eligible.filter(r=>r.ignored),un=eligible.filter(r=>!r.assigned&&!r.ignored);$("progress").innerHTML=`<b>${assigned.length}</b> assigned · <b>${ignored.length}</b> ignored · <b>${un.length}</b> unassigned`;}
 function renderAll(){renderComponents();renderSG();updateProgress();if(typeof updateQC==="function")try{updateQC();}catch(e){}render();}
 
@@ -933,6 +956,7 @@ function drawLoop(loop,fill,stroke,line=1){ctx.beginPath();loop.forEach((p,i)=>{
 function drawRegion(r,fill,stroke){if(!r.outer?.length)return;ctx.beginPath();for(const loop of [r.outer,...(r.holes||[])]){loop.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.closePath();}if(fill){ctx.fillStyle=fill;ctx.fill("evenodd");}if(stroke){ctx.strokeStyle=stroke;ctx.stroke();}}
 function drawOuterRing(r,stroke,width){if(!r.outer?.length)return;ctx.save();ctx.strokeStyle=stroke;ctx.lineWidth=width;ctx.beginPath();r.outer.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.closePath();ctx.stroke();ctx.restore();}
 function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=getComputedStyle(document.body).getPropertyValue("--panel");ctx.fillRect(0,0,w,h);if(VIEW_MODE==="overlay"){renderOverlay();return;}if(VIEW_MODE==="tyre"){renderTyre();return;}if(!BOUNDS)return;
+  drawGrid(w,h);
   // rotation axis: horizontal line at Y=AXIS (the wheel/hub centreline)
   {const ay=w2s([0,AXIS])[1];if(ay>=-40&&ay<=h+40){ctx.save();ctx.strokeStyle="rgba(70,110,190,.85)";ctx.lineWidth=1.5;ctx.setLineDash([8,5]);ctx.beginPath();ctx.moveTo(0,ay);ctx.lineTo(w,ay);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle="rgba(70,110,190,.9)";ctx.font="11px ui-monospace,monospace";ctx.fillText(`rotation axis  Y = ${AXIS.toFixed(2)}`,8,ay-6);ctx.restore();}}
   // section centreline (vertical) + excluded-half shading when working one side
@@ -960,12 +984,15 @@ function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=get
   if(MODE==="vector"&&GRAPH){ctx.fillStyle="#E45756";for(const id of GRAPH.openNodeIds){const p=GRAPH.nodes[id];if(Math.abs(p[1]-AXIS)<=TOL*2)continue;const s=w2s(p);ctx.beginPath();ctx.arc(s[0],s[1],4,0,Math.PI*2);ctx.fill();}}
   if(drag?.type==="box"){ctx.strokeStyle="#55aaff";ctx.fillStyle="rgba(85,170,255,.12)";ctx.setLineDash([5,4]);const x=Math.min(drag.x0,drag.x1),y=Math.min(drag.y0,drag.y1),ww=Math.abs(drag.x1-drag.x0),hh=Math.abs(drag.y1-drag.y0);ctx.fillRect(x,y,ww,hh);ctx.strokeRect(x,y,ww,hh);ctx.setLineDash([]);}
   if(drag?.type==="selbox"){ctx.strokeStyle="#ff6b5e";ctx.fillStyle="rgba(255,107,94,.10)";ctx.setLineDash([5,4]);const x=Math.min(drag.x0,drag.x1),y=Math.min(drag.y0,drag.y1),ww=Math.abs(drag.x1-drag.x0),hh=Math.abs(drag.y1-drag.y0);ctx.fillRect(x,y,ww,hh);ctx.strokeRect(x,y,ww,hh);ctx.setLineDash([]);}
-  drawMeasure();
+  drawMeasure();drawSnapMarker();
 }
 
 cv.addEventListener("wheel",e=>{e.preventDefault();const r=cv.getBoundingClientRect();zoomAt(e.deltaY<0?1.18:1/1.18,e.clientX-r.left,e.clientY-r.top);},{passive:false});
 cv.addEventListener("contextmenu",e=>e.preventDefault());
-cv.addEventListener("mousedown",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;lastClickScreen={x,y};hidePop();{const t=$("hoverTip");if(t)t.style.display="none";}if(VIEW_MODE==="tyre"){if(TYRE_VIEW==="3d"&&e.button===0){drag={type:"tyrerot",x0:x,y0:y,yaw0:tyreCam.yaw,pitch0:tyreCam.pitch};cv.classList.add("grabbing");}return;}const pan=navMode==="pan"||spaceDown||e.button===1||e.button===2;if(pan){drag={type:"pan",x0:x,y0:y,lastX:x,lastY:y};cv.classList.add("grabbing");}else if(navMode==="box"){drag={type:"box",x0:x,y0:y,x1:x,y1:y};}else if(e.button===0&&navMode==="measure"){const p=snapPoint(s2w(x,y));if(!MEASURE.p1||MEASURE.p2)MEASURE={p1:p,p2:null,temp:null};else MEASURE.p2=p;render();}else if(VIEW_MODE!=="single"){/* overlay: only nav+measure active */}else if(e.button===0&&EDIT.mode==="delete"){drag={type:"selbox",x0:x,y0:y,x1:x,y1:y};}
+cv.addEventListener("mousedown",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;lastClickScreen={x,y};hidePop();{const t=$("hoverTip");if(t)t.style.display="none";}if(VIEW_MODE==="tyre"){if(TYRE_VIEW==="3d"&&e.button===0){drag={type:"tyrerot",x0:x,y0:y,yaw0:tyreCam.yaw,pitch0:tyreCam.pitch};cv.classList.add("grabbing");}return;}
+  if(VIEW_MODE==="overlay"&&navMode==="move"&&e.button===0){drag={type:"varmove",lastX:x,lastY:y};cv.classList.add("grabbing");return;}
+  if(navMode==="move"){return;}
+  const pan=navMode==="pan"||spaceDown||e.button===1||e.button===2;if(pan){drag={type:"pan",x0:x,y0:y,lastX:x,lastY:y};cv.classList.add("grabbing");}else if(navMode==="box"){drag={type:"box",x0:x,y0:y,x1:x,y1:y};}else if(e.button===0&&navMode==="measure"){const p=snapPoint(s2w(x,y));if(!MEASURE.p1||MEASURE.p2)MEASURE={p1:p,p2:null,temp:null};else MEASURE.p2=p;render();}else if(VIEW_MODE!=="single"){/* overlay: only nav+measure active */}else if(e.button===0&&EDIT.mode==="delete"){drag={type:"selbox",x0:x,y0:y,x1:x,y1:y};}
   else if(e.button===0&&EDIT.mode==="extend"){extendAtPoint(s2w(x,y));}
   else if(e.button===0&&EDIT.mode==="bridge"){
     const w0=s2w(x,y);
@@ -983,8 +1010,9 @@ cv.addEventListener("mousedown",e=>{const r=cv.getBoundingClientRect(),x=e.clien
     syncEditUI();render();
   }
   else if(e.button===0){const reg=getRegionAtWorld(s2w(x,y));chooseRegion(reg);}});
-window.addEventListener("mousemove",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;if(drag?.type==="tyrerot"){tyreCam.yaw=drag.yaw0+(x-drag.x0)*0.012;tyreCam.pitch=Math.max(-1.35,Math.min(1.35,drag.pitch0-(y-drag.y0)*0.012));render();return;}if(drag?.type==="pan"){panPixels(x-drag.lastX,y-drag.lastY);drag.lastX=x;drag.lastY=y;return;}if(drag?.type==="box"||drag?.type==="selbox"){drag.x1=x;drag.y1=y;render();return;}if(x<0||y<0||x>r.width||y>r.height)return;const p=s2w(x,y);
-  if(navMode==="measure"&&MEASURE.p1&&!MEASURE.p2){MEASURE.temp=snapPoint(p);render();updateHover(p,null);return;}
+window.addEventListener("mousemove",e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;if(drag?.type==="tyrerot"){tyreCam.yaw=drag.yaw0+(x-drag.x0)*0.012;tyreCam.pitch=Math.max(-1.35,Math.min(1.35,drag.pitch0-(y-drag.y0)*0.012));render();return;}if(drag?.type==="varmove"){const v=VARIANTS[CUR];v.mdx=(v.mdx||0)+(x-drag.lastX)/view.scale;v.mdy=(v.mdy||0)-(y-drag.lastY)/view.scale;drag.lastX=x;drag.lastY=y;render();return;}if(drag?.type==="pan"){panPixels(x-drag.lastX,y-drag.lastY);drag.lastX=x;drag.lastY=y;return;}if(drag?.type==="box"||drag?.type==="selbox"){drag.x1=x;drag.y1=y;render();return;}if(x<0||y<0||x>r.width||y>r.height)return;const p=s2w(x,y);
+  if(navMode==="measure"){const sn=snapWorld(p);SNAP_HL=sn.snapped?{p:sn.p,kind:sn.kind}:null;if(MEASURE.p1&&!MEASURE.p2)MEASURE.temp=sn.p;render();updateHover(sn.p,null);return;}
+  SNAP_HL=null;
   if(VIEW_MODE!=="single"){updateHover(p,null);return;}
   if(EDIT.mode==="delete"){const he=entityAt(p);if(he!==HOVER_ENT){HOVER_ENT=he;render();}updateHover(p,null);return;}
   if(EDIT.mode==="bridge"){updateHover(p,null);return;}
@@ -1000,9 +1028,10 @@ window.addEventListener("mousemove",e=>{const r=cv.getBoundingClientRect(),x=e.c
     tip.style.top=Math.max(6,y-tip.offsetHeight-12)+"px";
   }else tip.style.display="none";
   });
-cv.addEventListener("mouseleave",()=>{const t=$("hoverTip");if(t)t.style.display="none";});
+cv.addEventListener("mouseleave",()=>{const t=$("hoverTip");if(t)t.style.display="none";if(SNAP_HL){SNAP_HL=null;render();}});
 window.addEventListener("mouseup",e=>{
 if(drag?.type==="tyrerot"){drag=null;cv.classList.remove("grabbing");render();return;}
+if(drag?.type==="varmove"){drag=null;cv.classList.remove("grabbing");render();return;}
 if(drag?.type==="selbox"){
   const dx=Math.abs(drag.x1-drag.x0),dy=Math.abs(drag.y1-drag.y0);
   if(dx<4&&dy<4){
@@ -1028,7 +1057,7 @@ if(e.key==="Escape"){EDIT.mode=null;EDIT.selected.clear();EDIT.bridgeA=null;HOVE
 function updateHover(p,r){const el=$("hoverInfo");if(!BOUNDS){el.textContent="";return;}let s=`x ${p[0].toFixed(2)} · y ${p[1].toFixed(2)}`;if(r)s+=` | ${r.id} · area ${r.area.toFixed(2)} mm² · CG (${r.cx.toFixed(2)}, ${r.cy.toFixed(2)}) · axis dist ${Math.abs(r.cy-AXIS).toFixed(2)} mm ·${r.assigned|| (r.ignored?"ignored":"unassigned")}${r.holes&&r.holes.length?` · ${r.holes.length} hole${r.holes.length===1?"":"s"} excluded`:""}`;el.textContent=s;}
 /* ---------------- variants ---------------- */
 const VCOLORS=["#9fb0c0","#4C78A8","#F58518","#54A24B","#E45756","#B279A2","#72B7B2","#EECA3B","#9D755D","#FF9DA6"];
-function newVariant(name){return {name,fileName:"",dxfText:"",fingerprint:"",ents:[],bounds:null,graph:null,regions:[],raster:null,mode:"vector",axis:0,dupes:0,results:[],undoStack:[],redoStack:[],visible:true};}
+function newVariant(name){return {name,fileName:"",dxfText:"",fingerprint:"",ents:[],bounds:null,graph:null,regions:[],raster:null,mode:"vector",axis:0,dupes:0,results:[],undoStack:[],redoStack:[],visible:true,mdx:0,mdy:0};}
 let VARIANTS=[newVariant("Variant 1")],CUR=0,VIEW_MODE="single";
 function saveCur(){const v=VARIANTS[CUR];if(!v)return;Object.assign(v,{ents:ENT,bounds:BOUNDS,graph:GRAPH,regions:REGIONS,fingerprint:FINGERPRINT,fileName:FILE_NAME,dxfText:DXF_TEXT,mode:MODE,axis:AXIS,side:SIDE,centre:CENTRE,raster,results,undoStack,redoStack,dupes:DUPES_REMOVED});}
 function loadCur(i){CUR=i;const v=VARIANTS[i];
@@ -1155,11 +1184,33 @@ function showAssignPop(r){
 
 /* ---------------- measure tool ---------------- */
 let MEASURE={p1:null,p2:null,temp:null};
-function snapPoint(p){
-  if(GRAPH&&GRAPH.nodes){let best=null,bd=10/view.scale;
-    for(const q of GRAPH.nodes){const d=Math.hypot(q[0]-p[0],q[1]-p[1]);if(d<bd){bd=d;best=q;}}
-    if(best)return [best[0],best[1]];}
-  return [p[0],p[1]];
+function gridStep(){const target=62/view.scale,pow=Math.pow(10,Math.floor(Math.log10(target)));for(const m of [1,2,5,10])if(m*pow>=target)return m*pow;return 10*pow;}
+// Snap the cursor to the nearest drawing vertex (preferred), else grid intersection.
+function snapWorld(p){
+  if(!SNAP)return {p:[p[0],p[1]],snapped:false,kind:null};
+  const thr=9/view.scale;let best=null,bd=thr*thr;
+  const verts=(GRAPH&&GRAPH.nodes)?GRAPH.nodes:[];
+  for(const q of verts){const dx=q[0]-p[0],dy=q[1]-p[1],d=dx*dx+dy*dy;if(d<bd){bd=d;best=q;}}
+  if(best)return {p:[best[0],best[1]],snapped:true,kind:"vertex"};
+  if(SHOW_GRID){const s=gridStep(),gx=Math.round(p[0]/s)*s,gy=Math.round(p[1]/s)*s,dx=gx-p[0],dy=gy-p[1];if(dx*dx+dy*dy<=thr*thr)return {p:[gx,gy],snapped:true,kind:"grid"};}
+  return {p:[p[0],p[1]],snapped:false,kind:null};
+}
+function snapPoint(p){return snapWorld(p).p;}
+function drawGrid(w,h){
+  if(!SHOW_GRID)return;const s=gridStep();
+  const c0=s2w(0,h),c1=s2w(w,0); // world corners (screen y flipped)
+  const x0=Math.floor(c0[0]/s)*s,x1=Math.ceil(c1[0]/s)*s,y0=Math.floor(c0[1]/s)*s,y1=Math.ceil(c1[1]/s)*s;
+  ctx.save();ctx.lineWidth=1;ctx.font="10px ui-monospace,monospace";
+  const maj=n=>(((Math.round(n/s)%5)+5)%5)===0;
+  for(let x=x0;x<=x1+1e-6;x+=s){const sx=Math.round(w2s([x,0])[0])+0.5,m=maj(x);ctx.strokeStyle=m?"rgba(140,152,168,.30)":"rgba(140,152,168,.12)";ctx.beginPath();ctx.moveTo(sx,0);ctx.lineTo(sx,h);ctx.stroke();if(m){ctx.fillStyle="rgba(140,152,168,.5)";ctx.fillText(x.toFixed(s<1?1:0),sx+2,h-3);}}
+  for(let y=y0;y<=y1+1e-6;y+=s){const sy=Math.round(w2s([0,y])[1])+0.5,m=maj(y);ctx.strokeStyle=m?"rgba(140,152,168,.30)":"rgba(140,152,168,.12)";ctx.beginPath();ctx.moveTo(0,sy);ctx.lineTo(w,sy);ctx.stroke();if(m){ctx.fillStyle="rgba(140,152,168,.5)";ctx.fillText(y.toFixed(s<1?1:0),3,sy-3);}}
+  ctx.fillStyle="rgba(140,152,168,.7)";ctx.textAlign="right";ctx.fillText(`grid ${s} mm`,w-6,14);ctx.textAlign="left";ctx.restore();
+}
+function drawSnapMarker(){
+  if(!SNAP_HL)return;const s=w2s(SNAP_HL.p);ctx.save();
+  ctx.strokeStyle=SNAP_HL.kind==="vertex"?"#39c06a":"#9a86d0";ctx.lineWidth=1.4;
+  ctx.strokeRect(s[0]-5,s[1]-5,10,10);
+  ctx.beginPath();ctx.moveTo(s[0]-8,s[1]);ctx.lineTo(s[0]+8,s[1]);ctx.moveTo(s[0],s[1]-8);ctx.lineTo(s[0],s[1]+8);ctx.stroke();ctx.restore();
 }
 function drawMeasure(){
   const a=MEASURE.p1,b=MEASURE.p2||MEASURE.temp;
@@ -1184,14 +1235,15 @@ function drawMeasure(){
 
 /* ---------------- overlay mode ---------------- */
 function variantView(i){const v=VARIANTS[i];
-  return i===CUR?{ents:ENT,regions:REGIONS,axis:AXIS,bounds:BOUNDS,name:v.name}
-               :{ents:v.ents||[],regions:v.regions||[],axis:v.axis||0,bounds:v.bounds,name:v.name};}
+  return i===CUR?{ents:ENT,regions:REGIONS,axis:AXIS,bounds:BOUNDS,name:v.name,mdx:v.mdx||0,mdy:v.mdy||0}
+               :{ents:v.ents||[],regions:v.regions||[],axis:v.axis||0,bounds:v.bounds,name:v.name,mdx:v.mdx||0,mdy:v.mdy||0};}
 function variantOffset(vv){
   // Align variants for overlay: match X-centre (mid-width) and the rotation
   // axis Y, so equal radii and the tyre centreline line up across designs.
+  // Plus any manual "Move" offset the user has dragged for this variant.
   const b0=variantView(0);
-  if(!vv.bounds||!b0.bounds)return [0,0];
-  return [((b0.bounds.minX+b0.bounds.maxX)/2)-((vv.bounds.minX+vv.bounds.maxX)/2),b0.axis-vv.axis];
+  if(!vv.bounds||!b0.bounds)return [(vv.mdx||0),(vv.mdy||0)];
+  return [((b0.bounds.minX+b0.bounds.maxX)/2)-((vv.bounds.minX+vv.bounds.maxX)/2)+(vv.mdx||0),b0.axis-vv.axis+(vv.mdy||0)];
 }
 function renderOverlay(){
   const comp=$("overlayComp").value;
@@ -1379,7 +1431,7 @@ function renderTyreFront(){
 }
 
 function renderTyre(){updateTyreOD();if(TYRE_VIEW==="front")renderTyreFront();else renderTyre3D();}
-function setViewButtons(mode){for(const id of ["viewSingle","viewOverlay","viewTyre"])$(id).classList.remove("active");$(mode==="overlay"?"viewOverlay":mode==="tyre"?"viewTyre":"viewSingle").classList.add("active");const ov=mode==="overlay";$("overlayComp").style.display=ov?"":"none";$("overlayAll").style.display=ov?"":"none";$("overlayNone").style.display=ov?"":"none";$("tyreCtrls").style.display=mode==="tyre"?"inline-flex":"none";}
+function setViewButtons(mode){for(const id of ["viewSingle","viewOverlay","viewTyre"])$(id).classList.remove("active");$(mode==="overlay"?"viewOverlay":mode==="tyre"?"viewTyre":"viewSingle").classList.add("active");const ov=mode==="overlay";$("overlayComp").style.display=ov?"":"none";$("overlayAll").style.display=ov?"":"none";$("overlayNone").style.display=ov?"":"none";$("overlayReset").style.display=ov?"":"none";$("tyreCtrls").style.display=mode==="tyre"?"inline-flex":"none";}
 $("viewSingle").onclick=()=>{VIEW_MODE="single";setViewButtons("single");hidePop();renderTabs();render();};
 $("viewOverlay").onclick=()=>{saveCur();VIEW_MODE="overlay";setViewButtons("overlay");hidePop();renderTabs();render();};
 $("viewTyre").onclick=()=>{if(VIEW_MODE==="single")saveCur();VIEW_MODE="tyre";setViewButtons("tyre");hidePop();updateTyreOD();renderTabs();render();};
@@ -1389,6 +1441,7 @@ $("odSet").onclick=calibrateFromOD;
 $("odia").addEventListener("keydown",e=>{if(e.key==="Enter")calibrateFromOD();});
 $("overlayAll").onclick=()=>{VARIANTS.forEach(v=>v.visible=true);renderTabs();render();};
 $("overlayNone").onclick=()=>{VARIANTS.forEach(v=>v.visible=false);renderTabs();render();};
+$("overlayReset").onclick=()=>{VARIANTS.forEach(v=>{v.mdx=0;v.mdy=0;});render();setStatus("Manual profile positions reset.","ok");};
 $("overlayComp").onchange=()=>render();
 function updateOverlayComp(){
   const oc=$("overlayComp");if(!oc)return;const cur=oc.value;
@@ -1402,6 +1455,24 @@ const CMP_METRICS={weight_g:"Weight (g)",area_mm2:"Area (mm²)",volume_cm3:"Volu
 function sortArrow(active,dir){return active?(dir>0?" ▲":" ▼"):"";}
 function variantResultsList(){
   return VARIANTS.map((v,i)=>({name:v.name,i,results:(i===CUR?results:(v.results||[]))})).filter(x=>x.results&&x.results.length);
+}
+// A full (non-sortable) component results table for one variant, with a totals row.
+function plainResultsTable(rows,title){
+  if(!rows||!rows.length)return `<div class="card"><h2>${escapeHtml(title)}</h2><div class="muted">No results computed for this variant — run “Compute all variants”.</div></div>`;
+  const RC=[["region_count","Regions"],["area_mm2","Area mm²"],["centroid_distance_mm","CG dist mm"],["volume_cm3","Volume cm³"],["weight_g","Weight g"],["surface_area_mm2","Surface mm²"],["polar_MOI","Polar MOI"],["radius_of_gyration_mm","RoG mm"],["pct","% wt"]];
+  let h=`<div class="card"><h2>${escapeHtml(title)}</h2><div class="tablewrap"><table><thead><tr><th>Component</th>`;
+  for(const [,l] of RC)h+=`<th>${l}</th>`;h+=`</tr></thead><tbody>`;
+  for(const r of rows)h+=`<tr class="${r.axis_crossing?'rowwarn':''}"><td>${escapeHtml(r.component)}${r.full_factor===2?' <span class="muted">×2</span>':''}${r.areal?' <span class="muted">kg/m²</span>':''}</td><td>${r.region_count}</td><td>${fmt(r.area_mm2)}</td><td>${fmt(r.centroid_distance_mm)}</td><td>${fmt(r.volume_cm3)}</td><td>${fmt(r.weight_g)}</td><td>${fmt(r.surface_area_mm2)}</td><td>${fmt(r.polar_MOI)}</td><td>${fmt(r.radius_of_gyration_mm)}</td><td>${fmt(r.pct)}</td></tr>`;
+  const sum=k=>rows.reduce((s,r)=>s+(+r[k]||0),0);
+  h+=`<tr style="font-weight:700;border-top:2px solid var(--mut)"><td>TOTAL</td><td>${rows.reduce((s,r)=>s+r.region_count,0)}</td><td>${fmt(sum('area_mm2'))}</td><td>—</td><td>${fmt(sum('volume_cm3'))}</td><td>${fmt(sum('weight_g'))}</td><td>${fmt(sum('surface_area_mm2'))}</td><td>${fmt(sum('polar_MOI'))}</td><td>—</td><td>${fmt(sum('pct'))}</td></tr>`;
+  return h+`</tbody></table></div></div>`;
+}
+function allVariantsHTML(){
+  const list=variantResultsList();
+  if(list.length<2)return "";
+  let h=`<h2 style="color:var(--mut);font-size:12px;letter-spacing:.06em;text-transform:uppercase;margin:14px 0 6px">Component results — all variants</h2>`;
+  for(const x of list)h+=plainResultsTable(x.results,x.name+(x.i===0?" (base)":""));
+  return h;
 }
 function comparisonHTML(){
   const list=variantResultsList();
@@ -1436,6 +1507,48 @@ function comparisonHTML(){
   h+='<div class="row" style="margin-top:8px"><button id="compareCsv">Export comparison CSV</button></div></div>';
   return h;
 }
+/* ---------------- brief PDF report (print / save-as-PDF, offline) ---------------- */
+function profilesImage(wpx=980,hpx=640){
+  const c=document.createElement("canvas");c.width=wpx;c.height=hpx;const g=c.getContext("2d");
+  g.fillStyle="#ffffff";g.fillRect(0,0,wpx,hpx);
+  let mnx=Infinity,mxx=-Infinity,mny=Infinity,mxy=-Infinity;const items=[];
+  for(let i=0;i<VARIANTS.length;i++){const vv=variantView(i);if(!vv.bounds||!vv.ents.length)continue;if(VARIANTS[i].visible===false)continue;
+    const [dx,dy]=variantOffset(vv),col=i===0?"#333333":VCOLORS[i%VCOLORS.length];items.push({vv,dx,dy,col,i});
+    mnx=Math.min(mnx,vv.bounds.minX+dx);mxx=Math.max(mxx,vv.bounds.maxX+dx);mny=Math.min(mny,vv.bounds.minY+dy);mxy=Math.max(mxy,vv.bounds.maxY+dy);}
+  if(!items.length)return null;
+  const pad=34,sc=Math.min((wpx-2*pad)/((mxx-mnx)||1),(hpx-2*pad)/((mxy-mny)||1));
+  const ox=(wpx-(mxx-mnx)*sc)/2-mnx*sc,oy=hpx-((hpx-(mxy-mny)*sc)/2)+mny*sc;
+  const W=(x,y)=>[ox+x*sc,oy-y*sc];
+  for(const {vv,dx,dy,col} of items){g.strokeStyle=col;g.lineWidth=1.2;
+    for(const e of vv.ents){g.beginPath();e.pts.forEach((p,k)=>{const s=W(p[0]+dx,p[1]+dy);k?g.lineTo(s[0],s[1]):g.moveTo(s[0],s[1]);});g.stroke();}}
+  g.font="13px sans-serif";let ly=22;for(const {vv,col,i} of items){g.fillStyle=col;g.fillRect(12,ly-11,13,13);g.fillStyle="#222";g.fillText(vv.name+(i===0?" (base)":""),30,ly);ly+=19;}
+  return c.toDataURL("image/png");
+}
+function reportHTML(){
+  if(!results.length)computeResults();
+  const list=variantResultsList();
+  const useList=list.length?list:[{name:(FILE_NAME||"baseline").replace(/\.dxf$/i,""),i:0,results}];
+  const img=profilesImage();
+  const RC=[["region_count","Regions"],["area_mm2","Area mm²"],["centroid_distance_mm","CG dist"],["volume_cm3","Volume cm³"],["weight_g","Weight g"],["surface_area_mm2","Surface mm²"],["polar_MOI","Polar MOI"],["radius_of_gyration_mm","RoG mm"],["pct","% wt"]];
+  const tbl=(rows,name)=>{if(!rows||!rows.length)return "";
+    let t=`<h3>${escapeHtml(name)}</h3><table><thead><tr><th class="l">Component</th>`+RC.map(([,l])=>`<th>${l}</th>`).join("")+`</tr></thead><tbody>`;
+    for(const r of rows)t+=`<tr><td class="l">${escapeHtml(r.component)}${r.full_factor===2?" ×2":""}${r.areal?" (kg/m²)":""}</td><td>${r.region_count}</td><td>${fmt(r.area_mm2)}</td><td>${fmt(r.centroid_distance_mm)}</td><td>${fmt(r.volume_cm3)}</td><td>${fmt(r.weight_g)}</td><td>${fmt(r.surface_area_mm2)}</td><td>${fmt(r.polar_MOI)}</td><td>${fmt(r.radius_of_gyration_mm)}</td><td>${fmt(r.pct)}</td></tr>`;
+    const sum=k=>rows.reduce((s,r)=>s+(+r[k]||0),0);
+    t+=`<tr class="tot"><td class="l">TOTAL</td><td>${rows.reduce((s,r)=>s+r.region_count,0)}</td><td>${fmt(sum('area_mm2'))}</td><td>—</td><td>${fmt(sum('volume_cm3'))}</td><td>${fmt(sum('weight_g'))}</td><td>${fmt(sum('surface_area_mm2'))}</td><td>${fmt(sum('polar_MOI'))}</td><td>—</td><td>${fmt(sum('pct'))}</td></tr>`;
+    return t+`</tbody></table>`;};
+  const css=`*{font-family:Arial,Helvetica,sans-serif}body{margin:24px;color:#1a1a1a}h1{font-size:19px;margin:0 0 2px}h2{font-size:14px;border-bottom:1px solid #ccc;padding-bottom:3px;margin:18px 0 8px}h3{font-size:13px;margin:12px 0 4px}.meta{color:#666;font-size:11px;margin-bottom:6px}table{border-collapse:collapse;width:100%;font-size:10.5px;margin-bottom:8px}th,td{border:1px solid #ccc;padding:3px 5px;text-align:right}th{background:#f0f0f0}.l{text-align:left}.tot{font-weight:bold;background:#f7f7f7}img{max-width:100%;border:1px solid #ddd}@media print{body{margin:10mm}}`;
+  let body=`<h1>Tyre Cross-Section — Summary Report</h1><div class="meta">Generated ${new Date().toLocaleString()} · rotation axis Y = ${AXIS.toFixed(1)} mm · working ${SIDE} half${useList.length>1?` · ${useList.length} variants`:""}</div>`;
+  if(img)body+=`<h2>Superimposed profiles</h2><img src="${img}">`;
+  body+=`<h2>Component results — full tyre</h2>`;
+  for(const x of useList)body+=tbl(x.results,x.name+(x.i===0?" (base)":""));
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Tyre report</title><style>${css}</style></head><body>${body}</body></html>`;
+}
+function openReport(){
+  const html=reportHTML();
+  const w=window.open("","_blank");
+  if(w){w.document.open();w.document.write(html+`<script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script>`);w.document.close();setStatus("Report opened — use your browser's Print dialog and choose “Save as PDF”.","ok");}
+  else{const blob=new Blob([html],{type:"text/html"});download("tyre_report.html",html,"text/html");setStatus("Popup blocked — downloaded the report as HTML; open it and print to PDF.","ok");}
+}
 function exportComparisonCsv(){
   const list=variantResultsList();
   const keys=["area_mm2","centroid_distance_mm","volume_cm3","weight_g","surface_area_mm2","polar_MOI","radius_of_gyration_mm"];
@@ -1450,8 +1563,8 @@ $("computeAll").onclick=()=>{
     if(!has)continue;
     switchVariant(i);computeResults();done++;
   }
-  switchVariant(orig);
-  setStatus(`Computed results for ${done} variant${done===1?"":"s"}.`,"ok");
+  switchVariant(orig);computeResults();
+  setStatus(`Computed results for ${done} variant${done===1?"":"s"}. Per-variant tables are shown below.`,"ok");
 };
 
 /* ---------------- extend-to-curve repair ---------------- */
@@ -1600,9 +1713,12 @@ function exportDXF(){
   setStatus("Edited DXF exported (curves are written as fine polylines).","ok");
 }
 $("exportDxf").onclick=exportDXF;
-function setNav(n){navMode=n;if(typeof EDIT!=="undefined"&&EDIT.mode){EDIT.mode=null;EDIT.bridgeA=null;HOVER_ENT=null;syncEditUI();}syncNav();render();}
-function syncNav(){document.querySelectorAll("[data-nav]").forEach(b=>b.classList.toggle("active",b.dataset.nav===navMode));cv.style.cursor=navMode==="pan"?"grab":(navMode==="box"||navMode==="measure")?"crosshair":"default";}
+function setNav(n){navMode=n;if(typeof EDIT!=="undefined"&&EDIT.mode){EDIT.mode=null;EDIT.bridgeA=null;HOVER_ENT=null;syncEditUI();}syncNav();render();
+  if(n==="move")setStatus(VIEW_MODE==="overlay"?`Move — drag to reposition the active variant (${VARIANTS[CUR]?.name||""}); click a variant tab to choose which. Use “Reset positions” to clear.`:"Switch to Overlay view to use Move (drag one profile to align it over another).","");}
+function syncNav(){document.querySelectorAll("[data-nav]").forEach(b=>b.classList.toggle("active",b.dataset.nav===navMode));cv.style.cursor=navMode==="pan"?"grab":navMode==="move"?"move":(navMode==="box"||navMode==="measure")?"crosshair":"default";}
 document.querySelectorAll("[data-nav]").forEach(b=>b.onclick=()=>setNav(b.dataset.nav));$("zoomIn").onclick=()=>{const {w,h}=cssSize();zoomAt(1.3,w/2,h/2);};$("zoomOut").onclick=()=>{const {w,h}=cssSize();zoomAt(1/1.3,w/2,h/2);};$("fit").onclick=fitView;syncNav();
+$("gridBtn").onclick=()=>{SHOW_GRID=!SHOW_GRID;$("gridBtn").classList.toggle("active",SHOW_GRID);render();};
+$("snapBtn").onclick=()=>{SNAP=!SNAP;$("snapBtn").classList.toggle("active",SNAP);if(!SNAP)SNAP_HL=null;render();};
 
 function updateDiagnostics(){const el=$("diagnostics");if(!BOUNDS){el.textContent="No drawing loaded.";return;}if(MODE==="vector"&&GRAPH){const open=GRAPH.openNodeIds.filter(id=>Math.abs(GRAPH.nodes[id][1]-AXIS)>TOL*2);el.innerHTML=`${GRAPH.rawSegmentCount} flattened segments · ${GRAPH.edges.length} cleaned edges · ${REGIONS.length} enclosed regions · <span class="${open.length?'warn':'good'}">${open.length} unresolved open endpoint${open.length===1?'':'s'}</span>. Red dots mark unresolved endpoints — use the Edit drawing card to delete construction lines or bridge real gaps.`;}else{const conv=raster?.convergencePct;el.innerHTML=`Raster fallback: ${REGIONS.length} enclosed pixel regions at ${raster?.res||"—"} px. Pixel boundaries were converted to selectable polygons. ${conv==null?"Convergence not evaluated.":`Resolution check: <span class="${conv>1?"warn":"good"}">${conv.toFixed(2)}% area difference</span> and ${raster.secondaryCount} regions at the secondary resolution.`}`;}}
 
@@ -1622,6 +1738,21 @@ function computeResults(){
     const M=componentMult(regs);
     m.full_factor=M;m.crosses_centreline=(SIDE!=="both")&&regs.some(crossesCentre);
     if(M!==1)for(const k of ["area_mm2","volume_cm3","weight_g","surface_area_mm2","polar_MOI","boundary_length_mm"])m[k]*=M;
+    // land ratio (tread grooves) + calendered (areal-density) handling
+    const land=Math.max(0,Math.min(100,(LAND[n]??100)))/100;
+    m.land_pct=land*100;
+    if((UNIT[n]||"vol")==="areal"){
+      // Calendered sheet: weight = areal density (kg/m²) × developed sheet area.
+      // A thin band's revolved boundary is ~2× one face, so developed ≈ surface/2.
+      // kg/m² × mm² × 1e-3 = grams. RoG is geometric (SG-independent), so MOI = w·RoG².
+      const developed=m.surface_area_mm2/2;
+      m.weight_g=(SG[n]||0)*developed*1e-3*land;
+      m.polar_MOI=m.weight_g*m.radius_of_gyration_mm*m.radius_of_gyration_mm;
+      m.density_unit="kg/m²";m.areal=true;
+    }else{
+      if(land!==1){m.weight_g*=land;m.volume_cm3*=land;m.polar_MOI*=land;}
+      m.density_unit="g/cm³";m.areal=false;
+    }
     results.push(m);
   }
   const total=results.reduce((s,r)=>s+r.weight_g,0);results.forEach(r=>r.pct=total?r.weight_g/total*100:0);VARIANTS[CUR].results=results;showResults(total);return results;
@@ -1638,8 +1769,11 @@ function showResults(total){LAST_TOTAL=total;let h=`<div class="summary"><span>T
   h+=`</tr></thead><tbody>`;
   let rrows=results.slice();
   if(RES_SORT.key){const k=RES_SORT.key;rrows.sort((a,b)=>{const va=a[k],vb=b[k];return RES_SORT.dir*(typeof va==="string"?va.localeCompare(vb):(va-vb));});}
-  for(const r of rrows)h+=`<tr class="${r.axis_crossing?'rowwarn':''}"><td>${escapeHtml(r.component)}${r.full_factor===2?' <span class="muted" title="side component doubled for the full tyre">×2</span>':''}${r.crosses_centreline?' <span class="warn" title="crosses centreline — counted once">⚠</span>':''}</td><td>${r.region_count}</td><td>${fmt(r.area_mm2)}</td><td>${fmt(r.centroid_distance_mm)}</td><td>${fmt(r.volume_cm3)}</td><td>${fmt(r.weight_g)}</td><td>${fmt(r.surface_area_mm2)}</td><td>${fmt(r.polar_MOI)}</td><td>${fmt(r.radius_of_gyration_mm)}</td><td>${fmt(r.pct)}</td></tr>`;
-  h+=`</tbody></table></div></div><div class="card"><h2>Weight by component</h2>`;const max=Math.max(1,...results.map(r=>r.weight_g));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.weight_g/max)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.weight_g,1)} g</b></div>`;h+=`</div><div class="card"><h2>Polar MOI by component</h2>`;const mm=Math.max(1,...results.map(r=>r.polar_MOI));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.polar_MOI/mm)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.polar_MOI)}</b></div>`;h+=`</div></div>`;h+=comparisonHTML();$("results").innerHTML=h;
+  const badge=r=>`${r.full_factor===2?' <span class="muted" title="side component doubled for the full tyre">×2</span>':''}${r.crosses_centreline?' <span class="warn" title="crosses centreline — counted once">⚠</span>':''}${r.areal?' <span class="muted" title="calendered — areal density kg/m²">kg/m²</span>':''}${(r.land_pct!=null&&r.land_pct<100)?` <span class="muted" title="tread land ratio">land ${fmt(r.land_pct,0)}%</span>`:''}`;
+  for(const r of rrows)h+=`<tr class="${r.axis_crossing?'rowwarn':''}"><td>${escapeHtml(r.component)}${badge(r)}</td><td>${r.region_count}</td><td>${fmt(r.area_mm2)}</td><td>${fmt(r.centroid_distance_mm)}</td><td>${fmt(r.volume_cm3)}</td><td>${fmt(r.weight_g)}</td><td>${fmt(r.surface_area_mm2)}</td><td>${fmt(r.polar_MOI)}</td><td>${fmt(r.radius_of_gyration_mm)}</td><td>${fmt(r.pct)}</td></tr>`;
+  {const sum=k=>results.reduce((s,r)=>s+(+r[k]||0),0);
+   h+=`<tr style="font-weight:700;border-top:2px solid var(--mut)"><td>TOTAL</td><td>${results.reduce((s,r)=>s+r.region_count,0)}</td><td>${fmt(sum('area_mm2'))}</td><td>—</td><td>${fmt(sum('volume_cm3'))}</td><td>${fmt(sum('weight_g'))}</td><td>${fmt(sum('surface_area_mm2'))}</td><td>${fmt(sum('polar_MOI'))}</td><td>—</td><td>${fmt(sum('pct'))}</td></tr>`;}
+  h+=`</tbody></table></div></div><div class="card"><h2>Weight by component</h2>`;const max=Math.max(1,...results.map(r=>r.weight_g));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.weight_g/max)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.weight_g,1)} g</b></div>`;h+=`</div><div class="card"><h2>Polar MOI by component</h2>`;const mm=Math.max(1,...results.map(r=>r.polar_MOI));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.polar_MOI/mm)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.polar_MOI)}</b></div>`;h+=`</div></div>`;h+=comparisonHTML();h+=allVariantsHTML();$("results").innerHTML=h;
   const cbtn=$("compareCsv");if(cbtn)cbtn.onclick=exportComparisonCsv;
   document.querySelectorAll("#results th[data-sk]").forEach(th=>th.onclick=()=>{
     const k=th.dataset.sk;
@@ -1653,13 +1787,13 @@ function showResults(total){LAST_TOTAL=total;let h=`<div class="summary"><span>T
   });
   const ms=$("cmpMetric");if(ms)ms.onchange=()=>{CMP_METRIC=ms.value;showResults(LAST_TOTAL);};
 }
-$("csv").onclick=()=>{if(!results.length)computeResults();const keys=["component","region_count","full_factor","area_mm2","centroid_x","centroid_y","centroid_distance_mm","volume_cm3","weight_g","surface_area_mm2","boundary_length_mm","boundary_centroid_y","polar_MOI","radius_of_gyration_mm","sg","pct","axis_crossing","crosses_centreline"],rows=[keys.join(","),...results.map(r=>keys.map(k=>r[k]??"").join(","))];download((FILE_NAME||"tyre").replace(/\.dxf$/i,"")+"_results.csv",rows.join("\n"),"text/csv");};
+$("csv").onclick=()=>{if(!results.length)computeResults();const keys=["component","region_count","full_factor","density_unit","sg","land_pct","area_mm2","centroid_x","centroid_y","centroid_distance_mm","volume_cm3","weight_g","surface_area_mm2","boundary_length_mm","boundary_centroid_y","polar_MOI","radius_of_gyration_mm","pct","axis_crossing","crosses_centreline"],rows=[keys.join(","),...results.map(r=>keys.map(k=>r[k]??"").join(","))];download((FILE_NAME||"tyre").replace(/\.dxf$/i,"")+"_results.csv",rows.join("\n"),"text/csv");};
 
 function regionFeature(r,list=REGIONS){const d=Math.hypot(BOUNDS.width,BOUNDS.height)||1,w=Math.max(r.bbox.maxX-r.bbox.minX,1e-9),h=Math.max(r.bbox.maxY-r.bbox.minY,1e-9),neighbors=list.filter(x=>x!==r).map(x=>Math.hypot(x.cx-r.cx,x.cy-r.cy)/d).sort((a,b)=>a-b).slice(0,3);return {aspect:w/h,neighbors};}
-function projectObject(){return {version:2,tool:"Tyre Cross-Section Analysis",fileName:FILE_NAME,fingerprint:FINGERPRINT,axisY:AXIS,side:SIDE,centre:Number.isFinite(CENTRE)?CENTRE:null,mode:MODE,tolerance:TOL,components:COMPONENTS,specificGravity:SG,notes:$("notes").value,regions:REGIONS.map(r=>({id:r.id,cx:r.cx,cy:r.cy,area:r.area,bbox:r.bbox,feature:regionFeature(r),assigned:r.assigned,ignored:r.ignored,source:r.source}))};}
+function projectObject(){return {version:2,tool:"Tyre Cross-Section Analysis",fileName:FILE_NAME,fingerprint:FINGERPRINT,axisY:AXIS,side:SIDE,centre:Number.isFinite(CENTRE)?CENTRE:null,mode:MODE,tolerance:TOL,components:COMPONENTS,specificGravity:SG,unit:UNIT,land:LAND,notes:$("notes").value,regions:REGIONS.map(r=>({id:r.id,cx:r.cx,cy:r.cy,area:r.area,bbox:r.bbox,feature:regionFeature(r),assigned:r.assigned,ignored:r.ignored,source:r.source}))};}
 $("saveProject").onclick=()=>download((FILE_NAME||"tyre").replace(/\.dxf$/i,"")+".tyreproject.json",JSON.stringify(projectObject(),null,2));
 $("projectFile").addEventListener("change",e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{try{const p=JSON.parse(rd.result);importProject(p);}catch(err){alert("Could not load project: "+err.message);}};rd.readAsText(f);});
-function importProject(p){if(!REGIONS.length){alert("Load the corresponding DXF before importing a project.");return;}pushUndo();COMPONENTS=[...(p.components||[])];SG={...DEFAULT_SG,...(p.specificGravity||{})};$("notes").value=p.notes||"";const axv=Number.isFinite(p.axisY)?p.axisY:(Number.isFinite(p.axisX)?p.axisX:null);if(axv!=null){AXIS=axv;$("axis").value=AXIS.toFixed(2);}if(p.side){SIDE=p.side;$("side").value=SIDE;}CENTRE=Number.isFinite(p.centre)?p.centre:NaN;$("centre").value=centrelineX().toFixed(2);const diag=Math.hypot(BOUNDS.width,BOUNDS.height)||1,used=new Set();let matched=0;
+function importProject(p){if(!REGIONS.length){alert("Load the corresponding DXF before importing a project.");return;}pushUndo();COMPONENTS=[...(p.components||[])];SG={...DEFAULT_SG,...(p.specificGravity||{})};UNIT={...(p.unit||{})};LAND={...(p.land||{})};for(const n of COMPONENTS)ensureComponent(n);$("notes").value=p.notes||"";const axv=Number.isFinite(p.axisY)?p.axisY:(Number.isFinite(p.axisX)?p.axisX:null);if(axv!=null){AXIS=axv;$("axis").value=AXIS.toFixed(2);}if(p.side){SIDE=p.side;$("side").value=SIDE;}CENTRE=Number.isFinite(p.centre)?p.centre:NaN;$("centre").value=centrelineX().toFixed(2);const diag=Math.hypot(BOUNDS.width,BOUNDS.height)||1,used=new Set();let matched=0;
   for(const s of p.regions||[]){if(!s.assigned&&!s.ignored)continue;let best=null,bc=Infinity;for(const r of REGIONS){if(used.has(r.id))continue;let cost;if(p.fingerprint===FINGERPRINT&&r.id===s.id)cost=0;else{const rf=regionFeature(r),sf=s.feature||{},aspectCost=sf.aspect?Math.abs(Math.log(Math.max(rf.aspect,1e-9)/Math.max(sf.aspect,1e-9))):0;let neighCost=0;if(sf.neighbors?.length){const n=Math.min(sf.neighbors.length,rf.neighbors.length);for(let i=0;i<n;i++)neighCost+=Math.abs(sf.neighbors[i]-rf.neighbors[i]);neighCost/=Math.max(n,1);}cost=3*Math.hypot(r.cx-s.cx,r.cy-s.cy)/diag+.8*Math.abs(Math.log(Math.max(r.area,1e-9)/Math.max(s.area,1e-9)))+.35*aspectCost+.5*neighCost;}if(cost<bc){bc=cost;best=r;}}if(best&&bc<.35){best.assigned=s.assigned||null;best.ignored=!!s.ignored;used.add(best.id);matched++;}}
   renderAll();updateDiagnostics();setStatus(`${matched} saved region assignments transferred from ${escapeHtml(p.fileName||"project")}.`,"ok");}
 
@@ -1683,6 +1817,13 @@ window.__autoAssignFromBase=autoAssignFromBase;
 window.__entDump=()=>ENT.map((e,i)=>{let L=0;for(let k=0;k<e.pts.length-1;k++)L+=Math.hypot(e.pts[k+1][0]-e.pts[k][0],e.pts[k+1][1]-e.pts[k][1]);return {i,type:e.type,npts:e.pts.length,len:+L.toFixed(5),a:e.pts[0].map(v=>+v.toFixed(3)),z:e.pts[e.pts.length-1].map(v=>+v.toFixed(3))};});
 window.__openDump=()=>GRAPH?GRAPH.openNodeIds.map(id=>GRAPH.nodes[id].map(v=>+v.toFixed(3))):[];
 window.__cmpDebug=()=>({cur:CUR,list:variantResultsList().map(x=>({i:x.i,n:x.results.length})),htmlLen:comparisonHTML().length});
+$("pdfReport").onclick=openReport;
+window.__reportHTML=()=>reportHTML();
+window.__profilesImage=()=>profilesImage();
+window.__setUnit=(name,unit)=>{UNIT[name]=unit;if(unit==="areal"&&SG[name]==null)SG[name]=CALENDERED_DEFAULTS[name]??4.0;renderSG();};
+window.__setLand=(name,v)=>{LAND[name]=v;renderSG();};
+window.__moveVariant=(i,dx,dy)=>{VARIANTS[i].mdx=(VARIANTS[i].mdx||0)+dx;VARIANTS[i].mdy=(VARIANTS[i].mdy||0)+dy;render();};
+window.__variantOffset=i=>variantOffset(variantView(i));
 window.__assignRegion=(id,name)=>{const r=REGIONS.find(x=>x.id===id);if(r)assignRegionTo(r,name);};
 window.__side=()=>({side:SIDE,centre:centrelineX()});
 window.__setSide=v=>{SIDE=v;$("side").value=v;render();updateProgress();};
