@@ -3,15 +3,422 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Tire Layout &amp; Properties Tool (TLPT)</title>
+<title>Tyre Layout &amp; Properties Tool | Apollo Tyres</title>
 <style>
 :root{--bg:#0e1620;--panel:#172431;--panel2:#111c27;--ink:#e8eef4;--mut:#9fb0c0;--line:#2c3d4d;--accent:#4C78A8;--good:#39a65a;--bad:#e15b5a;--warn:#e8a33d}
 @media(prefers-color-scheme:light){:root{--bg:#f4f7fa;--panel:#fff;--panel2:#f7f9fb;--ink:#17212b;--mut:#607080;--line:#d9e1e8}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif}button,input,select,textarea{font:inherit}button,input,select,textarea{color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:6px 8px}button{cursor:pointer}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button:hover{filter:brightness(1.08)}button:disabled{opacity:.4;cursor:not-allowed}.active{outline:2px solid #77b7ff;outline-offset:-1px}header{height:54px;padding:10px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px}header h1{font-size:17px;margin:0}header .sub{color:var(--mut);font-size:12px}#layout{display:grid;grid-template-columns:355px 1fr;height:calc(100vh - 54px)}aside{padding:12px;overflow:auto;border-right:1px solid var(--line)}main{min-width:0;display:flex;flex-direction:column;overflow:hidden}#tabGeo{flex:1;display:flex;flex-direction:column;min-height:0}#tabRes{flex:1;overflow:auto}.maintabs{display:flex;gap:4px;padding:8px 12px 0;flex:0 0 auto}.mtab{background:var(--panel2);border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;padding:7px 16px;font-weight:600;color:var(--mut)}.mtab.active{background:var(--panel);color:var(--ink);border-color:var(--line);box-shadow:0 -2px 0 var(--accent) inset}.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:10px}.card h2{margin:0 0 8px;color:var(--mut);font-size:12px;letter-spacing:.06em;text-transform:uppercase}.row{display:flex;gap:7px;align-items:center}.row>*{min-width:0;flex:1}.row .auto{flex:0 0 auto}.stack>*+*{margin-top:7px}label{display:block;color:var(--mut);font-size:12px;margin:6px 0 3px}input[type=file]{width:100%;padding:5px}input[type=number],input[type=text],select,textarea{width:100%}.hint{font-size:12px;color:var(--mut);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px}.toolbar{display:flex;gap:5px;flex-wrap:wrap}.toolbar button{padding:5px 8px}.toolbar .spacer{flex:1}.status{font-size:12px;color:var(--mut);padding-top:6px}.status.ok,.good{color:var(--good)}.status.bad,.warn{color:var(--warn)}#cvwrap{position:relative;flex:1;margin:10px 12px 12px;min-height:300px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}#cv{display:block;width:100%;height:100%;touch-action:none}#hoverInfo{position:absolute;left:8px;bottom:8px;right:8px;padding:5px 8px;border-radius:6px;background:rgba(0,0,0,.55);color:#eaf2f8;font-size:11px;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.comp{display:flex;align-items:center;gap:5px;border-bottom:1px solid var(--line);padding:4px 2px}.comp.selected{background:rgba(76,120,168,.15)}.pill{width:11px;height:11px;border-radius:3px;flex:0 0 auto}.namebtn{background:none;border:0;padding:3px;text-align:left;flex:1;font-weight:600}.tiny{padding:2px 6px;background:var(--panel2)}.muted{color:var(--mut);font-size:12px}#progress{font-size:12px;margin-top:7px}.sgtab{width:100%;border-collapse:collapse}.sgtab td{padding:3px}.sgtab td:first-child{width:65%}.sgtab input{padding:4px 6px}#results{padding:12px}.summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}.summary span{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:6px 10px}.resultgrid{display:grid;grid-template-columns:minmax(600px,2fr) minmax(260px,1fr);gap:10px}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:6px 7px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}.rowwarn{background:rgba(232,163,61,.12)}.alert{border:1px solid var(--warn);background:rgba(232,163,61,.1);padding:8px;border-radius:8px;margin-bottom:10px}.barrow{display:grid;grid-template-columns:90px minmax(10px,260px) 90px;gap:6px;align-items:center;margin:5px 0;font-size:12px}.barrow i{height:14px;border-radius:3px}.barrow b{font-weight:500;color:var(--mut)}.testpass,.testfail{padding:8px;border-radius:8px;font-size:12px}.testpass{border:1px solid var(--good);background:rgba(57,166,90,.1)}.testfail{border:1px solid var(--bad);background:rgba(225,91,90,.1)}textarea{min-height:55px;resize:vertical}.grabbing{cursor:grabbing!important}.diagbar{position:absolute;top:8px;left:8px;max-width:min(58%,620px);z-index:6;pointer-events:none;background:rgba(20,30,40,.86);color:#eaf2f8;border:1px solid rgba(255,255,255,.16);border-radius:8px;padding:7px 11px;font-size:11.5px;line-height:1.4;box-shadow:0 3px 12px rgba(0,0,0,.35)}.diagbar b{color:#fff}.diagbar .warn{color:#ffcf7a}.diagbar .good{color:#7fe0a0}.editstep{display:flex;gap:8px;align-items:flex-start;margin-top:8px}.editstep>div{flex:1;min-width:0}.stepnum{flex:0 0 auto;width:19px;height:19px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:2px}.editlbl{font-size:11.5px;color:var(--mut);margin-bottom:4px}.helppanel{padding:16px 20px;overflow:auto;max-width:900px;line-height:1.55}.helppanel h3{margin:18px 0 6px;font-size:15px;color:var(--ink)}.helppanel h3:first-child{margin-top:4px}.helppanel p,.helppanel li{color:var(--ink);font-size:13.5px}.helppanel ul,.helppanel ol{margin:4px 0 4px 4px;padding-left:20px}.helppanel li{margin:4px 0}.helppanel .lead{color:var(--mut);font-size:13px;margin-bottom:6px}.helppanel .do{color:var(--good);font-weight:600}.helppanel .dont{color:var(--warn);font-weight:600}.helppanel code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:12px}@media(max-width:1000px){#layout{grid-template-columns:310px 1fr}.resultgrid{grid-template-columns:1fr}}@media(max-width:760px){#layout{display:block;height:auto}aside{border-right:0}main{grid-template-rows:auto 480px auto}#cvwrap{height:480px}.resultgrid{grid-template-columns:1fr}}
+
+/* Explicit theme selection overrides the operating-system preference. */
+html[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0e1620;--panel:#172431;--panel2:#111c27;--ink:#e8eef4;
+  --mut:#9fb0c0;--line:#2c3d4d;--accent:#4C78A8;
+  --good:#39a65a;--bad:#e15b5a;--warn:#e8a33d;
+}
+html[data-theme="light"]{
+  color-scheme:light;
+  --bg:#f4f7fa;--panel:#fff;--panel2:#f7f9fb;--ink:#17212b;
+  --mut:#607080;--line:#d9e1e8;--accent:#1f5d96;
+  --good:#218544;--bad:#c53f3e;--warn:#b96d08;
+}
+.theme-control{display:flex;align-items:center;gap:7px;margin-left:auto}
+.theme-control label{margin:0;color:var(--mut);font-size:11px;font-weight:700;letter-spacing:.055em;text-transform:uppercase}
+.theme-control select{width:auto;min-width:108px;padding:6px 28px 6px 9px;background-color:var(--panel2)}
+.cad-ribbon{
+  display:flex;align-items:stretch;gap:0;margin:8px 12px 0;
+  border:1px solid var(--line);border-radius:10px;background:var(--panel);
+  box-shadow:0 3px 12px rgba(0,0,0,.08);overflow-x:auto;flex:0 0 auto
+}
+.cad-ribbon-title{
+  display:flex;align-items:center;padding:8px 12px;background:var(--panel2);
+  border-right:1px solid var(--line);font-size:11px;font-weight:800;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--mut);white-space:nowrap
+}
+.cad-toolgroup{display:flex;align-items:center;gap:5px;padding:7px 9px;border-right:1px solid var(--line);white-space:nowrap}
+.cad-toolgroup:last-of-type{border-right:0}
+.cad-toolgroup-name{font-size:10px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:.045em;margin-right:2px}
+.cad-ribbon button{padding:5px 8px}
+.cad-ribbon-status{display:flex;align-items:center;min-width:150px;padding:7px 10px;margin-left:auto;color:var(--mut);font-size:11px;background:var(--panel2)}
+@media(max-width:760px){
+  .theme-control label{display:none}
+  .theme-control select{min-width:92px}
+  .cad-ribbon{margin:8px 10px 0}
+  .cad-ribbon-status{display:none}
+}
+
 </style>
+
+<style id="professional-ui-refresh">
+:root{
+  --bg:#f3f6f9;
+  --panel:#ffffff;
+  --panel2:#f7f9fb;
+  --ink:#17212b;
+  --mut:#687787;
+  --line:#dce3e9;
+  --accent:#195d9b;
+  --accent-strong:#114b80;
+  --accent-soft:#eaf3fb;
+  --good:#198754;
+  --bad:#c73e3e;
+  --warn:#b76b08;
+  --shadow-sm:0 1px 2px rgba(15,23,42,.05);
+  --shadow-md:0 8px 24px rgba(15,23,42,.08);
+  --radius:12px;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#0b1219;--panel:#121d27;--panel2:#0e1821;--ink:#edf3f8;
+    --mut:#9bacbb;--line:#263746;--accent:#4f9bd8;--accent-strong:#6aafe4;
+    --accent-soft:rgba(79,155,216,.13);--shadow-sm:0 1px 2px rgba(0,0,0,.2);
+    --shadow-md:0 10px 28px rgba(0,0,0,.28)
+  }
+}
+html{background:var(--bg)}
+body{
+  font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  letter-spacing:.005em;
+}
+button,input,select,textarea{transition:border-color .16s ease,box-shadow .16s ease,background .16s ease,transform .08s ease}
+button,input,select,textarea{border-radius:8px;min-height:34px}
+input,select,textarea{background:var(--panel);border-color:var(--line)}
+input:focus,select:focus,textarea:focus{
+  outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(25,93,155,.13)
+}
+button{
+  background:var(--panel);border-color:var(--line);font-weight:600;color:var(--ink);
+  box-shadow:var(--shadow-sm)
+}
+button:hover{filter:none;border-color:#b8c5d0;background:var(--panel2)}
+button:active{transform:translateY(1px)}
+button.primary{
+  background:linear-gradient(180deg,var(--accent),var(--accent-strong));
+  border-color:var(--accent-strong);box-shadow:0 4px 12px rgba(25,93,155,.2)
+}
+button.primary:hover{background:var(--accent-strong);border-color:var(--accent-strong)}
+button:focus-visible{outline:3px solid rgba(25,93,155,.22);outline-offset:2px}
+.app-header{
+  height:66px;padding:10px 18px;background:var(--panel);border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:12px;position:relative;z-index:20;box-shadow:var(--shadow-sm)
+}
+.brand-mark{
+  width:38px;height:38px;border-radius:10px;display:grid;place-items:center;
+  background:linear-gradient(145deg,var(--accent),var(--accent-strong));color:#fff;
+  font-weight:800;font-size:13px;letter-spacing:.04em;box-shadow:0 5px 14px rgba(25,93,155,.22)
+}
+.brand-copy{min-width:0}
+.app-header h1{font-size:17px;line-height:1.25;margin:0;font-weight:750;letter-spacing:-.01em}
+.app-header .sub{display:block;margin-top:2px;color:var(--mut);font-size:11.5px}
+.header-meta{margin-left:auto}
+.product-badge{
+  display:inline-flex;align-items:center;min-height:28px;padding:4px 10px;border-radius:999px;
+  background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:700;border:1px solid rgba(25,93,155,.16)
+}
+#layout{grid-template-columns:372px minmax(0,1fr);height:calc(100vh - 66px)}
+aside{
+  padding:14px;background:var(--panel2);border-right:1px solid var(--line);
+  scrollbar-width:thin;scrollbar-color:#b8c4ce transparent
+}
+main{background:var(--bg)}
+.card{
+  border-radius:var(--radius);padding:13px 14px;margin-bottom:12px;
+  border:1px solid var(--line);box-shadow:var(--shadow-sm)
+}
+.card:hover{border-color:#cbd5dd}
+.card h2{
+  margin:0 0 10px;color:var(--ink);font-size:11px;line-height:1.3;
+  letter-spacing:.085em;font-weight:800
+}
+label{font-size:11.5px;font-weight:650;color:var(--mut);margin:8px 0 4px}
+.hint{
+  font-size:11.7px;line-height:1.55;background:var(--panel2);border-color:var(--line);
+  border-left:3px solid var(--accent);padding:9px 10px
+}
+.status{padding:7px 2px 0;line-height:1.45}
+.toolbar{gap:6px}
+.toolbar button{padding:6px 9px}
+.maintabs{
+  gap:2px;padding:10px 14px 0;background:var(--bg);border-bottom:1px solid var(--line)
+}
+.mtab{
+  border:0;border-radius:8px 8px 0 0;padding:9px 15px;background:transparent;
+  box-shadow:none;color:var(--mut);position:relative
+}
+.mtab:hover{background:var(--panel2);border-color:transparent}
+.mtab.active{
+  background:var(--panel);color:var(--ink);box-shadow:none;outline:0;border:1px solid var(--line);
+  border-bottom-color:var(--panel);margin-bottom:-1px
+}
+.mtab.active:after{
+  content:"";position:absolute;left:14px;right:14px;bottom:0;height:2px;background:var(--accent);border-radius:2px
+}
+#variantBar{
+  margin:0!important;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--line)
+}
+#cvwrap{
+  margin:14px;border-radius:14px;border-color:var(--line);box-shadow:var(--shadow-md);background:var(--panel)
+}
+#navOverlay{
+  background:color-mix(in srgb,var(--panel) 88%,transparent)!important;
+  border:1px solid var(--line);box-shadow:var(--shadow-md);backdrop-filter:blur(10px)
+}
+#navOverlay button{min-height:30px;padding:4px 8px;box-shadow:none}
+#diagnostics{
+  background:rgba(17,29,39,.9);border-color:rgba(255,255,255,.13);
+  box-shadow:0 5px 18px rgba(0,0,0,.22);backdrop-filter:blur(8px)
+}
+#hoverInfo{left:10px;right:10px;bottom:10px;border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(8px)}
+.comp{padding:6px 4px;border-radius:7px;border-bottom:0;margin-bottom:2px}
+.comp:hover{background:var(--panel2)}
+.comp.selected{background:var(--accent-soft)}
+.namebtn{font-weight:650}
+.summary span{box-shadow:var(--shadow-sm);font-weight:650}
+#results{padding:16px}
+.tablewrap{border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+th{
+  position:sticky;top:0;background:var(--panel2);z-index:1;color:var(--mut);
+  font-size:11px;text-transform:uppercase;letter-spacing:.045em
+}
+th,td{padding:8px 9px}
+tr:hover td{background:var(--panel2)}
+.alert,.testpass,.testfail{border-radius:10px;padding:10px 11px}
+.helppanel{padding:22px 26px}
+.helppanel h3{font-size:15px}
+.helppanel .lead{font-size:13px;line-height:1.6}
+.stepnum{box-shadow:0 3px 9px rgba(25,93,155,.22)}
+.active{outline:2px solid var(--accent);outline-offset:-2px}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#bec8d1;border:3px solid transparent;background-clip:padding-box;border-radius:999px}
+::-webkit-scrollbar-track{background:transparent}
+@media(max-width:1100px){#layout{grid-template-columns:330px minmax(0,1fr)}}
+@media(max-width:760px){
+  .app-header{height:auto;min-height:66px;padding:10px 12px}
+  .header-meta{display:none}
+  #layout{display:block;height:auto}
+  aside{border-right:0;border-bottom:1px solid var(--line)}
+  #cvwrap{height:520px;margin:10px}
+  #variantBar{padding:8px 10px}
+  .maintabs{overflow-x:auto;padding-left:10px}
+}
+</style>
+
+
+<style id="high-contrast-visual-refresh">
+/* Stronger, fully opaque surfaces and clearer visual hierarchy. */
+:root{
+  --bg:#e7edf3;
+  --panel:#ffffff;
+  --panel2:#eef3f7;
+  --ink:#10202d;
+  --mut:#526575;
+  --line:#bdcad5;
+  --accent:#0068a6;
+  --accent-strong:#004f82;
+  --accent-soft:#d9ecf8;
+  --good:#147a46;
+  --bad:#bd3434;
+  --warn:#a85c00;
+  --shadow-sm:0 2px 5px rgba(22,42,58,.10);
+  --shadow-md:0 12px 30px rgba(22,42,58,.16);
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#07121b;
+    --panel:#102330;
+    --panel2:#0b1a25;
+    --ink:#f1f7fb;
+    --mut:#adc0ce;
+    --line:#355064;
+    --accent:#35a7e8;
+    --accent-strong:#1685c2;
+    --accent-soft:#153f59;
+    --good:#55c985;
+    --bad:#ff7676;
+    --warn:#ffc069;
+    --shadow-sm:0 2px 6px rgba(0,0,0,.32);
+    --shadow-md:0 14px 34px rgba(0,0,0,.45);
+  }
+}
+html[data-theme="light"]{
+  --bg:#e7edf3;
+  --panel:#ffffff;
+  --panel2:#eef3f7;
+  --ink:#10202d;
+  --mut:#526575;
+  --line:#bdcad5;
+  --accent:#0068a6;
+  --accent-strong:#004f82;
+  --accent-soft:#d9ecf8;
+  --good:#147a46;
+  --bad:#bd3434;
+  --warn:#a85c00;
+  --shadow-sm:0 2px 5px rgba(22,42,58,.10);
+  --shadow-md:0 12px 30px rgba(22,42,58,.16);
+}
+html[data-theme="dark"]{
+  --bg:#07121b;
+  --panel:#102330;
+  --panel2:#0b1a25;
+  --ink:#f1f7fb;
+  --mut:#adc0ce;
+  --line:#355064;
+  --accent:#35a7e8;
+  --accent-strong:#1685c2;
+  --accent-soft:#153f59;
+  --good:#55c985;
+  --bad:#ff7676;
+  --warn:#ffc069;
+  --shadow-sm:0 2px 6px rgba(0,0,0,.32);
+  --shadow-md:0 14px 34px rgba(0,0,0,.45);
+}
+body,main,.maintabs{background:var(--bg)}
+.app-header{
+  background:var(--panel);
+  border-bottom:2px solid var(--accent);
+  box-shadow:0 3px 12px rgba(12,37,54,.16)
+}
+.brand-mark{
+  background:linear-gradient(145deg,#0786c9,var(--accent-strong));
+  box-shadow:0 5px 14px rgba(0,88,145,.32)
+}
+.product-badge{
+  background:var(--accent-soft);
+  border:1px solid var(--accent);
+  color:var(--accent-strong)
+}
+html[data-theme="dark"] .product-badge{color:#bde8ff}
+aside{
+  background:var(--panel2);
+  border-right:2px solid var(--line)
+}
+.card{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-left:4px solid var(--accent);
+  box-shadow:var(--shadow-sm)
+}
+.card:hover{
+  border-color:var(--accent);
+  border-left-color:var(--accent-strong);
+  box-shadow:0 6px 18px rgba(22,42,58,.14)
+}
+.card h2{color:var(--accent-strong)}
+html[data-theme="dark"] .card h2{color:#83d1fa}
+input,select,textarea,button{
+  background:var(--panel);
+  border-color:var(--line)
+}
+input:hover,select:hover,textarea:hover{border-color:var(--accent)}
+button:hover{
+  background:var(--accent-soft);
+  border-color:var(--accent);
+  color:var(--ink)
+}
+button.primary{
+  background:linear-gradient(180deg,#0786c9,var(--accent-strong));
+  border-color:var(--accent-strong);
+  box-shadow:0 5px 14px rgba(0,88,145,.28)
+}
+button.primary:hover{background:var(--accent-strong);color:#fff}
+.hint{
+  background:var(--panel2);
+  border:1px solid var(--line);
+  border-left:4px solid var(--accent);
+  color:var(--ink)
+}
+.mtab{
+  background:var(--panel2);
+  border:1px solid var(--line);
+  color:var(--mut)
+}
+.mtab.active{
+  background:var(--panel);
+  color:var(--accent-strong);
+  border-color:var(--line);
+  border-bottom-color:var(--panel)
+}
+html[data-theme="dark"] .mtab.active{color:#9edcff}
+#variantBar{
+  background:var(--panel);
+  border-bottom:2px solid var(--line)
+}
+.cad-ribbon{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-top:3px solid var(--accent);
+  box-shadow:var(--shadow-sm)
+}
+.cad-ribbon-title{
+  background:var(--accent-strong);
+  color:#fff;
+  border-right:1px solid var(--accent)
+}
+.cad-toolgroup{background:var(--panel);border-right:1px solid var(--line)}
+.cad-ribbon-status{background:var(--panel2);color:var(--ink)}
+#cvwrap{
+  background:var(--panel);
+  border:2px solid var(--line);
+  box-shadow:var(--shadow-md)
+}
+#navOverlay{
+  background:var(--panel)!important;
+  border:1px solid var(--line);
+  box-shadow:var(--shadow-md);
+  backdrop-filter:none
+}
+#diagnostics{
+  background:#102a3a;
+  color:#f4f9fc;
+  border:1px solid #4c7188;
+  box-shadow:0 6px 18px rgba(0,0,0,.32);
+  backdrop-filter:none
+}
+#hoverInfo{
+  background:#102a3a;
+  color:#f4f9fc;
+  border:1px solid #4c7188;
+  backdrop-filter:none
+}
+#hoverTip,#assignPop{
+  background:var(--panel)!important;
+  color:var(--ink)!important;
+  border:1px solid var(--line)!important;
+  box-shadow:var(--shadow-md)!important
+}
+.comp{border:1px solid transparent}
+.comp:hover{background:var(--accent-soft);border-color:var(--line)}
+.comp.selected{background:var(--accent-soft);border-color:var(--accent)}
+.tablewrap{border:1px solid var(--line);box-shadow:var(--shadow-sm)}
+th{background:var(--accent-strong);color:#fff}
+tr:nth-child(even) td{background:var(--panel2)}
+tr:hover td{background:var(--accent-soft)}
+.summary span{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-left:3px solid var(--accent)
+}
+.theme-control select{background:var(--panel);border-color:var(--accent)}
+</style>
+
 </head>
 <body>
-<header><h1>Tire Layout &amp; Properties Tool (TLPT)</h1><span class="sub">Developed by CV Technology Predevelopment, Apollo Tyres</span></header>
+<header class="app-header">
+  <div class="brand-mark" aria-hidden="true">TL</div>
+  <div class="brand-copy">
+    <h1>Tyre Layout &amp; Properties Tool</h1>
+    <span class="sub">CV Technology Predevelopment · Apollo Tyres</span>
+  </div>
+  <div class="header-meta"><span class="product-badge">Engineering workspace</span></div>
+  <div class="theme-control">
+    <label for="themeSelect">Theme</label>
+    <select id="themeSelect" aria-label="Interface theme">
+      <option value="system">System</option>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
+  </div>
+</header>
 <div id="layout">
 <aside>
   <div class="card stack">
@@ -36,24 +443,14 @@
     <label>Rotation axis Y (mm)</label><div class="row"><input type="number" id="axis" value="0" step="0.1"><button id="axisAuto" class="auto">Auto</button></div>
     <label>Outer diameter — tread to tread (mm)</label><div class="row"><input type="number" id="odia" placeholder="e.g. 1113" step="0.1"><button id="odSet" class="auto">Set axis</button></div>
     <div class="hint">The rotation axis is the wheel/hub centreline — a horizontal line below the visible profile. It need <b>not</b> be at Y = 0: DXFs are often exported at arbitrary coordinates. The robust way to place it is the <b>outer diameter</b> — the tread surface (highest points in the drawing) sits at radius OD/2, so entering OD sets the axis to <code>Y_tread − OD/2</code>. Every point's Y-distance from this line is its true radius.</div>
-    <label>Work on</label><select id="side"><option value="right" selected>Right half — assign the right side, doubled for the full tyre</option><option value="both">Both halves — full section, counted once</option></select>
+    <label>Work on</label><select id="side"><option value="right">Right half — assign the right side, doubled for the full tyre</option><option value="both" selected>Both halves — full section, counted once</option></select>
     <label>Section centreline X (mm)</label><div class="row"><input type="number" id="centre" step="0.1"><button id="centreAuto" class="auto">Auto</button></div>
     <div class="hint" id="sideHint">Pick <b>Right half</b> for the common case: the left half is hidden, you assign only the right side, and the tool <b>doubles</b> it for the full tyre. A component that crosses the centreline (e.g. the crown wrapping over the top) is counted once and flagged. Pick <b>Both halves</b> when both sides are drawn and you want to assign each independently (e.g. asymmetric grooves) — everything is counted once.</div>
   </div>
 
-  <div class="card stack">
-    <h2>4 · Clean up the drawing</h2>
-    <div class="hint">Real DXF exports often carry construction lines, tiny fragments, or small gaps that stop a region from closing. <b>Red dots mark open curve ends.</b> Tidy them here and regions re-detect automatically — your component assignments are kept.</div>
-    <div class="editstep"><span class="stepnum">1</span><div><div class="editlbl">Pick a tool, then click curves in the drawing</div>
-      <div class="toolbar"><button id="editDelete" title="Click curves to select them, then use Delete selected">Select curves</button><button id="editBridge" title="Click two open ends to join them with a straight segment">Bridge a gap</button><button id="editExtend" title="Extend an un-terminated curve tangentially until it meets the next curve">Extend to curve</button></div></div></div>
-    <div class="editstep"><span class="stepnum">2</span><div><div class="editlbl">Remove unwanted geometry</div>
-      <div class="toolbar"><button id="deleteSel" disabled>Delete selected</button><button id="cleanMicro" title="Delete dangling curves shorter than 0.2 mm — the invisible fragments that show up as lone red dots">Clear tiny fragments</button></div></div></div>
-    <div class="toolbar"><button id="editUndo" disabled>Undo</button><button id="editRedo" disabled>Redo</button><span class="spacer"></span><button id="exportDxf">Export cleaned DXF</button></div>
-    <div id="editStatus" class="muted">Editing off.</div>
-  </div>
 
   <div class="card stack">
-    <h2>5 · Quality checks</h2>
+    <h2>4 · Quality checks</h2>
     <div id="qcOpen" class="muted">No drawing loaded.</div>
     <div class="row"><button id="qcPrevOpen" class="auto">◀</button><button id="qcZoomOpen">Zoom to open end</button><button id="qcNextOpen" class="auto">▶</button></div>
     <div id="qcDupes" class="muted"></div>
@@ -62,7 +459,7 @@
   </div>
 
   <div class="card stack">
-    <h2>6 · Assign components</h2>
+    <h2>5 · Assign components</h2>
     <div class="hint">Click a region in the drawing and pick its component from the popup. A component may contain several separate regions. The list below manages names (✎ rename · ○ clear · × delete).</div>
     <div class="row"><select id="compCatalog"><option value="">— choose component —</option><option value="__custom__">Other / custom name…</option></select><button id="addComp" class="auto primary">Add</button></div>
     <div id="compCustomWrap" style="display:none;margin-top:6px"><input id="compName" type="text" placeholder="Custom component name…"></div>
@@ -73,12 +470,12 @@
   </div>
 
   <div class="card stack">
-    <h2>7 · Specific gravity (g/cm³)</h2>
+    <h2>6 · Specific gravity (g/cm³)</h2>
     <table id="sgtab" class="sgtab"></table>
   </div>
 
   <div class="card stack">
-    <h2>8 · Save, transfer, calculate</h2>
+    <h2>7 · Save, transfer, calculate</h2>
     <label>Project notes</label><textarea id="notes" placeholder="Design iteration, tyre size, assumptions…"></textarea>
     <button id="saveProject">Save assignment project</button>
     <label>Load or transfer an earlier project</label><input type="file" id="projectFile" accept=".json,.tyreproject.json">
@@ -109,6 +506,29 @@
         <span id="tyreOD" class="muted" style="margin-left:2px"></span>
       </span>
     </div>
+  </div>
+  <div class="cad-ribbon" role="toolbar" aria-label="Drawing cleanup tools">
+    <div class="cad-ribbon-title">Drawing cleanup</div>
+    <div class="cad-toolgroup">
+      <span class="cad-toolgroup-name">Selection</span>
+      <button id="editDelete" title="Click curves to select them, then delete selected">Select curves</button>
+      <button id="deleteSel" disabled title="Delete the selected curves">Delete selected</button>
+    </div>
+    <div class="cad-toolgroup">
+      <span class="cad-toolgroup-name">Repair</span>
+      <button id="editBridge" title="Click two open ends to join them with a straight segment">Bridge gap</button>
+      <button id="editExtend" title="Extend an unterminated curve tangentially until it meets the next curve">Extend to curve</button>
+      <button id="cleanMicro" title="Delete dangling curves shorter than 0.2 mm">Clear fragments</button>
+    </div>
+    <div class="cad-toolgroup">
+      <span class="cad-toolgroup-name">History</span>
+      <button id="editUndo" disabled title="Undo cleanup edit">Undo</button>
+      <button id="editRedo" disabled title="Redo cleanup edit">Redo</button>
+    </div>
+    <div class="cad-toolgroup">
+      <button id="exportDxf" title="Export the cleaned geometry as a DXF">Export cleaned DXF</button>
+    </div>
+    <div id="editStatus" class="cad-ribbon-status">Editing off.</div>
   </div>
   <div id="cvwrap"><canvas id="cv"></canvas>
   <div id="navOverlay" style="position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:7;background:rgba(20,30,40,.72);padding:4px;border-radius:8px">
@@ -165,6 +585,29 @@
 <script>
 (function(global){
 "use strict";
+
+// Persisted interface theme: System follows the OS, while Light and Dark
+// explicitly override it. Storage access is guarded for restricted browsers.
+(function initTheme(){
+  const root=document.documentElement;
+  let saved="system";
+  try{saved=localStorage.getItem("tlpt-theme")||"system";}catch(_){}
+  if(!["system","light","dark"].includes(saved))saved="system";
+  if(saved==="system")root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme",saved);
+  const select=document.getElementById("themeSelect");
+  if(select){
+    select.value=saved;
+    select.addEventListener("change",()=>{
+      const value=select.value;
+      if(value==="system")root.removeAttribute("data-theme");
+      else root.setAttribute("data-theme",value);
+      try{localStorage.setItem("tlpt-theme",value);}catch(_){}
+      // Canvas colours are theme-dependent, so redraw immediately.
+      if(typeof draw==="function")requestAnimationFrame(draw);
+    });
+  }
+})();
 
 const EPS = 1e-9;
 const F = Number.parseFloat;
@@ -975,7 +1418,7 @@ $("redo").onclick=()=>{if(!redoStack.length)return;undoStack.push(snapshotAssign
 // that half. SIDE = both|left|right. CENTRE = the mid-width X (NaN => auto =
 // geomMidX). In left/right mode you assign only that half; the calculation
 // doubles side components and counts a centreline-crossing component once.
-let SIDE="right", CENTRE=NaN;
+let SIDE="both", CENTRE=NaN;
 // The "Left half" option was retired (Right / Both only). Legacy projects saved
 // with side:"left" still compute correctly, so re-add the option on demand.
 function ensureSideOption(side){const sel=$("side");if(!sel)return;if((side==="left")&&!sel.querySelector('option[value="left"]')){const o=document.createElement("option");o.value="left";o.textContent="Left half — assign the left side, doubled (legacy)";sel.appendChild(o);}}
@@ -1263,9 +1706,9 @@ function showAssignPop(r){
     h+='</div>';
   }
   const catOpts=catalogOptionsHtml();
-  h+='<div class="muted" style="margin:8px 0 3px">Add from TBR component list</div>';
-  h+=`<div class="row"><select id="popCatalog"><option value="">— choose —</option>${catOpts}<option value="__custom__">Other / custom name…</option></select><button id="popAddCat" class="auto primary">Add</button></div>`;
-  h+='<div id="popCustomWrap" style="display:none;margin-top:6px"><input id="popNew" type="text" placeholder="Custom component name…"></div>';
+  h+='<div class="muted" style="margin:8px 0 3px">Choose from TBR component list</div>';
+  h+=`<select id="popCatalog"><option value="">— choose component —</option>${catOpts}<option value="__custom__">Other / custom name…</option></select>`;
+  h+='<div id="popCustomWrap" style="display:none;margin-top:6px"><input id="popNew" type="text" placeholder="Type a custom component name and press Enter…"></div>';
   h+=`<div class="row" style="margin-top:8px"><button id="popIgnore" title="Mark as not a component (air/void)">Ignore</button>${(r.assigned||r.ignored)?'<button id="popClear">Clear</button>':''}<button id="popCancel">Cancel</button></div>`;
   pop.innerHTML=h;pop.style.display="block";
   const wr=wrap.getBoundingClientRect(),pw=pop.offsetWidth,ph=pop.offsetHeight;
@@ -1273,15 +1716,20 @@ function showAssignPop(r){
   pop.style.top=Math.max(6,Math.min(lastClickScreen.y+12,wr.height-ph-6))+"px";
   pop.querySelectorAll(".popComp").forEach(b=>b.onclick=()=>{assignRegionTo(r,b.dataset.name);hidePop();});
   const sel=$("popCatalog"),customWrap=$("popCustomWrap"),customInput=$("popNew");
-  sel.addEventListener("change",()=>{customWrap.style.display=sel.value==="__custom__"?"":"none";if(sel.value==="__custom__")customInput.focus();});
-  $("popAddCat").onclick=()=>{
+  sel.addEventListener("change",()=>{
     const v=sel.value;
+    customWrap.style.display=v==="__custom__"?"":"none";
+    if(v==="__custom__"){customInput.focus();return;}
     if(!v)return;
-    const nm=v==="__custom__"?customInput.value:v;
-    if(!nm||!nm.trim())return;
-    assignRegionTo(r,nm);hidePop();
-  };
-  if(customInput)customInput.addEventListener("keydown",ev=>{if(ev.key==="Enter")$("popAddCat").click();ev.stopPropagation();});
+    assignRegionTo(r,v);hidePop();
+  });
+  if(customInput)customInput.addEventListener("keydown",ev=>{
+    if(ev.key==="Enter"){
+      const nm=customInput.value.trim();
+      if(nm){assignRegionTo(r,nm);hidePop();}
+    }
+    ev.stopPropagation();
+  });
   $("popIgnore").onclick=()=>{pushUndo();r.assigned=null;r.ignored=true;hidePop();renderAll();};
   const pc=$("popClear");if(pc)pc.onclick=()=>{pushUndo();r.assigned=null;r.ignored=false;hidePop();renderAll();};
   $("popCancel").onclick=hidePop;
@@ -1712,7 +2160,162 @@ function reportHTML(){
   if(img)body+=`<h2>Superimposed profiles</h2><img src="${img}">`;
   body+=`<h2>Component results — full tyre</h2>`;
   for(const x of useList)body+=tbl(x.results,x.name+(x.i===0?" (base)":""));
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Tyre report</title><style>${css}</style></head><body>${body}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Tyre report</title><style>${css}</style>
+<style id="professional-ui-refresh">
+:root{
+  --bg:#f3f6f9;
+  --panel:#ffffff;
+  --panel2:#f7f9fb;
+  --ink:#17212b;
+  --mut:#687787;
+  --line:#dce3e9;
+  --accent:#195d9b;
+  --accent-strong:#114b80;
+  --accent-soft:#eaf3fb;
+  --good:#198754;
+  --bad:#c73e3e;
+  --warn:#b76b08;
+  --shadow-sm:0 1px 2px rgba(15,23,42,.05);
+  --shadow-md:0 8px 24px rgba(15,23,42,.08);
+  --radius:12px;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#0b1219;--panel:#121d27;--panel2:#0e1821;--ink:#edf3f8;
+    --mut:#9bacbb;--line:#263746;--accent:#4f9bd8;--accent-strong:#6aafe4;
+    --accent-soft:rgba(79,155,216,.13);--shadow-sm:0 1px 2px rgba(0,0,0,.2);
+    --shadow-md:0 10px 28px rgba(0,0,0,.28)
+  }
+}
+html{background:var(--bg)}
+body{
+  font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  letter-spacing:.005em;
+}
+button,input,select,textarea{transition:border-color .16s ease,box-shadow .16s ease,background .16s ease,transform .08s ease}
+button,input,select,textarea{border-radius:8px;min-height:34px}
+input,select,textarea{background:var(--panel);border-color:var(--line)}
+input:focus,select:focus,textarea:focus{
+  outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(25,93,155,.13)
+}
+button{
+  background:var(--panel);border-color:var(--line);font-weight:600;color:var(--ink);
+  box-shadow:var(--shadow-sm)
+}
+button:hover{filter:none;border-color:#b8c5d0;background:var(--panel2)}
+button:active{transform:translateY(1px)}
+button.primary{
+  background:linear-gradient(180deg,var(--accent),var(--accent-strong));
+  border-color:var(--accent-strong);box-shadow:0 4px 12px rgba(25,93,155,.2)
+}
+button.primary:hover{background:var(--accent-strong);border-color:var(--accent-strong)}
+button:focus-visible{outline:3px solid rgba(25,93,155,.22);outline-offset:2px}
+.app-header{
+  height:66px;padding:10px 18px;background:var(--panel);border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:12px;position:relative;z-index:20;box-shadow:var(--shadow-sm)
+}
+.brand-mark{
+  width:38px;height:38px;border-radius:10px;display:grid;place-items:center;
+  background:linear-gradient(145deg,var(--accent),var(--accent-strong));color:#fff;
+  font-weight:800;font-size:13px;letter-spacing:.04em;box-shadow:0 5px 14px rgba(25,93,155,.22)
+}
+.brand-copy{min-width:0}
+.app-header h1{font-size:17px;line-height:1.25;margin:0;font-weight:750;letter-spacing:-.01em}
+.app-header .sub{display:block;margin-top:2px;color:var(--mut);font-size:11.5px}
+.header-meta{margin-left:auto}
+.product-badge{
+  display:inline-flex;align-items:center;min-height:28px;padding:4px 10px;border-radius:999px;
+  background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:700;border:1px solid rgba(25,93,155,.16)
+}
+#layout{grid-template-columns:372px minmax(0,1fr);height:calc(100vh - 66px)}
+aside{
+  padding:14px;background:var(--panel2);border-right:1px solid var(--line);
+  scrollbar-width:thin;scrollbar-color:#b8c4ce transparent
+}
+main{background:var(--bg)}
+.card{
+  border-radius:var(--radius);padding:13px 14px;margin-bottom:12px;
+  border:1px solid var(--line);box-shadow:var(--shadow-sm)
+}
+.card:hover{border-color:#cbd5dd}
+.card h2{
+  margin:0 0 10px;color:var(--ink);font-size:11px;line-height:1.3;
+  letter-spacing:.085em;font-weight:800
+}
+label{font-size:11.5px;font-weight:650;color:var(--mut);margin:8px 0 4px}
+.hint{
+  font-size:11.7px;line-height:1.55;background:var(--panel2);border-color:var(--line);
+  border-left:3px solid var(--accent);padding:9px 10px
+}
+.status{padding:7px 2px 0;line-height:1.45}
+.toolbar{gap:6px}
+.toolbar button{padding:6px 9px}
+.maintabs{
+  gap:2px;padding:10px 14px 0;background:var(--bg);border-bottom:1px solid var(--line)
+}
+.mtab{
+  border:0;border-radius:8px 8px 0 0;padding:9px 15px;background:transparent;
+  box-shadow:none;color:var(--mut);position:relative
+}
+.mtab:hover{background:var(--panel2);border-color:transparent}
+.mtab.active{
+  background:var(--panel);color:var(--ink);box-shadow:none;outline:0;border:1px solid var(--line);
+  border-bottom-color:var(--panel);margin-bottom:-1px
+}
+.mtab.active:after{
+  content:"";position:absolute;left:14px;right:14px;bottom:0;height:2px;background:var(--accent);border-radius:2px
+}
+#variantBar{
+  margin:0!important;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--line)
+}
+#cvwrap{
+  margin:14px;border-radius:14px;border-color:var(--line);box-shadow:var(--shadow-md);background:var(--panel)
+}
+#navOverlay{
+  background:color-mix(in srgb,var(--panel) 88%,transparent)!important;
+  border:1px solid var(--line);box-shadow:var(--shadow-md);backdrop-filter:blur(10px)
+}
+#navOverlay button{min-height:30px;padding:4px 8px;box-shadow:none}
+#diagnostics{
+  background:rgba(17,29,39,.9);border-color:rgba(255,255,255,.13);
+  box-shadow:0 5px 18px rgba(0,0,0,.22);backdrop-filter:blur(8px)
+}
+#hoverInfo{left:10px;right:10px;bottom:10px;border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(8px)}
+.comp{padding:6px 4px;border-radius:7px;border-bottom:0;margin-bottom:2px}
+.comp:hover{background:var(--panel2)}
+.comp.selected{background:var(--accent-soft)}
+.namebtn{font-weight:650}
+.summary span{box-shadow:var(--shadow-sm);font-weight:650}
+#results{padding:16px}
+.tablewrap{border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+th{
+  position:sticky;top:0;background:var(--panel2);z-index:1;color:var(--mut);
+  font-size:11px;text-transform:uppercase;letter-spacing:.045em
+}
+th,td{padding:8px 9px}
+tr:hover td{background:var(--panel2)}
+.alert,.testpass,.testfail{border-radius:10px;padding:10px 11px}
+.helppanel{padding:22px 26px}
+.helppanel h3{font-size:15px}
+.helppanel .lead{font-size:13px;line-height:1.6}
+.stepnum{box-shadow:0 3px 9px rgba(25,93,155,.22)}
+.active{outline:2px solid var(--accent);outline-offset:-2px}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#bec8d1;border:3px solid transparent;background-clip:padding-box;border-radius:999px}
+::-webkit-scrollbar-track{background:transparent}
+@media(max-width:1100px){#layout{grid-template-columns:330px minmax(0,1fr)}}
+@media(max-width:760px){
+  .app-header{height:auto;min-height:66px;padding:10px 12px}
+  .header-meta{display:none}
+  #layout{display:block;height:auto}
+  aside{border-right:0;border-bottom:1px solid var(--line)}
+  #cvwrap{height:520px;margin:10px}
+  #variantBar{padding:8px 10px}
+  .maintabs{overflow-x:auto;padding-left:10px}
+}
+</style>
+
+</head><body>${body}</body></html>`;
 }
 function openReport(){
   const html=reportHTML();
