@@ -7,7 +7,7 @@
 <style>
 :root{--bg:#0e1620;--panel:#172431;--panel2:#111c27;--ink:#e8eef4;--mut:#9fb0c0;--line:#2c3d4d;--accent:#4C78A8;--good:#39a65a;--bad:#e15b5a;--warn:#e8a33d}
 @media(prefers-color-scheme:light){:root{--bg:#f4f7fa;--panel:#fff;--panel2:#f7f9fb;--ink:#17212b;--mut:#607080;--line:#d9e1e8}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif}button,input,select,textarea{font:inherit}button,input,select,textarea{color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:6px 8px}button{cursor:pointer}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button:hover{filter:brightness(1.08)}button:disabled{opacity:.4;cursor:not-allowed}.active{outline:2px solid #77b7ff;outline-offset:-1px}header{height:54px;padding:10px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px}header h1{font-size:17px;margin:0}header .sub{color:var(--mut);font-size:12px}#layout{display:grid;grid-template-columns:355px 1fr;height:calc(100vh - 54px)}aside{padding:12px;overflow:auto;border-right:1px solid var(--line)}main{min-width:0;display:grid;grid-template-rows:auto minmax(420px,58vh) auto;overflow:auto}.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:10px}.card h2{margin:0 0 8px;color:var(--mut);font-size:12px;letter-spacing:.06em;text-transform:uppercase}.row{display:flex;gap:7px;align-items:center}.row>*{min-width:0;flex:1}.row .auto{flex:0 0 auto}.stack>*+*{margin-top:7px}label{display:block;color:var(--mut);font-size:12px;margin:6px 0 3px}input[type=file]{width:100%;padding:5px}input[type=number],input[type=text],select,textarea{width:100%}.hint{font-size:12px;color:var(--mut);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px}.toolbar{display:flex;gap:5px;flex-wrap:wrap}.toolbar button{padding:5px 8px}.toolbar .spacer{flex:1}.status{font-size:12px;color:var(--mut);padding-top:6px}.status.ok,.good{color:var(--good)}.status.bad,.warn{color:var(--warn)}#cvwrap{position:relative;margin:12px 12px 0;min-height:440px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}#cv{display:block;width:100%;height:100%;touch-action:none}#hoverInfo{position:absolute;left:8px;bottom:8px;right:8px;padding:5px 8px;border-radius:6px;background:rgba(0,0,0,.55);color:#eaf2f8;font-size:11px;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.comp{display:flex;align-items:center;gap:5px;border-bottom:1px solid var(--line);padding:4px 2px}.comp.selected{background:rgba(76,120,168,.15)}.pill{width:11px;height:11px;border-radius:3px;flex:0 0 auto}.namebtn{background:none;border:0;padding:3px;text-align:left;flex:1;font-weight:600}.tiny{padding:2px 6px;background:var(--panel2)}.muted{color:var(--mut);font-size:12px}#progress{font-size:12px;margin-top:7px}.sgtab{width:100%;border-collapse:collapse}.sgtab td{padding:3px}.sgtab td:first-child{width:65%}.sgtab input{padding:4px 6px}#results{padding:12px}.summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}.summary span{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:6px 10px}.resultgrid{display:grid;grid-template-columns:minmax(600px,2fr) minmax(260px,1fr);gap:10px}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:6px 7px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}.rowwarn{background:rgba(232,163,61,.12)}.alert{border:1px solid var(--warn);background:rgba(232,163,61,.1);padding:8px;border-radius:8px;margin-bottom:10px}.barrow{display:grid;grid-template-columns:90px minmax(10px,260px) 90px;gap:6px;align-items:center;margin:5px 0;font-size:12px}.barrow i{height:14px;border-radius:3px}.barrow b{font-weight:500;color:var(--mut)}.testpass,.testfail{padding:8px;border-radius:8px;font-size:12px}.testpass{border:1px solid var(--good);background:rgba(57,166,90,.1)}.testfail{border:1px solid var(--bad);background:rgba(225,91,90,.1)}textarea{min-height:55px;resize:vertical}.grabbing{cursor:grabbing!important}@media(max-width:1000px){#layout{grid-template-columns:310px 1fr}.resultgrid{grid-template-columns:1fr}}@media(max-width:760px){#layout{display:block;height:auto}aside{border-right:0}main{grid-template-rows:auto 480px auto}#cvwrap{height:480px}.resultgrid{grid-template-columns:1fr}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif}button,input,select,textarea{font:inherit}button,input,select,textarea{color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:6px 8px}button{cursor:pointer}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button:hover{filter:brightness(1.08)}button:disabled{opacity:.4;cursor:not-allowed}.active{outline:2px solid #77b7ff;outline-offset:-1px}header{height:54px;padding:10px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px}header h1{font-size:17px;margin:0}header .sub{color:var(--mut);font-size:12px}#layout{display:grid;grid-template-columns:355px 1fr;height:calc(100vh - 54px)}aside{padding:12px;overflow:auto;border-right:1px solid var(--line)}main{min-width:0;display:flex;flex-direction:column;overflow:hidden}#tabGeo{flex:1;display:flex;flex-direction:column;min-height:0}#tabRes{flex:1;overflow:auto}.maintabs{display:flex;gap:4px;padding:8px 12px 0;flex:0 0 auto}.mtab{background:var(--panel2);border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;padding:7px 16px;font-weight:600;color:var(--mut)}.mtab.active{background:var(--panel);color:var(--ink);border-color:var(--line);box-shadow:0 -2px 0 var(--accent) inset}.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:10px}.card h2{margin:0 0 8px;color:var(--mut);font-size:12px;letter-spacing:.06em;text-transform:uppercase}.row{display:flex;gap:7px;align-items:center}.row>*{min-width:0;flex:1}.row .auto{flex:0 0 auto}.stack>*+*{margin-top:7px}label{display:block;color:var(--mut);font-size:12px;margin:6px 0 3px}input[type=file]{width:100%;padding:5px}input[type=number],input[type=text],select,textarea{width:100%}.hint{font-size:12px;color:var(--mut);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px}.toolbar{display:flex;gap:5px;flex-wrap:wrap}.toolbar button{padding:5px 8px}.toolbar .spacer{flex:1}.status{font-size:12px;color:var(--mut);padding-top:6px}.status.ok,.good{color:var(--good)}.status.bad,.warn{color:var(--warn)}#cvwrap{position:relative;flex:1;margin:10px 12px 12px;min-height:300px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}#cv{display:block;width:100%;height:100%;touch-action:none}#hoverInfo{position:absolute;left:8px;bottom:8px;right:8px;padding:5px 8px;border-radius:6px;background:rgba(0,0,0,.55);color:#eaf2f8;font-size:11px;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.comp{display:flex;align-items:center;gap:5px;border-bottom:1px solid var(--line);padding:4px 2px}.comp.selected{background:rgba(76,120,168,.15)}.pill{width:11px;height:11px;border-radius:3px;flex:0 0 auto}.namebtn{background:none;border:0;padding:3px;text-align:left;flex:1;font-weight:600}.tiny{padding:2px 6px;background:var(--panel2)}.muted{color:var(--mut);font-size:12px}#progress{font-size:12px;margin-top:7px}.sgtab{width:100%;border-collapse:collapse}.sgtab td{padding:3px}.sgtab td:first-child{width:65%}.sgtab input{padding:4px 6px}#results{padding:12px}.summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}.summary span{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:6px 10px}.resultgrid{display:grid;grid-template-columns:minmax(600px,2fr) minmax(260px,1fr);gap:10px}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:6px 7px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}.rowwarn{background:rgba(232,163,61,.12)}.alert{border:1px solid var(--warn);background:rgba(232,163,61,.1);padding:8px;border-radius:8px;margin-bottom:10px}.barrow{display:grid;grid-template-columns:90px minmax(10px,260px) 90px;gap:6px;align-items:center;margin:5px 0;font-size:12px}.barrow i{height:14px;border-radius:3px}.barrow b{font-weight:500;color:var(--mut)}.testpass,.testfail{padding:8px;border-radius:8px;font-size:12px}.testpass{border:1px solid var(--good);background:rgba(57,166,90,.1)}.testfail{border:1px solid var(--bad);background:rgba(225,91,90,.1)}textarea{min-height:55px;resize:vertical}.grabbing{cursor:grabbing!important}@media(max-width:1000px){#layout{grid-template-columns:310px 1fr}.resultgrid{grid-template-columns:1fr}}@media(max-width:760px){#layout{display:block;height:auto}aside{border-right:0}main{grid-template-rows:auto 480px auto}#cvwrap{height:480px}.resultgrid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -88,6 +88,8 @@
   </div>
 </aside>
 <main>
+  <div class="maintabs"><button id="tabGeoBtn" class="mtab active">Geometry viewer</button><button id="tabResBtn" class="mtab">Results</button></div>
+  <div id="tabGeo">
   <div id="variantBar" style="display:flex;gap:6px;align-items:center;margin:10px 12px 0;flex-wrap:wrap">
     <div id="variantTabs" style="display:flex;gap:4px;flex-wrap:wrap"></div>
     <button id="addVariant" class="tiny" title="Load another design variant for comparison">＋ Add variant</button>
@@ -115,7 +117,8 @@
   <div id="hoverTip" style="position:absolute;display:none;z-index:8;pointer-events:none;background:rgba(10,20,30,.93);color:#eaf2f8;border:1px solid var(--line);border-radius:7px;padding:5px 9px;font-size:12px;max-width:230px;box-shadow:0 4px 14px rgba(0,0,0,.4)"></div>
   <div id="assignPop" style="position:absolute;display:none;z-index:9;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px;min-width:200px;max-width:260px;box-shadow:0 8px 28px rgba(0,0,0,.5)"></div>
   <div id="hoverInfo"></div></div>
-  <div id="results"></div>
+  </div>
+  <div id="tabRes" style="display:none"><div id="results"></div></div>
 </main>
 </div>
 <script>
@@ -1453,6 +1456,33 @@ function updateOverlayComp(){
 let RES_SORT={key:null,dir:1},CMP_METRIC="weight_g",CMP_SORT={col:"name",dir:1},LAST_TOTAL=0,RESULT_TAB=0;
 const CHART_COLORS=["#4C78A8","#F58518","#54A24B","#E45756","#B279A2","#72B7B2","#EECA3B","#9D755D","#FF9DA6","#BAB0AC"];
 const variantColor=i=>CHART_COLORS[i%CHART_COLORS.length];
+const TYRE_METRICS={weight_g:"Total weight (g)",area_mm2:"Total area (mm²)",volume_cm3:"Total volume (cm³)",surface_area_mm2:"Total surface (mm²)",polar_MOI:"Total polar MOI (g·mm²)"};
+let TYRE_METRIC="weight_g";
+// Tyre-level comparison: X = design variants, Y = total of the chosen metric (one bar per variant).
+function tyreLevelChartHTML(){
+  const list=variantResultsList();
+  const mk=TYRE_METRIC;
+  let h=`<div class="card"><div class="row" style="margin-bottom:8px;align-items:center"><h2 style="margin:0;flex:0 0 auto">Tyre-level comparison</h2><span style="flex:1"></span><label style="margin:0;flex:0 0 auto;color:var(--mut)">Variable</label><select id="tyreMetric" style="flex:0 0 auto;width:auto;max-width:220px">`;
+  for(const k in TYRE_METRICS)h+=`<option value="${k}"${k===mk?" selected":""}>${TYRE_METRICS[k]}</option>`;
+  h+=`</select></div>`;
+  if(!list.length)return h+`<div class="muted">Compute results to see tyre-level totals.</div></div>`;
+  const cs=getComputedStyle(document.body);
+  const cLine=(cs.getPropertyValue("--line")||"#2c3d4d").trim(),cMut=(cs.getPropertyValue("--mut")||"#9fb0c0").trim(),cInk=(cs.getPropertyValue("--ink")||"#e8eef4").trim();
+  const totals=list.map(x=>({name:x.name,i:x.i,val:x.results.reduce((s,r)=>s+(+r[mk]||0),0)}));
+  let maxV=Math.max(...totals.map(t=>t.val),0)||1;
+  const p10=Math.pow(10,Math.floor(Math.log10(maxV))),nn=maxV/p10,top=(nn<=1?1:nn<=2?2:nn<=5?5:10)*p10;
+  const nV=totals.length,chartH=240,padT=18,padB=64,padL=72,padR=16;
+  const catW=Math.max(72,Math.min(150,560/nV)),W=padL+nV*catW+padR,H=padT+chartH+padB;
+  const yOf=v=>padT+chartH-(v/top)*chartH;
+  let svg=`<div style="overflow-x:auto"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="system-ui,sans-serif" font-size="10">`;
+  for(let t=0;t<=5;t++){const v=top*t/5,yy=yOf(v);svg+=`<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W-padR}" y2="${yy.toFixed(1)}" stroke="${cLine}" opacity="0.7"/><text x="${padL-7}" y="${(yy+3).toFixed(1)}" text-anchor="end" fill="${cMut}">${fmt(v,top<10?2:0)}</text>`;}
+  totals.forEach((t,vi)=>{const cx0=padL+vi*catW,barW=Math.min(58,catW*0.55),bx=cx0+(catW-barW)/2,bh=(t.val/top)*chartH,by=padT+chartH-bh;
+    svg+=`<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(0,bh).toFixed(1)}" rx="2" fill="${variantColor(t.i)}"><title>${escapeHtml(t.name)}: ${fmt(t.val)}</title></rect>`;
+    svg+=`<text x="${(cx0+catW/2).toFixed(1)}" y="${(by-4).toFixed(1)}" text-anchor="middle" fill="${cInk}">${fmt(t.val,top<10?2:0)}</text>`;
+    svg+=`<text x="${(cx0+catW/2).toFixed(1)}" y="${(padT+chartH+16).toFixed(1)}" text-anchor="middle" fill="${cInk}">${escapeHtml(t.name.length>16?t.name.slice(0,15)+"…":t.name)}${t.i===0?" (base)":""}</text>`;});
+  svg+=`<line x1="${padL}" y1="${padT+chartH}" x2="${W-padR}" y2="${padT+chartH}" stroke="${cMut}"/></svg></div>`;
+  return h+svg+`</div>`;
+}
 const CMP_METRICS={weight_g:"Weight (g)",area_mm2:"Area (mm²)",volume_cm3:"Volume (cm³)",centroid_distance_mm:"CG dist (mm)",surface_area_mm2:"Surface (mm²)",polar_MOI:"Polar MOI (g·mm²)",radius_of_gyration_mm:"RoG (mm)",pct:"% of tyre weight"};
 function sortArrow(active,dir){return active?(dir>0?" ▲":" ▼"):"";}
 function variantResultsList(){
@@ -1490,7 +1520,7 @@ function comparisonChartHTML(){
   const mk=CMP_METRIC;
   const cs=getComputedStyle(document.body);
   const cLine=(cs.getPropertyValue("--line")||"#2c3d4d").trim(),cMut=(cs.getPropertyValue("--mut")||"#9fb0c0").trim(),cInk=(cs.getPropertyValue("--ink")||"#e8eef4").trim();
-  let h=`<div class="card"><div class="row" style="margin-bottom:8px;align-items:center"><h2 style="margin:0;flex:0 0 auto">Variation comparison</h2><span style="flex:1"></span><label style="margin:0;flex:0 0 auto;color:var(--mut)">Variable</label><select id="cmpMetric" style="flex:0 0 auto;width:auto;max-width:210px">`;
+  let h=`<div class="card"><div class="row" style="margin-bottom:8px;align-items:center"><h2 style="margin:0;flex:0 0 auto">Component-level comparison</h2><span style="flex:1"></span><label style="margin:0;flex:0 0 auto;color:var(--mut)">Variable</label><select id="cmpMetric" style="flex:0 0 auto;width:auto;max-width:210px">`;
   for(const k in CMP_METRICS)h+=`<option value="${k}"${k===mk?" selected":""}>${CMP_METRICS[k]}</option>`;
   h+=`</select></div>`;
   const comps=[...new Set(list.flatMap(x=>x.results.map(r=>r.component)))];
@@ -1602,7 +1632,7 @@ $("computeAll").onclick=()=>{
     if(!has)continue;
     switchVariant(i);computeResults();done++;
   }
-  switchVariant(orig);computeResults();
+  switchVariant(orig);computeResults();switchMainTab("res");
   setStatus(`Computed results for ${done} variant${done===1?"":"s"}. Per-variant tables are shown below.`,"ok");
 };
 
@@ -1796,17 +1826,18 @@ function computeResults(){
   }
   const total=results.reduce((s,r)=>s+r.weight_g,0);results.forEach(r=>r.pct=total?r.weight_g/total*100:0);VARIANTS[CUR].results=results;showResults(total);return results;
 }
-$("compute").onclick=computeResults;
+$("compute").onclick=()=>{computeResults();switchMainTab("res");};
 function showResults(total){LAST_TOTAL=total;let h=`<div class="summary"><span>Total weight <b>${fmt(total,1)} g</b></span><span>Total polar MOI <b>${fmt(results.reduce((s,r)=>s+r.polar_MOI,0))}</b></span><span>Assigned components <b>${results.length}</b></span></div>`;
   if(SIDE!=="both"){const dbl=results.filter(r=>r.full_factor===2).length;h+=`<div class="hint" style="margin-bottom:10px">Full-tyre figures from the <b>${SIDE} half</b>: ${dbl} side component${dbl===1?"":"s"} doubled (×2); centreline-crossing components counted once.</div>`;}
   const xed=results.filter(r=>r.crosses_centreline);
   if(xed.length)h+=`<div class="alert"><b>Crosses the centreline:</b> ${xed.map(r=>escapeHtml(r.component)).join(", ")} — counted once (not doubled). Verify this is intended; in a true half section nothing should cross the centreline.</div>`;
   if(results.some(r=>r.axis_crossing))h+=`<div class="alert">One or more selected components cross the rotation axis. Pappus-derived results for those components should not be trusted.</div>`;
-  // graphical variation comparison (replaces the old component-results table) + weight bar + per-variant tabs
+  // graphical variation comparison — tyre level (X = variants) and component level (X = components) — then per-variant tables
+  h+=tyreLevelChartHTML();
   h+=comparisonChartHTML();
-  h+=`<div class="card"><h2>Weight by component</h2>`;const max=Math.max(1,...results.map(r=>r.weight_g));for(const r of results)h+=`<div class="barrow"><span>${escapeHtml(r.component)}</span><i style="width:${Math.max(2,260*r.weight_g/max)}px;background:${colorFor(r.component)}"></i><b>${fmt(r.weight_g,1)} g</b></div>`;h+=`</div>`;
   h+=variantTabsResultsHTML();
   $("results").innerHTML=h;
+  const tm=$("tyreMetric");if(tm)tm.onchange=()=>{TYRE_METRIC=tm.value;showResults(LAST_TOTAL);};
   const ms=$("cmpMetric");if(ms)ms.onchange=()=>{CMP_METRIC=ms.value;showResults(LAST_TOTAL);};
   document.querySelectorAll("#results .rtab").forEach(bn=>bn.onclick=()=>{RESULT_TAB=+bn.dataset.rt;showResults(LAST_TOTAL);});
 }
@@ -1824,6 +1855,17 @@ function runDemoCheck(){const exp=E.demoExpected(),rows=computeResults();let ok=
 $("runTest").onclick=()=>{if(FILE_NAME!=="single_layer_validation_geometry.dxf")loadDemo(true);else runDemoCheck();};
 
 // boot
+// main tabs: Geometry viewer (big) vs Results
+function switchMainTab(which){
+  const geo=which!=="res";
+  $("tabGeo").style.display=geo?"flex":"none";
+  $("tabRes").style.display=geo?"none":"block";
+  $("tabGeoBtn").classList.toggle("active",geo);
+  $("tabResBtn").classList.toggle("active",!geo);
+  if(geo)requestAnimationFrame(()=>resizeCanvas());
+}
+$("tabGeoBtn").onclick=()=>switchMainTab("geo");
+$("tabResBtn").onclick=()=>switchMainTab("res");
 $("rasterOpts").style.display="none";$("tolCustomWrap").style.display="none";renderTabs();renderAll();updateUndoButtons();resizeCanvas();
 window.__tyreDebug=()=>({mode:MODE,file:FILE_NAME,entities:ENT.length,regions:REGIONS.length,open:GRAPH?GRAPH.openNodeIds.length:null,components:COMPONENTS.slice(),regionStates:REGIONS.map(r=>({id:r.id,assigned:r.assigned,ignored:r.ignored,area:r.area,hasContour:!!r.outer?.length})),results:results.map(r=>({...r})),axis:AXIS,tolerance:TOL,raster:raster?{res:raster.res,convergencePct:raster.convergencePct,secondaryCount:raster.secondaryCount}:null});
 window.__edit={EDIT,setEditMode,entityAt,nearestOpenEnd,exportDXF};window.__allRegions=()=>REGIONS.map(r=>({id:r.id,area:r.area,cx:r.cx,cy:r.cy,bbox:r.bbox,assigned:r.assigned,outer:r.outer,holes:r.holes}));
