@@ -719,7 +719,7 @@ const DEFAULT_SG=Object.fromEntries(TBR_CATALOG);
 // Placeholder areal weights — adjust to your material spec.
 const CALENDERED_DEFAULTS={"BODY PLY":4.0,"WORKING BELT-1":4.6,"WORKING BELT-2":4.6,"PROTECTOR BELT":4.0,"TRANSITION BELT":4.0};
 
-let ENT=[],BOUNDS=null,GRAPH=null,REGIONS=[],FINGERPRINT="",FILE_NAME="",DXF_TEXT="";
+let ENT=[],BOUNDS=null,GRAPH=null,REGIONS=[],OVERLAPS=[],FINGERPRINT="",FILE_NAME="",DXF_TEXT="";
 let MODE="vector",AXIS=0,TOL=0.05,ACTIVE=null,ACTION="assign",COMPONENTS=[],SG={...DEFAULT_SG},UNIT={},LAND={},HOVER=null,PENDING=null;
 let undoStack=[],redoStack=[],results=[];
 let raster=null;
@@ -745,6 +745,30 @@ function zoomAt(factor,sx,sy){if(!BOUNDS)return;const before=s2w(sx,sy);view.sca
 function panPixels(dx,dy){view.cx-=dx/view.scale;view.cy+=dy/view.scale;render();}
 
 let DUPES_REMOVED=0;
+// Detect overlapping / coincident collinear segments — the case the open-end
+// red dots miss (a stray line lying on top of a real boundary, or two lines
+// sharing a stretch). Returns the overlapping segments so they can be flagged.
+function detectOverlaps(){
+  const segs=[];
+  for(const e of ENT)for(let i=0;i<e.pts.length-1;i++){const a=e.pts[i],b=e.pts[i+1],L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L>1e-6)segs.push({a,b,L});}
+  if(segs.length<2||segs.length>40000)return [];
+  const tol=Math.max(TOL,0.03),angQ=Math.PI/180,ndQ=tol; // 1° and tol buckets
+  for(const s of segs){let dx=(s.b[0]-s.a[0])/s.L,dy=(s.b[1]-s.a[1])/s.L;if(dx<0||(Math.abs(dx)<1e-9&&dy<0)){dx=-dx;dy=-dy;}
+    s.dx=dx;s.dy=dy;s.ang=Math.atan2(dy,dx);s.nd=-dy*s.a[0]+dx*s.a[1];
+    const ta=s.a[0]*dx+s.a[1]*dy,tb=s.b[0]*dx+s.b[1]*dy;s.t0=Math.min(ta,tb);s.t1=Math.max(ta,tb);}
+  // bucket with half-cell double cover so collinear pairs near a boundary still meet
+  const map=new Map();
+  for(const s of segs)for(const ao of [0,0.5])for(const no of [0,0.5]){const k=Math.floor(s.ang/angQ+ao)+":"+Math.floor(s.nd/ndQ+no);let a=map.get(k);if(!a)map.set(k,a=[]);a.push(s);}
+  const flag=new Set();
+  for(const arr of map.values()){if(arr.length<2)continue;arr.sort((p,q)=>p.t0-q.t0);
+    for(let i=0;i<arr.length;i++)for(let j=i+1;j<arr.length;j++){
+      if(arr[j].t0>arr[i].t1+tol)break;
+      if(arr[i]===arr[j])continue; // same segment can land in a bucket twice (double cover)
+      if(Math.abs(arr[i].nd-arr[j].nd)>tol||Math.abs(arr[i].ang-arr[j].ang)>2*angQ)continue;
+      if(Math.min(arr[i].t1,arr[j].t1)-Math.max(arr[i].t0,arr[j].t0)>tol){flag.add(arr[i]);flag.add(arr[j]);}
+    }}
+  return [...flag].map(s=>[s.a,s.b]);
+}
 function dedupeEntities(list){
   // strict: a curve is a duplicate only if it is pointwise identical (within
   // 1e-9 mm) to an already-kept curve, forwards or reversed. A rounded-key
@@ -806,12 +830,13 @@ function autoAxis(){
 $("axisAuto").onclick=()=>{autoAxis();render();updateDiagnostics();};
 $("axis").addEventListener("change",()=>{AXIS=parseFloat($("axis").value)||0;render();updateDiagnostics();});
 
-function extractRegions(){
+function extractRegions(assignSnap){
   if(!ENT.length)return;MODE=$("extractMode").value;TOL=currentTol();setStatus(MODE==="vector"?"Building vector planar network…":"Building raster fallback regions…");
-  const previous=snapshotAssignments();
+  const previous=assignSnap||snapshotAssignments();
   if(MODE==="vector"){
     GRAPH=E.preparePlanarGraph(ENT,TOL);const out=E.polygonizeGraph(GRAPH,Math.max(0.02,TOL*TOL*0.02));REGIONS=out.regions;raster=null;
   }else buildRasterRegions(null,true);
+  OVERLAPS=detectOverlaps();
   restoreBySimilarity(previous);undoStack=[];redoStack=[];renderAll();updateDiagnostics();setStatus(`${REGIONS.length} enclosed regions detected using ${MODE} extraction.`,REGIONS.length?"ok":"bad");
 }
 $("extract").onclick=extractRegions;
@@ -983,6 +1008,8 @@ function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=get
     if(EDIT.selected.size){ctx.strokeStyle="#ff4d4d";ctx.lineWidth=2.5;for(const e of EDIT.selected){ctx.beginPath();e.pts.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.stroke();}}
     if(EDIT.bridgeA){const s=w2s(EDIT.bridgeA);ctx.strokeStyle="#2ea043";ctx.lineWidth=2;ctx.beginPath();ctx.arc(s[0],s[1],8,0,Math.PI*2);ctx.stroke();}
   }
+  // overlapping / coincident lines — highlighted in orange so they can be cleaned
+  if(OVERLAPS.length){ctx.save();ctx.strokeStyle="#f5a020";ctx.lineWidth=3.5;ctx.globalAlpha=0.75;ctx.setLineDash([6,4]);for(const [a,b] of OVERLAPS){const sa=w2s(a),sb=w2s(b);ctx.beginPath();ctx.moveTo(sa[0],sa[1]);ctx.lineTo(sb[0],sb[1]);ctx.stroke();}ctx.setLineDash([]);ctx.restore();}
   // open endpoints diagnostics
   if(MODE==="vector"&&GRAPH){ctx.fillStyle="#E45756";for(const id of GRAPH.openNodeIds){const p=GRAPH.nodes[id];if(Math.abs(p[1]-AXIS)<=TOL*2)continue;const s=w2s(p);ctx.beginPath();ctx.arc(s[0],s[1],4,0,Math.PI*2);ctx.fill();}}
   if(drag?.type==="box"){ctx.strokeStyle="#55aaff";ctx.fillStyle="rgba(85,170,255,.12)";ctx.setLineDash([5,4]);const x=Math.min(drag.x0,drag.x1),y=Math.min(drag.y0,drag.y1),ww=Math.abs(drag.x1-drag.x0),hh=Math.abs(drag.y1-drag.y0);ctx.fillRect(x,y,ww,hh);ctx.strokeRect(x,y,ww,hh);ctx.setLineDash([]);}
@@ -1751,11 +1778,14 @@ $("cleanMicro").onclick=()=>{
   pushEditUndo();ENT=ENT.filter(e=>!doomed.has(e));
   afterEdit(`${doomed.size} micro-fragment${doomed.size===1?"":"s"} deleted; regions re-detected.`);
 };
-function afterEdit(msg){EDIT.selected.clear();EDIT.bridgeA=null;HOVER_ENT=null;extractRegions();syncEditUI();if(msg)setStatus(msg,"ok");}
-function pushEditUndo(){EDIT.undo.push(ENT.slice());if(EDIT.undo.length>50)EDIT.undo.shift();EDIT.redo=[];}
+function afterEdit(msg,assignSnap){EDIT.selected.clear();EDIT.bridgeA=null;HOVER_ENT=null;extractRegions(assignSnap);syncEditUI();if(msg)setStatus(msg,"ok");}
+// Snapshot geometry AND component assignments together, so an undo restores the
+// exact prior state — not a similarity-remapped approximation that can migrate a
+// component (e.g. TREAD) onto a different region and change its computed mass.
+function pushEditUndo(){EDIT.undo.push({ent:ENT.slice(),assign:snapshotAssignments()});if(EDIT.undo.length>50)EDIT.undo.shift();EDIT.redo=[];}
 $("deleteSel").onclick=()=>{if(!EDIT.selected.size)return;pushEditUndo();ENT=ENT.filter(e=>!EDIT.selected.has(e));afterEdit("Curves deleted; regions re-detected.");};
-$("editUndo").onclick=()=>{if(!EDIT.undo.length)return;EDIT.redo.push(ENT.slice());ENT=EDIT.undo.pop();afterEdit("Edit undone.");};
-$("editRedo").onclick=()=>{if(!EDIT.redo.length)return;EDIT.undo.push(ENT.slice());ENT=EDIT.redo.pop();afterEdit("Edit redone.");};
+$("editUndo").onclick=()=>{if(!EDIT.undo.length)return;EDIT.redo.push({ent:ENT.slice(),assign:snapshotAssignments()});const st=EDIT.undo.pop();ENT=st.ent;afterEdit("Edit undone.",st.assign);};
+$("editRedo").onclick=()=>{if(!EDIT.redo.length)return;EDIT.undo.push({ent:ENT.slice(),assign:snapshotAssignments()});const st=EDIT.redo.pop();ENT=st.ent;afterEdit("Edit redone.",st.assign);};
 function distToSeg(p,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],l2=dx*dx+dy*dy;let t=l2>0?((p[0]-a[0])*dx+(p[1]-a[1])*dy)/l2:0;t=Math.max(0,Math.min(1,t));return Math.hypot(p[0]-a[0]-t*dx,p[1]-a[1]-t*dy);}
 function entityAt(p,tolPx=6){const tolW=tolPx/view.scale;let best=null,bd=tolW;
   for(const e of ENT){const bb=e.__bb||(e.__bb=(()=>{let x0=1/0,y0=1/0,x1=-1/0,y1=-1/0;for(const q of e.pts){x0=Math.min(x0,q[0]);x1=Math.max(x1,q[0]);y0=Math.min(y0,q[1]);y1=Math.max(y1,q[1]);}return {x0,y0,x1,y1};})());
@@ -1789,7 +1819,7 @@ document.querySelectorAll("[data-nav]").forEach(b=>b.onclick=()=>setNav(b.datase
 $("gridBtn").onclick=()=>{SHOW_GRID=!SHOW_GRID;$("gridBtn").classList.toggle("active",SHOW_GRID);render();};
 $("snapBtn").onclick=()=>{try{const a=document.createElement("a");a.href=cv.toDataURL("image/png");a.download=(FILE_NAME||"tyre").replace(/\.dxf$/i,"")+"_snapshot.png";a.click();setStatus("Snapshot saved as PNG.","ok");}catch(e){setStatus("Could not save snapshot: "+e.message,"bad");}};
 
-function updateDiagnostics(){const el=$("diagnostics");if(!BOUNDS){el.textContent="No drawing loaded.";return;}if(MODE==="vector"&&GRAPH){const open=GRAPH.openNodeIds.filter(id=>Math.abs(GRAPH.nodes[id][1]-AXIS)>TOL*2);el.innerHTML=`${GRAPH.rawSegmentCount} flattened segments · ${GRAPH.edges.length} cleaned edges · ${REGIONS.length} enclosed regions · <span class="${open.length?'warn':'good'}">${open.length} unresolved open endpoint${open.length===1?'':'s'}</span>. Red dots mark unresolved endpoints — use the Edit drawing card to delete construction lines or bridge real gaps.`;}else{const conv=raster?.convergencePct;el.innerHTML=`Raster fallback: ${REGIONS.length} enclosed pixel regions at ${raster?.res||"—"} px. Pixel boundaries were converted to selectable polygons. ${conv==null?"Convergence not evaluated.":`Resolution check: <span class="${conv>1?"warn":"good"}">${conv.toFixed(2)}% area difference</span> and ${raster.secondaryCount} regions at the secondary resolution.`}`;}}
+function updateDiagnostics(){const el=$("diagnostics");if(!BOUNDS){el.textContent="No drawing loaded.";return;}if(MODE==="vector"&&GRAPH){const open=GRAPH.openNodeIds.filter(id=>Math.abs(GRAPH.nodes[id][1]-AXIS)>TOL*2);el.innerHTML=`${GRAPH.rawSegmentCount} flattened segments · ${GRAPH.edges.length} cleaned edges · ${REGIONS.length} enclosed regions · <span class="${open.length?'warn':'good'}">${open.length} unresolved open endpoint${open.length===1?'':'s'}</span>${OVERLAPS.length?` · <span class="warn">${OVERLAPS.length} overlapping line${OVERLAPS.length===1?'':'s'}</span>`:''}. Red dots mark open endpoints; ${OVERLAPS.length?'orange dashed lines mark overlapping/coincident segments — ':''}use the Edit drawing card to delete construction lines or bridge real gaps.`;}else{const conv=raster?.convergencePct;el.innerHTML=`Raster fallback: ${REGIONS.length} enclosed pixel regions at ${raster?.res||"—"} px. Pixel boundaries were converted to selectable polygons. ${conv==null?"Convergence not evaluated.":`Resolution check: <span class="${conv>1?"warn":"good"}">${conv.toFixed(2)}% area difference</span> and ${raster.secondaryCount} regions at the secondary resolution.`}`;}}
 
 function rasterMetrics(name,regs,sg){
   const selected=new Set(regs.map(r=>r.label)),{w,h,labels,ppm,pad}=raster,pxA=1/(ppm*ppm),pxL=1/ppm;let area=0,sx=0,sy=0,rf=0,r3=0,bL=0,by=0,minY=Infinity,maxY=-Infinity;
@@ -1868,6 +1898,7 @@ $("tabGeoBtn").onclick=()=>switchMainTab("geo");
 $("tabResBtn").onclick=()=>switchMainTab("res");
 $("rasterOpts").style.display="none";$("tolCustomWrap").style.display="none";renderTabs();renderAll();updateUndoButtons();resizeCanvas();
 window.__tyreDebug=()=>({mode:MODE,file:FILE_NAME,entities:ENT.length,regions:REGIONS.length,open:GRAPH?GRAPH.openNodeIds.length:null,components:COMPONENTS.slice(),regionStates:REGIONS.map(r=>({id:r.id,assigned:r.assigned,ignored:r.ignored,area:r.area,hasContour:!!r.outer?.length})),results:results.map(r=>({...r})),axis:AXIS,tolerance:TOL,raster:raster?{res:raster.res,convergencePct:raster.convergencePct,secondaryCount:raster.secondaryCount}:null});
+window.__overlaps=()=>OVERLAPS.map(s=>s.map(p=>[+p[0].toFixed(2),+p[1].toFixed(2)]));
 window.__edit={EDIT,setEditMode,entityAt,nearestOpenEnd,exportDXF};window.__allRegions=()=>REGIONS.map(r=>({id:r.id,area:r.area,cx:r.cx,cy:r.cy,bbox:r.bbox,assigned:r.assigned,outer:r.outer,holes:r.holes}));
 window.__variants=()=>({cur:CUR,viewMode:VIEW_MODE,list:VARIANTS.map((v,i)=>({name:v.name,file:i===CUR?FILE_NAME:v.fileName,regions:(i===CUR?REGIONS:(v.regions||[])).length,assigned:(i===CUR?REGIONS:(v.regions||[])).filter(r=>r.assigned).length,results:((i===CUR?results:v.results)||[]).length}))});
 window.__addVariantFromText=(name,text,fname)=>{saveCur();VARIANTS.push(newVariant(name));loadCur(VARIANTS.length-1);parseAndSet(text,fname||name+".dxf");};
