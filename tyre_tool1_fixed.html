@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Tyre Cross-Section Analysis — Single-Layer Region Tool</title>
+<title>Tire Layout &amp; Properties Tool (TLPT)</title>
 <style>
 :root{--bg:#0e1620;--panel:#172431;--panel2:#111c27;--ink:#e8eef4;--mut:#9fb0c0;--line:#2c3d4d;--accent:#4C78A8;--good:#39a65a;--bad:#e15b5a;--warn:#e8a33d}
 @media(prefers-color-scheme:light){:root{--bg:#f4f7fa;--panel:#fff;--panel2:#f7f9fb;--ink:#17212b;--mut:#607080;--line:#d9e1e8}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif}button,input,select,textarea{font:inherit}button,input,select,textarea{color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:6px 8px}button{cursor:pointer}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button:hover{filter:brightness(1.08)}button:disabled{opacity:.4;cursor:not-allowed}.active{outline:2px solid #77b7ff;outline-offset:-1px}header{height:54px;padding:10px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px}header h1{font-size:17px;margin:0}header .sub{color:var(--mut);font-size:12px}#layout{display:grid;grid-template-columns:355px 1fr;height:calc(100vh - 54px)}aside{padding:12px;overflow:auto;border-right:1px solid var(--line)}main{min-width:0;display:flex;flex-direction:column;overflow:hidden}#tabGeo{flex:1;display:flex;flex-direction:column;min-height:0}#tabRes{flex:1;overflow:auto}.maintabs{display:flex;gap:4px;padding:8px 12px 0;flex:0 0 auto}.mtab{background:var(--panel2);border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;padding:7px 16px;font-weight:600;color:var(--mut)}.mtab.active{background:var(--panel);color:var(--ink);border-color:var(--line);box-shadow:0 -2px 0 var(--accent) inset}.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:10px}.card h2{margin:0 0 8px;color:var(--mut);font-size:12px;letter-spacing:.06em;text-transform:uppercase}.row{display:flex;gap:7px;align-items:center}.row>*{min-width:0;flex:1}.row .auto{flex:0 0 auto}.stack>*+*{margin-top:7px}label{display:block;color:var(--mut);font-size:12px;margin:6px 0 3px}input[type=file]{width:100%;padding:5px}input[type=number],input[type=text],select,textarea{width:100%}.hint{font-size:12px;color:var(--mut);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px}.toolbar{display:flex;gap:5px;flex-wrap:wrap}.toolbar button{padding:5px 8px}.toolbar .spacer{flex:1}.status{font-size:12px;color:var(--mut);padding-top:6px}.status.ok,.good{color:var(--good)}.status.bad,.warn{color:var(--warn)}#cvwrap{position:relative;flex:1;margin:10px 12px 12px;min-height:300px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}#cv{display:block;width:100%;height:100%;touch-action:none}#hoverInfo{position:absolute;left:8px;bottom:8px;right:8px;padding:5px 8px;border-radius:6px;background:rgba(0,0,0,.55);color:#eaf2f8;font-size:11px;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.comp{display:flex;align-items:center;gap:5px;border-bottom:1px solid var(--line);padding:4px 2px}.comp.selected{background:rgba(76,120,168,.15)}.pill{width:11px;height:11px;border-radius:3px;flex:0 0 auto}.namebtn{background:none;border:0;padding:3px;text-align:left;flex:1;font-weight:600}.tiny{padding:2px 6px;background:var(--panel2)}.muted{color:var(--mut);font-size:12px}#progress{font-size:12px;margin-top:7px}.sgtab{width:100%;border-collapse:collapse}.sgtab td{padding:3px}.sgtab td:first-child{width:65%}.sgtab input{padding:4px 6px}#results{padding:12px}.summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}.summary span{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:6px 10px}.resultgrid{display:grid;grid-template-columns:minmax(600px,2fr) minmax(260px,1fr);gap:10px}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:6px 7px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}.rowwarn{background:rgba(232,163,61,.12)}.alert{border:1px solid var(--warn);background:rgba(232,163,61,.1);padding:8px;border-radius:8px;margin-bottom:10px}.barrow{display:grid;grid-template-columns:90px minmax(10px,260px) 90px;gap:6px;align-items:center;margin:5px 0;font-size:12px}.barrow i{height:14px;border-radius:3px}.barrow b{font-weight:500;color:var(--mut)}.testpass,.testfail{padding:8px;border-radius:8px;font-size:12px}.testpass{border:1px solid var(--good);background:rgba(57,166,90,.1)}.testfail{border:1px solid var(--bad);background:rgba(225,91,90,.1)}textarea{min-height:55px;resize:vertical}.grabbing{cursor:grabbing!important}@media(max-width:1000px){#layout{grid-template-columns:310px 1fr}.resultgrid{grid-template-columns:1fr}}@media(max-width:760px){#layout{display:block;height:auto}aside{border-right:0}main{grid-template-rows:auto 480px auto}#cvwrap{height:480px}.resultgrid{grid-template-columns:1fr}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif}button,input,select,textarea{font:inherit}button,input,select,textarea{color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:6px 8px}button{cursor:pointer}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button:hover{filter:brightness(1.08)}button:disabled{opacity:.4;cursor:not-allowed}.active{outline:2px solid #77b7ff;outline-offset:-1px}header{height:54px;padding:10px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px}header h1{font-size:17px;margin:0}header .sub{color:var(--mut);font-size:12px}#layout{display:grid;grid-template-columns:355px 1fr;height:calc(100vh - 54px)}aside{padding:12px;overflow:auto;border-right:1px solid var(--line)}main{min-width:0;display:flex;flex-direction:column;overflow:hidden}#tabGeo{flex:1;display:flex;flex-direction:column;min-height:0}#tabRes{flex:1;overflow:auto}.maintabs{display:flex;gap:4px;padding:8px 12px 0;flex:0 0 auto}.mtab{background:var(--panel2);border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;padding:7px 16px;font-weight:600;color:var(--mut)}.mtab.active{background:var(--panel);color:var(--ink);border-color:var(--line);box-shadow:0 -2px 0 var(--accent) inset}.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:10px}.card h2{margin:0 0 8px;color:var(--mut);font-size:12px;letter-spacing:.06em;text-transform:uppercase}.row{display:flex;gap:7px;align-items:center}.row>*{min-width:0;flex:1}.row .auto{flex:0 0 auto}.stack>*+*{margin-top:7px}label{display:block;color:var(--mut);font-size:12px;margin:6px 0 3px}input[type=file]{width:100%;padding:5px}input[type=number],input[type=text],select,textarea{width:100%}.hint{font-size:12px;color:var(--mut);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px}.toolbar{display:flex;gap:5px;flex-wrap:wrap}.toolbar button{padding:5px 8px}.toolbar .spacer{flex:1}.status{font-size:12px;color:var(--mut);padding-top:6px}.status.ok,.good{color:var(--good)}.status.bad,.warn{color:var(--warn)}#cvwrap{position:relative;flex:1;margin:10px 12px 12px;min-height:300px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}#cv{display:block;width:100%;height:100%;touch-action:none}#hoverInfo{position:absolute;left:8px;bottom:8px;right:8px;padding:5px 8px;border-radius:6px;background:rgba(0,0,0,.55);color:#eaf2f8;font-size:11px;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.comp{display:flex;align-items:center;gap:5px;border-bottom:1px solid var(--line);padding:4px 2px}.comp.selected{background:rgba(76,120,168,.15)}.pill{width:11px;height:11px;border-radius:3px;flex:0 0 auto}.namebtn{background:none;border:0;padding:3px;text-align:left;flex:1;font-weight:600}.tiny{padding:2px 6px;background:var(--panel2)}.muted{color:var(--mut);font-size:12px}#progress{font-size:12px;margin-top:7px}.sgtab{width:100%;border-collapse:collapse}.sgtab td{padding:3px}.sgtab td:first-child{width:65%}.sgtab input{padding:4px 6px}#results{padding:12px}.summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}.summary span{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:6px 10px}.resultgrid{display:grid;grid-template-columns:minmax(600px,2fr) minmax(260px,1fr);gap:10px}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:6px 7px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}.rowwarn{background:rgba(232,163,61,.12)}.alert{border:1px solid var(--warn);background:rgba(232,163,61,.1);padding:8px;border-radius:8px;margin-bottom:10px}.barrow{display:grid;grid-template-columns:90px minmax(10px,260px) 90px;gap:6px;align-items:center;margin:5px 0;font-size:12px}.barrow i{height:14px;border-radius:3px}.barrow b{font-weight:500;color:var(--mut)}.testpass,.testfail{padding:8px;border-radius:8px;font-size:12px}.testpass{border:1px solid var(--good);background:rgba(57,166,90,.1)}.testfail{border:1px solid var(--bad);background:rgba(225,91,90,.1)}textarea{min-height:55px;resize:vertical}.grabbing{cursor:grabbing!important}.diagbar{position:absolute;top:8px;left:8px;max-width:min(58%,620px);z-index:6;pointer-events:none;background:rgba(20,30,40,.86);color:#eaf2f8;border:1px solid rgba(255,255,255,.16);border-radius:8px;padding:7px 11px;font-size:11.5px;line-height:1.4;box-shadow:0 3px 12px rgba(0,0,0,.35)}.diagbar b{color:#fff}.diagbar .warn{color:#ffcf7a}.diagbar .good{color:#7fe0a0}.editstep{display:flex;gap:8px;align-items:flex-start;margin-top:8px}.editstep>div{flex:1;min-width:0}.stepnum{flex:0 0 auto;width:19px;height:19px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:2px}.editlbl{font-size:11.5px;color:var(--mut);margin-bottom:4px}.helppanel{padding:16px 20px;overflow:auto;max-width:900px;line-height:1.55}.helppanel h3{margin:18px 0 6px;font-size:15px;color:var(--ink)}.helppanel h3:first-child{margin-top:4px}.helppanel p,.helppanel li{color:var(--ink);font-size:13.5px}.helppanel ul,.helppanel ol{margin:4px 0 4px 4px;padding-left:20px}.helppanel li{margin:4px 0}.helppanel .lead{color:var(--mut);font-size:13px;margin-bottom:6px}.helppanel .do{color:var(--good);font-weight:600}.helppanel .dont{color:var(--warn);font-weight:600}.helppanel code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:12px}@media(max-width:1000px){#layout{grid-template-columns:310px 1fr}.resultgrid{grid-template-columns:1fr}}@media(max-width:760px){#layout{display:block;height:auto}aside{border-right:0}main{grid-template-rows:auto 480px auto}#cvwrap{height:480px}.resultgrid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<header><h1>Tyre Cross-Section Analysis</h1><span class="sub">Single-layer DXF · vector region detection · manual component assignment · local browser processing</span></header>
+<header><h1>Tire Layout &amp; Properties Tool (TLPT)</h1><span class="sub">Developed by CV Technology Predevelopment, Apollo Tyres</span></header>
 <div id="layout">
 <aside>
   <div class="card stack">
@@ -29,7 +29,6 @@
     <div class="row"><select id="tolPreset"><option value="0.01">Strict · 0.01 mm</option><option value="0.05" selected>Normal · 0.05 mm</option><option value="0.1">Relaxed · 0.10 mm</option><option value="custom">Custom</option></select><div id="tolCustomWrap"><input type="number" id="tolCustom" value="0.05" min="0.001" step="0.01"></div></div>
     <div id="rasterOpts"><label>Raster resolution and seal width</label><div class="row"><input type="number" id="rasterRes" value="1400" min="600" max="3000" step="100"><input type="number" id="seal" value="3" min="1" max="11" step="1"></div></div>
     <button id="extract" class="primary">Detect enclosed regions</button>
-    <div id="diagnostics" class="hint">No drawing loaded.</div>
   </div>
 
   <div class="card stack">
@@ -37,19 +36,20 @@
     <label>Rotation axis Y (mm)</label><div class="row"><input type="number" id="axis" value="0" step="0.1"><button id="axisAuto" class="auto">Auto</button></div>
     <label>Outer diameter — tread to tread (mm)</label><div class="row"><input type="number" id="odia" placeholder="e.g. 1113" step="0.1"><button id="odSet" class="auto">Set axis</button></div>
     <div class="hint">The rotation axis is the wheel/hub centreline — a horizontal line below the visible profile. It need <b>not</b> be at Y = 0: DXFs are often exported at arbitrary coordinates. The robust way to place it is the <b>outer diameter</b> — the tread surface (highest points in the drawing) sits at radius OD/2, so entering OD sets the axis to <code>Y_tread − OD/2</code>. Every point's Y-distance from this line is its true radius.</div>
-    <label>Work on</label><select id="side"><option value="both">Both halves — full section, count once</option><option value="left">Left half — assign left, double for full tyre</option><option value="right">Right half — assign right, double for full tyre</option></select>
+    <label>Work on</label><select id="side"><option value="right" selected>Right half — assign right, double for full tyre</option><option value="left">Left half — assign left, double for full tyre</option><option value="both">Both halves — full section, count once</option></select>
     <label>Section centreline X (mm)</label><div class="row"><input type="number" id="centre" step="0.1"><button id="centreAuto" class="auto">Auto</button></div>
     <div class="hint" id="sideHint">Pick <b>Left</b> or <b>Right</b> when you work one half of the section (the common case): assign only that side and the tool <b>doubles</b> it for the full tyre. A component that crosses the centreline (e.g. the crown wrapping over the top) is counted once, and flagged. Pick <b>Both</b> when both halves are drawn and you want to assign each side yourself (e.g. asymmetric grooves) — everything is counted once.</div>
   </div>
 
   <div class="card stack">
-    <h2>4 · Edit drawing</h2>
-    <div class="hint">Red dots are open curve ends. Delete construction / reference lines that came with the DXF, and bridge real gaps in the tyre profile, then regions are re-detected automatically (existing assignments are preserved).</div>
-    <div class="toolbar"><button id="editDelete">Select curves</button><button id="editBridge">Bridge gap</button><button id="editExtend" title="Extend an un-terminated curve tangentially until it meets the next curve">Extend to curve</button></div>
-    <div class="toolbar"><button id="deleteSel" disabled>Delete selected</button><button id="cleanMicro" title="Delete dangling curves shorter than 0.2 mm — the invisible fragments that show up as lone red dots">Clean micro-fragments</button></div>
-    <div class="toolbar"><button id="editUndo" disabled>Undo edit</button><button id="editRedo" disabled>Redo edit</button></div>
+    <h2>4 · Clean up the drawing</h2>
+    <div class="hint">Real DXF exports often carry construction lines, tiny fragments, or small gaps that stop a region from closing. <b>Red dots mark open curve ends.</b> Tidy them here and regions re-detect automatically — your component assignments are kept.</div>
+    <div class="editstep"><span class="stepnum">1</span><div><div class="editlbl">Pick a tool, then click curves in the drawing</div>
+      <div class="toolbar"><button id="editDelete" title="Click curves to select them, then use Delete selected">Select curves</button><button id="editBridge" title="Click two open ends to join them with a straight segment">Bridge a gap</button><button id="editExtend" title="Extend an un-terminated curve tangentially until it meets the next curve">Extend to curve</button></div></div></div>
+    <div class="editstep"><span class="stepnum">2</span><div><div class="editlbl">Remove unwanted geometry</div>
+      <div class="toolbar"><button id="deleteSel" disabled>Delete selected</button><button id="cleanMicro" title="Delete dangling curves shorter than 0.2 mm — the invisible fragments that show up as lone red dots">Clear tiny fragments</button></div></div></div>
+    <div class="toolbar"><button id="editUndo" disabled>Undo</button><button id="editRedo" disabled>Redo</button><span class="spacer"></span><button id="exportDxf">Export cleaned DXF</button></div>
     <div id="editStatus" class="muted">Editing off.</div>
-    <button id="exportDxf">Export edited DXF</button>
   </div>
 
   <div class="card stack">
@@ -88,7 +88,7 @@
   </div>
 </aside>
 <main>
-  <div class="maintabs"><button id="tabGeoBtn" class="mtab active">Geometry viewer</button><button id="tabResBtn" class="mtab">Results</button></div>
+  <div class="maintabs"><button id="tabGeoBtn" class="mtab active">Geometry viewer</button><button id="tabResBtn" class="mtab">Results</button><button id="tabHelpBtn" class="mtab">DXF prep guide</button></div>
   <div id="tabGeo">
   <div id="variantBar" style="display:flex;gap:6px;align-items:center;margin:10px 12px 0;flex-wrap:wrap">
     <div id="variantTabs" style="display:flex;gap:4px;flex-wrap:wrap"></div>
@@ -111,14 +111,55 @@
     </div>
   </div>
   <div id="cvwrap"><canvas id="cv"></canvas>
-  <div id="navOverlay" style="position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:5;background:rgba(20,30,40,.55);padding:4px;border-radius:8px">
-    <button data-nav="select" title="Select regions">Select</button><button data-nav="pan" title="Pan">Pan</button><button data-nav="box" title="Box zoom">Box</button><button data-nav="measure" title="Measure distance between two points">Measure</button><button data-nav="move" title="Overlay: drag the active variant to reposition it">Move</button><button id="gridBtn" class="active" title="Toggle grid">Grid</button><button id="snapBtn" title="Save a PNG snapshot of the viewer">📷 Snapshot</button><button id="zoomIn">＋</button><button id="zoomOut">−</button><button id="fit">Fit</button>
+  <div id="navOverlay" style="position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:7;background:rgba(20,30,40,.72);padding:4px;border-radius:8px">
+    <button data-nav="select" title="Select regions">Select</button><button data-nav="pan" title="Pan">Pan</button><button data-nav="box" title="Box zoom">Box</button><button data-nav="measure" title="Measure distance between two points">Measure</button><button data-nav="move" title="Overlay: drag the active variant to reposition it">Move</button><button id="gridBtn" class="active" title="Toggle grid">Grid</button><button id="overlapBtn" title="Highlight overlapping / coincident lines">Overlaps</button><button id="snapBtn" title="Save a PNG snapshot of the viewer">📷 Snapshot</button><button id="zoomIn">＋</button><button id="zoomOut">−</button><button id="fit">Fit</button>
   </div>
+  <div id="diagnostics" class="diagbar">No drawing loaded.</div>
   <div id="hoverTip" style="position:absolute;display:none;z-index:8;pointer-events:none;background:rgba(10,20,30,.93);color:#eaf2f8;border:1px solid var(--line);border-radius:7px;padding:5px 9px;font-size:12px;max-width:230px;box-shadow:0 4px 14px rgba(0,0,0,.4)"></div>
   <div id="assignPop" style="position:absolute;display:none;z-index:9;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px;min-width:200px;max-width:260px;box-shadow:0 8px 28px rgba(0,0,0,.5)"></div>
   <div id="hoverInfo"></div></div>
   </div>
   <div id="tabRes" style="display:none"><div id="results"></div></div>
+  <div id="tabHelp" class="helppanel" style="display:none">
+    <p class="lead">A clean DXF is the single biggest factor in getting accurate, error-free results. The tool detects closed regions from the section outline, so anything that leaves a region open — or adds stray geometry — throws off the calculation. Follow the checklist below when exporting from your CAD package.</p>
+
+    <h3>1 · Draw only the tyre cross-section</h3>
+    <ul>
+      <li>Export a <span class="do">single half</span> of the section (left or right of the centreline) whenever the tyre is symmetric — the tool doubles it for you. Export <span class="do">both halves</span> only for asymmetric designs.</li>
+      <li>Delete everything that is not part of the section profile: <span class="dont">title blocks, borders, dimension lines, leaders, centre-marks, hatching, text and construction geometry</span>.</li>
+      <li>Keep the drawing in <span class="do">millimetres</span> at 1:1 scale. Do not scale or rotate the section.</li>
+    </ul>
+
+    <h3>2 · Make every region close</h3>
+    <ul>
+      <li>Each component (tread, belts, plies, sidewall, bead, etc.) must be bounded by curves that <span class="do">meet end-to-end</span> with no gaps and no overshoot.</li>
+      <li>Snap endpoints together in CAD before exporting. A gap of even a few microns leaves the region open — shown as a <b>red dot</b> in the viewer.</li>
+      <li>Shared boundaries between two components should be a <span class="do">single line</span>, not two lines drawn on top of each other.</li>
+    </ul>
+
+    <h3>3 · Avoid overlapping and duplicate lines</h3>
+    <ul>
+      <li>Duplicate or partially overlapping segments confuse region detection and can double-count boundaries. Run your CAD's <code>OVERKILL</code> / purge-duplicates command before exporting.</li>
+      <li>In the viewer, press <b>Overlaps</b> in the toolbar to highlight any overlapping or coincident lines in orange, then remove them in the <b>Clean up the drawing</b> panel.</li>
+    </ul>
+
+    <h3>4 · Use supported entity types</h3>
+    <ul>
+      <li>Supported: <code>LINE</code>, <code>LWPOLYLINE</code>, <code>POLYLINE</code>, <code>ARC</code>, <code>CIRCLE</code>, and <code>SPLINE</code>.</li>
+      <li><span class="dont">Not supported:</span> blocks/inserts (explode them first), hatches, dimensions, MTEXT, ellipses and 3D solids. Explode or delete these before exporting.</li>
+      <li>Save as a plain <b>ASCII DXF</b> (R2000 or later). Avoid binary DXF and DWG.</li>
+    </ul>
+
+    <h3>5 · Check before you compute</h3>
+    <ol>
+      <li>Load the DXF and read the diagnostic bar on the viewer: it reports enclosed regions, open endpoints and overlaps.</li>
+      <li>Resolve every red dot — either delete the stray curve or <b>bridge</b> the real gap.</li>
+      <li>Set the <b>rotation axis</b> (wheel centreline) and, for a one-sided section, confirm <b>Work on → Right</b> so the section is correctly doubled.</li>
+      <li>Assign each region to a component, set specific gravities, then <b>Compute results</b>.</li>
+    </ol>
+
+    <p class="lead" style="margin-top:14px">Rule of thumb: if the viewer shows <span class="do">zero open endpoints and zero overlaps</span>, and the region count matches the number of components you expect, the results will be reliable.</p>
+  </div>
 </main>
 </div>
 <script>
@@ -724,7 +765,7 @@ let MODE="vector",AXIS=0,TOL=0.05,ACTIVE=null,ACTION="assign",COMPONENTS=[],SG={
 let undoStack=[],redoStack=[],results=[];
 let raster=null;
 let view={cx:0,cy:0,scale:1},navMode="select",drag=null,spaceDown=false;
-let SHOW_GRID=true,SNAP=true,SNAP_HL=null;
+let SHOW_GRID=true,SNAP=true,SNAP_HL=null,SHOW_OVERLAPS=false;
 const cv=$("cv"),ctx=cv.getContext("2d"),wrap=$("cvwrap");
 
 function escapeHtml(s){return String(s).replace(/[&<>\"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -933,7 +974,7 @@ $("redo").onclick=()=>{if(!redoStack.length)return;undoStack.push(snapshotAssign
 // that half. SIDE = both|left|right. CENTRE = the mid-width X (NaN => auto =
 // geomMidX). In left/right mode you assign only that half; the calculation
 // doubles side components and counts a centreline-crossing component once.
-let SIDE="both", CENTRE=NaN;
+let SIDE="right", CENTRE=NaN;
 function centrelineX(){return Number.isFinite(CENTRE)?CENTRE:geomMidX();}
 function crossesCentre(r){const C=centrelineX();return r.bbox.minX<C-1e-6&&r.bbox.maxX>C+1e-6;}
 function sideAllowed(r){if(SIDE==="both")return true;const C=centrelineX();
@@ -1008,8 +1049,8 @@ function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=get
     if(EDIT.selected.size){ctx.strokeStyle="#ff4d4d";ctx.lineWidth=2.5;for(const e of EDIT.selected){ctx.beginPath();e.pts.forEach((p,i)=>{const s=w2s(p);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.stroke();}}
     if(EDIT.bridgeA){const s=w2s(EDIT.bridgeA);ctx.strokeStyle="#2ea043";ctx.lineWidth=2;ctx.beginPath();ctx.arc(s[0],s[1],8,0,Math.PI*2);ctx.stroke();}
   }
-  // overlapping / coincident lines — highlighted in orange so they can be cleaned
-  if(OVERLAPS.length){ctx.save();ctx.strokeStyle="#f5a020";ctx.lineWidth=3.5;ctx.globalAlpha=0.75;ctx.setLineDash([6,4]);for(const [a,b] of OVERLAPS){const sa=w2s(a),sb=w2s(b);ctx.beginPath();ctx.moveTo(sa[0],sa[1]);ctx.lineTo(sb[0],sb[1]);ctx.stroke();}ctx.setLineDash([]);ctx.restore();}
+  // overlapping / coincident lines — highlighted in orange so they can be cleaned (toggle in the toolbar)
+  if(SHOW_OVERLAPS&&OVERLAPS.length){ctx.save();ctx.strokeStyle="#f5a020";ctx.lineWidth=3.5;ctx.globalAlpha=0.75;ctx.setLineDash([6,4]);for(const [a,b] of OVERLAPS){const sa=w2s(a),sb=w2s(b);ctx.beginPath();ctx.moveTo(sa[0],sa[1]);ctx.lineTo(sb[0],sb[1]);ctx.stroke();}ctx.setLineDash([]);ctx.restore();}
   // open endpoints diagnostics
   if(MODE==="vector"&&GRAPH){ctx.fillStyle="#E45756";for(const id of GRAPH.openNodeIds){const p=GRAPH.nodes[id];if(Math.abs(p[1]-AXIS)<=TOL*2)continue;const s=w2s(p);ctx.beginPath();ctx.arc(s[0],s[1],4,0,Math.PI*2);ctx.fill();}}
   if(drag?.type==="box"){ctx.strokeStyle="#55aaff";ctx.fillStyle="rgba(85,170,255,.12)";ctx.setLineDash([5,4]);const x=Math.min(drag.x0,drag.x1),y=Math.min(drag.y0,drag.y1),ww=Math.abs(drag.x1-drag.x0),hh=Math.abs(drag.y1-drag.y0);ctx.fillRect(x,y,ww,hh);ctx.strokeRect(x,y,ww,hh);ctx.setLineDash([]);}
@@ -1092,7 +1133,7 @@ let VARIANTS=[newVariant("Variant 1")],CUR=0,VIEW_MODE="single";
 function saveCur(){const v=VARIANTS[CUR];if(!v)return;Object.assign(v,{ents:ENT,bounds:BOUNDS,graph:GRAPH,regions:REGIONS,fingerprint:FINGERPRINT,fileName:FILE_NAME,dxfText:DXF_TEXT,mode:MODE,axis:AXIS,side:SIDE,centre:CENTRE,raster,results,undoStack,redoStack,dupes:DUPES_REMOVED});}
 function loadCur(i){CUR=i;const v=VARIANTS[i];
   ENT=v.ents||[];BOUNDS=v.bounds||null;GRAPH=v.graph||null;REGIONS=v.regions||[];FINGERPRINT=v.fingerprint||"";FILE_NAME=v.fileName||"";DXF_TEXT=v.dxfText||"";
-  MODE=v.mode||"vector";AXIS=v.axis||0;SIDE=v.side||"both";CENTRE=("centre"in v)?v.centre:NaN;raster=v.raster||null;results=v.results||[];undoStack=v.undoStack||[];redoStack=v.redoStack||[];DUPES_REMOVED=v.dupes||0;
+  MODE=v.mode||"vector";AXIS=v.axis||0;SIDE=v.side||"right";CENTRE=("centre"in v)?v.centre:NaN;raster=v.raster||null;results=v.results||[];undoStack=v.undoStack||[];redoStack=v.redoStack||[];DUPES_REMOVED=v.dupes||0;
   $("axis").value=(+AXIS).toFixed(2);$("extractMode").value=MODE;$("side").value=SIDE;$("centre").value=(BOUNDS?centrelineX():0).toFixed(2);
   if(typeof resetEdit==="function")resetEdit();HOVER=null;PENDING=null;hidePop();
   renderTabs();renderAll();updateDiagnostics();updateUndoButtons();
@@ -1818,8 +1859,9 @@ function syncNav(){document.querySelectorAll("[data-nav]").forEach(b=>b.classLis
 document.querySelectorAll("[data-nav]").forEach(b=>b.onclick=()=>setNav(b.dataset.nav));$("zoomIn").onclick=()=>{const {w,h}=cssSize();zoomAt(1.3,w/2,h/2);};$("zoomOut").onclick=()=>{const {w,h}=cssSize();zoomAt(1/1.3,w/2,h/2);};$("fit").onclick=fitView;syncNav();
 $("gridBtn").onclick=()=>{SHOW_GRID=!SHOW_GRID;$("gridBtn").classList.toggle("active",SHOW_GRID);render();};
 $("snapBtn").onclick=()=>{try{const a=document.createElement("a");a.href=cv.toDataURL("image/png");a.download=(FILE_NAME||"tyre").replace(/\.dxf$/i,"")+"_snapshot.png";a.click();setStatus("Snapshot saved as PNG.","ok");}catch(e){setStatus("Could not save snapshot: "+e.message,"bad");}};
+$("overlapBtn").onclick=()=>{SHOW_OVERLAPS=!SHOW_OVERLAPS;$("overlapBtn").classList.toggle("active",SHOW_OVERLAPS);render();updateDiagnostics();setStatus(SHOW_OVERLAPS?`Overlap highlighting ON — ${OVERLAPS.length} overlapping line${OVERLAPS.length===1?"":"s"} shown in orange.`:"Overlap highlighting off.","");};
 
-function updateDiagnostics(){const el=$("diagnostics");if(!BOUNDS){el.textContent="No drawing loaded.";return;}if(MODE==="vector"&&GRAPH){const open=GRAPH.openNodeIds.filter(id=>Math.abs(GRAPH.nodes[id][1]-AXIS)>TOL*2);el.innerHTML=`${GRAPH.rawSegmentCount} flattened segments · ${GRAPH.edges.length} cleaned edges · ${REGIONS.length} enclosed regions · <span class="${open.length?'warn':'good'}">${open.length} unresolved open endpoint${open.length===1?'':'s'}</span>${OVERLAPS.length?` · <span class="warn">${OVERLAPS.length} overlapping line${OVERLAPS.length===1?'':'s'}</span>`:''}. Red dots mark open endpoints; ${OVERLAPS.length?'orange dashed lines mark overlapping/coincident segments — ':''}use the Edit drawing card to delete construction lines or bridge real gaps.`;}else{const conv=raster?.convergencePct;el.innerHTML=`Raster fallback: ${REGIONS.length} enclosed pixel regions at ${raster?.res||"—"} px. Pixel boundaries were converted to selectable polygons. ${conv==null?"Convergence not evaluated.":`Resolution check: <span class="${conv>1?"warn":"good"}">${conv.toFixed(2)}% area difference</span> and ${raster.secondaryCount} regions at the secondary resolution.`}`;}}
+function updateDiagnostics(){const el=$("diagnostics");if(!BOUNDS){el.textContent="No drawing loaded.";return;}if(MODE==="vector"&&GRAPH){const open=GRAPH.openNodeIds.filter(id=>Math.abs(GRAPH.nodes[id][1]-AXIS)>TOL*2);const overlapNote=OVERLAPS.length?` · <span class="warn">${OVERLAPS.length} overlapping line${OVERLAPS.length===1?'':'s'}</span>`:'';const overlapHelp=OVERLAPS.length?(SHOW_OVERLAPS?'Orange dashes mark the overlapping segments. ':'Press <b>Overlaps</b> in the toolbar to highlight them. '):'';el.innerHTML=`<b>${REGIONS.length}</b> enclosed regions · ${GRAPH.edges.length} cleaned edges · <span class="${open.length?'warn':'good'}">${open.length} open endpoint${open.length===1?'':'s'}</span>${overlapNote}. Red dots mark open endpoints. ${overlapHelp}Fix issues in the <b>Edit drawing</b> panel — delete stray lines or bridge real gaps.`;}else{const conv=raster?.convergencePct;el.innerHTML=`Raster fallback: ${REGIONS.length} enclosed pixel regions at ${raster?.res||"—"} px. Pixel boundaries were converted to selectable polygons. ${conv==null?"Convergence not evaluated.":`Resolution check: <span class="${conv>1?"warn":"good"}">${conv.toFixed(2)}% area difference</span> and ${raster.secondaryCount} regions at the secondary resolution.`}`;}}
 
 function rasterMetrics(name,regs,sg){
   const selected=new Set(regs.map(r=>r.label)),{w,h,labels,ppm,pad}=raster,pxA=1/(ppm*ppm),pxL=1/ppm;let area=0,sx=0,sy=0,rf=0,r3=0,bL=0,by=0,minY=Infinity,maxY=-Infinity;
@@ -1887,15 +1929,18 @@ $("runTest").onclick=()=>{if(FILE_NAME!=="single_layer_validation_geometry.dxf")
 // boot
 // main tabs: Geometry viewer (big) vs Results
 function switchMainTab(which){
-  const geo=which!=="res";
+  const geo=which==="geo",res=which==="res",help=which==="help";
   $("tabGeo").style.display=geo?"flex":"none";
-  $("tabRes").style.display=geo?"none":"block";
+  $("tabRes").style.display=res?"block":"none";
+  $("tabHelp").style.display=help?"block":"none";
   $("tabGeoBtn").classList.toggle("active",geo);
-  $("tabResBtn").classList.toggle("active",!geo);
+  $("tabResBtn").classList.toggle("active",res);
+  $("tabHelpBtn").classList.toggle("active",help);
   if(geo)requestAnimationFrame(()=>resizeCanvas());
 }
 $("tabGeoBtn").onclick=()=>switchMainTab("geo");
 $("tabResBtn").onclick=()=>switchMainTab("res");
+$("tabHelpBtn").onclick=()=>switchMainTab("help");
 $("rasterOpts").style.display="none";$("tolCustomWrap").style.display="none";renderTabs();renderAll();updateUndoButtons();resizeCanvas();
 window.__tyreDebug=()=>({mode:MODE,file:FILE_NAME,entities:ENT.length,regions:REGIONS.length,open:GRAPH?GRAPH.openNodeIds.length:null,components:COMPONENTS.slice(),regionStates:REGIONS.map(r=>({id:r.id,assigned:r.assigned,ignored:r.ignored,area:r.area,hasContour:!!r.outer?.length})),results:results.map(r=>({...r})),axis:AXIS,tolerance:TOL,raster:raster?{res:raster.res,convergencePct:raster.convergencePct,secondaryCount:raster.secondaryCount}:null});
 window.__overlaps=()=>OVERLAPS.map(s=>s.map(p=>[+p[0].toFixed(2),+p[1].toFixed(2)]));
