@@ -36,9 +36,9 @@
     <label>Rotation axis Y (mm)</label><div class="row"><input type="number" id="axis" value="0" step="0.1"><button id="axisAuto" class="auto">Auto</button></div>
     <label>Outer diameter — tread to tread (mm)</label><div class="row"><input type="number" id="odia" placeholder="e.g. 1113" step="0.1"><button id="odSet" class="auto">Set axis</button></div>
     <div class="hint">The rotation axis is the wheel/hub centreline — a horizontal line below the visible profile. It need <b>not</b> be at Y = 0: DXFs are often exported at arbitrary coordinates. The robust way to place it is the <b>outer diameter</b> — the tread surface (highest points in the drawing) sits at radius OD/2, so entering OD sets the axis to <code>Y_tread − OD/2</code>. Every point's Y-distance from this line is its true radius.</div>
-    <label>Work on</label><select id="side"><option value="right" selected>Right half — assign right, double for full tyre</option><option value="left">Left half — assign left, double for full tyre</option><option value="both">Both halves — full section, count once</option></select>
+    <label>Work on</label><select id="side"><option value="right" selected>Right half — assign the right side, doubled for the full tyre</option><option value="both">Both halves — full section, counted once</option></select>
     <label>Section centreline X (mm)</label><div class="row"><input type="number" id="centre" step="0.1"><button id="centreAuto" class="auto">Auto</button></div>
-    <div class="hint" id="sideHint">Pick <b>Left</b> or <b>Right</b> when you work one half of the section (the common case): assign only that side and the tool <b>doubles</b> it for the full tyre. A component that crosses the centreline (e.g. the crown wrapping over the top) is counted once, and flagged. Pick <b>Both</b> when both halves are drawn and you want to assign each side yourself (e.g. asymmetric grooves) — everything is counted once.</div>
+    <div class="hint" id="sideHint">Pick <b>Right half</b> for the common case: the left half is hidden, you assign only the right side, and the tool <b>doubles</b> it for the full tyre. A component that crosses the centreline (e.g. the crown wrapping over the top) is counted once and flagged. Pick <b>Both halves</b> when both sides are drawn and you want to assign each independently (e.g. asymmetric grooves) — everything is counted once.</div>
   </div>
 
   <div class="card stack">
@@ -746,7 +746,7 @@ const PALETTE=["#4C78A8","#F58518","#54A24B","#E45756","#72B7B2","#B279A2","#EEC
 // layers (belts, body ply, bead) use composite SG -- see project notes --
 // not plain-rubber SG; replace with your compound spec sheet values.
 const TBR_CATALOG=[
-  ["TREAD",1.15],["UNDER TREAD",1.13],["SHOULDER CUSHION",1.14],
+  ["TREAD",1.15],["UNDER TREAD",1.13],["TREAD CUSHION",1.13],["SHOULDER CUSHION",1.14],
   ["SIDEWALL",1.10],["RIM CUSHION",1.15],
   ["PROTECTOR BELT",2.40],["BELT EDGE CUSHION",1.20],
   ["WORKING BELT-1",2.60],["WORKING BELT-2",2.60],["TRANSITION BELT",2.20],
@@ -757,8 +757,9 @@ const TBR_CATALOG=[
 ];
 const DEFAULT_SG=Object.fromEntries(TBR_CATALOG);
 // Calendered (sheet) components are specified by areal weight kg/m², not g/cm³.
+// The chafer is a fabric-reinforced composite, so it is calendered like the belts.
 // Placeholder areal weights — adjust to your material spec.
-const CALENDERED_DEFAULTS={"BODY PLY":4.0,"WORKING BELT-1":4.6,"WORKING BELT-2":4.6,"PROTECTOR BELT":4.0,"TRANSITION BELT":4.0};
+const CALENDERED_DEFAULTS={"BODY PLY":4.0,"WORKING BELT-1":4.6,"WORKING BELT-2":4.6,"PROTECTOR BELT":4.0,"TRANSITION BELT":4.0,"CHAFER":4.0};
 
 let ENT=[],BOUNDS=null,GRAPH=null,REGIONS=[],OVERLAPS=[],FINGERPRINT="",FILE_NAME="",DXF_TEXT="";
 let MODE="vector",AXIS=0,TOL=0.05,ACTIVE=null,ACTION="assign",COMPONENTS=[],SG={...DEFAULT_SG},UNIT={},LAND={},HOVER=null,PENDING=null;
@@ -975,6 +976,9 @@ $("redo").onclick=()=>{if(!redoStack.length)return;undoStack.push(snapshotAssign
 // geomMidX). In left/right mode you assign only that half; the calculation
 // doubles side components and counts a centreline-crossing component once.
 let SIDE="right", CENTRE=NaN;
+// The "Left half" option was retired (Right / Both only). Legacy projects saved
+// with side:"left" still compute correctly, so re-add the option on demand.
+function ensureSideOption(side){const sel=$("side");if(!sel)return;if((side==="left")&&!sel.querySelector('option[value="left"]')){const o=document.createElement("option");o.value="left";o.textContent="Left half — assign the left side, doubled (legacy)";sel.appendChild(o);}}
 function centrelineX(){return Number.isFinite(CENTRE)?CENTRE:geomMidX();}
 function crossesCentre(r){const C=centrelineX();return r.bbox.minX<C-1e-6&&r.bbox.maxX>C+1e-6;}
 function sideAllowed(r){if(SIDE==="both")return true;const C=centrelineX();
@@ -1028,11 +1032,15 @@ function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=get
   drawGrid(w,h);
   // rotation axis: horizontal line at Y=AXIS (the wheel/hub centreline)
   {const ay=w2s([0,AXIS])[1];if(ay>=-40&&ay<=h+40){ctx.save();ctx.strokeStyle="rgba(70,110,190,.85)";ctx.lineWidth=1.5;ctx.setLineDash([8,5]);ctx.beginPath();ctx.moveTo(0,ay);ctx.lineTo(w,ay);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle="rgba(70,110,190,.9)";ctx.font="11px ui-monospace,monospace";ctx.fillText(`rotation axis  Y = ${AXIS.toFixed(2)}`,8,ay-6);ctx.restore();}}
-  // section centreline (vertical) + excluded-half shading when working one side
+  // section centreline (vertical). When working the Right half only, the left
+  // half is CLIPPED away so the layout reads as a clean single-sided section
+  // (avoids centreline-crossing ambiguity for new users).
+  let __rightClip=false;
   if(REGIONS.length){const mx=w2s([centrelineX(),0])[0];ctx.save();
-    if(SIDE!=="both"){ctx.fillStyle="rgba(120,130,140,.13)";if(SIDE==="left")ctx.fillRect(mx,0,w-mx,h);else ctx.fillRect(0,0,mx,h);}
+    if(SIDE==="left"){ctx.fillStyle="rgba(120,130,140,.13)";ctx.fillRect(mx,0,w-mx,h);} // legacy left-half projects
     ctx.strokeStyle="rgba(150,120,190,.6)";ctx.lineWidth=1;ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(mx,0);ctx.lineTo(mx,h);ctx.stroke();ctx.setLineDash([]);
-    ctx.fillStyle="rgba(150,120,190,.8)";ctx.font="10px ui-monospace,monospace";ctx.fillText(SIDE==="both"?"centreline":`centreline · working ${SIDE} half (×2)`,mx+4,h-8);ctx.restore();}
+    ctx.fillStyle="rgba(150,120,190,.8)";ctx.font="10px ui-monospace,monospace";ctx.fillText(SIDE==="both"?"centreline":`centreline · working ${SIDE} half (×2)`,mx+4,h-8);ctx.restore();
+    if(SIDE==="right"){__rightClip=true;ctx.save();ctx.beginPath();ctx.rect(mx,0,Math.max(0,w-mx),h);ctx.clip();}}
   if(MODE==="raster"&&raster){const p0=w2s([BOUNDS.minX-raster.pad,BOUNDS.maxY+raster.pad]),p1=w2s([BOUNDS.maxX+raster.pad,BOUNDS.minY-raster.pad]);ctx.globalAlpha=.12;ctx.drawImage(raster.off,p0[0],p0[1],p1[0]-p0[0],p1[1]-p0[1]);ctx.globalAlpha=1;}
   for(const r of REGIONS){let fill=null;if(r===PENDING)fill="rgba(255,215,80,.42)";else if(r.assigned)fill=hexA(colorFor(r.assigned),.35);else if(r.ignored)fill="rgba(130,130,130,.22)";if(fill)drawRegion(r,fill,r===PENDING?"#fff":null);}
   // hovered highlight: FILL the exact selectable area (holes stay unfilled via
@@ -1053,6 +1061,7 @@ function render(){const {w,h}=cssSize();ctx.clearRect(0,0,w,h);ctx.fillStyle=get
   if(SHOW_OVERLAPS&&OVERLAPS.length){ctx.save();ctx.strokeStyle="#f5a020";ctx.lineWidth=3.5;ctx.globalAlpha=0.75;ctx.setLineDash([6,4]);for(const [a,b] of OVERLAPS){const sa=w2s(a),sb=w2s(b);ctx.beginPath();ctx.moveTo(sa[0],sa[1]);ctx.lineTo(sb[0],sb[1]);ctx.stroke();}ctx.setLineDash([]);ctx.restore();}
   // open endpoints diagnostics
   if(MODE==="vector"&&GRAPH){ctx.fillStyle="#E45756";for(const id of GRAPH.openNodeIds){const p=GRAPH.nodes[id];if(Math.abs(p[1]-AXIS)<=TOL*2)continue;const s=w2s(p);ctx.beginPath();ctx.arc(s[0],s[1],4,0,Math.PI*2);ctx.fill();}}
+  if(__rightClip)ctx.restore(); // end right-half clip; screen-space overlays below draw unclipped
   if(drag?.type==="box"){ctx.strokeStyle="#55aaff";ctx.fillStyle="rgba(85,170,255,.12)";ctx.setLineDash([5,4]);const x=Math.min(drag.x0,drag.x1),y=Math.min(drag.y0,drag.y1),ww=Math.abs(drag.x1-drag.x0),hh=Math.abs(drag.y1-drag.y0);ctx.fillRect(x,y,ww,hh);ctx.strokeRect(x,y,ww,hh);ctx.setLineDash([]);}
   if(drag?.type==="selbox"){ctx.strokeStyle="#ff6b5e";ctx.fillStyle="rgba(255,107,94,.10)";ctx.setLineDash([5,4]);const x=Math.min(drag.x0,drag.x1),y=Math.min(drag.y0,drag.y1),ww=Math.abs(drag.x1-drag.x0),hh=Math.abs(drag.y1-drag.y0);ctx.fillRect(x,y,ww,hh);ctx.strokeRect(x,y,ww,hh);ctx.setLineDash([]);}
   drawMeasure();drawSnapMarker();
@@ -1134,7 +1143,7 @@ function saveCur(){const v=VARIANTS[CUR];if(!v)return;Object.assign(v,{ents:ENT,
 function loadCur(i){CUR=i;const v=VARIANTS[i];
   ENT=v.ents||[];BOUNDS=v.bounds||null;GRAPH=v.graph||null;REGIONS=v.regions||[];FINGERPRINT=v.fingerprint||"";FILE_NAME=v.fileName||"";DXF_TEXT=v.dxfText||"";
   MODE=v.mode||"vector";AXIS=v.axis||0;SIDE=v.side||"right";CENTRE=("centre"in v)?v.centre:NaN;raster=v.raster||null;results=v.results||[];undoStack=v.undoStack||[];redoStack=v.redoStack||[];DUPES_REMOVED=v.dupes||0;
-  $("axis").value=(+AXIS).toFixed(2);$("extractMode").value=MODE;$("side").value=SIDE;$("centre").value=(BOUNDS?centrelineX():0).toFixed(2);
+  $("axis").value=(+AXIS).toFixed(2);$("extractMode").value=MODE;ensureSideOption(SIDE);$("side").value=SIDE;$("centre").value=(BOUNDS?centrelineX():0).toFixed(2);
   if(typeof resetEdit==="function")resetEdit();HOVER=null;PENDING=null;hidePop();
   renderTabs();renderAll();updateDiagnostics();updateUndoButtons();
   if(BOUNDS)fitView();else render();
@@ -1182,27 +1191,52 @@ $("variantFile").addEventListener("change",e=>{
 });
 
 /* ---------------- auto-assign from base ---------------- */
-function normFeat(r,axis,bounds){const d=Math.hypot(bounds.width,bounds.height)||1;
-  return {u:(r.cx-axis)/d,v:(r.cy-bounds.minY)/d,a:r.area/(d*d),
-          asp:Math.max(r.bbox.maxX-r.bbox.minX,1e-9)/Math.max(r.bbox.maxY-r.bbox.minY,1e-9)};}
+function regionPerimeter(r){let p=0;const o=r.outer;if(o&&o.length){for(let i=0;i<o.length;i++){const a=o[i],b=o[(i+1)%o.length];p+=Math.hypot(b[0]-a[0],b[1]-a[1]);}}return p;}
+// Hybrid feature for cross-variant region matching. Everything is made
+// scale/translation-invariant through the drawing bounds so a variant that is
+// slightly larger, shifted, or stretched still lines up:
+//   u,v  — normalised centroid position inside the section box (0..1); dominant cue
+//   rad  — radial band: distance from the wheel axis (tyre layers stack radially)
+//   a    — area as a fraction of the section box (size)
+//   asp  — bounding-box aspect ratio (shape)
+//   peri — normalised boundary length; comp — 4πA/P² compactness (1=round, →0 thin/complex)
+function normFeat(r,axis,bounds){
+  const W=Math.max(bounds.width,1e-9),H=Math.max(bounds.height,1e-9),d=Math.hypot(W,H);
+  const w=Math.max(r.bbox.maxX-r.bbox.minX,1e-9),h=Math.max(r.bbox.maxY-r.bbox.minY,1e-9),peri=regionPerimeter(r);
+  return {u:(r.cx-bounds.minX)/W, v:(r.cy-bounds.minY)/H, rad:Math.abs(r.cy-axis)/d,
+          a:r.area/(W*H), asp:w/h, peri:peri/d, comp:peri>0?(4*Math.PI*r.area)/(peri*peri):0};
+}
+// Weighted distance in feature space — position dominates, then radial band,
+// then size, then the two shape descriptors. Lower = more similar.
+function featCost(s,t){
+  const pos=Math.hypot(t.u-s.u,t.v-s.v);
+  const rad=Math.abs(t.rad-s.rad);
+  const area=Math.abs(Math.log(Math.max(t.a,1e-12)/Math.max(s.a,1e-12)));
+  const asp=Math.abs(Math.log(Math.max(t.asp,1e-9)/Math.max(s.asp,1e-9)));
+  const peri=Math.abs(Math.log(Math.max(t.peri,1e-9)/Math.max(s.peri,1e-9)));
+  const comp=Math.abs(t.comp-s.comp);
+  return 3.4*pos + 1.3*rad + 0.7*area + 0.35*asp + 0.4*peri + 0.5*comp;
+}
+// Auto-label a new variant's regions from the FIRST (base) variant. Greedy
+// one-to-one matching by ascending cost, capped by an acceptance threshold so
+// dissimilar regions are simply left unassigned rather than mislabelled.
 function autoAssignFromBase(){
   if(CUR===0)return 0;const base=VARIANTS[0];
   if(!base.bounds||!(base.regions||[]).some(r=>r.assigned))return 0;
-  const src=base.regions.filter(r=>r.assigned);
+  const oneSide=SIDE!=="both";
+  const src=base.regions.filter(r=>r.assigned).map(s=>({s,f:normFeat(s,base.axis,base.bounds)}));
+  const tgt=REGIONS.filter(t=>!t.assigned&&!t.ignored&&(!oneSide||sideAllowed(t))).map(t=>({t,f:normFeat(t,AXIS,BOUNDS)}));
+  if(!src.length||!tgt.length)return 0;
   const pairs=[];
-  for(const s of src){const sf=normFeat(s,base.axis,base.bounds);
-    for(const t of REGIONS){
-      if(t.assigned||t.ignored)continue;
-      const tf2=normFeat(t,AXIS,BOUNDS);
-      const cost=4*Math.hypot(tf2.u-sf.u,tf2.v-sf.v)
-        +0.8*Math.abs(Math.log(Math.max(tf2.a,1e-12)/Math.max(sf.a,1e-12)))
-        +0.3*Math.abs(Math.log(Math.max(tf2.asp,1e-9)/Math.max(sf.asp,1e-9)));
-      if(cost<0.35)pairs.push({s,t,cost});
-    }}
+  for(const S of src)for(const T of tgt)pairs.push({s:S.s,t:T.t,cost:featCost(S.f,T.f)});
   pairs.sort((a,b)=>a.cost-b.cost);
-  const su=new Set(),tu=new Set();let n=0;
-  for(const p of pairs){if(su.has(p.s)||tu.has(p.t))continue;su.add(p.s);tu.add(p.t);
-    p.t.assigned=p.s.assigned;p.t.ignored=false;ensureComponent(p.s.assigned);n++;}
+  const su=new Set(),tu=new Set();let n=0;const ACCEPT=0.9; // ~0.3 = clean match; 0.9 tolerates real design variation
+  for(const p of pairs){
+    if(p.cost>ACCEPT)break;
+    if(su.has(p.s)||tu.has(p.t))continue;
+    su.add(p.s);tu.add(p.t);
+    p.t.assigned=p.s.assigned;p.t.ignored=false;ensureComponent(p.s.assigned);n++;
+  }
   if(n)renderAll();
   return n;
 }
@@ -1919,7 +1953,7 @@ function regionFeature(r,list=REGIONS){const d=Math.hypot(BOUNDS.width,BOUNDS.he
 function projectObject(){return {version:2,tool:"Tyre Cross-Section Analysis",fileName:FILE_NAME,fingerprint:FINGERPRINT,axisY:AXIS,side:SIDE,centre:Number.isFinite(CENTRE)?CENTRE:null,mode:MODE,tolerance:TOL,components:COMPONENTS,specificGravity:SG,unit:UNIT,land:LAND,notes:$("notes").value,regions:REGIONS.map(r=>({id:r.id,cx:r.cx,cy:r.cy,area:r.area,bbox:r.bbox,feature:regionFeature(r),assigned:r.assigned,ignored:r.ignored,source:r.source}))};}
 $("saveProject").onclick=()=>download((FILE_NAME||"tyre").replace(/\.dxf$/i,"")+".tyreproject.json",JSON.stringify(projectObject(),null,2));
 $("projectFile").addEventListener("change",e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{try{const p=JSON.parse(rd.result);importProject(p);}catch(err){alert("Could not load project: "+err.message);}};rd.readAsText(f);});
-function importProject(p){if(!REGIONS.length){alert("Load the corresponding DXF before importing a project.");return;}pushUndo();COMPONENTS=[...(p.components||[])];SG={...DEFAULT_SG,...(p.specificGravity||{})};UNIT={...(p.unit||{})};LAND={...(p.land||{})};for(const n of COMPONENTS)ensureComponent(n);$("notes").value=p.notes||"";const axv=Number.isFinite(p.axisY)?p.axisY:(Number.isFinite(p.axisX)?p.axisX:null);if(axv!=null){AXIS=axv;$("axis").value=AXIS.toFixed(2);}if(p.side){SIDE=p.side;$("side").value=SIDE;}CENTRE=Number.isFinite(p.centre)?p.centre:NaN;$("centre").value=centrelineX().toFixed(2);const diag=Math.hypot(BOUNDS.width,BOUNDS.height)||1,used=new Set();let matched=0;
+function importProject(p){if(!REGIONS.length){alert("Load the corresponding DXF before importing a project.");return;}pushUndo();COMPONENTS=[...(p.components||[])];SG={...DEFAULT_SG,...(p.specificGravity||{})};UNIT={...(p.unit||{})};LAND={...(p.land||{})};for(const n of COMPONENTS)ensureComponent(n);$("notes").value=p.notes||"";const axv=Number.isFinite(p.axisY)?p.axisY:(Number.isFinite(p.axisX)?p.axisX:null);if(axv!=null){AXIS=axv;$("axis").value=AXIS.toFixed(2);}if(p.side){SIDE=p.side;ensureSideOption(SIDE);$("side").value=SIDE;}CENTRE=Number.isFinite(p.centre)?p.centre:NaN;$("centre").value=centrelineX().toFixed(2);const diag=Math.hypot(BOUNDS.width,BOUNDS.height)||1,used=new Set();let matched=0;
   for(const s of p.regions||[]){if(!s.assigned&&!s.ignored)continue;let best=null,bc=Infinity;for(const r of REGIONS){if(used.has(r.id))continue;let cost;if(p.fingerprint===FINGERPRINT&&r.id===s.id)cost=0;else{const rf=regionFeature(r),sf=s.feature||{},aspectCost=sf.aspect?Math.abs(Math.log(Math.max(rf.aspect,1e-9)/Math.max(sf.aspect,1e-9))):0;let neighCost=0;if(sf.neighbors?.length){const n=Math.min(sf.neighbors.length,rf.neighbors.length);for(let i=0;i<n;i++)neighCost+=Math.abs(sf.neighbors[i]-rf.neighbors[i]);neighCost/=Math.max(n,1);}cost=3*Math.hypot(r.cx-s.cx,r.cy-s.cy)/diag+.8*Math.abs(Math.log(Math.max(r.area,1e-9)/Math.max(s.area,1e-9)))+.35*aspectCost+.5*neighCost;}if(cost<bc){bc=cost;best=r;}}if(best&&bc<.35){best.assigned=s.assigned||null;best.ignored=!!s.ignored;used.add(best.id);matched++;}}
   renderAll();updateDiagnostics();setStatus(`${matched} saved region assignments transferred from ${escapeHtml(p.fileName||"project")}.`,"ok");}
 
