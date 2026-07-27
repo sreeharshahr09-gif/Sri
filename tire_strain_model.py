@@ -59,7 +59,15 @@ class TireParams:
     # Distance from the neutral axis of the belt/carcass package to the inner
     # liner. This is what converts a curvature change into a liner strain, and
     # it is the single physical knob that sets the peak strain magnitude.
-    neutral_axis_offset: float = 1.33e-3  # m
+    # Calibrated so the nominal 40 kN / 827 kPa case lands near 2500 ue.
+    neutral_axis_offset: float = 1.38e-3  # m
+
+    # Bending stiffness per unit width of the belt package (N*m). Sets how
+    # sharply the belt can bend into and out of the flat, and therefore how
+    # completely it conforms to the road. ~400 N*m corresponds to E*t^3/12 for
+    # a ~15 mm belt package at ~1 GPa, which is the right order for a truck
+    # tire. Calibrate against measured data if you have it.
+    belt_bending_stiffness: float = 394.0
 
     # --- shape parameters of the analytical strain profile ---
     tension_flatness: int = 3        # super-Gaussian order of the tensile plateau
@@ -95,18 +103,58 @@ class TireParams:
         return self.contact_area / self.contact_width
 
     @property
+    def belt_relaxation_length(self) -> float:
+        """Length over which the belt bends into or out of the flat (m).
+
+        The belt behaves like a beam under tension on an elastic foundation.
+        Its tension per unit width is the inflation membrane load N = p * R, so
+        the characteristic bending length is lambda = sqrt(D / N). Raising the
+        inflation pressure tightens the belt and *shortens* lambda, letting it
+        snap flatter over a shorter distance.
+        """
+        return np.sqrt(
+            self.belt_bending_stiffness / (self.inflation_pressure * self.inflated_radius)
+        )
+
+    @property
+    def conformity(self) -> float:
+        """How completely the belt flattens at the patch centre, in [0, 1).
+
+        The belt cannot reach zero curvature instantly at the patch edge; it
+        relaxes toward flat over ~lambda. If the patch is long compared with
+        lambda the centre is fully flat and conformity -> 1. If the patch is
+        short -- a lightly loaded or heavily inflated tire -- the belt never
+        fully flattens and the peak strain falls short of h/R.
+        """
+        return 1.0 - np.exp(-self.L / (2 * self.belt_relaxation_length))
+
+    @property
     def eps_peak(self) -> float:
         """Peak tensile liner strain (microstrain).
 
         Physical basis: inside the contact patch the belt is flattened, so its
-        curvature changes from 1/R to ~0. A fibre offset h from the neutral axis
-        therefore sees a strain of h * delta_kappa = h / R. Note this is set by
-        *geometry*, not by load -- doubling the load does not double the peak
-        strain, it lengthens the patch.
+        curvature changes from 1/R to ~0, and a fibre offset h from the neutral
+        axis sees h * delta_kappa = h / R. That ceiling is pure geometry -- the
+        road is flat no matter how hard you press on it -- so peak strain does
+        NOT scale with load the way patch length does.
+
+        It is not perfectly load-independent either, though. The ceiling is
+        reached only insofar as the belt actually conforms, so
+
+            eps_peak = (h / R) * conformity(load, pressure).
+
+        The result is a *saturating* dependence: strong below rated load, where
+        a short patch cannot flatten the belt, and nearly flat above it. Over
+        25-55 kN the peak moves about 13% while the patch length more than
+        doubles. Pressure enters twice and the two effects partly cancel --
+        higher pressure shortens the patch (less conformity) but also tightens
+        the belt (shorter lambda, more conformity) -- leaving a net swing of
+        only ~1% over 650-1000 kPa, in the direction of lower strain at higher
+        pressure.
         """
         if self.peak_strain is not None:
             return self.peak_strain
-        return self.neutral_axis_offset / self.inflated_radius * 1e6
+        return self.neutral_axis_offset / self.inflated_radius * self.conformity * 1e6
 
     @property
     def circumference(self) -> float:

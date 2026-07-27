@@ -158,9 +158,32 @@ h = 1.5 mm → 2830 µε        h = 3.0 mm → 5660 µε
 but it is an assertion rather than a derivation, and nothing ties it to the tire.
 
 The scaling is the real error: **once the belt is flat it cannot flatten further**, so
-additional load extends the flat region rather than deepening the strain. Peak liner
-strain is near load-*independent*; load acts on patch *length*. The notebook's `∝ load`
-rule reports 3125 µε at 50 kN, attributing to amplitude what physically goes into duration.
+additional load mostly extends the flat region rather than deepening the strain. The
+notebook's `∝ load` rule reports 3125 µε at 50 kN, attributing to amplitude what
+physically goes into duration.
+
+That said, peak strain is *not* strictly load-independent, and an earlier draft of this
+audit overstated the point. The `h/R` ceiling is geometric and fixed, but it is only
+*reached* insofar as the belt actually conforms to the road. The belt is a tensioned beam
+with bending stiffness `D` under membrane load `N = pR`, so it relaxes into and out of the
+flat over `λ = √(D/N) ≈ 30 mm`, giving `ε_peak = (h/R)·η` with `η = 1 − e^(−L/2λ)`. The
+dependence is therefore **saturating**, not absent:
+
+```
+        L        conformity η   peak strain   vs 40 kN
+15 kN    75 mm      0.713          1857 µε      0.74
+25 kN   125 mm      0.875          2279 µε      0.91
+40 kN   200 mm      0.964          2511 µε      1.00
+55 kN   275 mm      0.990          2577 µε      1.03
+70 kN   349 mm      0.997          2596 µε      1.03
+```
+
+Over 25–55 kN, patch length changes ×2.20 while peak strain changes ×1.13. So the
+notebook's error is one of *degree and mechanism*, not of direction — it is least wrong
+below rated load, where the belt genuinely fails to conform, and most wrong above it,
+where the ceiling has been reached. Pressure enters twice and largely self-cancels
+(shorter patch = less conformity, tighter belt = shorter λ = more conformity), netting
+~1% over 650–1000 kPa toward lower strain at higher pressure.
 
 The patch-length rule `L ∝ (F/p)^0.5` has the same problem — it assumes the patch grows
 isotropically, but tread width is fixed by construction, so all growth goes into length
@@ -389,7 +412,7 @@ Corrected model, same inputs:
 
 ```
 contact patch length      199.7 mm     (from vertical equilibrium, was 132 mm)
-peak tensile strain       2509 µε      (= h/R, h = 1.33 mm — derived, not asserted)
+peak tensile strain       2511 µε      (= (h/R)·η, h = 1.38 mm, η = 0.964 — derived)
 peak compression          −999 µε      centred outside ±L/2 ✓
 ∮ ε ds                    −6e−06 µε·mm (was −22,977) ✓
 tension/compression area   1.000       (was 0.86) ✓
