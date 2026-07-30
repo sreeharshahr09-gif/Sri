@@ -882,6 +882,273 @@
             .workflow-step { font-size: 10px; padding: 6px 8px; }
         }
 
+
+        /* ─────────────────────────────────────────────────────────────
+           DXF STUDIO — viewer + profile smoother (additive module)
+           Namespaced under .dxfs- so it cannot affect tracer styling.
+        ───────────────────────────────────────────────────────────── */
+        .dxfs-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.72);
+            backdrop-filter: blur(4px);
+            z-index: 4000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 22px;
+        }
+        .dxfs-modal.active { display: flex; }
+
+        .dxfs-shell {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            width: min(1500px, 100%);
+            height: min(920px, 100%);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 30px 80px rgba(0,0,0,.5);
+        }
+
+        .dxfs-head {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .dxfs-title {
+            font-size: 14px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .dxfs-head .dxfs-spacer { margin-left: auto; }
+
+        .dxfs-body {
+            flex: 1;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 380px;
+            min-height: 0;
+        }
+
+        .dxfs-viewer {
+            position: relative;
+            background: var(--canvas-bg);
+            border-right: 1px solid var(--border);
+            min-width: 0;
+            min-height: 0;
+        }
+        .dxfs-viewer canvas { display: block; cursor: grab; }
+
+        .dxfs-viewtools {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            align-items: center;
+            background: rgba(0,0,0,.55);
+            padding: 6px 8px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,.1);
+        }
+        .dxfs-viewtools label {
+            font-size: 10px;
+            color: #e5e7eb;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .dxfs-legend {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0,0,0,.55);
+            border: 1px solid rgba(255,255,255,.1);
+            border-radius: 8px;
+            padding: 7px 10px;
+            font-size: 10px;
+            color: #e5e7eb;
+            line-height: 1.7;
+        }
+        .dxfs-swatch {
+            display: inline-block;
+            width: 16px; height: 3px;
+            vertical-align: middle;
+            margin-right: 6px;
+            border-radius: 2px;
+        }
+
+        .dxfs-side {
+            overflow-y: auto;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .dxfs-card {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px;
+        }
+        .dxfs-card h4 {
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: .8px;
+            text-transform: uppercase;
+            color: var(--accent-primary);
+            margin-bottom: 10px;
+        }
+
+        .dxfs-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 9px;
+        }
+        .dxfs-row > label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            flex: 1;
+            min-width: 0;
+        }
+        .dxfs-row input[type="range"] { flex: 1.3; min-width: 0; }
+        .dxfs-row .dxfs-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            min-width: 38px;
+            text-align: right;
+            color: var(--text-primary);
+        }
+        .dxfs-row select, .dxfs-row input[type="number"] {
+            flex: 1.3;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px 8px;
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            min-width: 0;
+        }
+        .dxfs-check {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            margin-bottom: 8px;
+        }
+
+        .dxfs-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+        .dxfs-grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+
+        .dxfs-list { max-height: 190px; overflow-y: auto; }
+        .dxfs-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 6px;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            border-radius: 6px;
+        }
+        .dxfs-item:hover { background: var(--bg-tertiary); }
+        .dxfs-item.sel { background: rgba(16,185,129,.14); }
+        .dxfs-item-main { flex: 1; min-width: 0; }
+        .dxfs-item-main strong {
+            display: block;
+            font-size: 11px;
+            color: var(--text-primary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .dxfs-item-main span { font-size: 9.5px; color: var(--text-secondary); }
+        .dxfs-eye {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 13px;
+            opacity: .8;
+        }
+
+        .dxfs-metric {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            font-size: 11px;
+            padding: 4px 0;
+            border-bottom: 1px dashed var(--border);
+        }
+        .dxfs-metric:last-child { border-bottom: none; }
+        .dxfs-metric span { color: var(--text-secondary); }
+        .dxfs-metric strong { font-family: 'JetBrains Mono', monospace; color: var(--text-primary); }
+
+        .dxfs-hint { font-size: 10px; color: var(--text-secondary); line-height: 1.5; }
+        .dxfs-warn {
+            margin-top: 8px;
+            font-size: 10px;
+            line-height: 1.5;
+            color: var(--accent-warning);
+            background: rgba(245,158,11,.10);
+            border: 1px solid rgba(245,158,11,.35);
+            border-radius: 6px;
+            padding: 7px 8px;
+        }
+        .dxfs-note {
+            font-size: 11px;
+            color: var(--accent-primary);
+            min-height: 15px;
+            line-height: 1.4;
+        }
+        .dxfs-note.warn { color: var(--accent-warning); }
+
+        .dxfs-audit { max-height: 230px; overflow-y: auto; }
+        .dxfs-audit-head {
+            font-size: 11px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            padding: 6px 8px;
+            border-radius: 6px;
+        }
+        .dxfs-audit-head.ok { color: var(--accent-primary); background: rgba(16,185,129,.12); }
+        .dxfs-audit-head.bad { color: #ef4444; background: rgba(239,68,68,.12); }
+        .dxfs-audit-row {
+            display: flex;
+            gap: 7px;
+            font-size: 10px;
+            padding: 4px 0;
+            border-bottom: 1px dashed var(--border);
+            line-height: 1.45;
+        }
+        .dxfs-audit-row.ok > span { color: var(--accent-primary); }
+        .dxfs-audit-row.bad > span { color: #ef4444; }
+        .dxfs-audit-row strong { color: var(--text-primary); font-weight: 600; display: block; }
+        .dxfs-audit-row em {
+            color: var(--text-secondary);
+            font-style: normal;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9.5px;
+        }
+
+        @media (max-width: 1100px) {
+            .dxfs-body { grid-template-columns: minmax(0, 1fr) 320px; }
+        }
+
     </style>
 </head>
 <body>
@@ -1680,6 +1947,18 @@
                 </div>
             </div>
             
+            <div class="panel-section">
+                <div class="section-header">🧩 DXF Studio</div>
+                <button class="btn btn-primary" onclick="DXFStudio.open()" style="width:100%;font-size:11px;padding:10px;">
+                    🧩 Open DXF Viewer &amp; Smoother
+                </button>
+                <div class="manual-trace-note">
+                    View any DXF, or pull in the shapes you just traced, and smooth away digitisation
+                    jitter without changing the profile. Sharp corners are protected and a hard
+                    deviation limit keeps the curve faithful to what you extracted.
+                </div>
+            </div>
+
             <div class="panel-section export-section">
                 <div class="section-header">💾 Export / Save</div>
                 <div class="coordinates-display" id="coordsDisplay">
@@ -5760,6 +6039,1667 @@
         }
 
 
+        /* ===== PROFILE-SMOOTH-CORE-START =====================================
+           Pure, DOM-free geometry / DXF core for the DXF Studio module.
+           Deliberately isolated from the tracer engine: it takes plain point
+           arrays in and returns plain point arrays out, so it can be unit
+           tested headlessly and can never corrupt tracer state.
+        ==================================================================== */
+        var ProfileSmoothCore = (function () {
+            'use strict';
+
+            const DEG = 180 / Math.PI;
+
+            // ── basic helpers ────────────────────────────────────────────────
+            function dist(a, b) { return Math.hypot(b.x - a.x, b.y - a.y); }
+
+            function sanitize(pts) {
+                if (!Array.isArray(pts)) return [];
+                const out = [];
+                for (const p of pts) {
+                    if (!p) continue;
+                    const x = Number(p.x), y = Number(p.y);
+                    if (Number.isFinite(x) && Number.isFinite(y)) out.push({ x, y });
+                }
+                return out;
+            }
+
+            function clonePts(pts) { return pts.map(p => ({ x: p.x, y: p.y })); }
+
+            function polylineLength(pts, closed) {
+                if (!pts || pts.length < 2) return 0;
+                let L = 0;
+                for (let i = 0; i < pts.length - 1; i++) L += dist(pts[i], pts[i + 1]);
+                if (closed && pts.length > 2) L += dist(pts[pts.length - 1], pts[0]);
+                return L;
+            }
+
+            function polygonArea(pts) {
+                if (!pts || pts.length < 3) return 0;
+                let a = 0;
+                for (let i = 0; i < pts.length; i++) {
+                    const j = (i + 1) % pts.length;
+                    a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+                }
+                return Math.abs(a / 2);
+            }
+
+            function boundingBox(pts) {
+                if (!pts || !pts.length) return null;
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                for (const p of pts) {
+                    if (p.x < minX) minX = p.x;
+                    if (p.y < minY) minY = p.y;
+                    if (p.x > maxX) maxX = p.x;
+                    if (p.y > maxY) maxY = p.y;
+                }
+                return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
+            }
+
+            // Turn angle (deg) at each vertex, measured across `span` neighbours.
+            // Using a span > 1 makes the measure robust to single-pixel noise,
+            // so real CAD corners are detected but digitisation jitter is not.
+            function turnAngles(pts, span, closed) {
+                const n = pts.length;
+                const out = new Array(n).fill(0);
+                if (n < 3) return out;
+                const s = Math.max(1, Math.min(span | 0 || 1, Math.floor((n - 1) / 2)));
+                for (let i = 0; i < n; i++) {
+                    let ia = i - s, ib = i + s;
+                    if (closed) { ia = ((ia % n) + n) % n; ib = ib % n; }
+                    else { ia = Math.max(0, ia); ib = Math.min(n - 1, ib); }
+                    if (ia === i || ib === i) { out[i] = 0; continue; }
+                    const ax = pts[i].x - pts[ia].x, ay = pts[i].y - pts[ia].y;
+                    const bx = pts[ib].x - pts[i].x, by = pts[ib].y - pts[i].y;
+                    const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
+                    if (la < 1e-12 || lb < 1e-12) { out[i] = 0; continue; }
+                    let c = (ax * bx + ay * by) / (la * lb);
+                    c = Math.max(-1, Math.min(1, c));
+                    out[i] = Math.acos(c) * DEG;
+                }
+                return out;
+            }
+
+            // Mean absolute turn angle across immediate neighbours = "jaggedness".
+            function meanTurn(pts, closed) {
+                if (!pts || pts.length < 3) return 0;
+                const a = turnAngles(pts, 1, closed);
+                let s = 0, n = 0;
+                for (let i = 0; i < a.length; i++) {
+                    if (!closed && (i === 0 || i === a.length - 1)) continue;
+                    s += a[i]; n++;
+                }
+                return n ? s / n : 0;
+            }
+
+            // ── linear algebra (small dense systems) ─────────────────────────
+            // Gauss-Jordan with partial pivoting, multiple right-hand sides.
+            // Returns array of solution vectors, or null if singular.
+            function solveMulti(M, rhsList) {
+                const n = M.length;
+                const k = rhsList.length;
+                const A = M.map((row, i) => {
+                    const r = row.slice();
+                    for (let j = 0; j < k; j++) r.push(rhsList[j][i]);
+                    return r;
+                });
+                for (let col = 0; col < n; col++) {
+                    let piv = col;
+                    for (let r = col + 1; r < n; r++) {
+                        if (Math.abs(A[r][col]) > Math.abs(A[piv][col])) piv = r;
+                    }
+                    if (!Number.isFinite(A[piv][col]) || Math.abs(A[piv][col]) < 1e-12) return null;
+                    if (piv !== col) { const t = A[piv]; A[piv] = A[col]; A[col] = t; }
+                    const d = A[col][col];
+                    for (let c = col; c < n + k; c++) A[col][c] /= d;
+                    for (let r = 0; r < n; r++) {
+                        if (r === col) continue;
+                        const f = A[r][col];
+                        if (f === 0) continue;
+                        for (let c = col; c < n + k; c++) A[r][c] -= f * A[col][c];
+                    }
+                }
+                const out = [];
+                for (let j = 0; j < k; j++) out.push(A.map(row => row[n + j]));
+                return out;
+            }
+
+            // Collect a window of neighbours around i together with their signed
+            // arc-length offsets. Handles wrap-around for closed contours and
+            // one-sided windows at the ends of open profiles.
+            // `breaks[i] = true` marks a vertex the window must not reach across
+            // (a genuine corner). Without this a polynomial window spanning a 90°
+            // corner drags the vertices on either side off their own edge — the
+            // corner stays sharp but its neighbourhood bulges. Stopping the window
+            // at corners means each straight run is fitted purely on its own data.
+            function gatherWindow(pts, i, half, closed, breaks) {
+                const n = pts.length;
+                const idx = [i], t = [0];
+                let acc = 0, cur = i;
+                for (let k = 1; k <= half; k++) {
+                    let nxt = cur + 1;
+                    if (nxt >= n) { if (!closed) break; nxt = 0; }
+                    if (closed && nxt === i) break;
+                    if (breaks && breaks[nxt]) break;
+                    acc += dist(pts[cur], pts[nxt]);
+                    idx.push(nxt); t.push(acc);
+                    cur = nxt;
+                }
+                acc = 0; cur = i;
+                for (let k = 1; k <= half; k++) {
+                    let prv = cur - 1;
+                    if (prv < 0) { if (!closed) break; prv = n - 1; }
+                    if (closed && prv === i) break;
+                    if (breaks && breaks[prv]) break;
+                    acc += dist(pts[cur], pts[prv]);
+                    idx.push(prv); t.push(-acc);
+                    cur = prv;
+                }
+                return { idx, t };
+            }
+
+            // ── smoothing kernels ────────────────────────────────────────────
+
+            // Savitzky-Golay, generalised to non-uniform spacing: a local
+            // weighted least-squares polynomial is fitted in arc-length and
+            // evaluated at the vertex. Preserves curvature/peak shape far better
+            // than a moving average, which is exactly what a profile needs.
+            function savitzkyGolay(pts, half, degree, closed, breaks) {
+                const n = pts.length;
+                const out = new Array(n);
+                for (let i = 0; i < n; i++) {
+                    out[i] = sgPoint(pts, i, half, degree, closed, breaks);
+                }
+                return out;
+            }
+
+            function sgPoint(pts, i, half, degree, closed, breaks) {
+                const { idx, t } = gatherWindow(pts, i, half, closed, breaks);
+                const m = idx.length;
+                if (m < 2) return { x: pts[i].x, y: pts[i].y };
+                let h = 0;
+                for (const v of t) h = Math.max(h, Math.abs(v));
+                if (h < 1e-12) return { x: pts[i].x, y: pts[i].y };
+                // Normalise abscissa to [-1,1] to keep the normal equations well
+                // conditioned even for high polynomial order.
+                const u = t.map(v => v / h);
+                let deg = Math.max(0, Math.min(degree | 0, m - 1));
+                while (deg >= 0) {
+                    const nc = deg + 1;
+                    const M = [], bx = new Array(nc), by = new Array(nc);
+                    for (let a = 0; a < nc; a++) {
+                        const row = new Array(nc);
+                        for (let b = 0; b < nc; b++) {
+                            let s = 0;
+                            for (let j = 0; j < m; j++) s += Math.pow(u[j], a + b);
+                            row[b] = s;
+                        }
+                        M.push(row);
+                        let sx = 0, sy = 0;
+                        for (let j = 0; j < m; j++) {
+                            const w = Math.pow(u[j], a);
+                            sx += w * pts[idx[j]].x;
+                            sy += w * pts[idx[j]].y;
+                        }
+                        bx[a] = sx; by[a] = sy;
+                    }
+                    const sol = solveMulti(M, [bx, by]);
+                    if (sol && Number.isFinite(sol[0][0]) && Number.isFinite(sol[1][0])) {
+                        return { x: sol[0][0], y: sol[1][0] };
+                    }
+                    deg--; // degrade gracefully to a lower order, ultimately a mean
+                }
+                return { x: pts[i].x, y: pts[i].y };
+            }
+
+            function laplacianPass(pts, factor, closed) {
+                const n = pts.length;
+                const out = new Array(n);
+                for (let i = 0; i < n; i++) {
+                    const pi = pts[i];
+                    let pp, pn;
+                    if (closed) { pp = pts[(i - 1 + n) % n]; pn = pts[(i + 1) % n]; }
+                    else {
+                        if (i === 0 || i === n - 1) { out[i] = { x: pi.x, y: pi.y }; continue; }
+                        pp = pts[i - 1]; pn = pts[i + 1];
+                    }
+                    const lx = (pp.x + pn.x) / 2 - pi.x;
+                    const ly = (pp.y + pn.y) / 2 - pi.y;
+                    out[i] = { x: pi.x + factor * lx, y: pi.y + factor * ly };
+                }
+                return out;
+            }
+
+            // Taubin lambda/mu: a shrink-free low-pass. The negative mu pass
+            // re-inflates what the positive lambda pass contracted, so closed
+            // profiles keep their enclosed area instead of collapsing inward.
+            function taubin(pts, iterations, lambda, mu, closed) {
+                let cur = clonePts(pts);
+                const it = Math.max(1, iterations | 0);
+                for (let k = 0; k < it; k++) {
+                    cur = laplacianPass(cur, lambda, closed);
+                    cur = laplacianPass(cur, mu, closed);
+                }
+                return cur;
+            }
+
+            // Gaussian low-pass in arc-length space.
+            function gaussianSmooth(pts, sigma, closed, breaks) {
+                const n = pts.length;
+                const L = polylineLength(pts, closed);
+                const avg = L / Math.max(1, closed ? n : n - 1);
+                const s = Math.max(sigma, 1e-9);
+                let half = Math.ceil((3 * s) / Math.max(avg, 1e-9));
+                half = Math.max(1, Math.min(half, Math.min(200, n - 1)));
+                const out = new Array(n);
+                for (let i = 0; i < n; i++) {
+                    const { idx, t } = gatherWindow(pts, i, half, closed, breaks);
+                    let wsum = 0, sx = 0, sy = 0;
+                    for (let j = 0; j < idx.length; j++) {
+                        const w = Math.exp(-(t[j] * t[j]) / (2 * s * s));
+                        wsum += w;
+                        sx += w * pts[idx[j]].x;
+                        sy += w * pts[idx[j]].y;
+                    }
+                    out[i] = wsum > 1e-12
+                        ? { x: sx / wsum, y: sy / wsum }
+                        : { x: pts[i].x, y: pts[i].y };
+                }
+                return out;
+            }
+
+            function movingAverage(pts, half, closed, breaks) {
+                const n = pts.length;
+                const out = new Array(n);
+                const h = Math.max(1, Math.min(half | 0, n - 1));
+                for (let i = 0; i < n; i++) {
+                    const { idx } = gatherWindow(pts, i, h, closed, breaks);
+                    let sx = 0, sy = 0;
+                    for (const j of idx) { sx += pts[j].x; sy += pts[j].y; }
+                    out[i] = { x: sx / idx.length, y: sy / idx.length };
+                }
+                return out;
+            }
+
+            // ── shape-preservation guards ────────────────────────────────────
+
+            // Per-vertex smoothing weight in [0,1]. Genuine corners are pinned to
+            // 0 so they stay sharp; the field is then tapered so the transition
+            // into a locked corner is gradual rather than a visible kink.
+            function smoothingWeights(pts, cornerAngle, span, taperPasses, closed, preserveEnds) {
+                const n = pts.length;
+                const ang = turnAngles(pts, span, closed);
+                const corners = ang.map(a => a >= cornerAngle);   // genuine geometry corners
+                const locked = corners.slice();
+                if (!closed && preserveEnds) { locked[0] = true; locked[n - 1] = true; }
+                let w = locked.map(l => (l ? 0 : 1));
+                const passes = Math.max(0, taperPasses | 0);
+                for (let p = 0; p < passes; p++) {
+                    const nw = w.slice();
+                    for (let i = 0; i < n; i++) {
+                        let a, b;
+                        if (closed) { a = w[(i - 1 + n) % n]; b = w[(i + 1) % n]; }
+                        else { a = w[Math.max(0, i - 1)]; b = w[Math.min(n - 1, i + 1)]; }
+                        nw[i] = (a + w[i] + b) / 3;
+                    }
+                    w = nw;
+                }
+                for (let i = 0; i < n; i++) if (locked[i]) w[i] = 0;
+                return { w, locked, corners };
+            }
+
+            // Hard fidelity guarantee: no vertex may travel further than `maxDev`
+            // from where the tracer put it. Anything beyond is projected back
+            // onto the tolerance circle, so the overall profile cannot drift.
+            function clampDeviation(orig, smoothed, maxDev) {
+                if (!(maxDev > 0)) return smoothed;
+                const out = new Array(orig.length);
+                for (let i = 0; i < orig.length; i++) {
+                    const dx = smoothed[i].x - orig[i].x;
+                    const dy = smoothed[i].y - orig[i].y;
+                    const d = Math.hypot(dx, dy);
+                    if (d <= maxDev || d < 1e-15) {
+                        out[i] = { x: smoothed[i].x, y: smoothed[i].y };
+                    } else {
+                        const f = maxDev / d;
+                        out[i] = { x: orig[i].x + dx * f, y: orig[i].y + dy * f };
+                    }
+                }
+                return out;
+            }
+
+            function deviations(orig, out) {
+                let max = 0, sum = 0;
+                for (let i = 0; i < orig.length; i++) {
+                    const d = dist(orig[i], out[i]);
+                    if (d > max) max = d;
+                    sum += d;
+                }
+                return { max, mean: orig.length ? sum / orig.length : 0 };
+            }
+
+            function computeMetrics(orig, out, closed, corners, clampedCount) {
+                const dev = deviations(orig, out);
+                const lenBefore = polylineLength(orig, closed);
+                const lenAfter = polylineLength(out, closed);
+                const areaBefore = closed ? polygonArea(orig) : 0;
+                const areaAfter = closed ? polygonArea(out) : 0;
+                const turnBefore = meanTurn(orig, closed);
+                const turnAfter = meanTurn(out, closed);
+                const pct = (a, b) => (a > 1e-12 ? ((b - a) / a) * 100 : 0);
+                return {
+                    points: orig.length,
+                    maxDeviation: dev.max,
+                    meanDeviation: dev.mean,
+                    lengthBefore: lenBefore,
+                    lengthAfter: lenAfter,
+                    lengthChangePct: pct(lenBefore, lenAfter),
+                    areaBefore, areaAfter,
+                    areaChangePct: pct(areaBefore, areaAfter),
+                    turnBefore, turnAfter,
+                    roughnessDropPct: turnBefore > 1e-9 ? ((turnBefore - turnAfter) / turnBefore) * 100 : 0,
+                    lockedCorners: Array.isArray(corners) ? corners.filter(Boolean).length : 0,
+                    clampedPoints: clampedCount || 0,
+                    clampedPct: orig.length ? ((clampedCount || 0) / orig.length) * 100 : 0
+                };
+            }
+
+            // Defaults chosen from a parameter sweep against a known ground-truth
+            // curve degraded by pixel quantisation (the tracer's real error mode):
+            // window 8 / degree 3 cut true geometric error by ~70% and mean turn
+            // angle by ~90%, while never worsening the peak error.
+            const DEFAULTS = {
+                method: 'sg',        // 'sg' | 'taubin' | 'gaussian' | 'movavg'
+                closed: false,
+                window: 8,           // half-window in vertices
+                degree: 3,           // polynomial order for SG
+                iterations: 12,      // Taubin
+                lambda: 0.5,
+                mu: -0.53,
+                sigma: 1.0,          // Gaussian, in drawing units (mm)
+                maxDeviation: 0.15,  // mm, 0 disables the cap
+                preserveCorners: true,
+                cornerAngle: 32,     // deg
+                cornerSpan: 3,
+                taperPasses: 2,
+                preserveEnds: true
+            };
+
+            function runMethod(name, pts, o, breaks) {
+                switch (name) {
+                    case 'sg':       return savitzkyGolay(pts, o.window, o.degree, o.closed, breaks);
+                    case 'taubin':   return taubin(pts, o.iterations, o.lambda, o.mu, o.closed);
+                    case 'gaussian': return gaussianSmooth(pts, o.sigma, o.closed, breaks);
+                    case 'movavg':   return movingAverage(pts, o.window, o.closed, breaks);
+                    default: throw new Error('unknown method "' + name + '"');
+                }
+            }
+
+            // Ordered fallback chain: the requested method first, then
+            // progressively simpler/sturdier kernels. If every kernel fails the
+            // ORIGINAL geometry is returned untouched — smoothing never destroys
+            // data, it only ever declines to act.
+            function buildChain(requested) {
+                const base = ['sg', 'taubin', 'gaussian', 'movavg'];
+                const chain = [];
+                if (requested && base.indexOf(requested) !== -1) chain.push(requested);
+                for (const m of base) if (chain.indexOf(m) === -1) chain.push(m);
+                return chain;
+            }
+
+            function smoothPolyline(pts, options) {
+                const o = Object.assign({}, DEFAULTS, options || {});
+                const warnings = [];
+                const orig = sanitize(pts);
+
+                if (!pts || !Array.isArray(pts)) {
+                    return { ok: false, pts: [], method: 'none', requested: o.method, fellBack: false,
+                             warnings: ['Input is not an array of points'], metrics: null };
+                }
+                if (orig.length !== (pts ? pts.length : 0)) {
+                    warnings.push(`Dropped ${pts.length - orig.length} non-finite point(s)`);
+                }
+                if (orig.length < 3) {
+                    return { ok: false, pts: clonePts(orig), method: 'none', requested: o.method, fellBack: false,
+                             warnings: warnings.concat('Need at least 3 valid points to smooth'),
+                             metrics: computeMetrics(orig, orig, o.closed, [], 0) };
+                }
+
+                // Corner detection runs once, up front: the same corner set both
+                // pins the vertices (weight 0) and bounds the smoothing windows,
+                // so a corner never contaminates the runs on either side of it.
+                const wr = o.preserveCorners
+                    ? smoothingWeights(orig, o.cornerAngle, o.cornerSpan, o.taperPasses, o.closed, o.preserveEnds)
+                    : { w: new Array(orig.length).fill(1),
+                        locked: new Array(orig.length).fill(false),
+                        corners: new Array(orig.length).fill(false) };
+
+                if (!o.closed && o.preserveEnds) {
+                    wr.w[0] = 0;
+                    wr.w[wr.w.length - 1] = 0;
+                    wr.locked[0] = true;
+                    wr.locked[wr.locked.length - 1] = true;
+                }
+
+                const breaks = o.preserveCorners ? wr.corners : null;
+
+                const chain = buildChain(o.method);
+                for (const m of chain) {
+                    try {
+                        const sm = runMethod(m, orig, o, breaks);
+                        if (!Array.isArray(sm) || sm.length !== orig.length) {
+                            throw new Error('kernel returned wrong point count');
+                        }
+                        for (const p of sm) {
+                            if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) {
+                                throw new Error('kernel produced non-finite values');
+                            }
+                        }
+
+                        let out = orig.map((p, i) => ({
+                            x: p.x + wr.w[i] * (sm[i].x - p.x),
+                            y: p.y + wr.w[i] * (sm[i].y - p.y)
+                        }));
+
+                        let clamped = 0;
+                        if (o.maxDeviation > 0) {
+                            for (let i = 0; i < out.length; i++) {
+                                if (dist(orig[i], out[i]) > o.maxDeviation) clamped++;
+                            }
+                            out = clampDeviation(orig, out, o.maxDeviation);
+                        }
+
+                        for (const p of out) {
+                            if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) {
+                                throw new Error('post-processing produced non-finite values');
+                            }
+                        }
+
+                        const metrics = computeMetrics(orig, out, o.closed, wr.corners, clamped);
+
+                        if (o.maxDeviation > 0 && metrics.maxDeviation > o.maxDeviation * 1.0001 + 1e-9) {
+                            throw new Error('deviation cap violated');
+                        }
+
+                        return {
+                            ok: true, pts: out, method: m, requested: o.method,
+                            fellBack: m !== o.method, warnings, metrics
+                        };
+                    } catch (err) {
+                        warnings.push(`${m}: ${err && err.message ? err.message : String(err)}`);
+                    }
+                }
+
+                return {
+                    ok: false, pts: clonePts(orig), method: 'none', requested: o.method, fellBack: true,
+                    warnings: warnings.concat('All smoothing kernels failed — original geometry kept'),
+                    metrics: computeMetrics(orig, orig, o.closed, [], 0)
+                };
+            }
+
+            // ── DXF ──────────────────────────────────────────────────────────
+
+            function tessellateArc(cx, cy, r, a0Deg, a1Deg, segs) {
+                const pts = [];
+                let a0 = a0Deg, a1 = a1Deg;
+                while (a1 < a0) a1 += 360;
+                const sweep = a1 - a0;
+                const n = Math.max(2, Math.min(segs || Math.ceil(sweep / 5) + 2, 720));
+                for (let i = 0; i <= n; i++) {
+                    const a = (a0 + (sweep * i) / n) / DEG;
+                    pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+                }
+                return pts;
+            }
+
+            // Expand an LWPOLYLINE bulge (tan of a quarter of the included angle)
+            // into line segments so curved CAD polylines survive the round trip.
+            function expandBulge(p0, p1, bulge, segs) {
+                try {
+                    if (!bulge || Math.abs(bulge) < 1e-12) return [];
+                    const theta = 4 * Math.atan(bulge);
+                    const chord = dist(p0, p1);
+                    if (chord < 1e-12) return [];
+                    const r = chord / (2 * Math.sin(Math.abs(theta) / 2));
+                    if (!Number.isFinite(r) || r < 1e-12) return [];
+                    const mx = (p0.x + p1.x) / 2, my = (p0.y + p1.y) / 2;
+                    const dx = (p1.x - p0.x) / chord, dy = (p1.y - p0.y) / chord;
+                    const hSq = r * r - (chord / 2) * (chord / 2);
+                    const h = Math.sqrt(Math.max(0, hSq)) * (theta > 0 ? 1 : -1);
+                    const cx = mx - dy * h, cy = my + dx * h;
+                    const a0 = Math.atan2(p0.y - cy, p0.x - cx);
+                    const n = Math.max(2, Math.min(Math.ceil(Math.abs(theta) * DEG / 5) + 2, 360));
+                    const out = [];
+                    for (let i = 1; i < n; i++) {
+                        const a = a0 + (theta * i) / n;
+                        out.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+                    }
+                    return out;
+                } catch (e) { return []; }
+            }
+
+            function parseDXF(text) {
+                const result = { shapes: [], warnings: [], stats: {} };
+                if (typeof text !== 'string' || !text.length) {
+                    result.warnings.push('Empty file');
+                    return result;
+                }
+                if (text.indexOf('AutoCAD Binary DXF') === 0) {
+                    result.warnings.push('Binary DXF is not supported — re-save as ASCII DXF');
+                    return result;
+                }
+
+                const raw = text.split(/\r\n|\r|\n/);
+                const pairs = [];
+                for (let i = 0; i + 1 < raw.length; i += 2) {
+                    const code = parseInt(raw[i].trim(), 10);
+                    if (!Number.isFinite(code)) continue;
+                    pairs.push([code, raw[i + 1]]);
+                }
+                if (!pairs.length) {
+                    result.warnings.push('No valid DXF group codes found');
+                    return result;
+                }
+
+                let counts = {};
+                let cur = null, curType = null;
+                let polyParent = null;      // active POLYLINE awaiting VERTEX list
+                let section = null;
+
+                const num = v => { const n = parseFloat(String(v).trim()); return Number.isFinite(n) ? n : 0; };
+                const addShape = (type, pts, closed, layer) => {
+                    const clean = sanitize(pts);
+                    if (clean.length < 2) return;
+                    counts[type] = (counts[type] || 0) + 1;
+                    result.shapes.push({
+                        name: `${type}_${result.shapes.length + 1}`,
+                        type, layer: layer || '0',
+                        closed: !!closed && clean.length > 2,
+                        pts: clean
+                    });
+                };
+
+                function flush() {
+                    if (!cur) return;
+                    const t = curType;
+                    try {
+                        if (t === 'LWPOLYLINE') {
+                            const xs = cur.v10 || [], ys = cur.v20 || [], bulges = cur.v42 || [];
+                            const pts = [];
+                            for (let i = 0; i < Math.min(xs.length, ys.length); i++) {
+                                pts.push({ x: xs[i], y: ys[i] });
+                                const b = bulges[i];
+                                const nextI = i + 1;
+                                const hasNext = nextI < Math.min(xs.length, ys.length);
+                                const wrap = !hasNext && ((cur.f70 | 0) & 1);
+                                const p1 = hasNext ? { x: xs[nextI], y: ys[nextI] }
+                                                   : (wrap ? { x: xs[0], y: ys[0] } : null);
+                                if (b && p1) pts.push(...expandBulge(pts[pts.length - 1], p1, b));
+                            }
+                            addShape('LWPOLYLINE', pts, (cur.f70 | 0) & 1, cur.layer);
+                        } else if (t === 'LINE') {
+                            addShape('LINE', [
+                                { x: cur.x10 || 0, y: cur.y20 || 0 },
+                                { x: cur.x11 || 0, y: cur.y21 || 0 }
+                            ], false, cur.layer);
+                        } else if (t === 'CIRCLE') {
+                            addShape('CIRCLE', tessellateArc(cur.x10 || 0, cur.y20 || 0, cur.r40 || 0, 0, 360, 96),
+                                     true, cur.layer);
+                        } else if (t === 'ARC') {
+                            addShape('ARC', tessellateArc(cur.x10 || 0, cur.y20 || 0, cur.r40 || 0,
+                                     cur.a50 || 0, cur.a51 || 0), false, cur.layer);
+                        } else if (t === 'SPLINE') {
+                            // Prefer fit points (they lie on the curve); fall back
+                            // to the control polygon, which approximates it.
+                            const fx = cur.v11 || [], fy = cur.v21 || [];
+                            const cxs = cur.v10 || [], cys = cur.v20 || [];
+                            let pts = [];
+                            if (fx.length >= 2 && fy.length >= 2) {
+                                for (let i = 0; i < Math.min(fx.length, fy.length); i++) pts.push({ x: fx[i], y: fy[i] });
+                            } else {
+                                for (let i = 0; i < Math.min(cxs.length, cys.length); i++) pts.push({ x: cxs[i], y: cys[i] });
+                                if (pts.length) result.warnings.push('SPLINE approximated by its control polygon');
+                            }
+                            addShape('SPLINE', pts, (cur.f70 | 0) & 1, cur.layer);
+                        }
+                    } catch (e) {
+                        result.warnings.push(`Skipped a ${t}: ${e.message}`);
+                    }
+                    cur = null; curType = null;
+                }
+
+                for (const [code, valRaw] of pairs) {
+                    const val = valRaw === undefined ? '' : String(valRaw).trim();
+
+                    if (code === 0) {
+                        // Finish whatever entity was in progress.
+                        if (curType === 'VERTEX' && polyParent) {
+                            polyParent.pts.push({ x: cur.x10 || 0, y: cur.y20 || 0 });
+                            cur = null; curType = null;
+                        } else {
+                            flush();
+                        }
+
+                        if (val === 'SECTION') { section = 'PENDING'; continue; }
+                        if (val === 'ENDSEC') { section = null; continue; }
+
+                        if (val === 'POLYLINE') {
+                            polyParent = { pts: [], closed: false, layer: '0' };
+                            cur = {}; curType = 'POLYLINE_HDR';
+                            continue;
+                        }
+                        if (val === 'VERTEX') { cur = {}; curType = 'VERTEX'; continue; }
+                        if (val === 'SEQEND') {
+                            if (polyParent) {
+                                addShape('POLYLINE', polyParent.pts, polyParent.closed, polyParent.layer);
+                                polyParent = null;
+                            }
+                            cur = null; curType = null;
+                            continue;
+                        }
+                        cur = {}; curType = val;
+                        continue;
+                    }
+
+                    if (section === 'PENDING' && code === 2) { section = val; continue; }
+                    if (!cur) continue;
+
+                    if (curType === 'POLYLINE_HDR') {
+                        if (code === 70) polyParent.closed = !!(parseInt(val, 10) & 1);
+                        else if (code === 8) polyParent.layer = val;
+                        continue;
+                    }
+
+                    switch (code) {
+                        case 8: cur.layer = val; break;
+                        case 10:
+                            cur.x10 = num(val);
+                            (cur.v10 = cur.v10 || []).push(num(val));
+                            break;
+                        case 20:
+                            cur.y20 = num(val);
+                            (cur.v20 = cur.v20 || []).push(num(val));
+                            break;
+                        case 11:
+                            cur.x11 = num(val);
+                            (cur.v11 = cur.v11 || []).push(num(val));
+                            break;
+                        case 21:
+                            cur.y21 = num(val);
+                            (cur.v21 = cur.v21 || []).push(num(val));
+                            break;
+                        case 40: cur.r40 = num(val); break;
+                        case 42: (cur.v42 = cur.v42 || [])[(cur.v10 ? cur.v10.length : 1) - 1] = num(val); break;
+                        case 50: cur.a50 = num(val); break;
+                        case 51: cur.a51 = num(val); break;
+                        case 70: cur.f70 = parseInt(val, 10) || 0; break;
+                        default: break;
+                    }
+                }
+
+                // File may end without a trailing 0-code.
+                if (curType === 'VERTEX' && polyParent) {
+                    polyParent.pts.push({ x: cur.x10 || 0, y: cur.y20 || 0 });
+                    cur = null;
+                }
+                if (polyParent) addShape('POLYLINE', polyParent.pts, polyParent.closed, polyParent.layer);
+                flush();
+
+                result.stats = counts;
+                if (!result.shapes.length) result.warnings.push('No drawable polyline/arc/line entities found');
+                return result;
+            }
+
+            function sanitizeLayer(name) {
+                return String(name || 'PROFILE').replace(/[^A-Za-z0-9_]/g, '_').slice(0, 60) || 'PROFILE';
+            }
+
+            // R12-compatible output, matching what the tracer already exports so
+            // downstream CAD behaves identically for both paths.
+            function buildDXF(shapes) {
+                const list = (shapes || []).filter(s => s && Array.isArray(s.pts) && s.pts.length >= 2);
+                if (!list.length) throw new Error('No valid shapes to export');
+                const lines = [];
+                const push = (...v) => v.forEach(x => lines.push(String(x)));
+                const layers = list.map((s, i) => sanitizeLayer(s.name || `PROFILE_${i + 1}`));
+                const uniq = layers.filter((l, i) => layers.indexOf(l) === i);
+                push('0', 'SECTION', '2', 'HEADER', '9', '$ACADVER', '1', 'AC1009',
+                     '9', '$INSUNITS', '70', '4', '0', 'ENDSEC');
+                push('0', 'SECTION', '2', 'TABLES', '0', 'TABLE', '2', 'LAYER', '70', uniq.length || 1);
+                uniq.forEach(l => push('0', 'LAYER', '2', l, '70', '0', '62', '7', '6', 'CONTINUOUS'));
+                push('0', 'ENDTAB', '0', 'ENDSEC');
+                push('0', 'SECTION', '2', 'ENTITIES');
+                let ok = 0;
+                list.forEach((s, i) => {
+                    const clean = sanitize(s.pts);
+                    const closed = s.closed !== false && clean.length > 2;
+                    if ((closed && clean.length < 3) || clean.length < 2) return;
+                    push('0', 'POLYLINE', '8', layers[i], '66', '1', '70', closed ? '1' : '0');
+                    clean.forEach(p => push('0', 'VERTEX', '8', layers[i],
+                        '10', p.x.toFixed(6), '20', p.y.toFixed(6), '30', '0.000000'));
+                    push('0', 'SEQEND');
+                    ok++;
+                });
+                if (!ok) throw new Error('No valid shapes to export');
+                push('0', 'ENDSEC', '0', 'EOF');
+                return lines.join('\n');
+            }
+
+            // ── self audit ───────────────────────────────────────────────────
+            // Deterministic numeric checks. Every claim the UI makes about
+            // fidelity is verified here, so a regression shows up immediately.
+            function runSelfAudit() {
+                const tests = [];
+                const T = (name, fn) => {
+                    try {
+                        const r = fn();
+                        tests.push({ name, pass: !!(r && r.pass), detail: (r && r.detail) || '' });
+                    } catch (e) {
+                        tests.push({ name, pass: false, detail: 'threw: ' + (e && e.message ? e.message : String(e)) });
+                    }
+                };
+
+                // Deterministic pseudo-noise so results are reproducible.
+                let seed = 12345;
+                const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff - 0.5; };
+
+                const noisyLine = [];
+                for (let i = 0; i < 120; i++) noisyLine.push({ x: i * 0.5, y: 10 + rnd() * 0.12 });
+
+                const circle = [];
+                for (let i = 0; i < 200; i++) {
+                    const a = (i / 200) * Math.PI * 2;
+                    circle.push({ x: 50 * Math.cos(a), y: 50 * Math.sin(a) });
+                }
+                const noisyCircle = circle.map(p => ({ x: p.x + rnd() * 0.15, y: p.y + rnd() * 0.15 }));
+
+                const corner = [];
+                for (let i = 0; i <= 40; i++) corner.push({ x: i * 0.5, y: 0 + rnd() * 0.05 });
+                for (let i = 1; i <= 40; i++) corner.push({ x: 20, y: i * 0.5 + rnd() * 0.05 });
+
+                T('SG reduces jaggedness on a noisy straight profile', () => {
+                    const r = smoothPolyline(noisyLine, { method: 'sg', closed: false, window: 6, degree: 2, maxDeviation: 0 });
+                    const drop = r.metrics.roughnessDropPct;
+                    return { pass: r.ok && drop > 50, detail: `roughness -${drop.toFixed(1)}%` };
+                });
+
+                T('Smoothing preserves point count', () => {
+                    const r = smoothPolyline(noisyLine, { method: 'sg', closed: false });
+                    return { pass: r.pts.length === noisyLine.length, detail: `${noisyLine.length} → ${r.pts.length}` };
+                });
+
+                T('Deviation cap is never exceeded', () => {
+                    const cap = 0.05;
+                    const r = smoothPolyline(noisyCircle, { method: 'sg', closed: true, window: 10, degree: 3, maxDeviation: cap });
+                    return { pass: r.ok && r.metrics.maxDeviation <= cap * 1.0001 + 1e-9,
+                             detail: `max ${r.metrics.maxDeviation.toFixed(5)} ≤ ${cap}` };
+                });
+
+                T('Closed profile keeps its area (no shrinkage)', () => {
+                    const r = smoothPolyline(noisyCircle, { method: 'taubin', closed: true, iterations: 20, maxDeviation: 0 });
+                    const d = Math.abs(r.metrics.areaChangePct);
+                    return { pass: r.ok && d < 2, detail: `area change ${r.metrics.areaChangePct.toFixed(3)}%` };
+                });
+
+                T('A clean circle is left essentially untouched', () => {
+                    const r = smoothPolyline(circle, { method: 'sg', closed: true, window: 5, degree: 3, maxDeviation: 0 });
+                    return { pass: r.ok && r.metrics.maxDeviation < 0.05,
+                             detail: `max shift ${r.metrics.maxDeviation.toExponential(2)} mm` };
+                });
+
+                T('Sharp corner stays sharp when corner-lock is on', () => {
+                    const r = smoothPolyline(corner, { method: 'sg', closed: false, window: 6, degree: 2,
+                                                       preserveCorners: true, cornerAngle: 30, maxDeviation: 0 });
+                    const moved = Math.hypot(r.pts[40].x - corner[40].x, r.pts[40].y - corner[40].y);
+                    return { pass: r.ok && moved < 1e-9 && r.metrics.lockedCorners > 0,
+                             detail: `corner moved ${moved.toExponential(2)} mm, ${r.metrics.lockedCorners} locked` };
+                });
+
+                T('Open profile endpoints are anchored', () => {
+                    const r = smoothPolyline(noisyLine, { method: 'sg', closed: false, preserveEnds: true, maxDeviation: 0 });
+                    const a = dist(r.pts[0], noisyLine[0]);
+                    const b = dist(r.pts[r.pts.length - 1], noisyLine[noisyLine.length - 1]);
+                    return { pass: a < 1e-9 && b < 1e-9, detail: `ends moved ${a.toExponential(1)} / ${b.toExponential(1)}` };
+                });
+
+                T('A smooth parabola is not distorted', () => {
+                    const par = [];
+                    for (let i = 0; i < 100; i++) { const x = (i - 50) * 0.4; par.push({ x, y: 0.02 * x * x }); }
+                    const r = smoothPolyline(par, { method: 'sg', closed: false, window: 6, degree: 3, maxDeviation: 0 });
+                    return { pass: r.ok && r.metrics.maxDeviation < 0.01,
+                             detail: `max shift ${r.metrics.maxDeviation.toExponential(2)} mm` };
+                });
+
+                T('Unknown method falls back instead of failing', () => {
+                    const r = smoothPolyline(noisyLine, { method: 'does-not-exist', closed: false });
+                    return { pass: r.ok && r.fellBack && r.method !== 'does-not-exist', detail: `used "${r.method}"` };
+                });
+
+                T('Non-finite input is rejected safely', () => {
+                    const bad = [{ x: 0, y: 0 }, { x: NaN, y: 1 }, { x: 2, y: Infinity }, { x: 3, y: 3 }];
+                    const r = smoothPolyline(bad, { method: 'sg' });
+                    const finite = r.pts.every(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+                    return { pass: finite, detail: `${r.pts.length} finite points returned` };
+                });
+
+                T('Degenerate input does not crash', () => {
+                    const a = smoothPolyline([], {});
+                    const b = smoothPolyline([{ x: 1, y: 1 }, { x: 1, y: 1 }], {});
+                    const c = smoothPolyline([{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }], {});
+                    const ok = !a.ok && !b.ok && c.pts.every(p => Number.isFinite(p.x));
+                    return { pass: ok, detail: 'empty / duplicate / collapsed handled' };
+                });
+
+                T('Every kernel runs and stays finite', () => {
+                    const names = ['sg', 'taubin', 'gaussian', 'movavg'];
+                    const bad = [];
+                    for (const m of names) {
+                        const r = smoothPolyline(noisyCircle, { method: m, closed: true, maxDeviation: 0 });
+                        if (!r.ok || r.fellBack || !r.pts.every(p => Number.isFinite(p.x) && Number.isFinite(p.y))) bad.push(m);
+                    }
+                    return { pass: bad.length === 0, detail: bad.length ? 'failed: ' + bad.join(',') : 'sg, taubin, gaussian, movavg OK' };
+                });
+
+                T('DXF round-trips through build → parse', () => {
+                    const src = [{ name: 'PROFILE_A', closed: false, pts: [{ x: 0, y: 0 }, { x: 10.5, y: 2.25 }, { x: 20, y: -3 }] }];
+                    const txt = buildDXF(src);
+                    const back = parseDXF(txt);
+                    const got = back.shapes[0];
+                    const ok = got && got.pts.length === 3 &&
+                        Math.abs(got.pts[1].x - 10.5) < 1e-6 && Math.abs(got.pts[1].y - 2.25) < 1e-6;
+                    return { pass: !!ok, detail: ok ? 'coordinates preserved' : 'mismatch' };
+                });
+
+                T('DXF parser reads LWPOLYLINE, LINE, CIRCLE and ARC', () => {
+                    const dxf = [
+                        '0','SECTION','2','ENTITIES',
+                        '0','LWPOLYLINE','8','P','90','3','70','0',
+                        '10','0','20','0','10','5','20','5','10','10','20','0',
+                        '0','LINE','8','L','10','0','20','0','11','4','21','4',
+                        '0','CIRCLE','8','C','10','0','20','0','40','5',
+                        '0','ARC','8','A','10','0','20','0','40','5','50','0','51','90',
+                        '0','ENDSEC','0','EOF'
+                    ].join('\n');
+                    const r = parseDXF(dxf);
+                    const types = r.shapes.map(s => s.type);
+                    const ok = ['LWPOLYLINE','LINE','CIRCLE','ARC'].every(t => types.indexOf(t) !== -1);
+                    return { pass: ok, detail: types.join(', ') || 'none' };
+                });
+
+                T('DXF parser survives malformed input', () => {
+                    const cases = ['', 'not a dxf at all', '0\nSECTION\n2\nENTITIES\n0\nLWPOLYLINE\n10\n', '999\nx\n'];
+                    for (const c of cases) {
+                        const r = parseDXF(c);
+                        if (!r || !Array.isArray(r.shapes)) return { pass: false, detail: 'parser returned junk' };
+                    }
+                    return { pass: true, detail: `${cases.length} malformed inputs handled` };
+                });
+
+                T('Smoothing a real-world jagged profile keeps shape within tolerance', () => {
+                    // Gentle tyre-shoulder-like curve plus digitisation noise.
+                    const base = [], noisy = [];
+                    for (let i = 0; i < 300; i++) {
+                        const x = i * 0.35;
+                        const y = 12 * Math.sin((x / 105) * Math.PI) + 0.004 * x * x;
+                        base.push({ x, y });
+                        noisy.push({ x: x + rnd() * 0.05, y: y + rnd() * 0.14 });
+                    }
+                    const r = smoothPolyline(noisy, { method: 'sg', closed: false, window: 8, degree: 3, maxDeviation: 0.25 });
+                    let err = 0;
+                    for (let i = 0; i < base.length; i++) err = Math.max(err, Math.abs(r.pts[i].y - base[i].y));
+                    let errRaw = 0;
+                    for (let i = 0; i < base.length; i++) errRaw = Math.max(errRaw, Math.abs(noisy[i].y - base[i].y));
+                    return { pass: r.ok && err < errRaw,
+                             detail: `peak error ${errRaw.toFixed(3)} → ${err.toFixed(3)} mm` };
+                });
+
+                T('Smoothing moves a pixel-quantised trace CLOSER to the true curve', () => {
+                    // The tracer's real error mode: every vertex snapped to a pixel.
+                    // This is the headline claim, so it is measured as true
+                    // perpendicular distance to the underlying curve, not as
+                    // point-to-point distance (which would penalise harmless
+                    // sliding of vertices along the profile).
+                    const ppm = 4.0, truthC = [], tracedC = [];
+                    for (let i = 0; i < 400; i++) {
+                        const x = i * 0.5;
+                        const y = 30 * Math.sin((x / 200) * Math.PI) + 0.01 * x * x;
+                        truthC.push({ x, y });
+                        tracedC.push({ x: Math.round(x * ppm) / ppm, y: Math.round(y * ppm) / ppm });
+                    }
+                    const ptSeg = (p, a, b) => {
+                        const dx = b.x - a.x, dy = b.y - a.y, L = dx * dx + dy * dy;
+                        let t = L > 0 ? ((p.x - a.x) * dx + (p.y - a.y) * dy) / L : 0;
+                        t = Math.max(0, Math.min(1, t));
+                        return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+                    };
+                    const shapeErr = arr => {
+                        let mx = 0, s = 0;
+                        for (const p of arr) {
+                            let m = Infinity;
+                            for (let i = 0; i < truthC.length - 1; i++) {
+                                const d = ptSeg(p, truthC[i], truthC[i + 1]);
+                                if (d < m) m = d;
+                            }
+                            mx = Math.max(mx, m); s += m;
+                        }
+                        return { max: mx, mean: s / arr.length };
+                    };
+                    const before = shapeErr(tracedC);
+                    const r = smoothPolyline(tracedC, { method: 'sg', closed: false, maxDeviation: 0 });
+                    const after = shapeErr(r.pts);
+                    const gain = ((before.mean - after.mean) / before.mean) * 100;
+                    return {
+                        pass: r.ok && after.mean < before.mean * 0.6 && after.max <= before.max,
+                        detail: `mean err ${before.mean.toFixed(4)} → ${after.mean.toFixed(4)} mm (${gain.toFixed(0)}% closer), peak ${before.max.toFixed(4)} → ${after.max.toFixed(4)}`
+                    };
+                });
+
+                T('Vertices beside a corner are not dragged off their own edge', () => {
+                    // Regression guard: a smoothing window that reaches across a
+                    // corner bulges the runs either side of it. Windows must stop
+                    // at corners, so every point on a straight edge stays on it.
+                    const rect = [];
+                    for (let i = 0; i < 60; i++) rect.push({ x: i * 2 + rnd() * 0.1, y: rnd() * 0.1 });
+                    for (let i = 0; i < 30; i++) rect.push({ x: 118 + rnd() * 0.1, y: i * 2 + rnd() * 0.1 });
+                    for (let i = 0; i < 60; i++) rect.push({ x: 118 - i * 2 + rnd() * 0.1, y: 58 + rnd() * 0.1 });
+                    for (let i = 0; i < 30; i++) rect.push({ x: rnd() * 0.1, y: 58 - i * 2 + rnd() * 0.1 });
+                    const r = smoothPolyline(rect, { closed: true, maxDeviation: 0 });
+                    // points 5..55 lie on the bottom edge (y ≈ 0), far from corners
+                    let worst = 0;
+                    for (let i = 5; i < 55; i++) worst = Math.max(worst, Math.abs(r.pts[i].y));
+                    return { pass: r.ok && worst < 0.05,
+                             detail: `worst off-edge excursion ${worst.toFixed(4)} mm` };
+                });
+
+                T('Deviation cap reports how many points it limited', () => {
+                    const r = smoothPolyline(noisyCircle, { method: 'sg', closed: true, window: 12, maxDeviation: 0.01 });
+                    return { pass: r.ok && r.metrics.clampedPoints > 0 && r.metrics.clampedPct <= 100,
+                             detail: `${r.metrics.clampedPoints} pts limited (${r.metrics.clampedPct.toFixed(0)}%)` };
+                });
+
+                const passed = tests.filter(t => t.pass).length;
+                return { tests, passed, total: tests.length, ok: passed === tests.length };
+            }
+
+            return {
+                DEFAULTS,
+                dist, sanitize, clonePts, polylineLength, polygonArea, boundingBox,
+                turnAngles, meanTurn, savitzkyGolay, taubin, gaussianSmooth, movingAverage,
+                smoothingWeights, clampDeviation, computeMetrics, smoothPolyline,
+                parseDXF, buildDXF, runSelfAudit
+            };
+        })();
+        /* ===== PROFILE-SMOOTH-CORE-END ===================================== */
+
+        /* ===== DXF STUDIO UI =================================================
+           Viewer + smoother. Deliberately additive: it reads from the tracer,
+           never mutates tracer state except through the explicit "Apply to
+           Tracer" action, and the whole module is wrapped so that any failure
+           here can never stop the core extractor from working.
+        ==================================================================== */
+        var DXFStudio = (function () {
+            'use strict';
+
+            const Core = ProfileSmoothCore;
+
+            let shapes = [];            // [{name, closed, space, unitsPerMm, orig, pts, selected, include, result}]
+            let view = { cx: 0, cy: 0, scale: 1 };
+            let canvas = null, ctx = null;
+            let dragging = false, dragStart = null, viewStart = null;
+            let previewTimer = null;
+            let showOriginal = true, showVertices = false, safeMode = false;
+            let lastError = null;
+
+            const $ = id => document.getElementById(id);
+
+            function open() {
+                const modal = $('dxfsModal');
+                if (!modal) return;
+                modal.classList.add('active');
+                if (!canvas) initCanvas();
+                if (!shapes.length) importFromTracer(true);
+                requestAnimationFrame(() => { resizeCanvas(); fitView(); render(); });
+            }
+
+            function close() {
+                const modal = $('dxfsModal');
+                if (modal) modal.classList.remove('active');
+            }
+
+            function initCanvas() {
+                canvas = $('dxfsCanvas');
+                if (!canvas) return;
+                ctx = canvas.getContext('2d');
+                canvas.addEventListener('wheel', e => {
+                    e.preventDefault();
+                    const r = canvas.getBoundingClientRect();
+                    const before = toWorld(e.clientX - r.left, e.clientY - r.top);
+                    view.scale *= (e.deltaY < 0 ? 1.15 : 1 / 1.15);
+                    view.scale = Math.max(1e-4, Math.min(view.scale, 1e6));
+                    const after = toWorld(e.clientX - r.left, e.clientY - r.top);
+                    view.cx += before.x - after.x;
+                    view.cy += before.y - after.y;
+                    render();
+                }, { passive: false });
+                canvas.addEventListener('mousedown', e => {
+                    dragging = true;
+                    dragStart = { x: e.clientX, y: e.clientY };
+                    viewStart = { cx: view.cx, cy: view.cy };
+                    canvas.style.cursor = 'grabbing';
+                });
+                window.addEventListener('mousemove', e => {
+                    if (!dragging) return;
+                    view.cx = viewStart.cx - (e.clientX - dragStart.x) / view.scale;
+                    view.cy = viewStart.cy + (e.clientY - dragStart.y) / view.scale;
+                    render();
+                });
+                window.addEventListener('mouseup', () => {
+                    dragging = false;
+                    if (canvas) canvas.style.cursor = 'grab';
+                });
+                window.addEventListener('resize', () => {
+                    if ($('dxfsModal') && $('dxfsModal').classList.contains('active')) {
+                        resizeCanvas(); render();
+                    }
+                });
+            }
+
+            function resizeCanvas() {
+                if (!canvas) return;
+                const host = canvas.parentElement;
+                if (!host) return;
+                const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                const w = Math.max(200, host.clientWidth), h = Math.max(200, host.clientHeight);
+                canvas.width = Math.round(w * dpr);
+                canvas.height = Math.round(h * dpr);
+                canvas.style.width = w + 'px';
+                canvas.style.height = h + 'px';
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            }
+
+            // Display space: Y is always up. Image-space shapes (from the tracer)
+            // are Y-down, so they are flipped for display only.
+            function dispY(sh, y) { return sh.space === 'image' ? -y : y; }
+
+            function toScreen(x, y) {
+                const w = canvas.clientWidth, h = canvas.clientHeight;
+                return { x: w / 2 + (x - view.cx) * view.scale, y: h / 2 - (y - view.cy) * view.scale };
+            }
+            function toWorld(sx, sy) {
+                const w = canvas.clientWidth, h = canvas.clientHeight;
+                return { x: view.cx + (sx - w / 2) / view.scale, y: view.cy - (sy - h / 2) / view.scale };
+            }
+
+            function allDisplayPts() {
+                const out = [];
+                for (const sh of shapes) {
+                    if (!sh.visible) continue;
+                    for (const p of sh.pts) out.push({ x: p.x, y: dispY(sh, p.y) });
+                }
+                return out;
+            }
+
+            function fitView() {
+                const pts = allDisplayPts();
+                const bb = Core.boundingBox(pts);
+                if (!bb || !canvas) return;
+                const w = canvas.clientWidth || 600, h = canvas.clientHeight || 400;
+                const sx = bb.w > 1e-9 ? (w * 0.85) / bb.w : 1;
+                const sy = bb.h > 1e-9 ? (h * 0.85) / bb.h : 1;
+                view.scale = Math.max(1e-4, Math.min(sx, sy, 1e6));
+                view.cx = (bb.minX + bb.maxX) / 2;
+                view.cy = (bb.minY + bb.maxY) / 2;
+            }
+
+            function zoom(f) { view.scale = Math.max(1e-4, Math.min(view.scale * f, 1e6)); render(); }
+
+            function render() {
+                if (!ctx || !canvas) return;
+                try {
+                    const w = canvas.clientWidth, h = canvas.clientHeight;
+                    ctx.clearRect(0, 0, w, h);
+                    ctx.fillStyle = getComputedStyle(document.documentElement)
+                        .getPropertyValue('--canvas-bg').trim() || '#000';
+                    ctx.fillRect(0, 0, w, h);
+
+                    if (safeMode) {
+                        ctx.fillStyle = '#f59e0b';
+                        ctx.font = 'bold 13px monospace';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('Preview disabled (safe mode) — smoothing still works', w / 2, h / 2);
+                        return;
+                    }
+
+                    drawGrid(w, h);
+
+                    for (const sh of shapes) {
+                        if (!sh.visible) continue;
+                        if (showOriginal && sh.result) drawPath(sh, sh.orig, 'rgba(148,163,184,0.55)', 1);
+                        const pts = sh.result ? sh.result.pts : sh.pts;
+                        const col = sh.selected ? '#10b981' : (sh.result ? '#3b82f6' : '#60a5fa');
+                        drawPath(sh, pts, col, sh.selected ? 2.2 : 1.6);
+                        if (showVertices) drawVerts(sh, pts, col);
+                    }
+                    drawScaleBar(w, h);
+                } catch (err) {
+                    lastError = err;
+                    safeMode = true;
+                    note('Preview failed — switched to safe mode. Smoothing and export still work.', true);
+                }
+            }
+
+            function drawGrid(w, h) {
+                // Adaptive decade grid so the viewer reads like a drawing sheet.
+                const target = 80;
+                let step = Math.pow(10, Math.floor(Math.log10(target / view.scale)));
+                if (step * view.scale < 40) step *= 5;
+                if (step * view.scale < 40) step *= 2;
+                const tl = toWorld(0, 0), br = toWorld(w, h);
+                ctx.strokeStyle = 'rgba(148,163,184,0.12)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                for (let x = Math.floor(tl.x / step) * step; x <= br.x; x += step) {
+                    const s = toScreen(x, 0);
+                    ctx.moveTo(s.x, 0); ctx.lineTo(s.x, h);
+                }
+                for (let y = Math.floor(br.y / step) * step; y <= tl.y; y += step) {
+                    const s = toScreen(0, y);
+                    ctx.moveTo(0, s.y); ctx.lineTo(w, s.y);
+                }
+                ctx.stroke();
+            }
+
+            function drawPath(sh, pts, color, lw) {
+                if (!pts || pts.length < 2) return;
+                ctx.strokeStyle = color;
+                ctx.lineWidth = lw;
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                let s = toScreen(pts[0].x, dispY(sh, pts[0].y));
+                ctx.moveTo(s.x, s.y);
+                for (let i = 1; i < pts.length; i++) {
+                    s = toScreen(pts[i].x, dispY(sh, pts[i].y));
+                    ctx.lineTo(s.x, s.y);
+                }
+                if (sh.closed) ctx.closePath();
+                ctx.stroke();
+            }
+
+            function drawVerts(sh, pts, color) {
+                if (pts.length > 4000) return;   // keep the viewer responsive
+                ctx.fillStyle = color;
+                for (const p of pts) {
+                    const s = toScreen(p.x, dispY(sh, p.y));
+                    ctx.beginPath();
+                    ctx.arc(s.x, s.y, 1.8, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            function drawScaleBar(w, h) {
+                const upm = shapes.length ? (shapes[0].unitsPerMm || 1) : 1;
+                let mm = Math.pow(10, Math.floor(Math.log10(120 / (view.scale * upm) || 1)));
+                if (mm * upm * view.scale < 60) mm *= 5;
+                const px = mm * upm * view.scale;
+                if (!Number.isFinite(px) || px < 4 || px > w) return;
+                const x0 = 16, y0 = h - 20;
+                ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(x0, y0); ctx.lineTo(x0 + px, y0);
+                ctx.moveTo(x0, y0 - 4); ctx.lineTo(x0, y0 + 4);
+                ctx.moveTo(x0 + px, y0 - 4); ctx.lineTo(x0 + px, y0 + 4);
+                ctx.stroke();
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '11px monospace';
+                ctx.textAlign = 'left';
+                ctx.fillText(`${mm} mm`, x0, y0 - 8);
+            }
+
+            // ── sources ──────────────────────────────────────────────────────
+
+            function safeGet(name, fallback) {
+                try {
+                    return Function(`try{return (typeof ${name}!=='undefined')?${name}:undefined}catch(e){return undefined}`)() ?? fallback;
+                } catch (e) { return fallback; }
+            }
+
+            function importFromTracer(quiet) {
+                try {
+                    const fpts = safeGet('finalPts', []) || [];
+                    const saved = safeGet('savedShapes', []) || [];
+                    const sc = safeGet('scale', null);
+                    const closedFlag = safeGet('shapeClosed', true);
+                    const upm = (sc && Number.isFinite(sc) && sc > 0) ? sc : 1;
+
+                    const next = [];
+                    if (Array.isArray(saved)) {
+                        saved.forEach(sh => {
+                            if (sh && Array.isArray(sh.pts) && sh.pts.length >= 2) {
+                                next.push(makeShape(sh.name || 'Shape', sh.closed !== false, sh.pts, 'image', upm));
+                            }
+                        });
+                    }
+                    if (Array.isArray(fpts) && fpts.length >= 2) {
+                        next.push(makeShape('Active trace', !!closedFlag, fpts, 'image', upm));
+                    }
+
+                    if (!next.length) {
+                        if (!quiet) note('Nothing to import — trace or save a shape in the tracer first.', true);
+                        return;
+                    }
+                    if (!sc && !quiet) {
+                        note('Tracer is not calibrated: values are shown in pixels, not mm.', true);
+                    }
+                    shapes = next;
+                    shapes.forEach((s, i) => { s.selected = i === shapes.length - 1; });
+                    refreshList(); fitView(); render(); schedulePreview();
+                    if (!quiet) note(`Imported ${shapes.length} shape(s) from the tracer.`);
+                } catch (err) {
+                    note('Import failed: ' + err.message, true);
+                }
+            }
+
+            function makeShape(name, closed, pts, space, unitsPerMm) {
+                const clean = Core.sanitize(pts);
+                return {
+                    name, closed: !!closed && clean.length > 2,
+                    space, unitsPerMm: unitsPerMm || 1,
+                    orig: clean, pts: clean,
+                    visible: true, include: true, selected: false, result: null
+                };
+            }
+
+            function loadDXFText(text, label) {
+                try {
+                    const parsed = Core.parseDXF(text);
+                    if (!parsed.shapes.length) {
+                        note('No usable geometry found. ' + (parsed.warnings[0] || ''), true);
+                        return;
+                    }
+                    shapes = parsed.shapes.map(s => makeShape(s.name, s.closed, s.pts, 'drawing', 1));
+                    shapes.forEach((s, i) => { s.selected = i === 0; });
+                    refreshList(); fitView(); render(); schedulePreview();
+                    const w = parsed.warnings.length ? ' · ' + parsed.warnings[0] : '';
+                    note(`Loaded ${shapes.length} entities from ${label || 'DXF'}${w}`);
+                } catch (err) {
+                    note('DXF parse failed: ' + err.message, true);
+                }
+            }
+
+            function onFile(input) {
+                const f = input.files && input.files[0];
+                if (!f) return;
+                const rd = new FileReader();
+                rd.onload = e => loadDXFText(String(e.target.result || ''), f.name);
+                rd.onerror = () => note('Could not read that file.', true);
+                rd.readAsText(f);
+                input.value = '';
+            }
+
+            // ── options / preview ────────────────────────────────────────────
+
+            function readOpts() {
+                const val = (id, d) => {
+                    const el = $(id);
+                    if (!el) return d;
+                    const v = parseFloat(el.value);
+                    return Number.isFinite(v) ? v : d;
+                };
+                const chk = (id, d) => { const el = $(id); return el ? !!el.checked : d; };
+                return {
+                    method: ($('dxfsMethod') || {}).value || 'sg',
+                    window: Math.max(2, Math.round(val('dxfsWindow', 8))),
+                    degree: Math.max(1, Math.round(val('dxfsDegree', 3))),
+                    iterations: Math.max(1, Math.round(val('dxfsIters', 12))),
+                    sigma: Math.max(0.01, val('dxfsSigma', 1.0)),
+                    maxDeviationMm: Math.max(0, val('dxfsMaxDev', 0.15)),
+                    preserveCorners: chk('dxfsCorners', true),
+                    cornerAngle: Math.max(1, val('dxfsCornerAngle', 32)),
+                    preserveEnds: chk('dxfsEnds', true)
+                };
+            }
+
+            function syncControlVisibility() {
+                const m = ($('dxfsMethod') || {}).value || 'sg';
+                const show = (id, on) => { const e = $(id); if (e) e.style.display = on ? '' : 'none'; };
+                show('dxfsRowWindow', m === 'sg' || m === 'movavg');
+                show('dxfsRowDegree', m === 'sg');
+                show('dxfsRowIters', m === 'taubin');
+                show('dxfsRowSigma', m === 'gaussian');
+            }
+
+            function schedulePreview() {
+                clearTimeout(previewTimer);
+                previewTimer = setTimeout(runPreview, 140);
+            }
+
+            function runPreview() {
+                const o = readOpts();
+                let totalPts = 0;
+                for (const sh of shapes) if (sh.include) totalPts += sh.orig.length;
+                if (totalPts > 250000) {
+                    note(`${totalPts.toLocaleString()} points — auto-preview off. Press Apply to smooth.`, true);
+                    return;
+                }
+                let any = null;
+                for (const sh of shapes) {
+                    if (!sh.include) { sh.result = null; continue; }
+                    try {
+                        sh.result = Core.smoothPolyline(sh.orig, {
+                            method: o.method,
+                            closed: sh.closed,
+                            window: o.window,
+                            degree: o.degree,
+                            iterations: o.iterations,
+                            sigma: o.sigma * (sh.unitsPerMm || 1),
+                            // cap is entered in mm; convert into the shape's own units
+                            maxDeviation: o.maxDeviationMm * (sh.unitsPerMm || 1),
+                            preserveCorners: o.preserveCorners,
+                            cornerAngle: o.cornerAngle,
+                            preserveEnds: o.preserveEnds
+                        });
+                    } catch (err) {
+                        sh.result = null;
+                        note(`"${sh.name}" could not be smoothed: ${err.message}`, true);
+                    }
+                    if (sh.selected && sh.result) any = sh;
+                }
+                if (!any) any = shapes.find(s => s.include && s.result) || null;
+                showMetrics(any);
+                refreshList();
+                render();
+            }
+
+            function showMetrics(sh) {
+                const box = $('dxfsMetrics');
+                if (!box) return;
+                if (!sh || !sh.result || !sh.result.metrics) {
+                    box.innerHTML = '<div class="dxfs-hint">Select a shape and adjust settings to see the effect.</div>';
+                    return;
+                }
+                const r = sh.result, m = r.metrics, u = sh.unitsPerMm || 1;
+                const mm = v => (v / u);
+                const unit = sh.space === 'image' && u === 1 ? 'px' : 'mm';
+                const row = (k, v, good) =>
+                    `<div class="dxfs-metric"><span>${k}</span><strong style="${good ? 'color:var(--accent-primary)' : ''}">${v}</strong></div>`;
+
+                let html = '';
+                html += row('Smoothness gain', `${m.roughnessDropPct.toFixed(0)}% less jagged`, m.roughnessDropPct > 20);
+                html += row('Mean turn angle', `${m.turnBefore.toFixed(2)}° → ${m.turnAfter.toFixed(2)}°`);
+                html += row('Max point shift', `${mm(m.maxDeviation).toFixed(4)} ${unit}`);
+                html += row('Mean point shift', `${mm(m.meanDeviation).toFixed(4)} ${unit}`);
+                html += row('Length change', `${m.lengthChangePct.toFixed(3)}%`, Math.abs(m.lengthChangePct) < 1);
+                if (sh.closed) html += row('Area change', `${m.areaChangePct.toFixed(3)}%`, Math.abs(m.areaChangePct) < 1);
+                html += row('Corners protected', `${m.lockedCorners}`);
+                if (m.clampedPoints) {
+                    html += row('Limited by cap', `${m.clampedPoints} pts (${m.clampedPct.toFixed(0)}%)`);
+                }
+                if (r.fellBack) {
+                    html += `<div class="dxfs-warn">Requested method unavailable — automatically used
+                             <strong>${labelFor(r.method)}</strong> instead.</div>`;
+                }
+                if (!r.ok) {
+                    html += `<div class="dxfs-warn">Could not smooth this shape; original geometry kept.</div>`;
+                }
+                if (m.clampedPct > 60 && m.roughnessDropPct < 40) {
+                    html += `<div class="dxfs-warn">The deviation cap is limiting most points.
+                             Raise “Max deviation” for more smoothing.</div>`;
+                }
+                box.innerHTML = html;
+            }
+
+            function labelFor(m) {
+                return { sg: 'Savitzky-Golay', taubin: 'Taubin λ/μ', gaussian: 'Gaussian', movavg: 'Moving average', none: 'none' }[m] || m;
+            }
+
+            function preset(kind) {
+                const set = (id, v) => { const e = $(id); if (e) e.value = v; };
+                if (kind === 'light') { set('dxfsMethod', 'sg'); set('dxfsWindow', 5); set('dxfsDegree', 3); set('dxfsMaxDev', 0.05); }
+                if (kind === 'balanced') { set('dxfsMethod', 'sg'); set('dxfsWindow', 8); set('dxfsDegree', 3); set('dxfsMaxDev', 0.15); }
+                if (kind === 'strong') { set('dxfsMethod', 'sg'); set('dxfsWindow', 14); set('dxfsDegree', 3); set('dxfsMaxDev', 0.40); }
+                syncControlVisibility();
+                syncLabels();
+                schedulePreview();
+            }
+
+            function syncLabels() {
+                const map = { dxfsWindow: 'dxfsWindowV', dxfsDegree: 'dxfsDegreeV', dxfsIters: 'dxfsItersV',
+                              dxfsSigma: 'dxfsSigmaV', dxfsMaxDev: 'dxfsMaxDevV', dxfsCornerAngle: 'dxfsCornerAngleV' };
+                Object.keys(map).forEach(k => {
+                    const src = $(k), dst = $(map[k]);
+                    if (src && dst) dst.textContent = src.value;
+                });
+            }
+
+            // ── shape list ───────────────────────────────────────────────────
+
+            function refreshList() {
+                const el = $('dxfsList');
+                if (!el) return;
+                if (!shapes.length) {
+                    el.innerHTML = '<div class="dxfs-hint">No geometry loaded.</div>';
+                    return;
+                }
+                el.innerHTML = shapes.map((s, i) => {
+                    const g = s.result && s.result.metrics
+                        ? `${s.result.metrics.roughnessDropPct.toFixed(0)}% smoother` : '—';
+                    return `<div class="dxfs-item ${s.selected ? 'sel' : ''}" onclick="DXFStudio.select(${i})">
+                        <input type="checkbox" ${s.include ? 'checked' : ''} title="Include in smoothing"
+                               onclick="event.stopPropagation();DXFStudio.toggleInclude(${i},this.checked)">
+                        <div class="dxfs-item-main">
+                            <strong>${escapeHtml(s.name)}</strong>
+                            <span>${s.closed ? 'closed' : 'open'} · ${s.orig.length} pts · ${g}</span>
+                        </div>
+                        <button class="dxfs-eye" title="Show / hide"
+                                onclick="event.stopPropagation();DXFStudio.toggleVisible(${i})">${s.visible ? '👁' : '🚫'}</button>
+                    </div>`;
+                }).join('');
+            }
+
+            function escapeHtml(s) {
+                return String(s).replace(/[&<>"']/g, c =>
+                    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            }
+
+            function select(i) {
+                shapes.forEach((s, k) => { s.selected = k === i; });
+                refreshList();
+                showMetrics(shapes[i]);
+                render();
+            }
+            function toggleInclude(i, v) { if (shapes[i]) { shapes[i].include = v; schedulePreview(); } }
+            function toggleVisible(i) { if (shapes[i]) { shapes[i].visible = !shapes[i].visible; refreshList(); render(); } }
+
+            // ── outputs ──────────────────────────────────────────────────────
+
+            function applySmoothing() {
+                runPreview();
+                let n = 0;
+                for (const sh of shapes) {
+                    if (sh.include && sh.result && sh.result.ok) {
+                        sh.pts = sh.result.pts;
+                        sh.orig = sh.result.pts;   // new baseline; further passes compound
+                        sh.result = null;
+                        n++;
+                    }
+                }
+                refreshList(); render(); schedulePreview();
+                note(n ? `Smoothing baked into ${n} shape(s).` : 'Nothing to apply.', !n);
+            }
+
+            function resetShapes() {
+                importFromTracerOrReload();
+            }
+
+            function importFromTracerOrReload() {
+                if (shapes.length && shapes[0].space === 'drawing') {
+                    note('Reload the DXF file to restore its original geometry.', true);
+                    return;
+                }
+                importFromTracer(false);
+            }
+
+            function currentOut(sh) {
+                return (sh.result && sh.result.ok) ? sh.result.pts : sh.pts;
+            }
+
+            function exportDXF() {
+                try {
+                    const list = shapes.filter(s => s.include && s.pts.length >= 2);
+                    if (!list.length) { note('No shapes selected for export.', true); return; }
+                    const out = list.map(sh => {
+                        let pts = currentOut(sh);
+                        // Route tracer shapes through the tracer's own converter so
+                        // the DXF matches the main export byte-for-byte in meaning.
+                        if (sh.space === 'image' && typeof convertPtsToOutput === 'function') {
+                            try {
+                                const c = convertPtsToOutput(pts, sh.closed);
+                                if (c && c.length) pts = c;
+                            } catch (e) { /* fall through with raw points */ }
+                        }
+                        return { name: sh.name, closed: sh.closed, pts };
+                    });
+                    download(Core.buildDXF(out), 'smoothed_profiles.dxf', 'application/dxf');
+                    note(`Exported ${out.length} shape(s) to DXF.`);
+                } catch (err) {
+                    note('DXF export failed: ' + err.message, true);
+                }
+            }
+
+            function exportCSV() {
+                try {
+                    const list = shapes.filter(s => s.include && s.pts.length >= 2);
+                    if (!list.length) { note('No shapes selected for export.', true); return; }
+                    let out = 'shape,index,x,y\n';
+                    list.forEach(sh => {
+                        const u = sh.unitsPerMm || 1;
+                        currentOut(sh).forEach((p, i) => {
+                            out += `"${sh.name}",${i},${(p.x / u).toFixed(6)},${(p.y / u).toFixed(6)}\n`;
+                        });
+                    });
+                    download(out, 'smoothed_profiles.csv', 'text/csv');
+                    note('Exported CSV.');
+                } catch (err) {
+                    note('CSV export failed: ' + err.message, true);
+                }
+            }
+
+            function applyToTracer() {
+                try {
+                    const target = shapes.find(s => s.selected && s.space === 'image')
+                                || shapes.find(s => s.include && s.space === 'image');
+                    if (!target) { note('Select a tracer-imported shape first.', true); return; }
+                    const pts = currentOut(target);
+                    if (!pts || pts.length < 2) { note('That shape has no usable points.', true); return; }
+                    if (typeof finalPts === 'undefined') { note('Tracer not available.', true); return; }
+
+                    if (typeof saveUndo === 'function') saveUndo('DXF Studio smoothing');
+                    finalPts = pts.map(p => ({ x: p.x, y: p.y }));
+                    if (typeof shapeClosed !== 'undefined') shapeClosed = target.closed;
+                    ['updatePointDisplay', 'draw', 'updateCoords', 'calcArea'].forEach(fn => {
+                        try { if (typeof window[fn] === 'function') window[fn](); } catch (e) {}
+                    });
+                    if (typeof updateStatus === 'function') {
+                        updateStatus(`Smoothed profile applied from DXF Studio (${pts.length} points) — Undo restores the original`);
+                    }
+                    note('Applied to the tracer. Use Undo in the main toolbar to revert.');
+                } catch (err) {
+                    note('Apply failed: ' + err.message, true);
+                }
+            }
+
+            function download(text, name, mime) {
+                const blob = new Blob([text], { type: mime || 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = name;
+                document.body.appendChild(a); a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 1500);
+            }
+
+            // ── audit ────────────────────────────────────────────────────────
+
+            function runAudit() {
+                const box = $('dxfsAudit');
+                if (!box) return;
+                box.innerHTML = '<div class="dxfs-hint">Running…</div>';
+                setTimeout(() => {
+                    try {
+                        const r = Core.runSelfAudit();
+                        box.innerHTML =
+                            `<div class="dxfs-audit-head ${r.ok ? 'ok' : 'bad'}">
+                                ${r.ok ? '✓' : '✕'} ${r.passed}/${r.total} checks passed
+                             </div>` +
+                            r.tests.map(t =>
+                                `<div class="dxfs-audit-row ${t.pass ? 'ok' : 'bad'}">
+                                    <span>${t.pass ? '✓' : '✕'}</span>
+                                    <div><strong>${escapeHtml(t.name)}</strong>
+                                    ${t.detail ? `<em>${escapeHtml(t.detail)}</em>` : ''}</div>
+                                 </div>`).join('');
+                    } catch (err) {
+                        box.innerHTML = `<div class="dxfs-audit-head bad">Audit could not run: ${escapeHtml(err.message)}</div>`;
+                    }
+                }, 20);
+            }
+
+            function note(msg, warn) {
+                const el = $('dxfsNote');
+                if (!el) return;
+                el.textContent = msg;
+                el.className = 'dxfs-note' + (warn ? ' warn' : '');
+                clearTimeout(note._t);
+                note._t = setTimeout(() => {
+                    if (el.textContent === msg) { el.textContent = ''; el.className = 'dxfs-note'; }
+                }, 7000);
+            }
+
+            function bind() {
+                ['dxfsWindow', 'dxfsDegree', 'dxfsIters', 'dxfsSigma', 'dxfsMaxDev', 'dxfsCornerAngle']
+                    .forEach(id => {
+                        const el = $(id);
+                        if (el) el.addEventListener('input', () => { syncLabels(); schedulePreview(); });
+                    });
+                ['dxfsCorners', 'dxfsEnds'].forEach(id => {
+                    const el = $(id);
+                    if (el) el.addEventListener('change', schedulePreview);
+                });
+                const m = $('dxfsMethod');
+                if (m) m.addEventListener('change', () => { syncControlVisibility(); schedulePreview(); });
+                const so = $('dxfsShowOrig');
+                if (so) so.addEventListener('change', e => { showOriginal = e.target.checked; render(); });
+                const sv = $('dxfsShowVerts');
+                if (sv) sv.addEventListener('change', e => { showVertices = e.target.checked; render(); });
+                const modal = $('dxfsModal');
+                if (modal) {
+                    modal.addEventListener('click', e => { if (e.target === modal) close(); });
+                }
+                document.addEventListener('keydown', e => {
+                    const mo = $('dxfsModal');
+                    if (e.key === 'Escape' && mo && mo.classList.contains('active')) close();
+                });
+                syncControlVisibility();
+                syncLabels();
+            }
+
+            function init() {
+                try { bind(); } catch (err) { console.error('DXF Studio init failed', err); }
+            }
+
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+            else init();
+
+            return {
+                open, close, importFromTracer, loadDXFText, onFile, select, toggleInclude, toggleVisible,
+                applySmoothing, resetShapes, exportDXF, exportCSV, applyToTracer, runAudit,
+                fit: () => { fitView(); render(); }, zoomIn: () => zoom(1.25), zoomOut: () => zoom(1 / 1.25),
+                preset, runPreview,
+                _state: () => ({ shapes, view, lastError })
+            };
+        })();
+
+
         // ─────────────────────────────────────────────────────────────────────
         //  UI POLISH LAYER — grouping/navigation/presentation only
         //  No changes to tracing, OpenCV, CAD constraints, DXF export, or data logic.
@@ -5802,6 +7742,7 @@
                     <button class="side-tab" data-group="shapes">Shapes</button>
                     <button class="side-tab" data-group="cad">CAD</button>
                     <button class="side-tab" data-group="pitch">Pitch</button>
+                    <button class="side-tab" data-group="dxf">DXF</button>
                     <button class="side-tab" data-group="export">Export</button>`;
                 side.prepend(tabs);
 
@@ -5829,6 +7770,8 @@
                     {match: 'Point Control', group: 'edit'},
                     {match: 'Geometry', group: 'edit'},
                     {match: 'CAD Constraints', group: 'cad'},
+                    {match: 'DXF Studio', group: 'dxf'},
+                    {match: 'Measure Distance', group: 'setup'},
                     {match: 'Coordinate Output', group: 'export'},
                     {match: 'Export / Save', group: 'export'}
                 ];
@@ -5921,5 +7864,159 @@
         })();
 
     </script>
+    <!-- ── DXF Studio: viewer + profile smoother ─────────────────────────── -->
+    <div class="dxfs-modal" id="dxfsModal">
+        <div class="dxfs-shell">
+            <div class="dxfs-head">
+                <div class="dxfs-title">🧩 DXF Studio — Viewer &amp; Profile Smoother</div>
+                <input type="file" id="dxfsFile" accept=".dxf,.txt" style="display:none"
+                       onchange="DXFStudio.onFile(this)">
+                <button class="btn" onclick="document.getElementById('dxfsFile').click()" style="font-size:11px;">
+                    📂 Open DXF
+                </button>
+                <button class="btn" onclick="DXFStudio.importFromTracer()" style="font-size:11px;">
+                    ⬇ Import from Tracer
+                </button>
+                <div class="dxfs-spacer"></div>
+                <button class="btn" onclick="DXFStudio.close()" style="font-size:11px;">✕ Close</button>
+            </div>
+
+            <div class="dxfs-body">
+                <div class="dxfs-viewer">
+                    <canvas id="dxfsCanvas"></canvas>
+                    <div class="dxfs-viewtools">
+                        <button class="btn" onclick="DXFStudio.zoomOut()" style="font-size:11px;padding:5px 9px;">−</button>
+                        <button class="btn" onclick="DXFStudio.fit()" style="font-size:11px;padding:5px 9px;">Fit</button>
+                        <button class="btn" onclick="DXFStudio.zoomIn()" style="font-size:11px;padding:5px 9px;">+</button>
+                        <label><input type="checkbox" id="dxfsShowOrig" checked> Show original</label>
+                        <label><input type="checkbox" id="dxfsShowVerts"> Vertices</label>
+                    </div>
+                    <div class="dxfs-legend">
+                        <div><span class="dxfs-swatch" style="background:#94a3b8"></span>Original</div>
+                        <div><span class="dxfs-swatch" style="background:#3b82f6"></span>Smoothed</div>
+                        <div><span class="dxfs-swatch" style="background:#10b981"></span>Selected</div>
+                        <div style="opacity:.7;margin-top:3px;">Drag to pan · wheel to zoom</div>
+                    </div>
+                </div>
+
+                <div class="dxfs-side">
+                    <div class="dxfs-note" id="dxfsNote"></div>
+
+                    <div class="dxfs-card">
+                        <h4>Geometry</h4>
+                        <div class="dxfs-list" id="dxfsList">
+                            <div class="dxfs-hint">No geometry loaded.</div>
+                        </div>
+                    </div>
+
+                    <div class="dxfs-card">
+                        <h4>Smoothing</h4>
+                        <div class="dxfs-grid3" style="margin-bottom:10px;">
+                            <button class="btn" onclick="DXFStudio.preset('light')" style="font-size:10px;padding:7px 4px;">Light</button>
+                            <button class="btn" onclick="DXFStudio.preset('balanced')" style="font-size:10px;padding:7px 4px;">Balanced</button>
+                            <button class="btn" onclick="DXFStudio.preset('strong')" style="font-size:10px;padding:7px 4px;">Strong</button>
+                        </div>
+
+                        <div class="dxfs-row">
+                            <label>Method</label>
+                            <select id="dxfsMethod">
+                                <option value="sg">Savitzky-Golay (shape-preserving)</option>
+                                <option value="taubin">Taubin λ/μ (no shrinkage)</option>
+                                <option value="gaussian">Gaussian low-pass</option>
+                                <option value="movavg">Moving average (simple)</option>
+                            </select>
+                        </div>
+
+                        <div class="dxfs-row" id="dxfsRowWindow">
+                            <label>Window (vertices)</label>
+                            <input type="range" id="dxfsWindow" min="2" max="30" step="1" value="8">
+                            <span class="dxfs-val" id="dxfsWindowV">8</span>
+                        </div>
+                        <div class="dxfs-row" id="dxfsRowDegree">
+                            <label>Polynomial order</label>
+                            <input type="range" id="dxfsDegree" min="1" max="4" step="1" value="3">
+                            <span class="dxfs-val" id="dxfsDegreeV">3</span>
+                        </div>
+                        <div class="dxfs-row" id="dxfsRowIters">
+                            <label>Iterations</label>
+                            <input type="range" id="dxfsIters" min="1" max="60" step="1" value="12">
+                            <span class="dxfs-val" id="dxfsItersV">12</span>
+                        </div>
+                        <div class="dxfs-row" id="dxfsRowSigma">
+                            <label>Sigma (mm)</label>
+                            <input type="range" id="dxfsSigma" min="0.1" max="5" step="0.1" value="1">
+                            <span class="dxfs-val" id="dxfsSigmaV">1</span>
+                        </div>
+
+                        <div class="dxfs-row">
+                            <label>Max deviation (mm)</label>
+                            <input type="range" id="dxfsMaxDev" min="0" max="1" step="0.01" value="0.15">
+                            <span class="dxfs-val" id="dxfsMaxDevV">0.15</span>
+                        </div>
+                        <div class="dxfs-hint" style="margin:-2px 0 10px;">
+                            Hard limit on how far any point may move. This is what guarantees the overall
+                            profile cannot change — set 0 to disable the cap.
+                        </div>
+
+                        <label class="dxfs-check">
+                            <input type="checkbox" id="dxfsCorners" checked> Protect sharp corners
+                        </label>
+                        <div class="dxfs-row" style="margin-left:22px;">
+                            <label>Corner angle (°)</label>
+                            <input type="range" id="dxfsCornerAngle" min="5" max="90" step="1" value="32">
+                            <span class="dxfs-val" id="dxfsCornerAngleV">32</span>
+                        </div>
+                        <label class="dxfs-check">
+                            <input type="checkbox" id="dxfsEnds" checked> Anchor open-profile endpoints
+                        </label>
+
+                        <div class="dxfs-grid2" style="margin-top:10px;">
+                            <button class="btn btn-primary" onclick="DXFStudio.applySmoothing()" style="font-size:10px;padding:9px 4px;">
+                                ✓ Bake Smoothing
+                            </button>
+                            <button class="btn" onclick="DXFStudio.resetShapes()" style="font-size:10px;padding:9px 4px;">
+                                ↺ Reset
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="dxfs-card">
+                        <h4>Effect on selected shape</h4>
+                        <div id="dxfsMetrics">
+                            <div class="dxfs-hint">Select a shape and adjust settings to see the effect.</div>
+                        </div>
+                    </div>
+
+                    <div class="dxfs-card">
+                        <h4>Output</h4>
+                        <div class="dxfs-grid2" style="margin-bottom:6px;">
+                            <button class="btn btn-primary" onclick="DXFStudio.exportDXF()" style="font-size:10px;padding:9px 4px;">🧩 Export DXF</button>
+                            <button class="btn" onclick="DXFStudio.exportCSV()" style="font-size:10px;padding:9px 4px;">📊 Export CSV</button>
+                        </div>
+                        <button class="btn" onclick="DXFStudio.applyToTracer()" style="width:100%;font-size:10px;padding:9px 4px;">
+                            ⬆ Apply Selected to Tracer
+                        </button>
+                        <div class="dxfs-hint" style="margin-top:6px;">
+                            Applying replaces the tracer's active contour. The main <strong>Undo</strong> button restores it.
+                        </div>
+                    </div>
+
+                    <div class="dxfs-card">
+                        <h4>Self-audit</h4>
+                        <button class="btn" onclick="DXFStudio.runAudit()" style="width:100%;font-size:10px;padding:9px 4px;">
+                            🧪 Run Self-Audit
+                        </button>
+                        <div class="dxfs-audit" id="dxfsAudit" style="margin-top:8px;">
+                            <div class="dxfs-hint">
+                                Runs numeric checks on the smoothing maths and the DXF reader/writer —
+                                corner preservation, deviation limits, area retention and malformed-file handling.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>
