@@ -6785,6 +6785,266 @@
                 return lines.join('\n');
             }
 
+            // ── IGES ─────────────────────────────────────────────────────────
+            // Writes IGES 5.3 (fixed 80-column records, S/G/D/P/T sections).
+            // A 2D profile plus a depth becomes real 3D geometry:
+            //   surface   → Tabulated Cylinder (122) swept from the profile
+            //   wireframe → profile at z=0 and z=depth joined by lines (110)
+            //   flat      → the profile alone, placed at z=depth
+            // Everything is emitted in millimetres.
+
+            function igsNum(v) {
+                if (!Number.isFinite(v)) v = 0;
+                let s = v.toFixed(6);
+                if (s.indexOf('.') !== -1) {
+                    s = s.replace(/0+$/, '');
+                    if (s.charAt(s.length - 1) === '.') s += '0';
+                }
+                return s;
+            }
+
+            function igsRecord(content, letter, seq) {
+                let c = String(content);
+                if (c.length > 72) c = c.slice(0, 72);
+                while (c.length < 72) c += ' ';
+                let s = String(seq);
+                while (s.length < 7) s = ' ' + s;
+                return c + letter + s;
+            }
+
+            function igsHollerith(s) {
+                const t = String(s === undefined || s === null ? '' : s);
+                return t.length + 'H' + t;
+            }
+
+            // Pack comma/semicolon-terminated tokens into <=64 char parameter lines
+            // without ever splitting a token across records.
+            function igsPackParams(tokens, limit) {
+                const lim = limit || 64;
+                const out = [];
+                let line = '';
+                for (const tok of tokens) {
+                    if (line.length + tok.length > lim) {
+                        if (line) out.push(line);
+                        line = tok;
+                    } else {
+                        line += tok;
+                    }
+                }
+                if (line) out.push(line);
+                return out.length ? out : [';'];
+            }
+
+            function igsTokens(values) {
+                return values.map((v, i) => String(v) + (i === values.length - 1 ? ';' : ','));
+            }
+
+            function buildIGES(shapes, options) {
+                const o = Object.assign({
+                    depth: 0,
+                    mode: 'surface',        // 'surface' | 'wireframe' | 'flat'
+                    fileName: 'profile.igs',
+                    author: 'Apollo Tyres',
+                    timestamp: '20000101.000000'
+                }, options || {});
+
+                const list = (shapes || [])
+                    .map(s => ({ name: s.name, closed: !!s.closed, pts: sanitize(s.pts) }))
+                    .filter(s => s.pts.length >= 2);
+                if (!list.length) throw new Error('No valid shapes to export');
+
+                const depth = Number(o.depth);
+                if (!Number.isFinite(depth)) throw new Error('Depth must be a number');
+                if (o.mode !== 'flat' && Math.abs(depth) < 1e-9) {
+                    throw new Error('Depth must be non-zero to extrude — use "Flat profile" for a 2D curve');
+                }
+
+                // entity = {type, form, params:[...]}, built first so that DE and
+                // PD sequence numbers can be resolved before anything is written.
+                const entities = [];
+                const addEntity = (type, form, params) => {
+                    entities.push({ type, form, params });
+                    return entities.length - 1;      // index, DE pointer resolved later
+                };
+                const dePointerOf = idx => idx * 2 + 1;
+
+                // Entity 106 copious data. ip=1 → (x,y) with a common z; ip=2 → (x,y,z).
+                const addPath = (pts, z, closed, ip) => {
+                    const vals = [106, ip, pts.length];
+                    if (ip === 1) {
+                        vals.push(igsNum(z));
+                        for (const p of pts) vals.push(igsNum(p.x), igsNum(p.y));
+                    } else {
+                        for (const p of pts) vals.push(igsNum(p.x), igsNum(p.y), igsNum(z));
+                    }
+                    // form 63 = simple closed planar curve, 11 = 2D path, 12 = 3D path
+                    const form = ip === 2 ? 12 : (closed ? 63 : 11);
+                    return addEntity(106, form, vals);
+                };
+
+                let maxCoord = 0;
+                for (const sh of list) {
+                    for (const p of sh.pts) {
+                        maxCoord = Math.max(maxCoord, Math.abs(p.x), Math.abs(p.y));
+                    }
+                }
+                maxCoord = Math.max(maxCoord, Math.abs(depth));
+
+                for (const sh of list) {
+                    if (o.mode === 'flat') {
+                        addPath(sh.pts, depth, sh.closed, 1);
+                    } else if (o.mode === 'wireframe') {
+                        addPath(sh.pts, 0, sh.closed, 1);
+                        addPath(sh.pts, depth, sh.closed, 1);
+                        // Risers: one per vertex, thinned on very dense profiles so
+                        // the file stays a sane size.
+                        const stride = Math.max(1, Math.ceil(sh.pts.length / 400));
+                        for (let i = 0; i < sh.pts.length; i += stride) {
+                            const p = sh.pts[i];
+                            addEntity(110, 0, [110,
+                                igsNum(p.x), igsNum(p.y), igsNum(0),
+                                igsNum(p.x), igsNum(p.y), igsNum(depth)]);
+                        }
+                    } else {
+                        // Tabulated cylinder: directrix curve swept to a terminate
+                        // point offset from the directrix's FIRST point by the depth.
+                        const dir = addPath(sh.pts, 0, sh.closed, 2);
+                        const p0 = sh.pts[0];
+                        addEntity(122, 0, [122, dePointerOf(dir),
+                            igsNum(p0.x), igsNum(p0.y), igsNum(depth)]);
+                    }
+                }
+
+                // ── assemble sections ───────────────────────────────────────
+                const S = [], G = [], D = [], P = [];
+
+                S.push(igsRecord('Profile export from Apollo Technical Drawing Extractor - DXF Studio', 'S', 1));
+                S.push(igsRecord('Units: millimetres. Depth applied along +Z.', 'S', 2));
+
+                const globals = [
+                    '1H,', '1H;',
+                    igsHollerith('APOLLO_PROFILE'),
+                    igsHollerith(o.fileName),
+                    igsHollerith('Apollo Technical Drawing Extractor'),
+                    igsHollerith('DXF Studio 1.0'),
+                    '32', '38', '6', '308', '15',
+                    igsHollerith('APOLLO_PROFILE'),
+                    '1.0',                       // model space scale
+                    '2',                         // units flag: 2 = millimetres
+                    igsHollerith('MM'),
+                    '1', '1.0',                  // line weight gradations / max width
+                    igsHollerith(o.timestamp),
+                    '0.0001',                    // minimum resolution
+                    igsNum(maxCoord),            // approximate max coordinate
+                    igsHollerith(o.author),
+                    igsHollerith(o.author),
+                    '11',                        // IGES version 5.3
+                    '0',                         // drafting standard: none
+                    igsHollerith(o.timestamp)
+                ];
+                igsPackParams(igsTokens(globals), 72).forEach((ln, i) => {
+                    G.push(igsRecord(ln, 'G', i + 1));
+                });
+
+                // Parameter data first, so each DE knows its P pointer and line count.
+                const pdInfo = [];
+                let pSeq = 1;
+                entities.forEach((ent, idx) => {
+                    const dePtr = dePointerOf(idx);
+                    const lines = igsPackParams(igsTokens(ent.params), 64);
+                    const start = pSeq;
+                    lines.forEach(ln => {
+                        let body = ln;
+                        while (body.length < 64) body += ' ';
+                        let ptr = String(dePtr);
+                        while (ptr.length < 8) ptr = ' ' + ptr;
+                        P.push(igsRecord(body + ptr, 'P', pSeq));
+                        pSeq++;
+                    });
+                    pdInfo.push({ start, count: lines.length });
+                });
+
+                const f8 = v => {
+                    let s = String(v);
+                    if (s.length > 8) s = s.slice(-8);
+                    while (s.length < 8) s = ' ' + s;
+                    return s;
+                };
+                entities.forEach((ent, idx) => {
+                    const info = pdInfo[idx];
+                    const deSeq = dePointerOf(idx);
+                    const l1 = f8(ent.type) + f8(info.start) + f8(0) + f8(0) + f8(0) +
+                               f8(0) + f8(0) + f8(0) + '00000000';
+                    const l2 = f8(ent.type) + f8(0) + f8(0) + f8(info.count) + f8(ent.form) +
+                               '        ' + '        ' + '        ' + f8(0);
+                    D.push(igsRecord(l1, 'D', deSeq));
+                    D.push(igsRecord(l2, 'D', deSeq + 1));
+                });
+
+                const t = 'S' + String(S.length).padStart(7) +
+                          'G' + String(G.length).padStart(7) +
+                          'D' + String(D.length).padStart(7) +
+                          'P' + String(P.length).padStart(7);
+                const T = [igsRecord(t, 'T', 1)];
+
+                return S.concat(G, D, P, T).join('\n') + '\n';
+            }
+
+            // Structural validation against the IGES record layout. Used by the
+            // self-audit so a malformed file is caught here rather than in CAD.
+            function validateIGES(text) {
+                const errs = [];
+                if (typeof text !== 'string' || !text.length) {
+                    return { ok: false, errors: ['empty output'], counts: {} };
+                }
+                const lines = text.split('\n').filter(l => l.length);
+                const counts = { S: 0, G: 0, D: 0, P: 0, T: 0 };
+                const order = [];
+                lines.forEach((ln, i) => {
+                    if (ln.length !== 80) errs.push(`line ${i + 1} is ${ln.length} chars, expected 80`);
+                    const sec = ln.charAt(72);
+                    if ('SGDPT'.indexOf(sec) === -1) {
+                        errs.push(`line ${i + 1} has invalid section letter "${sec}"`);
+                        return;
+                    }
+                    counts[sec]++;
+                    if (!order.length || order[order.length - 1] !== sec) order.push(sec);
+                    const seq = parseInt(ln.slice(73), 10);
+                    if (!Number.isFinite(seq) || seq !== counts[sec]) {
+                        errs.push(`line ${i + 1} sequence ${ln.slice(73)} out of order for section ${sec}`);
+                    }
+                });
+                if (order.join('') !== 'SGDPT') errs.push(`sections out of order: ${order.join('')}`);
+                if (counts.D % 2 !== 0) errs.push('directory section must hold an even number of records');
+                if (!counts.P) errs.push('no parameter data records');
+
+                // Terminate record must agree with what was actually written.
+                const last = lines[lines.length - 1] || '';
+                if (last.charAt(72) !== 'T') errs.push('file does not end with a terminate record');
+                else {
+                    const got = {
+                        S: parseInt(last.slice(1, 8), 10), G: parseInt(last.slice(9, 16), 10),
+                        D: parseInt(last.slice(17, 24), 10), P: parseInt(last.slice(25, 32), 10)
+                    };
+                    ['S', 'G', 'D', 'P'].forEach(k => {
+                        if (got[k] !== counts[k]) {
+                            errs.push(`terminate says ${k}=${got[k]} but file has ${counts[k]}`);
+                        }
+                    });
+                }
+
+                // Every parameter record must point at a real directory entry.
+                lines.forEach((ln, i) => {
+                    if (ln.charAt(72) !== 'P') return;
+                    const ptr = parseInt(ln.slice(64, 72), 10);
+                    if (!Number.isFinite(ptr) || ptr < 1 || ptr > counts.D || ptr % 2 === 0) {
+                        errs.push(`line ${i + 1} points to directory entry ${ptr}, which is not valid`);
+                    }
+                });
+
+                return { ok: errs.length === 0, errors: errs, counts };
+            }
+
             // ── self audit ───────────────────────────────────────────────────
             // Deterministic numeric checks. Every claim the UI makes about
             // fidelity is verified here, so a regression shows up immediately.
@@ -7017,6 +7277,56 @@
                              detail: `${r.metrics.clampedPoints} pts limited (${r.metrics.clampedPct.toFixed(0)}%)` };
                 });
 
+                T('IGES output is structurally valid in every mode', () => {
+                    const prof = [];
+                    for (let i = 0; i < 24; i++) {
+                        const a = (i / 24) * Math.PI * 2;
+                        prof.push({ x: 60 * Math.cos(a), y: 35 * Math.sin(a) });
+                    }
+                    const bad = [];
+                    for (const mode of ['surface', 'wireframe', 'flat']) {
+                        const txt = buildIGES([{ name: 'P', closed: true, pts: prof }], { depth: 12, mode });
+                        const v = validateIGES(txt);
+                        if (!v.ok) bad.push(`${mode}: ${v.errors[0]}`);
+                    }
+                    return { pass: bad.length === 0, detail: bad.length ? bad.join(' | ') : 'surface, wireframe, flat all valid' };
+                });
+
+                T('IGES records are exactly 80 columns', () => {
+                    const txt = buildIGES([{ name: 'P', closed: false, pts: noisyLine }], { depth: 5, mode: 'surface' });
+                    const lines = txt.split('\n').filter(l => l.length);
+                    const wrong = lines.filter(l => l.length !== 80).length;
+                    return { pass: wrong === 0, detail: `${lines.length} records, ${wrong} malformed` };
+                });
+
+                T('IGES extrusion carries the depth and units through', () => {
+                    const sq = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 6 }, { x: 0, y: 6 }];
+                    const txt = buildIGES([{ name: 'P', closed: true, pts: sq }], { depth: 7.5, mode: 'surface' });
+                    const hasMM = txt.indexOf('2HMM') !== -1;      // global units = millimetres
+                    const unitFlag = txt.indexOf(',2,2HMM,') !== -1;
+                    const tab = /122,\d+,[-\d.]+,[-\d.]+,7\.5;/.test(txt);
+                    return { pass: hasMM && unitFlag && tab,
+                             detail: `units=${hasMM && unitFlag ? 'MM' : 'missing'}, tabulated cylinder depth ${tab ? '7.5 ✓' : 'not found'}` };
+                });
+
+                T('IGES rejects a zero depth for extrusion but allows it when flat', () => {
+                    const sq = [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 5 }];
+                    let threw = false;
+                    try { buildIGES([{ name: 'P', closed: true, pts: sq }], { depth: 0, mode: 'surface' }); }
+                    catch (e) { threw = true; }
+                    const flat = validateIGES(buildIGES([{ name: 'P', closed: true, pts: sq }], { depth: 0, mode: 'flat' }));
+                    return { pass: threw && flat.ok, detail: threw ? 'zero-depth extrusion refused, flat still works' : 'zero depth was accepted' };
+                });
+
+                T('IGES handles multiple shapes and negative depth', () => {
+                    const a = [{ x: 0, y: 0 }, { x: 10, y: 1 }, { x: 20, y: 0 }];
+                    const b = [{ x: 0, y: 20 }, { x: 10, y: 21 }, { x: 20, y: 20 }];
+                    const txt = buildIGES([{ name: 'A', closed: false, pts: a },
+                                           { name: 'B', closed: false, pts: b }], { depth: -4, mode: 'surface' });
+                    const v = validateIGES(txt);
+                    return { pass: v.ok && v.counts.D === 8, detail: `${v.counts.D / 2} entities, valid=${v.ok}` };
+                });
+
                 const passed = tests.filter(t => t.pass).length;
                 return { tests, passed, total: tests.length, ok: passed === tests.length };
             }
@@ -7026,7 +7336,7 @@
                 dist, sanitize, clonePts, polylineLength, polygonArea, boundingBox,
                 turnAngles, meanTurn, savitzkyGolay, taubin, gaussianSmooth, movingAverage,
                 smoothingWeights, clampDeviation, computeMetrics, smoothPolyline,
-                parseDXF, buildDXF, runSelfAudit
+                parseDXF, buildDXF, buildIGES, validateIGES, runSelfAudit
             };
         })();
         /* ===== PROFILE-SMOOTH-CORE-END ===================================== */
@@ -7544,22 +7854,34 @@
                 return (sh.result && sh.result.ok) ? sh.result.pts : sh.pts;
             }
 
-            function exportDXF() {
-                try {
-                    const list = shapes.filter(s => s.include && s.pts.length >= 2);
-                    if (!list.length) { note('No shapes selected for export.', true); return; }
-                    const out = list.map(sh => {
-                        let pts = currentOut(sh);
-                        // Route tracer shapes through the tracer's own converter so
-                        // the DXF matches the main export byte-for-byte in meaning.
-                        if (sh.space === 'image' && typeof convertPtsToOutput === 'function') {
+            // Collect the shapes to write out, in millimetres. Tracer geometry is
+            // routed through the tracer's own converter so any exported file means
+            // exactly what the main DXF export would mean.
+            function collectExportShapes() {
+                return shapes.filter(s => s.include && s.pts.length >= 2).map(sh => {
+                    let pts = currentOut(sh);
+                    if (sh.space === 'image') {
+                        let converted = null;
+                        if (typeof convertPtsToOutput === 'function') {
                             try {
                                 const c = convertPtsToOutput(pts, sh.closed);
-                                if (c && c.length) pts = c;
-                            } catch (e) { /* fall through with raw points */ }
+                                if (c && c.length) converted = c;
+                            } catch (e) { /* fall back to a plain unit scale below */ }
                         }
-                        return { name: sh.name, closed: sh.closed, pts };
-                    });
+                        pts = converted
+                            ? converted
+                            // Converter unavailable or refused: divide out px-per-mm
+                            // so the file is still written in millimetres.
+                            : pts.map(p => ({ x: p.x / (sh.unitsPerMm || 1), y: p.y / (sh.unitsPerMm || 1) }));
+                    }
+                    return { name: sh.name, closed: sh.closed, pts };
+                });
+            }
+
+            function exportDXF() {
+                try {
+                    const out = collectExportShapes();
+                    if (!out.length) { note('No shapes selected for export.', true); return; }
                     download(Core.buildDXF(out), 'smoothed_profiles.dxf', 'application/dxf');
                     note(`Exported ${out.length} shape(s) to DXF.`);
                 } catch (err) {
@@ -7567,15 +7889,47 @@
                 }
             }
 
+            function exportIGES() {
+                try {
+                    const out = collectExportShapes();
+                    if (!out.length) { note('No shapes selected for export.', true); return; }
+                    const depthEl = $('dxfsDepth');
+                    const depth = depthEl ? parseFloat(depthEl.value) : NaN;
+                    const mode = ($('dxfsIgesMode') || {}).value || 'surface';
+                    if (!Number.isFinite(depth)) { note('Enter a depth value in mm.', true); return; }
+                    if (mode !== 'flat' && Math.abs(depth) < 1e-9) {
+                        note('Depth must be non-zero to extrude — or choose "Flat profile at depth".', true);
+                        return;
+                    }
+                    const now = new Date();
+                    const p2 = n => String(n).padStart(2, '0');
+                    const stamp = `${now.getFullYear()}${p2(now.getMonth() + 1)}${p2(now.getDate())}.`
+                                + `${p2(now.getHours())}${p2(now.getMinutes())}${p2(now.getSeconds())}`;
+                    const txt = Core.buildIGES(out, { depth, mode, fileName: 'profile.igs', timestamp: stamp });
+
+                    // Never hand over a file that fails its own structural check.
+                    const v = Core.validateIGES(txt);
+                    if (!v.ok) {
+                        note('IGES failed validation and was not written: ' + v.errors[0], true);
+                        return;
+                    }
+                    download(txt, 'profile_extruded.igs', 'application/iges');
+                    const what = mode === 'surface' ? 'extruded surface'
+                               : (mode === 'wireframe' ? 'wireframe extrusion' : 'flat profile');
+                    note(`Exported ${out.length} shape(s) as IGES ${what} at ${depth} mm.`);
+                } catch (err) {
+                    note('IGES export failed: ' + err.message, true);
+                }
+            }
+
             function exportCSV() {
                 try {
-                    const list = shapes.filter(s => s.include && s.pts.length >= 2);
+                    const list = collectExportShapes();
                     if (!list.length) { note('No shapes selected for export.', true); return; }
                     let out = 'shape,index,x,y\n';
                     list.forEach(sh => {
-                        const u = sh.unitsPerMm || 1;
-                        currentOut(sh).forEach((p, i) => {
-                            out += `"${sh.name}",${i},${(p.x / u).toFixed(6)},${(p.y / u).toFixed(6)}\n`;
+                        sh.pts.forEach((p, i) => {
+                            out += `"${sh.name}",${i},${p.x.toFixed(6)},${p.y.toFixed(6)}\n`;
                         });
                     });
                     download(out, 'smoothed_profiles.csv', 'text/csv');
@@ -7692,7 +8046,7 @@
 
             return {
                 open, close, importFromTracer, loadDXFText, onFile, select, toggleInclude, toggleVisible,
-                applySmoothing, resetShapes, exportDXF, exportCSV, applyToTracer, runAudit,
+                applySmoothing, resetShapes, exportDXF, exportCSV, exportIGES, applyToTracer, runAudit,
                 fit: () => { fitView(); render(); }, zoomIn: () => zoom(1.25), zoomOut: () => zoom(1 / 1.25),
                 preset, runPreview,
                 _state: () => ({ shapes, view, lastError })
@@ -7989,9 +8343,35 @@
 
                     <div class="dxfs-card">
                         <h4>Output</h4>
-                        <div class="dxfs-grid2" style="margin-bottom:6px;">
+                        <div class="dxfs-grid2" style="margin-bottom:10px;">
                             <button class="btn btn-primary" onclick="DXFStudio.exportDXF()" style="font-size:10px;padding:9px 4px;">🧩 Export DXF</button>
                             <button class="btn" onclick="DXFStudio.exportCSV()" style="font-size:10px;padding:9px 4px;">📊 Export CSV</button>
+                        </div>
+
+                        <div style="border-top:1px solid var(--border);padding-top:10px;margin-bottom:6px;">
+                            <div style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--accent-secondary);margin-bottom:8px;">
+                                IGES (3D) — extrude by depth
+                            </div>
+                            <div class="dxfs-row">
+                                <label>Depth (mm)</label>
+                                <input type="number" id="dxfsDepth" value="10" step="0.1">
+                            </div>
+                            <div class="dxfs-row">
+                                <label>Geometry</label>
+                                <select id="dxfsIgesMode">
+                                    <option value="surface">Extruded surface</option>
+                                    <option value="wireframe">Wireframe extrusion</option>
+                                    <option value="flat">Flat profile at depth</option>
+                                </select>
+                            </div>
+                            <button class="btn" onclick="DXFStudio.exportIGES()" style="width:100%;font-size:10px;padding:9px 4px;">
+                                📦 Export IGES (.igs)
+                            </button>
+                            <div class="dxfs-hint" style="margin-top:6px;">
+                                The profile is swept along +Z by the depth you enter, written in millimetres.
+                                Use <strong>Extruded surface</strong> for a real swept face, or
+                                <strong>Wireframe</strong> if your CAD is fussy about surfaces.
+                            </div>
                         </div>
                         <button class="btn" onclick="DXFStudio.applyToTracer()" style="width:100%;font-size:10px;padding:9px 4px;">
                             ⬆ Apply Selected to Tracer
