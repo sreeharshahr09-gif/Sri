@@ -514,20 +514,31 @@
     return out;
   }
 
-  function entitiesToSegments(entities, sagitta) {
+  function finitePts(pts) {
+    // A malformed coordinate must not reach the extents calculation: one NaN
+    // there poisons the circumference, the grid and every downstream number.
+    for (const p of pts) if (!Number.isFinite(p[0]) || !Number.isFinite(p[1])) return false;
+    return true;
+  }
+
+  function entitiesToSegments(entities, sagitta, stats) {
     const segments = [];
+    stats = stats || {};
+    stats.skipped = 0;
+    const push = (pts) => { if (finitePts(pts)) segments.push(pts); else stats.skipped++; };
     for (const e of entities) {
       try {
         if (e.type === "LINE") {
           const p = [[+e["10"][0], +e["20"][0]], [+e["11"][0], +e["21"][0]]];
+          if (!finitePts(p)) { stats.skipped++; continue; }
           if (Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]) < 1e-9) continue;
           segments.push(p);
         } else if (e.type === "ARC") {
           const pts = flattenArc(+e["10"][0], +e["20"][0], +e["40"][0], +e["50"][0], +e["51"][0], sagitta);
-          if (pts.length >= 2) segments.push(pts);
+          if (pts.length >= 2) push(pts);
         } else if (e.type === "CIRCLE") {
           const pts = flattenArc(+e["10"][0], +e["20"][0], +e["40"][0], 0, 360, sagitta);
-          if (pts.length >= 3) segments.push(pts);
+          if (pts.length >= 3) push(pts);
         } else if (e.type === "LWPOLYLINE" || e.type === "POLYLINE") {
           const xs = (e["10"] || []).map(Number), ys = (e["20"] || []).map(Number);
           const pts = [];
@@ -535,7 +546,7 @@
           if (pts.length >= 2) {
             const closed = (parseInt((e["70"] || ["0"])[0], 10) & 1) === 1;
             if (closed && Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) > 1e-9) pts.push(pts[0]);
-            segments.push(pts);
+            push(pts);
           }
         }
       } catch (err) { /* skip malformed entity */ }
@@ -609,6 +620,43 @@
     return { loops: loops, leftover: leftovers.concat(others) };
   }
 
+  function pointInPolygon(pt, poly) {
+    let inside = false;
+    for (let i = 0, n = poly.length; i < n; i++) {
+      const a = poly[i], b = poly[(i + 1) % n];
+      if (a[1] === b[1]) continue;
+      if ((a[1] > pt[1]) !== (b[1] > pt[1])) {
+        const x = ((b[0] - a[0]) * (pt[1] - a[1])) / (b[1] - a[1]) + a[0];
+        if (pt[0] < x) inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  function bbox(poly) {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const p of poly) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+    return [x0, x1, y0, y1];
+  }
+
+  // How many block outlines sit wholly inside another one. Bounding boxes are
+  // checked first so this stays cheap on a few hundred blocks.
+  function countNestedLoops(blocks) {
+    const boxes = blocks.map((b) => bbox(b.polygon));
+    const cents = blocks.map((b) => polygonCentroid(b.polygon));
+    let n = 0;
+    for (let i = 0; i < blocks.length; i++) {
+      for (let j = 0; j < blocks.length; j++) {
+        if (i === j) continue;
+        const bi = boxes[i], bj = boxes[j];
+        if (bi[0] < bj[0] || bi[1] > bj[1] || bi[2] < bj[2] || bi[3] > bj[3]) continue;
+        if (bi[1] - bi[0] >= bj[1] - bj[0] && bi[3] - bi[2] >= bj[3] - bj[2]) continue;
+        if (pointInPolygon(cents[i], blocks[j].polygon)) { n++; break; }
+      }
+    }
+    return n;
+  }
+
   function gcd(a, b) { while (b) { [a, b] = [b, a % b]; } return a; }
 
   function pointSetsMatch(a, b, tol) {
@@ -669,25 +717,86 @@
     return out;
   }
 
+  // A 2D tread plan carries no depth, so these come from the caller. Bad values
+  // here do not crash -- they quietly zero every stiffness, which is worse.
+  function validateBlockDefaults(d) {
+    if (!d) return;
+    if (d.height != null) {
+      if (!Number.isFinite(d.height) || d.height <= 0)
+        throw new Error("NSD (block height) must be a positive number of mm, got " + d.height);
+    }
+    if (d.draft_angle != null) {
+      if (!Number.isFinite(d.draft_angle) || Math.abs(d.draft_angle) >= 90)
+        throw new Error("draft angle must be a finite angle strictly between -90 and 90 degrees, got " + d.draft_angle);
+    }
+    if (d.n_lateral_sipes != null) {
+      if (!Number.isFinite(d.n_lateral_sipes) || d.n_lateral_sipes < 0 || d.n_lateral_sipes % 1 !== 0)
+        throw new Error("lateral sipe count must be a non-negative whole number, got " + d.n_lateral_sipes);
+      if (d.n_lateral_sipes > 50)
+        throw new Error("lateral sipe count of " + d.n_lateral_sipes + " is implausible for a tread block (limit 50)");
+    }
+    if (d.sipe_depth_fraction != null) {
+      if (!Number.isFinite(d.sipe_depth_fraction) || d.sipe_depth_fraction < 0 || d.sipe_depth_fraction > 1)
+        throw new Error("sipe depth fraction must lie between 0 and 1 (fraction of NSD), got " + d.sipe_depth_fraction);
+    }
+  }
+
+  function validateImportOptions(o) {
+    if (!o) return;
+    for (const k of ["circumference", "tread_width"]) {
+      if (o[k] != null && (!Number.isFinite(o[k]) || o[k] <= 0))
+        throw new Error(k.replace("_", " ") + " override must be a positive number of mm, got " + o[k]);
+    }
+    if (o.n_pitches != null && o.n_pitches !== 0) {
+      if (!Number.isFinite(o.n_pitches) || o.n_pitches < 1 || o.n_pitches % 1 !== 0)
+        throw new Error("pitch count must be a whole number >= 1, got " + o.n_pitches);
+      if (o.n_pitches > 5000)
+        throw new Error("pitch count of " + o.n_pitches + " is implausible (limit 5000)");
+    }
+    if (o.min_block_area != null && (!Number.isFinite(o.min_block_area) || o.min_block_area < 0))
+      throw new Error("minimum block area must be a non-negative number of mm^2, got " + o.min_block_area);
+  }
+
   // params: {height, draft_angle, n_lateral_sipes, sipe_depth_fraction, shore_a}
   function loadPattern(text, defaults, opts) {
     defaults = Object.assign({ height: 8.0, draft_angle: 3.0, n_lateral_sipes: 0, sipe_depth_fraction: 0.6, shore_a: null,
       height_by_zone: {}, draft_by_zone: {}, sipes_by_zone: {} }, defaults || {});
     opts = opts || {};
+    validateBlockDefaults(defaults);
+    validateImportOptions(opts);
     const entities = readDxfEntities(text);
-    let segments = entitiesToSegments(entities, 0.02);
+    const stats = {};
+    let segments = entitiesToSegments(entities, 0.02, stats);
     const warnings = [];
-    if (!segments.length) throw new Error("no usable LINE/ARC/POLYLINE entities found in DXF");
+    if (!segments.length)
+      throw new Error(
+        "no usable LINE/ARC/POLYLINE entities found in this DXF. Check that the file " +
+        "contains the tread outline as geometry (not blocks/xrefs), and that it was " +
+        "exported as ASCII DXF rather than binary."
+      );
+    if (stats.skipped)
+      warnings.push(stats.skipped + " entit(ies) had non-finite coordinates and were skipped");
 
     let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
     for (const s of segments) for (const p of s) { xMin = Math.min(xMin, p[0]); xMax = Math.max(xMax, p[0]); yMin = Math.min(yMin, p[1]); yMax = Math.max(yMax, p[1]); }
     const circ = opts.circumference || xMax - xMin;
     const width = opts.tread_width || yMax - yMin;
+    if (!Number.isFinite(circ) || circ <= 0 || !Number.isFinite(width) || width <= 0)
+      throw new Error(
+        "DXF extents are degenerate: " + circ + " x " + width + " mm. The drawing must " +
+        "span a positive distance in both directions; a single straight line or a file " +
+        "with corrupt coordinates will produce this."
+      );
 
     const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+    // A centreline or border is a lone straight segment running the whole
+    // drawing. Only look for one when the drawing is big enough to have block
+    // detail as well -- on a 4-segment drawing every edge spans the extents,
+    // and the old 0.5x rule deleted the only block in the file.
+    const canHaveConstructionLines = segments.length >= 8;
     const kept = [];
     for (const s of segments) {
-      if (s.length === 2 && dist(s[0], s[1]) > 0.5 * circ) continue;
+      if (canHaveConstructionLines && s.length === 2 && dist(s[0], s[1]) > 0.9 * circ) continue;
       kept.push(s.map((p) => [p[0] - xMin, p[1] - yMin]));
     }
     if (kept.length !== segments.length) warnings.push("ignored " + (segments.length - kept.length) + " full-span construction line(s)");
@@ -697,10 +806,24 @@
     const seam = closeAcrossSeam(bl.openChains, circ);
     if (seam.leftover.length) warnings.push(seam.leftover.length + " chain(s) did not close and were discarded");
 
-    const minBlockArea = opts.min_block_area || 5.0;
+    const minBlockArea = opts.min_block_area == null ? 5.0 : opts.min_block_area;
     let loops = bl.closed.concat(seam.loops);
     const small = loops.filter((c) => polygonArea(c) < minBlockArea);
     loops = loops.filter((c) => polygonArea(c) >= minBlockArea);
+
+    // An import that yields no blocks is a failed import, not an empty tyre.
+    // Left to run it produces all-zero charts with nothing to explain them.
+    if (!loops.length) {
+      const why = [];
+      if (small.length) why.push(small.length + " closed loop(s) were smaller than the " + minBlockArea + " mm^2 minimum block area");
+      if (seam.leftover.length) why.push(seam.leftover.length + " outline(s) did not close — the drawing may have gaps at block corners");
+      if (!bl.closed.length && !seam.loops.length) why.push("no closed outline could be stitched from the segments at all");
+      throw new Error(
+        "DXF imported 0 tread blocks. " + (why.length ? why.join("; ") + ". " : "") +
+        "Check that the tread outlines are on the imported layer, that corners meet " +
+        "exactly, and that the drawing units are millimetres."
+      );
+    }
 
     const half = width / 2;
     loops.sort((a, b) => Math.min.apply(null, a.map((p) => p[0])) - Math.min.apply(null, b.map((p) => p[0])));
@@ -735,6 +858,16 @@
       const pit = pitches.find((p) => p.circumferential_start <= cx && cx < p.circumferential_start + p.circumferential_length);
       b.pitch_id = pit ? pit.id : pitches.length ? pitches[pitches.length - 1].id : "";
     }
+
+    // A loop lying inside another is usually a hole (a dimple, a stone ejector,
+    // an inner detail line), not a second block. The sweep is unaffected -- the
+    // rasteriser writes land pixels idempotently, so a union is what it measures
+    // -- but the land ratio below sums polygon areas and would double-count it.
+    const nested = countNestedLoops(blocks);
+    if (nested)
+      warnings.push(nested + " outline(s) lie inside another outline and are being counted as separate " +
+        "blocks; if they are holes rather than blocks the land ratio below is an over-estimate " +
+        "(the theta sweep itself measures the union and is unaffected)");
 
     let land = 0; for (const b of blocks) land += polygonArea(b.polygon);
     const uniform = repeat ? Math.abs(circ / repeat - Math.round(circ / repeat)) < 1e-3 && Math.round(circ / repeat) >= 2 : false;
@@ -1498,6 +1631,7 @@
     SHORE_E_TABLE, SHORE_K_TABLE, shoreE, shoreK, shoreRangeWarning, calcG, beamKMatrix, effectiveK, computeKz, blockStiffness, effectiveSipes,
     // dxf
     readDxfEntities, entitiesToSegments, buildLoops, closeAcrossSeam, loadPattern, estimatePitchCount, geometricRepeat,
+    validateBlockDefaults, validateImportOptions,
     // zones + crown
     zoneBounds, classifyZone, ZONES, crownDualRadius, crownFromRadiusProfile, crownTangentAngle, crownLocalRadius, crownDrop, crownContactLateral,
     // fft

@@ -117,15 +117,24 @@
     state.editorTheta = 0;
     renderBanner();
     drawEditor();
-    $("runBtn").disabled = false;
     $("emptyHint").style.display = "none";
+    refreshValidation();
   }
 
   function loadFile(file) {
     var reader = new FileReader();
     reader.onload = function () {
       try { buildPatternFromText(String(reader.result), file.name.replace(/\.dxf$/i, "")); }
-      catch (err) { alert("Could not read DXF: " + err.message); }
+      catch (err) {
+        // Drop the old pattern: leaving it loaded makes the banner describe one
+        // tyre while the user believes they are looking at another.
+        state.pattern = null; state.results = null;
+        $("banner").style.display = "none";
+        $("emptyHint").style.display = "";
+        $("emptyHint").innerHTML = "<b>Could not read that DXF.</b><br>" + escapeHtml(err.message);
+        drawEditor();
+        refreshValidation();
+      }
     };
     reader.readAsText(file);
   }
@@ -282,12 +291,81 @@
     ctx.fillText(E.describeSpec(spec) + "  |  y_c=" + yc.toFixed(1) + " mm  |  γ=" + state.gammaShown + "°", 8, 14);
   }
 
-  function setSpecError(msg) {
+  // Every numeric input, checked on the main thread before anything runs.
+  // An empty or nonsense field used to sail through as NaN and come back as
+  // "Mean vertical Kz: NaN" -- a wrong answer presented as an answer.
+  var FIELD_RULES = [
+    ["nsd", "NSD (block height)", "mm", function (v) { return v > 0; }, "must be greater than 0"],
+    ["draft", "Draft angle", "deg", function (v) { return Math.abs(v) < 90; }, "must be between -90 and 90"],
+    ["sipes", "Lateral sipes", "", function (v) { return v >= 0 && v <= 50 && v % 1 === 0; }, "must be a whole number from 0 to 50"],
+    ["sipeDepth", "Sipe depth fraction", "", function (v) { return v >= 0 && v <= 1; }, "must be between 0 and 1"],
+    ["shore", "Shore A hardness", "", function (v) { return v > 0 && v < 100; }, "must be between 0 and 100"],
+    ["poisson", "Poisson ratio", "", function (v) { return v > 0 && v < 0.5; }, "must be between 0 and 0.5 (rubber is ~0.49)"],
+    ["cpLoad", "Vertical load", "N", function (v) { return v > 0; }, "must be greater than 0"],
+    ["wheelR", "Wheel radius", "mm", function (v) { return v > 0; }, "must be greater than 0"],
+    ["cpLength", "Patch length", "mm", function (v) { return v > 0; }, "must be greater than 0"],
+    ["cpWidth", "Patch width", "mm", function (v) { return v > 0; }, "must be greater than 0"],
+  ];
+  var OPTIONAL_RULES = [
+    ["crownCenter", "Crown radius (centre)", "mm", function (v) { return v > 0; }, "must be greater than 0"],
+    ["crownShoulder", "Crown radius (shoulder)", "mm", function (v) { return v > 0; }, "must be greater than 0"],
+    ["nPitches", "Pitch count", "", function (v) { return v >= 1 && v % 1 === 0; }, "must be a whole number of 1 or more"],
+  ];
+
+  function collectInputErrors() {
+    var errs = [];
+    FIELD_RULES.forEach(function (r) {
+      var el = $(r[0]);
+      if (!el) return;
+      var raw = el.value.trim();
+      if (raw === "") { errs.push(r[1] + " is required"); return; }
+      var v = parseFloat(raw);
+      if (!isFinite(v)) { errs.push(r[1] + " must be a number"); return; }
+      if (!r[3](v)) errs.push(r[1] + " " + r[4] + (r[2] ? " (" + r[2] + ")" : ""));
+    });
+    OPTIONAL_RULES.forEach(function (r) {
+      var el = $(r[0]);
+      if (!el) return;
+      var raw = el.value.trim();
+      if (raw === "") return;              // blank means "use the default"
+      var v = parseFloat(raw);
+      if (!isFinite(v)) { errs.push(r[1] + " must be a number"); return; }
+      if (!r[3](v)) errs.push(r[1] + " " + r[4]);
+    });
+    if (!$("cpAutoY").checked) {
+      var y = parseFloat($("cpY").value);
+      if (!isFinite(y)) errs.push("Lateral centre y must be a number");
+    }
+    // shape-specific geometry, from the same validator the engine uses
+    if (!errs.length) {
+      try { E.validateSpec(readSpec()); }
+      catch (err) { errs.push(err.message); }
+    }
+    return errs;
+  }
+
+  // Single place that decides whether the tool is in a runnable state.
+  function refreshValidation() {
+    var errs = collectInputErrors();
     var el = $("specError");
-    if (!el) return;
-    el.textContent = msg || "";
-    el.style.display = msg ? "" : "none";
-    $("runBtn").disabled = !state.pattern || !!msg;
+    if (el) {
+      el.innerHTML = errs.length
+        ? "<b>Fix before running:</b><ul style='margin:4px 0 0;padding-left:18px'>" +
+          errs.map(function (e) { return "<li>" + escapeHtml(e) + "</li>"; }).join("") + "</ul>"
+        : "";
+      el.style.display = errs.length ? "" : "none";
+    }
+    $("runBtn").disabled = !state.pattern || errs.length > 0 || state.running;
+    return errs;
+  }
+
+  function setSpecError(msg) {
+    // kept for the editor's own paint-time failures; folds into the same panel
+    var el = $("specError");
+    if (!el || !msg) { refreshValidation(); return; }
+    el.innerHTML = escapeHtml(msg);
+    el.style.display = "";
+    $("runBtn").disabled = true;
   }
 
   function wrapText(ctx, text, cx, cy, maxWidth, lineHeight) {
@@ -368,6 +446,7 @@
 
   function run() {
     if (!state.pattern || state.running) return;
+    if (refreshValidation().length) return;   // never compute on invalid input
     rebuildIfLoaded();
     state.running = true;
     $("overlay").classList.add("on");
@@ -382,6 +461,12 @@
       var m = ev.data;
       if (m.type === "progress") { $("progress").textContent = "lean " + m.done + " / " + m.total; }
       else if (m.type === "done") {
+        var bad = resultsAreFinite(m.results);
+        if (bad) {
+          failRun("the sweep produced non-finite values in '" + bad + "'. This is a bug — " +
+            "please report the DXF and the settings that triggered it.");
+          return;
+        }
         state.results = m.results; state.stiffness = m.stiffness; state.grid = m.grid;
         state.notes = m.notes || []; state.maxLean = m.maxLean;
         state.running = false; $("overlay").classList.remove("on");
@@ -390,15 +475,53 @@
         populateGammaSelect();
         renderAll();
       } else if (m.type === "error") {
-        state.running = false; $("overlay").classList.remove("on");
-        alert("Compute failed: " + m.message);
+        failRun(m.message);
       }
+    };
+    // Without these a worker that dies outside its own try/catch (a parse
+    // failure, an out-of-memory kill) never posts anything, and the overlay
+    // spins forever with no way back.
+    state.worker.onerror = function (ev) {
+      ev.preventDefault();
+      failRun(ev.message || "the compute worker stopped unexpectedly");
+    };
+    state.worker.onmessageerror = function () {
+      failRun("the compute worker sent a message that could not be read");
     };
     state.worker.postMessage({
       cmd: "sweep", pattern: state.pattern, gridNx: nx, gridNy: ny,
       stiffParams: readStiffParams(), cpParams: readCpParams(), spec: readSpec(),
       leans: DEFAULT_LEANS, discreteSamples: 360, curvatureCorrection: $("curv").checked, stride: stride,
     });
+  }
+
+  // One exit path for every way a run can fail, so the UI can never be left
+  // spinning with no explanation.
+  function failRun(message) {
+    if (state.worker) { state.worker.terminate(); state.worker = null; }
+    state.running = false;
+    $("overlay").classList.remove("on");
+    $("runBtn").textContent = "▶ Run";
+    var el = $("specError");
+    if (el) {
+      el.innerHTML = "<b>Compute failed:</b> " + escapeHtml(String(message));
+      el.style.display = "";
+    }
+    refreshValidation();
+  }
+
+  // Results that arrive non-finite are a bug, not a finding -- say so rather
+  // than drawing "NaN" on a chart as though it were a measurement.
+  function resultsAreFinite(results) {
+    for (var i = 0; i < results.length; i++) {
+      var r = results[i];
+      var keys = ["contact_area", "kx", "ky", "kz", "block_count"];
+      for (var k = 0; k < keys.length; k++) {
+        var a = r[keys[k]];
+        for (var j = 0; j < a.length; j++) if (!isFinite(a[j])) return keys[k];
+      }
+    }
+    return null;
   }
 
   function populateGammaSelect() {
@@ -667,14 +790,14 @@
     on($("shape"), "change", function () { syncShapeFields(); drawEditor(); markStale(); });
 
     ["cpLength", "cpWidth", "cpCorner", "cpExp", "cpTaper", "cpRot", "cpY", "cpLoad"].forEach(function (id) {
-      on($(id), "input", function () { drawEditor(); markStale(); });
+      on($(id), "input", function () { refreshValidation(); drawEditor(); markStale(); });
     });
     on($("cpAutoY"), "change", function () { $("cpY").disabled = $("cpAutoY").checked; drawEditor(); markStale(); });
     on($("cpScaleLean"), "change", function () { drawEditor(); markStale(); });
     on($("cpAutoLoad"), "change", function () { $("cpLoad").disabled = $("cpAutoLoad").checked; markStale(); });
     ["nsd", "draft", "sipes", "sipeDepth", "shore", "poisson", "mode", "sipeModel", "quality", "curv", "wheelR", "loadLean", "crownCenter", "crownShoulder", "nPitches"].forEach(function (id) {
-      on($(id), "input", markStale);
-      on($(id), "change", markStale);
+      on($(id), "input", function () { refreshValidation(); markStale(); });
+      on($(id), "change", function () { refreshValidation(); markStale(); });
     });
 
     on($("gammaSel"), "change", function () { state.gammaShown = state.results[parseInt(this.value, 10)].gamma_deg; renderAll(); });
@@ -682,6 +805,7 @@
     on($("orderMetric"), "change", function () { state.orderMetric = this.value; renderOrders(); });
 
     syncShapeFields();
+    refreshValidation();
     $("cpY").disabled = $("cpAutoY").checked;
     $("cpLoad").disabled = $("cpAutoLoad").checked;
   }

@@ -314,24 +314,49 @@ def load_pattern(
     developed plan length.
     """
     defaults = defaults or BlockDefaults()
+    _validate_defaults(defaults)
+    _validate_options(circumference, tread_width, n_pitches, min_block_area)
     entities = read_dxf_entities(path)
     segments = entities_to_segments(entities, layers=layers)
     warnings: list[str] = []
 
     if not segments:
-        raise ValueError(f"no usable LINE/ARC/POLYLINE entities found in {path}")
+        raise ValueError(
+            f"no usable LINE/ARC/POLYLINE entities found in {path}. Check that the file "
+            "contains the tread outline as geometry (not blocks/xrefs), and that it was "
+            "exported as ASCII DXF rather than binary."
+        )
+
+    # A malformed coordinate must not reach the extents: one NaN there poisons
+    # the circumference, the grid and every number downstream.
+    clean = [s for s in segments if all(math.isfinite(x) and math.isfinite(y) for x, y in s)]
+    if len(clean) != len(segments):
+        warnings.append(f"{len(segments) - len(clean)} entit(ies) had non-finite coordinates and were skipped")
+        segments = clean
+    if not segments:
+        raise ValueError(f"every entity in {path} had non-finite coordinates")
 
     all_pts = np.asarray([p for s in segments for p in s], dtype=float)
     x_min, x_max = float(all_pts[:, 0].min()), float(all_pts[:, 0].max())
     y_min, y_max = float(all_pts[:, 1].min()), float(all_pts[:, 1].max())
     circ = circumference or (x_max - x_min)
     width = tread_width or (y_max - y_min)
+    if not (math.isfinite(circ) and circ > 0 and math.isfinite(width) and width > 0):
+        raise ValueError(
+            f"DXF extents are degenerate: {circ} x {width} mm. The drawing must span a "
+            "positive distance in both directions; a single straight line or a file with "
+            "corrupt coordinates will produce this."
+        )
 
-    # Drop construction geometry: any single straight segment spanning almost the
-    # whole drawing is a centreline or border, never a block edge.
+    # Drop construction geometry: a lone straight segment running the whole
+    # drawing is a centreline or border, never a block edge.  Only look for one
+    # when the drawing is big enough to carry block detail too -- on a
+    # four-segment drawing every edge spans the extents, and a loose threshold
+    # here deletes the only block in the file.
+    can_have_construction = len(segments) >= 8
     kept = []
     for s in segments:
-        if len(s) == 2 and math.dist(s[0], s[1]) > 0.5 * circ:
+        if can_have_construction and len(s) == 2 and math.dist(s[0], s[1]) > 0.9 * circ:
             continue
         kept.append([(x - x_min, y - y_min) for x, y in s])
     if len(kept) != len(segments):
@@ -349,6 +374,23 @@ def load_pattern(
     loops = closed + wrapped
     small = [c for c in loops if _polygon_area(c) < min_block_area]
     loops = [c for c in loops if _polygon_area(c) >= min_block_area]
+
+    # An import that yields no blocks is a failed import, not an empty tyre.
+    # Left to run it produces all-zero charts with nothing to explain them.
+    if not loops:
+        why = []
+        if small:
+            why.append(f"{len(small)} closed loop(s) were smaller than the {min_block_area} mm^2 minimum block area")
+        if leftover:
+            why.append(f"{len(leftover)} outline(s) did not close -- the drawing may have gaps at block corners")
+        if not closed and not wrapped:
+            why.append("no closed outline could be stitched from the segments at all")
+        raise ValueError(
+            f"{os.path.basename(path)} imported 0 tread blocks. "
+            + (("; ".join(why) + ". ") if why else "")
+            + "Check that the tread outlines are on the imported layer, that corners meet "
+            "exactly, and that the drawing units are millimetres."
+        )
 
     half = width / 2.0
     blocks: list[Block] = []
@@ -372,6 +414,18 @@ def load_pattern(
         b.pitch_id = next(
             (p.id for p in pitches if p.circumferential_start <= cx < p.circumferential_end),
             pitches[-1].id if pitches else "",
+        )
+
+    # A loop lying inside another is usually a hole (a dimple, a stone ejector,
+    # an inner detail line), not a second block.  The sweep is unaffected -- the
+    # rasteriser writes land pixels idempotently, so it measures the union -- but
+    # the land ratio below sums polygon areas and would double-count it.
+    nested = _count_nested_loops(blocks)
+    if nested:
+        warnings.append(
+            f"{nested} outline(s) lie inside another outline and are being counted as separate "
+            "blocks; if they are holes rather than blocks the land ratio is an over-estimate "
+            "(the theta sweep itself measures the union and is unaffected)"
         )
 
     land = sum(b.area() for b in blocks)
@@ -428,6 +482,86 @@ def load_pattern(
         },
     )
     return pattern, report
+
+
+def _validate_defaults(d: BlockDefaults) -> None:
+    """Reject depth attributes that would silently zero every stiffness."""
+    heights = [d.height, *d.height_by_zone.values()]
+    for h in heights:
+        if not math.isfinite(h) or h <= 0:
+            raise ValueError(f"NSD (block height) must be a positive number of mm, got {h!r}")
+    for a in [d.draft_angle, *d.draft_by_zone.values()]:
+        if not math.isfinite(a) or abs(a) >= 90.0:
+            raise ValueError(
+                f"draft angle must be a finite angle strictly between -90 and 90 degrees, got {a!r}"
+            )
+    for n in [d.n_lateral_sipes, *d.sipes_by_zone.values()]:
+        if int(n) != n or n < 0:
+            raise ValueError(f"lateral sipe count must be a non-negative whole number, got {n!r}")
+        if n > 50:
+            raise ValueError(f"lateral sipe count of {n} is implausible for a tread block (limit 50)")
+    if not math.isfinite(d.sipe_depth_fraction) or not 0.0 <= d.sipe_depth_fraction <= 1.0:
+        raise ValueError(
+            f"sipe depth fraction must lie between 0 and 1 (fraction of NSD), got {d.sipe_depth_fraction!r}"
+        )
+
+
+def _validate_options(
+    circumference: float | None, tread_width: float | None,
+    n_pitches: int | None, min_block_area: float,
+) -> None:
+    for name, v in (("circumference", circumference), ("tread width", tread_width)):
+        if v is not None and (not math.isfinite(v) or v <= 0):
+            raise ValueError(f"{name} override must be a positive number of mm, got {v!r}")
+    if n_pitches is not None and n_pitches != 0:
+        if int(n_pitches) != n_pitches or n_pitches < 1:
+            raise ValueError(f"pitch count must be a whole number >= 1, got {n_pitches!r}")
+        if n_pitches > 5000:
+            raise ValueError(f"pitch count of {n_pitches} is implausible (limit 5000)")
+    if not math.isfinite(min_block_area) or min_block_area < 0:
+        raise ValueError(f"minimum block area must be a non-negative number of mm^2, got {min_block_area!r}")
+
+
+def _point_in_polygon(pt: tuple[float, float], poly: list[Point]) -> bool:
+    x, y = pt
+    inside = False
+    n = len(poly)
+    for i in range(n):
+        ax, ay = poly[i]
+        bx, by = poly[(i + 1) % n]
+        if ay == by:
+            continue
+        if (ay > y) != (by > y):
+            xc = (bx - ax) * (y - ay) / (by - ay) + ax
+            if x < xc:
+                inside = not inside
+    return inside
+
+
+def _count_nested_loops(blocks: list[Block]) -> int:
+    """How many block outlines sit wholly inside another one.
+
+    Bounding boxes are compared first so this stays cheap for a few hundred
+    blocks; only survivors get the point-in-polygon test.
+    """
+    boxes, cents = [], []
+    for b in blocks:
+        a = np.asarray(b.polygon, dtype=float)
+        boxes.append((a[:, 0].min(), a[:, 0].max(), a[:, 1].min(), a[:, 1].max()))
+        cents.append(b.centroid())
+    n = 0
+    for i, bi in enumerate(boxes):
+        for j, bj in enumerate(boxes):
+            if i == j:
+                continue
+            if bi[0] < bj[0] or bi[1] > bj[1] or bi[2] < bj[2] or bi[3] > bj[3]:
+                continue
+            if (bi[1] - bi[0]) >= (bj[1] - bj[0]) and (bi[3] - bi[2]) >= (bj[3] - bj[2]):
+                continue
+            if _point_in_polygon(cents[i], blocks[j].polygon):
+                n += 1
+                break
+    return n
 
 
 def _geometric_repeat(blocks: list[Block], circumference: float, tol: float = 0.05) -> float | None:
