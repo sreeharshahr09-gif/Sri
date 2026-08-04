@@ -190,13 +190,13 @@ table.metrics td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
       <div class="group">
         <div class="title">2 · Block depth &amp; compound</div>
-        <div class="field"><label>NSD / block height (mm)</label><input id="nsd" type="number" value="8.5" step="0.5" /></div>
-        <div class="field"><label>Draft angle (deg)</label><input id="draft" type="number" value="3.0" step="0.5" /></div>
-        <div class="field"><label>Lateral sipes / block</label><input id="sipes" type="number" value="0" step="1" min="0" /></div>
-        <div class="field"><label>Sipe depth (frac of NSD)</label><input id="sipeDepth" type="number" value="0.6" step="0.05" min="0" max="1" /></div>
-        <div class="field"><label>Shore A hardness</label><input id="shore" type="number" value="60" step="1" /></div>
-        <div class="field"><label>Poisson ν</label><input id="poisson" type="number" value="0.49" step="0.01" /></div>
-        <div class="field"><label>Boundary mode</label>
+        <div class="field" title="Non-skid depth — the block height above the groove base. A 2D tread plan does not carry it, so you must supply it. It sets both the bending length of each block and the Gent shape factor, which makes it the single most influential number on this panel. Typical 2W: 6–10 mm."><label>NSD / block height (mm)</label><input id="nsd" type="number" value="8.5" step="0.5" /></div>
+        <div class="field" title="Mould draft angle, per side. Positive draft makes the block base wider than its top, so it adds material below the surface and STIFFENS the block. Typical: 2–5°."><label>Draft angle (deg)</label><input id="draft" type="number" value="3.0" step="0.5" /></div>
+        <div class="field" title="Number of lateral sipes cut across each block. A sipe softens the block in the direction it cuts. Set 0 if the pattern has none — a 2D plan does not show sipes, so this is your input."><label>Lateral sipes / block</label><input id="sipes" type="number" value="0" step="1" min="0" /></div>
+        <div class="field" title="How deep the sipes cut, as a fraction of NSD. 0.6 means the sipe reaches 60% of the way down to the groove base; 1.0 cuts the block clean through into independent sub-blocks."><label>Sipe depth (frac of NSD)</label><input id="sipeDepth" type="number" value="0.6" step="0.05" min="0" max="1" /></div>
+        <div class="field" title="Tread compound hardness. Sets Young's modulus E and the Gent coefficient k from Gent's table, which covers 30–70 A. Outside that range the nearest entry is substituted and you are warned — absolute stiffness is then unreliable."><label>Shore A hardness</label><input id="shore" type="number" value="60" step="1" /></div>
+        <div class="field" title="Poisson's ratio of the compound. Rubber is nearly incompressible, so 0.49 is right for virtually every tread compound."><label>Poisson ν</label><input id="poisson" type="number" value="0.49" step="0.01" /></div>
+        <div class="field" title="Boundary condition at the block's road-facing face. 'Parallel' holds the top face flat as it translates — the correct condition for a block that is gripping, and the stiffer of the two. 'Free' is an unconstrained cantilever tip."><label>Boundary mode</label>
           <select id="mode"><option value="parallel">parallel (gripping)</option><option value="free">free (cantilever)</option></select>
         </div>
         <div class="field" title="How a partially-siped block is decomposed. 'v6.4-compatible' stacks independently guided layers at each sipe root and reproduces the reference tool exactly — but a shallow sipe then comes out STIFFER than no sipe (up to +2% parallel / +4% free), because two guided half-length beams are 4x stiffer in bending than one full-length beam. 'continuous beam' integrates the moment-weighted compliance over one beam of varying section: a zero-depth sipe becomes an exact no-op and stiffness falls monotonically with sipe depth. Only affects blocks that actually have sipes.">
@@ -210,7 +210,7 @@ table.metrics td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
       <div class="group">
         <div class="title">3 · Contact patch (shape)</div>
-        <div class="field"><label>Shape</label>
+        <div class="field" title="Standard contact-patch outlines. Pick the one closest to your measured footprint, then set its dimensions below. Every shape feeds the same sweep, so a stated rectangle is treated exactly like a pressure-film scan."><label>Shape</label>
           <select id="shape">
             <option value="rounded">rounded rectangle</option>
             <option value="rectangle">rectangle</option>
@@ -221,14 +221,14 @@ table.metrics td.num { text-align: right; font-variant-numeric: tabular-nums; }
             <option value="diamond">diamond</option>
           </select>
         </div>
-        <div class="field"><label>Length — circumf. (mm)</label><input id="cpLength" type="number" value="90" step="1" /></div>
-        <div class="field"><label>Width — lateral (mm)</label><input id="cpWidth" type="number" value="50" step="1" /></div>
-        <div class="field" id="rowCorner"><label>Corner radius (mm)</label><input id="cpCorner" type="number" value="12" step="1" /></div>
-        <div class="field" id="rowExp"><label>Exponent</label><input id="cpExp" type="number" value="3" step="0.2" /></div>
-        <div class="field" id="rowTaper"><label>Taper (-1…1)</label><input id="cpTaper" type="number" value="0.3" step="0.1" /></div>
-        <div class="field"><label>Rotation (deg)</label><input id="cpRot" type="number" value="0" step="1" /></div>
-        <div class="field"><label>Lateral centre y (mm)</label><input id="cpY" type="number" value="0" step="1" /></div>
-        <div class="field"><label><input id="cpAutoY" type="checkbox" checked /> auto y from crown/lean</label></div>
+        <div class="field" title="Contact patch length along the direction of travel. With 'scale patch with lean' ticked, this describes the patch when UPRIGHT; it is scaled from there at each lean angle."><label>Length — circumf. (mm)</label><input id="cpLength" type="number" value="90" step="1" /></div>
+        <div class="field" title="Contact patch width across the tread. With 'scale patch with lean' ticked, this describes the patch when UPRIGHT; it is scaled from there at each lean angle."><label>Width — lateral (mm)</label><input id="cpWidth" type="number" value="50" step="1" /></div>
+        <div class="field" id="rowCorner" title="Corner radius of the rounded rectangle. Clamped to half the shorter side, at which point the shape becomes a stadium — so an over-large value degrades sensibly instead of self-intersecting."><label>Corner radius (mm)</label><input id="cpCorner" type="number" value="12" step="1" /></div>
+        <div class="field" id="rowExp" title="Superellipse squareness. 2 is a true ellipse; 3–4 matches a measured tyre footprint reasonably well; higher is squarer."><label>Exponent</label><input id="cpExp" type="number" value="3" step="0.2" /></div>
+        <div class="field" id="rowTaper" title="Trapezoid taper. Positive makes the leading edge wider, the sense a real footprint takes under braking. The stated width is the MEAN width, so patch area does not drift as you change taper."><label>Taper (-1…1)</label><input id="cpTaper" type="number" value="0.3" step="0.1" /></div>
+        <div class="field" title="Rotate the patch about its own centre. Positive turns the leading edge toward +y (the right-hand side looking in the direction of travel)."><label>Rotation (deg)</label><input id="cpRot" type="number" value="0" step="1" /></div>
+        <div class="field" title="Lateral position of the patch centre, measured from the tread centreline. Only used when 'auto y' is unticked."><label>Lateral centre y (mm)</label><input id="cpY" type="number" value="0" step="1" /></div>
+        <div class="field" title="Put the patch where the crown says the tyre actually touches at each lean — the point where the tread tangent has rotated to horizontal. Untick to pin the lateral position yourself."><label><input id="cpAutoY" type="checkbox" checked /> auto y from crown/lean</label></div>
         <div class="field" title="A real 2W patch narrows sharply as you lean, because the contact point moves onto the shoulder where the crown radius collapses. With this on, the dimensions above describe the UPRIGHT patch and are scaled to each lean by the Winkler trend. Turn off to hold the stated size at every lean (sensitivity studies, or when you have measured footprints per lean).">
           <label><input id="cpScaleLean" type="checkbox" checked /> scale patch with lean (crown physics)</label></div>
 
@@ -241,16 +241,16 @@ table.metrics td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
       <div class="group">
         <div class="title">4 · Load &amp; advanced</div>
-        <div class="field"><label>Vertical load Fz (N)</label><input id="cpLoad" type="number" value="1500" step="50" /></div>
+        <div class="field" title="Static vertical load carried by this tyre when upright. Sets the patch pressure, and with the box below, how that load grows as the bike leans."><label>Vertical load Fz (N)</label><input id="cpLoad" type="number" value="1500" step="50" /></div>
         <div class="field" title="In a steady turn the resultant of gravity and cornering force acts along the bike's plane, so the tyre carries Fz/cos(lean) rather than Fz. Uncheck to hold the load constant across the lean sweep (useful for isolating geometry from load).">
           <label><input id="cpAutoLoad" type="checkbox" checked /> load rises with lean (Fz / cos γ)</label></div>
-        <div class="field"><label>Wheel radius (mm)</label><input id="wheelR" type="number" value="320" step="5" /></div>
-        <div class="field"><label>Crown R centre (mm)</label><input id="crownCenter" type="number" placeholder="125" step="5" /></div>
-        <div class="field"><label>Crown R shoulder (mm)</label><input id="crownShoulder" type="number" placeholder="55" step="5" /></div>
-        <div class="field"><label>Pitch count (override)</label><input id="nPitches" type="number" placeholder="auto" step="1" /></div>
-        <div class="field"><label><input id="curv" type="checkbox" /> curvature correction</label></div>
+        <div class="field" title="Free rolling radius at the crown centre. Sets the patch's effective longitudinal radius, and the kinematic turn radius a leaned wheel traces (R_eff / tan γ)."><label>Wheel radius (mm)</label><input id="wheelR" type="number" value="320" step="5" /></div>
+        <div class="field" title="Crown radius at the tread centre. Leave blank for 125 mm. The crown decides where the contact point sits at every lean angle, so this drives the entire γ axis — it is not a cosmetic setting."><label>Crown R centre (mm)</label><input id="crownCenter" type="number" placeholder="125" step="5" /></div>
+        <div class="field" title="Crown radius at the shoulder. Leave blank for 55 mm. A tighter shoulder radius narrows the patch more sharply as you lean, and lowers the maximum lean the tyre can geometrically reach."><label>Crown R shoulder (mm)</label><input id="crownShoulder" type="number" placeholder="55" step="5" /></div>
+        <div class="field" title="Override the pitch count inferred from block spacing. Leave blank to re-infer it from the drawing. This sets which order is marked in red on the Order content chart."><label>Pitch count (override)</label><input id="nPitches" type="number" placeholder="auto" step="1" /></div>
+        <div class="field" title="For patterns digitised in PROJECTION (an ink impression, a photograph), which compress the shoulder. Leave OFF for a mould DXF — that drawing is already developed (arc-length) and applying the correction again double-counts."><label><input id="curv" type="checkbox" /> curvature correction</label></div>
         <div class="field" title="Circumferential grid cells. Fluctuation percentages (CoV) are stable at every setting; absolute stiffness values are not. Measured against a converged 8192 grid: draft is about 3% high, standard about 0.6%, fine about 0.01%.">
-          <label>Grid quality (nx)</label>
+          <label>Grid resolution</label>
           <select id="quality">
             <option value="1024">draft — fast, ~3% on absolute values</option>
             <option value="2048" selected>standard — ~0.6%</option>
@@ -273,10 +273,20 @@ table.metrics td.num { text-align: right; font-variant-numeric: tabular-nums; }
     </aside>
 
     <main class="main">
-      <div id="emptyHint" class="banner">Load a tread-plan DXF (or the bundled sample) to begin. Everything runs locally in your browser — nothing is uploaded.</div>
+      <div id="emptyHint" class="banner">
+        <b>Start here.</b> Everything runs locally in your browser — nothing is uploaded.
+        <ol style="margin:8px 0 0;padding-left:20px;line-height:1.7">
+          <li><b>Load a tread plan.</b> <em>Load DXF…</em> for your own drawing, or <em>Load sample</em> to try the bundled 130/80R17 plan.</li>
+          <li><b>Set what the drawing cannot tell you</b> — non-skid depth, draft angle, sipes, compound hardness. A 2D plan carries no depth.</li>
+          <li><b>Describe the contact patch</b> — pick a shape and type its size, or drag the handles on the preview.</li>
+          <li><b>Press Run.</b> The sweep takes a couple of seconds in a background worker; every chart then updates in place.</li>
+        </ol>
+        <div class="hint" style="margin-top:8px">Hover any input for an explanation of what it is and what it affects. The <b>How to read this</b> tab explains every chart once you have results.</div>
+      </div>
       <div id="banner" class="banner" style="display:none"></div>
       <div id="notes" class="banner warn" style="display:none"></div>
 
+      <div id="resultsArea" style="display:none">
       <div style="display:flex;gap:14px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
         <label class="hint">Lean γ shown: <select id="gammaSel" class="field"></select></label>
         <span id="progress" class="hint"></span>
@@ -501,6 +511,7 @@ python build_report.py --config my_tyre.json</code></pre>
 <p><strong>Everything is flagged red. Now what?</strong> Check the banner and the About tab first. If the crown profile or the contact patch is modelled rather than measured, the flags may be reacting to the model rather than to your pattern. Fix the inputs, then re-read the flags.</p>
 <p><strong>Which single change usually helps most?</strong> Getting more blocks into the contact patch — smaller blocks, or more of them. Nearly every ripple metric improves with better spatial averaging.</p></div>
       </section>
+      </div><!-- /resultsArea -->
     </main>
   </div>
 
@@ -70293,6 +70304,7 @@ return Plotly;
     state.results = null;
     state.editorTheta = 0;
     refreshExportButtons();
+    showResultsChrome(false);
     renderBanner();
     drawEditor();
     $("emptyHint").style.display = "none";
@@ -70306,7 +70318,7 @@ return Plotly;
       catch (err) {
         // Drop the old pattern: leaving it loaded makes the banner describe one
         // tyre while the user believes they are looking at another.
-        state.pattern = null; state.results = null; refreshExportButtons();
+        state.pattern = null; state.results = null; refreshExportButtons(); showResultsChrome(false);
         $("banner").style.display = "none";
         $("emptyHint").style.display = "";
         $("emptyHint").innerHTML = "<b>Could not read that DXF.</b><br>" + escapeHtml(err.message);
@@ -70751,8 +70763,16 @@ return Plotly;
     return state.results[0];
   }
 
+  // Tabs and the lean selector describe results. Before a run they lead to
+  // blank panels, which reads as a broken page rather than an empty one.
+  function showResultsChrome(on) {
+    var el = $("resultsArea");
+    if (el) el.style.display = on ? "" : "none";
+  }
+
   function renderAll() {
-    if (!state.results) return;
+    if (!state.results) { showResultsChrome(false); return; }
+    showResultsChrome(true);
     renderNotes();
     refreshExportButtons();
     renderCards();
@@ -70801,21 +70821,23 @@ return Plotly;
     var r = currentResult(), th = plotTheme();
     var x = r.theta_deg;
     var rows = [
-      { y: r.contact_area, name: "Contact area", unit: "mm²", color: th.accent },
-      { y: r.kz, name: "Kz (vertical)", unit: "N/mm", color: th.good },
-      { y: r.kx, name: "Kx (long.)", unit: "N/mm", color: th.accent2 },
-      { y: r.ky, name: "Ky (lateral)", unit: "N/mm", color: th.bad },
+      { y: r.contact_area, name: "Contact area", axis: "Contact area (mm²)", color: th.accent },
+      { y: r.kz, name: "Kz (vertical)", axis: "Kz (N/mm)", color: th.good },
+      { y: r.kx, name: "Kx (longitudinal)", axis: "Kx (N/mm)", color: th.accent2 },
+      { y: r.ky, name: "Ky (lateral)", axis: "Ky (N/mm)", color: th.bad },
       // The discrete count is sampled on its own theta grid, so it rides along
       // as a second trace on this row rather than being resampled.
-      { y: r.block_count, name: "Blocks in patch", unit: "count", color: th.inkDim,
+      { y: r.block_count, name: "Blocks in patch", axis: "Blocks", color: th.inkDim,
         extra: { x: r.theta_discrete, y: r.block_count_discrete,
                  name: "blocks >50% in", color: th.accent, shape: "hv" } },
-      { y: r.centroid_y, name: "Contact centroid", unit: "mm from centreline", color: th.accent2 },
+      { y: r.centroid_y, name: "Contact centroid", axis: "Centroid y (mm)", color: th.accent2 },
     ];
     var data = [], layout = {
       paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
-      showlegend: false, margin: { l: 64, r: 16, t: 24, b: 40 },
-      height: 560, grid: { rows: rows.length, columns: 1, pattern: "independent", roworder: "top to bottom" },
+      showlegend: true,
+      legend: { orientation: "h", y: -0.10, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
+      margin: { l: 78, r: 16, t: 34, b: 104 },
+      height: 720, grid: { rows: rows.length, columns: 1, pattern: "independent", roworder: "top to bottom" },
       title: { text: "In-patch aggregates vs rotation angle θ  (γ = " + r.gamma_deg + "°)", font: { size: 13 } },
     };
     for (var i = 0; i < rows.length; i++) {
@@ -70828,7 +70850,9 @@ return Plotly;
           name: rows[i].extra.name });
       }
       layout["xaxis" + (i + 1)] = { gridcolor: th.grid, zeroline: false, range: [0, 360], showticklabels: i === rows.length - 1, title: i === rows.length - 1 ? { text: "rotation angle θ (deg)", font: { size: 11 } } : undefined, tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] };
-      layout["yaxis" + (i + 1)] = { gridcolor: th.grid, zeroline: false, title: { text: rows[i].name + " (" + rows[i].unit + ")", font: { size: 10 } } };
+      layout["yaxis" + (i + 1)] = { gridcolor: th.grid, zeroline: false,
+        title: { text: rows[i].axis, font: { size: 10 }, standoff: 6 },
+        automargin: true };
     }
     Plotly.react($("thetaStack"), data, layout, { responsive: true, displayModeBar: false });
   }
@@ -71168,6 +71192,9 @@ return Plotly;
     on($("orderMetric"), "change", function () { state.orderMetric = this.value; renderOrders(); });
 
     syncShapeFields();
+    // Paint once at startup: without this the canvas stayed blank until some
+    // input happened to change, so the "load a DXF" hint inside it never showed.
+    drawEditor();
     refreshValidation();
     $("cpY").disabled = $("cpAutoY").checked;
   }

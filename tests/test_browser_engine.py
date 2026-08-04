@@ -259,3 +259,59 @@ def test_pattern_derived_inputs_are_reconciled_before_every_run():
     assert "crownDualRadius" in body, "crown is not rebuilt"
     assert "estimatePitchCount" in body or "nPitches" in body, "pitch division is not rebuilt"
     assert "b.height" in body, "block depths are not reapplied"
+
+
+def test_every_input_carries_an_explanation():
+    """The brief: a new user must complete the workflow unaided.  Coverage was
+    4/26 -- most controls had no explanation of what they were or what they
+    affected, and several (crown radius, sipe depth) are not guessable."""
+    import re
+
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    sidebar = tpl[tpl.index('<aside class="sidebar">'):tpl.index("</aside>")]
+    fields = re.findall(r'<div class="field"([^>]*)>(.*?)(?=<div class="field"|</div>\s*</div>)',
+                        sidebar, re.S)
+    missing = []
+    for attrs, body in fields:
+        m = re.search(r'id="([A-Za-z0-9_]+)"', body)
+        if not m:
+            continue
+        title = re.search(r'title="([^"]{10,})"', attrs)
+        if not title:
+            missing.append(m.group(1))
+    assert not missing, f"inputs with no tooltip: {missing}"
+
+
+def test_axis_titles_carry_units():
+    """Every plotted axis must name its quantity and its unit."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    for expected in [
+        "rotation angle θ (deg)", "lean angle γ (deg)", "lateral y (mm)",
+        "contact area (mm²)", "circumferential x (mm)",
+        "order (events per revolution)", "amplitude (fraction of mean)",
+    ]:
+        assert expected in ui, f"axis title missing or missing its unit: {expected!r}"
+
+
+def test_results_chrome_is_hidden_until_there_are_results():
+    """Tabs and the lean selector describe results.  Shown before a run they
+    lead to blank panels, which reads as a broken page rather than an empty one."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert 'id="resultsArea"' in tpl
+    assert 'id="resultsArea" style="display:none"' in tpl, "must start hidden"
+    assert "function showResultsChrome(" in ui
+    # hidden again whenever results are invalidated
+    assert ui.count("showResultsChrome(false)") >= 2
+    # the editor must be painted at startup so its empty-state hint is seen
+    init = ui[ui.index("function init()"):]
+    assert "drawEditor();" in init
+
+
+def test_first_run_gives_numbered_instructions():
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    hint = tpl[tpl.index('id="emptyHint"'):tpl.index('id="banner"')]
+    assert "Start here" in hint
+    assert hint.count("<li>") >= 4, "the workflow should be spelled out as steps"
+    for word in ("Load", "Run"):
+        assert word in hint

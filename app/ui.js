@@ -119,6 +119,7 @@
     state.results = null;
     state.editorTheta = 0;
     refreshExportButtons();
+    showResultsChrome(false);
     renderBanner();
     drawEditor();
     $("emptyHint").style.display = "none";
@@ -132,7 +133,7 @@
       catch (err) {
         // Drop the old pattern: leaving it loaded makes the banner describe one
         // tyre while the user believes they are looking at another.
-        state.pattern = null; state.results = null; refreshExportButtons();
+        state.pattern = null; state.results = null; refreshExportButtons(); showResultsChrome(false);
         $("banner").style.display = "none";
         $("emptyHint").style.display = "";
         $("emptyHint").innerHTML = "<b>Could not read that DXF.</b><br>" + escapeHtml(err.message);
@@ -577,8 +578,16 @@
     return state.results[0];
   }
 
+  // Tabs and the lean selector describe results. Before a run they lead to
+  // blank panels, which reads as a broken page rather than an empty one.
+  function showResultsChrome(on) {
+    var el = $("resultsArea");
+    if (el) el.style.display = on ? "" : "none";
+  }
+
   function renderAll() {
-    if (!state.results) return;
+    if (!state.results) { showResultsChrome(false); return; }
+    showResultsChrome(true);
     renderNotes();
     refreshExportButtons();
     renderCards();
@@ -627,21 +636,23 @@
     var r = currentResult(), th = plotTheme();
     var x = r.theta_deg;
     var rows = [
-      { y: r.contact_area, name: "Contact area", unit: "mm²", color: th.accent },
-      { y: r.kz, name: "Kz (vertical)", unit: "N/mm", color: th.good },
-      { y: r.kx, name: "Kx (long.)", unit: "N/mm", color: th.accent2 },
-      { y: r.ky, name: "Ky (lateral)", unit: "N/mm", color: th.bad },
+      { y: r.contact_area, name: "Contact area", axis: "Contact area (mm²)", color: th.accent },
+      { y: r.kz, name: "Kz (vertical)", axis: "Kz (N/mm)", color: th.good },
+      { y: r.kx, name: "Kx (longitudinal)", axis: "Kx (N/mm)", color: th.accent2 },
+      { y: r.ky, name: "Ky (lateral)", axis: "Ky (N/mm)", color: th.bad },
       // The discrete count is sampled on its own theta grid, so it rides along
       // as a second trace on this row rather than being resampled.
-      { y: r.block_count, name: "Blocks in patch", unit: "count", color: th.inkDim,
+      { y: r.block_count, name: "Blocks in patch", axis: "Blocks", color: th.inkDim,
         extra: { x: r.theta_discrete, y: r.block_count_discrete,
                  name: "blocks >50% in", color: th.accent, shape: "hv" } },
-      { y: r.centroid_y, name: "Contact centroid", unit: "mm from centreline", color: th.accent2 },
+      { y: r.centroid_y, name: "Contact centroid", axis: "Centroid y (mm)", color: th.accent2 },
     ];
     var data = [], layout = {
       paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
-      showlegend: false, margin: { l: 64, r: 16, t: 24, b: 40 },
-      height: 560, grid: { rows: rows.length, columns: 1, pattern: "independent", roworder: "top to bottom" },
+      showlegend: true,
+      legend: { orientation: "h", y: -0.10, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
+      margin: { l: 78, r: 16, t: 34, b: 104 },
+      height: 720, grid: { rows: rows.length, columns: 1, pattern: "independent", roworder: "top to bottom" },
       title: { text: "In-patch aggregates vs rotation angle θ  (γ = " + r.gamma_deg + "°)", font: { size: 13 } },
     };
     for (var i = 0; i < rows.length; i++) {
@@ -654,7 +665,9 @@
           name: rows[i].extra.name });
       }
       layout["xaxis" + (i + 1)] = { gridcolor: th.grid, zeroline: false, range: [0, 360], showticklabels: i === rows.length - 1, title: i === rows.length - 1 ? { text: "rotation angle θ (deg)", font: { size: 11 } } : undefined, tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] };
-      layout["yaxis" + (i + 1)] = { gridcolor: th.grid, zeroline: false, title: { text: rows[i].name + " (" + rows[i].unit + ")", font: { size: 10 } } };
+      layout["yaxis" + (i + 1)] = { gridcolor: th.grid, zeroline: false,
+        title: { text: rows[i].axis, font: { size: 10 }, standoff: 6 },
+        automargin: true };
     }
     Plotly.react($("thetaStack"), data, layout, { responsive: true, displayModeBar: false });
   }
@@ -994,6 +1007,9 @@
     on($("orderMetric"), "change", function () { state.orderMetric = this.value; renderOrders(); });
 
     syncShapeFields();
+    // Paint once at startup: without this the canvas stayed blank until some
+    // input happened to change, so the "load a DXF" hint inside it never showed.
+    drawEditor();
     refreshValidation();
     $("cpY").disabled = $("cpAutoY").checked;
   }
