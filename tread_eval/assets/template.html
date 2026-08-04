@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>/*__CSS__*/</style>
+<!--__PLOTLY__-->
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="mark"></span>
+    <div>
+      <h1>2W Tread Pattern Evaluation</h1>
+      <p id="subtitle" class="sub"></p>
+    </div>
+  </div>
+  <div id="metaChips" class="chips"></div>
+</header>
+
+<div id="placeholderBanner" class="banner">
+  <strong>Baseline build.</strong>
+  <span>Pattern geometry, block stiffness and the contact-patch-vs-lean footprint are all
+  placeholder models. Trends and relative comparisons are meaningful; absolute values are not.
+  <a href="#tab-about" data-goto="about">What is a placeholder &rarr;</a></span>
+</div>
+
+<nav class="tabs" id="tabs"></nav>
+
+<section class="controls" id="controls">
+  <div class="ctrl-group">
+    <label>Lean angle &gamma;</label>
+    <div id="leanButtons" class="seg"></div>
+  </div>
+  <div class="ctrl-group grow">
+    <label>Rotation &theta; <span id="thetaReadout" class="mono"></span></label>
+    <div class="slider-row">
+      <button id="playBtn" class="icon-btn" title="Animate rotation">&#9654;</button>
+      <input type="range" id="thetaSlider" min="0" max="359.5" step="0.5" value="0">
+    </div>
+  </div>
+  <div class="ctrl-group">
+    <label>Overlay</label>
+    <div class="seg">
+      <button data-overlay="pressure" class="on">Pressure</button>
+      <button data-overlay="travel" class="on">Travel dir</button>
+      <button data-overlay="centroid" class="on">Centroid</button>
+    </div>
+  </div>
+</section>
+
+<main>
+  <!-- 1. pattern ------------------------------------------------------ -->
+  <div class="panel" id="tab-pattern">
+    <div class="grid-2-1">
+      <div class="card">
+        <h2>Rolled-out pattern with contact patch</h2>
+        <p class="hint">The window follows &theta;. The patch outline, its pressure contours and
+        the instantaneous travel direction are drawn at the current lean angle.</p>
+        <div id="patternPlot" class="plot tall"></div>
+      </div>
+      <div class="card">
+        <h2>Crown section</h2>
+        <p class="hint">Where the patch sits on the profile at this lean.</p>
+        <div id="crownPlot" class="plot short"></div>
+        <div id="patchStats" class="statlist"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Full revolution overview</h2>
+      <p class="hint">Contact area around the whole tyre; the cursor marks the window above. Ticks are pitch boundaries.</p>
+      <div id="overviewPlot" class="plot mid"></div>
+    </div>
+  </div>
+
+  <!-- 2. contact ------------------------------------------------------ -->
+  <div class="panel" id="tab-contact" hidden>
+    <div class="card">
+      <h2>Contact area vs. rotation angle</h2>
+      <p class="hint">One curve per lean angle. Shaded bands mark abnormally fast changes
+      (gradient beyond 3&sigma;) &mdash; those are blocks entering or leaving contact abruptly.</p>
+      <div id="areaPlot" class="plot mid"></div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h2>In-contact stiffness K<sub>x</sub></h2>
+        <p class="hint">Sum over blocks in the patch, weighted by the fraction of each block inside.</p>
+        <div id="kxPlot" class="plot mid"></div>
+      </div>
+      <div class="card">
+        <h2>In-contact stiffness K<sub>y</sub></h2>
+        <p class="hint">Lateral (cornering) direction.</p>
+        <div id="kyPlot" class="plot mid"></div>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h2>Anisotropy K<sub>x</sub>/K<sub>y</sub></h2>
+        <div id="anisoPlot" class="plot mid"></div>
+      </div>
+      <div class="card">
+        <h2>Blocks in contact</h2>
+        <p class="hint">Effective count = sum of the in-patch area fraction of every block.</p>
+        <div id="blockPlot" class="plot mid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. orders ------------------------------------------------------- -->
+  <div class="panel" id="tab-orders" hidden>
+    <div class="card">
+      <h2>Rotation order content of contact area</h2>
+      <p class="hint">Order <em>k</em> = <em>k</em> events per wheel revolution. Amplitude is a
+      fraction of the mean contact area. A tall isolated bar is a tonal pitch sequence.</p>
+      <div id="orderPlot" class="plot mid"></div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h2>Pitch length sequence</h2>
+        <div id="pitchSeqPlot" class="plot mid"></div>
+      </div>
+      <div class="card">
+        <h2>Spectrum of the pitch sequence itself</h2>
+        <p class="hint">Independent of the contact model &mdash; this is the sequence, not the response.</p>
+        <div id="pitchSpecPlot" class="plot mid"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Polar summary</h2>
+      <p class="hint">Contact area around the revolution, normalised to its mean at each lean angle.</p>
+      <div id="polarPlot" class="plot tall"></div>
+    </div>
+  </div>
+
+  <!-- 4. lean --------------------------------------------------------- -->
+  <div class="panel" id="tab-lean" hidden>
+    <div class="card highlight">
+      <h2>Fluctuation vs. lean angle</h2>
+      <p class="hint">The headline 2W diagnostic. As the patch shrinks with lean it contains fewer
+      blocks, spatial averaging weakens, and the area/stiffness ripple grows.</p>
+      <div id="varLeanPlot" class="plot mid"></div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h2>Blocks in contact vs. lean</h2>
+        <div id="blockLeanPlot" class="plot mid"></div>
+      </div>
+      <div class="card">
+        <h2>Patch size and shape vs. lean</h2>
+        <div id="shapeLeanPlot" class="plot mid"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Centroid wander: geometric vs. residual</h2>
+      <p class="hint">The geometric shift is where lean and the crown profile put the patch &mdash; not a
+      flaw. The residual is what the block layout adds on top, and only that is actionable.</p>
+      <div id="centroidPlot" class="plot mid"></div>
+    </div>
+    <div class="card">
+      <h2>Per-lean summary</h2>
+      <div id="leanTable" class="tablewrap"></div>
+    </div>
+  </div>
+
+  <!-- 5. zones -------------------------------------------------------- -->
+  <div class="panel" id="tab-zones" hidden>
+    <div class="card">
+      <h2>Land ratio by lateral position</h2>
+      <p class="hint">Whole pattern, independent of the contact patch. Bands mark the zone boundaries.</p>
+      <div id="zoneBinPlot" class="plot mid"></div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h2>Zone share of the contact patch vs. lean</h2>
+        <p class="hint">Which ribs actually carry the contact as the tyre leans over.</p>
+        <div id="zoneSharePlot" class="plot mid"></div>
+      </div>
+      <div class="card">
+        <h2>Zone statistics</h2>
+        <div id="zoneTable" class="tablewrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. grooves ------------------------------------------------------ -->
+  <div class="panel" id="tab-grooves" hidden>
+    <div class="card">
+      <h2>Groove angle relative to instantaneous rolling direction</h2>
+      <p class="hint">90&deg; is a groove running straight across the direction of travel, 0&deg; one running
+      along it. The shaded band is the swing caused by contact-patch spin: a leaning tyre corners, so the
+      same groove meets the flow at a different angle entering and leaving the patch.</p>
+      <div id="groovePlot" class="plot tall"></div>
+    </div>
+    <div class="card">
+      <h2>Block property distribution</h2>
+      <div id="blockScatterPlot" class="plot mid"></div>
+    </div>
+  </div>
+
+  <!-- 7. diagnostics -------------------------------------------------- -->
+  <div class="panel" id="tab-diagnostics" hidden>
+    <div class="card">
+      <h2>Design flags</h2>
+      <p class="hint">Thresholds are uncalibrated placeholders. Treat the ranking as meaningful and the
+      pass/fail as provisional.</p>
+      <div id="flagList" class="flags"></div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h2>Pitch sequence</h2>
+        <div id="pitchTable" class="tablewrap"></div>
+      </div>
+      <div class="card">
+        <h2>Wear proxies</h2>
+        <div id="wearTable" class="tablewrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. about -------------------------------------------------------- -->
+  <div class="panel" id="tab-about" hidden>
+    <div class="card">
+      <h2>What is real and what is a placeholder</h2>
+      <div id="aboutBody"></div>
+    </div>
+    <div class="card">
+      <h2>Run configuration</h2>
+      <div id="configTable" class="tablewrap"></div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <span id="footerMeta"></span>
+  <span class="muted">Plotly bundle: __PLOTLY_PROVENANCE__</span>
+</footer>
+
+<script id="payload" type="application/json">/*__DATA__*/</script>
+<script>/*__APP__*/</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+# Runtime (computation)
+numpy>=1.24
+scipy>=1.10
+
+# Build-time only: the report embeds plotly.min.js from this package, so the
+# generated HTML needs neither plotly nor a network connection to open.
+plotly>=5.18
+
+# Development
+pytest>=7.0
