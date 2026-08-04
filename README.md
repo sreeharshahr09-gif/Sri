@@ -54,6 +54,14 @@ the θ sweep with the rolled-out pattern beneath it on the same angle axis, the
 θ×γ lean map, order content, zone balance, the contact patch, and a diagnostics
 table. A dark/light toggle and a built-in *How to read this* guide are included.
 
+**Getting the results out.** The Export panel writes three files locally:
+
+| | |
+|---|---|
+| **CSV data** | every θ and lean sample, with a commented header recording the settings, grid and physics notes that produced it |
+| **JSON run** | the complete run — settings, import report, per-block stiffness summary and all results — for scripting or archiving |
+| **Summary** | a short text table, one row per lean angle with means and fluctuations |
+
 Nothing is uploaded; the file works offline from `file://`.
 
 ## Running it on your own tyre (command-line report)

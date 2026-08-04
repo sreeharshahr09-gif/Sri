@@ -1535,7 +1535,12 @@
     const patch = shapePatch(useSpec, pattern.crown, pattern.tread_width, params);
     const masks = patchMasks(patch, grid);
     const kb = kernelSpectrum(masks.binary, grid);
-    const kp = kernelSpectrum(masks.pressure, grid);
+    // No pressure-weighted correlation here. Every patch this engine builds has
+    // a flat pressure field, so a pressure-weighted area is exactly
+    // contact_area * peak_pressure -- it carries no information the binary
+    // correlation does not already have, and it cost an extra kernel transform
+    // plus a correlation per lean angle. (The Python side keeps it because it
+    // can carry a measured pressure grid, where the weighting is real.)
 
     const contactArea = maxClamp(correlate(cache.get("area", pack.area), kb.re, kb.im, nx));
     const kx = maxClamp(correlate(cache.get("kx", pack.kx), kb.re, kb.im, nx));
@@ -1543,7 +1548,6 @@
     const kz = maxClamp(correlate(cache.get("kz", pack.kz), kb.re, kb.im, nx));
     const blockCount = maxClamp(correlate(cache.get("block_frac", pack.blockFrac), kb.re, kb.im, nx));
     const yMoment = correlate(cache.get("y_moment", pack.yMoment), kb.re, kb.im, nx);
-    const pressureArea = maxClamp(correlate(cache.get("area", pack.area), kp.re, kp.im, nx));
     const zoneArea = {};
     for (const z of ZONES) zoneArea[z] = maxClamp(correlate(cache.get("zone_" + z, pack.zoneArea[z]), kb.re, kb.im, nx));
 
@@ -1562,7 +1566,7 @@
       gamma_deg: gammaDeg, patch: { source: patch.source, provenance: patch.provenance, y_center: patch.y_center, a: patch.a, b: patch.b, clipped: patch.clipped, outline: patch.outline, normal_load: patch.normal_load, peak_pressure: patch.peak_pressure },
       theta_deg: gridThetaDeg(grid), contact_area: contactArea, land_ratio: landRatio,
       kx: kx, ky: ky, kz: kz, block_count: blockCount, centroid_y: centroidY,
-      zone_area: zoneArea, pressure_area: pressureArea,
+      zone_area: zoneArea,
       block_count_discrete: disc.count, theta_discrete: disc.theta,
       patch_area: patchAreaVal, patch_perimeter: shape.perimeter_mm, patch_load: patchLoad, shape: shape,
     };

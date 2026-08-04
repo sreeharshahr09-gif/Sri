@@ -8,7 +8,8 @@ const fs = require("fs");
   const outDir = path.join(__dirname, "..", "out", "shots");
   fs.mkdirSync(outDir, { recursive: true });
   const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome", args: ["--no-sandbox"] });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const ctx = await browser.newContext({ acceptDownloads: true, viewport: { width: 1440, height: 1000 } });
+  const page = await ctx.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
   page.on("console", (m) => { if (m.type() === "error") errors.push("console: " + m.text()); });
@@ -44,6 +45,20 @@ const fs = require("fs");
     await page.click(`.tabs button[data-tab="${t}"]`);
     await page.waitForTimeout(500);
     await page.screenshot({ path: path.join(outDir, `tab-${t}.png`), fullPage: false });
+  }
+
+  // export: every format must download and be self-describing
+  const dlDir = require("fs").mkdtempSync(require("path").join(require("os").tmpdir(), "tt-"));
+  for (const [id, label] of [["exportCsv", "CSV"], ["exportJson", "JSON"], ["exportTxt", "Summary"]]) {
+    if (await page.isDisabled("#" + id)) { errors.push(`${label} export still disabled after a run`); continue; }
+    const [dl] = await Promise.all([page.waitForEvent("download"), page.click("#" + id)]);
+    const f = require("path").join(dlDir, dl.suggestedFilename());
+    await dl.saveAs(f);
+    const txt = fs.readFileSync(f, "utf8");
+    if (!txt.length) errors.push(`${label} export was empty`);
+    if (id === "exportCsv" && !/^gamma_deg,theta_deg,/m.test(txt)) errors.push("CSV lacks its column header");
+    if (id === "exportJson") { const j = JSON.parse(txt); if (!j.results || !j.settings) errors.push("JSON export missing results/settings"); }
+    console.log(`export ${label}: ${dl.suggestedFilename()} (${(txt.length / 1024).toFixed(0)} KB)`);
   }
 
   // drag the editor centre handle to move y_center, verify input updates

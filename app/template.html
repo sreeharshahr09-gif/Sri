@@ -81,8 +81,8 @@
       <div class="group">
         <div class="title">4 · Load &amp; advanced</div>
         <div class="field"><label>Vertical load Fz (N)</label><input id="cpLoad" type="number" value="1500" step="50" /></div>
-        <div class="field"><label><input id="cpAutoLoad" type="checkbox" checked /> load rises with lean</label></div>
-        <div class="field" style="display:none"><label><input id="loadLean" type="checkbox" checked /> Fz/cos γ</label></div>
+        <div class="field" title="In a steady turn the resultant of gravity and cornering force acts along the bike's plane, so the tyre carries Fz/cos(lean) rather than Fz. Uncheck to hold the load constant across the lean sweep (useful for isolating geometry from load).">
+          <label><input id="cpAutoLoad" type="checkbox" checked /> load rises with lean (Fz / cos γ)</label></div>
         <div class="field"><label>Wheel radius (mm)</label><input id="wheelR" type="number" value="320" step="5" /></div>
         <div class="field"><label>Crown R centre (mm)</label><input id="crownCenter" type="number" placeholder="125" step="5" /></div>
         <div class="field"><label>Crown R shoulder (mm)</label><input id="crownShoulder" type="number" placeholder="55" step="5" /></div>
@@ -99,7 +99,16 @@
       </div>
 
       <button id="runBtn" class="btn block" disabled>▶ Run</button>
-      <input id="loadLean2" type="hidden" />
+
+      <div class="group" style="margin-top:14px">
+        <div class="title">5 · Export</div>
+        <div class="filerow">
+          <button id="exportCsv" class="btn secondary" disabled title="Every theta and lean sample as CSV, with a commented header recording the settings that produced it.">CSV data</button>
+          <button id="exportJson" class="btn secondary" disabled title="The complete run — settings, import report, physics notes, per-block stiffness summary and all results — as JSON.">JSON run</button>
+          <button id="exportTxt" class="btn secondary" disabled title="A short text summary: one row per lean angle with means and fluctuations.">Summary</button>
+        </div>
+        <div class="hint">Files download locally; nothing is uploaded.</div>
+      </div>
     </aside>
 
     <main class="main">

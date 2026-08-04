@@ -62,7 +62,6 @@
       inkDim: cssVar("--ink-dim"),
     };
   }
-  function ax(title) { return { title: { text: title, font: { size: 11 } } }; }
 
   // ---- reading controls into spec / params -----------------------------
   function readSpec() {
@@ -76,7 +75,7 @@
       rotation: num("cpRot"),
       y_center: $("cpAutoY").checked ? null : num("cpY"),
       gamma_deg: 0,
-      load_N: $("cpAutoLoad").checked ? null : num("cpLoad"),
+      load_N: null,
       label: "",
       scale_with_lean: $("cpScaleLean").checked,
     };
@@ -88,7 +87,11 @@
     };
   }
   function readCpParams() {
-    return { vertical_load: num("cpLoad"), wheel_radius: num("wheelR"), load_rises_with_lean: $("loadLean").checked };
+    // The visible checkbox drives the real parameter. It used to be wired to a
+    // hidden input that was always checked, so the box the user could see was
+    // labelled "load rises with lean" while doing something else entirely.
+    return { vertical_load: num("cpLoad"), wheel_radius: num("wheelR"),
+             load_rises_with_lean: $("cpAutoLoad").checked };
   }
   function readDefaults() {
     return { height: num("nsd"), draft_angle: num("draft"), n_lateral_sipes: parseInt($("sipes").value, 10), sipe_depth_fraction: num("sipeDepth"), shore_a: null };
@@ -115,6 +118,7 @@
     state.report = out.report;
     state.results = null;
     state.editorTheta = 0;
+    refreshExportButtons();
     renderBanner();
     drawEditor();
     $("emptyHint").style.display = "none";
@@ -128,7 +132,7 @@
       catch (err) {
         // Drop the old pattern: leaving it loaded makes the banner describe one
         // tyre while the user believes they are looking at another.
-        state.pattern = null; state.results = null;
+        state.pattern = null; state.results = null; refreshExportButtons();
         $("banner").style.display = "none";
         $("emptyHint").style.display = "";
         $("emptyHint").innerHTML = "<b>Could not read that DXF.</b><br>" + escapeHtml(err.message);
@@ -415,9 +419,6 @@
     } else if (editor.drag === "north") {
       var yc = $("cpAutoY").checked ? E.crownContactLateral(state.pattern.crown, state.gammaShown) : num("cpY");
       $("cpWidth").value = Math.max(6, Math.abs(dy - yc) * 2).toFixed(1);
-    } else if (editor.drag === "pan") {
-      // scrub the viewing angle
-      state.editorTheta = ((state.editorTheta - (dx) * 0) + 360) % 360; // pan disabled; keep simple
     }
     drawEditor();
   }
@@ -544,6 +545,7 @@
   function renderAll() {
     if (!state.results) return;
     renderNotes();
+    refreshExportButtons();
     renderCards();
     renderThetaStack();
     renderPatternStrip();
@@ -594,7 +596,12 @@
       { y: r.kz, name: "Kz (vertical)", unit: "N/mm", color: th.good },
       { y: r.kx, name: "Kx (long.)", unit: "N/mm", color: th.accent2 },
       { y: r.ky, name: "Ky (lateral)", unit: "N/mm", color: th.bad },
-      { y: r.block_count, name: "Blocks in patch", unit: "count", color: th.inkDim },
+      // The discrete count is sampled on its own theta grid, so it rides along
+      // as a second trace on this row rather than being resampled.
+      { y: r.block_count, name: "Blocks in patch", unit: "count", color: th.inkDim,
+        extra: { x: r.theta_discrete, y: r.block_count_discrete,
+                 name: "blocks >50% in", color: th.accent, shape: "hv" } },
+      { y: r.centroid_y, name: "Contact centroid", unit: "mm from centreline", color: th.accent2 },
     ];
     var data = [], layout = {
       paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
@@ -605,6 +612,12 @@
     for (var i = 0; i < rows.length; i++) {
       var xa = "x" + (i + 1), ya = "y" + (i + 1);
       data.push({ x: x, y: rows[i].y, xaxis: xa, yaxis: ya, type: "scatter", mode: "lines", line: { color: rows[i].color, width: 1.5 }, name: rows[i].name });
+      if (rows[i].extra && rows[i].extra.y && rows[i].extra.y.length) {
+        data.push({ x: rows[i].extra.x, y: rows[i].extra.y, xaxis: xa, yaxis: ya,
+          type: "scatter", mode: "lines",
+          line: { color: rows[i].extra.color, width: 1.2, shape: rows[i].extra.shape, dash: "dot" },
+          name: rows[i].extra.name });
+      }
       layout["xaxis" + (i + 1)] = { gridcolor: th.grid, zeroline: false, range: [0, 360], showticklabels: i === rows.length - 1, title: i === rows.length - 1 ? { text: "rotation angle θ (deg)", font: { size: 11 } } : undefined, tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] };
       layout["yaxis" + (i + 1)] = { gridcolor: th.grid, zeroline: false, title: { text: rows[i].name + " (" + rows[i].unit + ")", font: { size: 10 } } };
     }
@@ -758,6 +771,144 @@
   }
   function flag(kind, text) { return "<span class='flag " + kind + "'>" + text + "</span>"; }
 
+  // ---- export ----------------------------------------------------------
+  // The pipeline used to end at the screen: results could be read but never
+  // taken anywhere. Both formats below are self-describing so a file still
+  // means something months later, without the page that produced it.
+  function download(filename, text, mime) {
+    var blob = new Blob([text], { type: mime || "text/plain;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    // Revoking immediately can cancel the download in some browsers.
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+  }
+
+  function safeName() {
+    var n = (state.pattern && state.pattern.name) || "tread";
+    return n.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "tread";
+  }
+
+  function settingsSnapshot() {
+    return {
+      pattern: {
+        name: state.pattern.name, source: state.pattern.source,
+        circumference_mm: state.pattern.tyre_circumference,
+        tread_width_mm: state.pattern.tread_width,
+        n_blocks: state.pattern.blocks.length,
+        n_pitches: state.pattern.pitches.length,
+        geometric_repeat_mm: state.pattern.meta ? state.pattern.meta.geometric_repeat_mm : null,
+      },
+      block_defaults: readDefaults(),
+      compound_and_boundary: readStiffParams(),
+      contact_patch: readSpec(),
+      load: readCpParams(),
+      analysis: {
+        lean_angles_deg: state.results.map(function (r) { return r.gamma_deg; }),
+        grid: state.grid,
+        curvature_correction: $("curv").checked,
+        max_supported_lean_deg: state.maxLean,
+      },
+      import_report: state.report,
+      physics_notes: state.notes || [],
+    };
+  }
+
+  function exportCSV() {
+    if (!state.results) return;
+    var s = settingsSnapshot();
+    var lines = [];
+    // A header block, commented, so the numbers are never orphaned from how
+    // they were produced.
+    lines.push("# 2W tread pattern evaluation - theta x gamma sweep");
+    lines.push("# generated: " + new Date().toISOString());
+    lines.push("# pattern: " + s.pattern.name + " (" + s.pattern.n_blocks + " blocks, " +
+      s.pattern.circumference_mm.toFixed(2) + " x " + s.pattern.tread_width_mm.toFixed(2) + " mm)");
+    lines.push("# NSD " + s.block_defaults.height + " mm, draft " + s.block_defaults.draft_angle +
+      " deg, sipes " + s.block_defaults.n_lateral_sipes + ", Shore A " + s.compound_and_boundary.shore_a +
+      ", boundary " + s.compound_and_boundary.mode + ", sipe model " + s.compound_and_boundary.sipe_model);
+    lines.push("# patch: " + E.describeSpec(s.contact_patch) +
+      ", scale with lean " + (s.contact_patch.scale_with_lean ? "on" : "off") +
+      ", Fz " + s.load.vertical_load + " N" + (s.load.load_rises_with_lean ? " (rises with lean)" : " (constant)"));
+    lines.push("# grid: " + s.analysis.grid.nx + " x " + s.analysis.grid.ny +
+      " (dx " + s.analysis.grid.dx.toFixed(4) + " mm, dy " + s.analysis.grid.dy.toFixed(4) + " mm)");
+    (s.physics_notes || []).forEach(function (n) { lines.push("# note: " + n.replace(/\s+/g, " ")); });
+    lines.push([
+      "gamma_deg", "theta_deg", "contact_area_mm2", "land_ratio",
+      "kx_N_per_mm", "ky_N_per_mm", "kz_N_per_mm",
+      "block_count_effective", "centroid_y_mm",
+      "zone_center_mm2", "zone_intermediate_mm2", "zone_shoulder_mm2",
+    ].join(","));
+    for (var i = 0; i < state.results.length; i++) {
+      var r = state.results[i];
+      for (var j = 0; j < r.theta_deg.length; j++) {
+        lines.push([
+          r.gamma_deg, r.theta_deg[j].toFixed(4), r.contact_area[j].toFixed(4),
+          r.land_ratio[j].toFixed(6), r.kx[j].toFixed(4), r.ky[j].toFixed(4), r.kz[j].toFixed(4),
+          r.block_count[j].toFixed(4), r.centroid_y[j].toFixed(4),
+          r.zone_area.center[j].toFixed(4), r.zone_area.intermediate[j].toFixed(4),
+          r.zone_area.shoulder[j].toFixed(4),
+        ].join(","));
+      }
+    }
+    download(safeName() + "_sweep.csv", lines.join("\n"), "text/csv;charset=utf-8");
+  }
+
+  function exportJSON() {
+    if (!state.results) return;
+    var payload = {
+      format: "tread_eval.sweep",
+      format_version: 1,
+      generated: new Date().toISOString(),
+      settings: settingsSnapshot(),
+      block_stiffness_summary: state.stiffness,
+      results: state.results,
+    };
+    download(safeName() + "_run.json", JSON.stringify(payload, null, 1), "application/json");
+  }
+
+  function exportSummary() {
+    if (!state.results) return;
+    var s = settingsSnapshot();
+    var out = ["2W TREAD PATTERN EVALUATION", "=".repeat(60), ""];
+    out.push("Pattern : " + s.pattern.name);
+    out.push("Geometry: " + s.pattern.circumference_mm.toFixed(1) + " x " +
+      s.pattern.tread_width_mm.toFixed(1) + " mm, " + s.pattern.n_blocks + " blocks, " +
+      s.pattern.n_pitches + " pitches");
+    out.push("Blocks  : NSD " + s.block_defaults.height + " mm, draft " + s.block_defaults.draft_angle +
+      " deg, " + s.block_defaults.n_lateral_sipes + " sipes, Shore A " + s.compound_and_boundary.shore_a);
+    out.push("Patch   : " + E.describeSpec(s.contact_patch));
+    out.push("");
+    out.push("PER LEAN ANGLE");
+    out.push(["gamma", "area_mean", "area_CoV%", "Kz_mean", "Kz_CoV%", "Kx_mean", "Ky_mean", "blocks"]
+      .map(function (h) { return h.padStart(11); }).join(""));
+    state.results.forEach(function (r) {
+      var a = E.fluctuationStats(r.contact_area), kz = E.fluctuationStats(r.kz);
+      var kx = E.fluctuationStats(r.kx), ky = E.fluctuationStats(r.ky), bc = E.fluctuationStats(r.block_count);
+      out.push([
+        r.gamma_deg + "°", a.mean.toFixed(0), (a.cov * 100).toFixed(2), kz.mean.toFixed(0),
+        (kz.cov * 100).toFixed(2), kx.mean.toFixed(0), ky.mean.toFixed(0), bc.mean.toFixed(2),
+      ].map(function (v) { return String(v).padStart(11); }).join(""));
+    });
+    if ((s.physics_notes || []).length) {
+      out.push("", "PHYSICS NOTES");
+      s.physics_notes.forEach(function (n) { out.push(" - " + n.replace(/\s+/g, " ")); });
+    }
+    if (s.import_report && s.import_report.warnings && s.import_report.warnings.length) {
+      out.push("", "IMPORT WARNINGS");
+      s.import_report.warnings.forEach(function (n) { out.push(" - " + n.replace(/\s+/g, " ")); });
+    }
+    download(safeName() + "_summary.txt", out.join("\n"), "text/plain;charset=utf-8");
+  }
+
+  function refreshExportButtons() {
+    var on = !!state.results;
+    ["exportCsv", "exportJson", "exportTxt"].forEach(function (id) {
+      var el = $(id); if (el) el.disabled = !on;
+    });
+  }
+
   // ---- tabs ------------------------------------------------------------
   function initTabs() {
     var btns = document.querySelectorAll(".tabs button");
@@ -787,6 +938,9 @@
       buildPatternFromText(t, "130/80R17 Tramplr XR (sample)");
     });
     on($("runBtn"), "click", run);
+    on($("exportCsv"), "click", exportCSV);
+    on($("exportJson"), "click", exportJSON);
+    on($("exportTxt"), "click", exportSummary);
     on($("shape"), "change", function () { syncShapeFields(); drawEditor(); markStale(); });
 
     ["cpLength", "cpWidth", "cpCorner", "cpExp", "cpTaper", "cpRot", "cpY", "cpLoad"].forEach(function (id) {
@@ -794,8 +948,8 @@
     });
     on($("cpAutoY"), "change", function () { $("cpY").disabled = $("cpAutoY").checked; drawEditor(); markStale(); });
     on($("cpScaleLean"), "change", function () { drawEditor(); markStale(); });
-    on($("cpAutoLoad"), "change", function () { $("cpLoad").disabled = $("cpAutoLoad").checked; markStale(); });
-    ["nsd", "draft", "sipes", "sipeDepth", "shore", "poisson", "mode", "sipeModel", "quality", "curv", "wheelR", "loadLean", "crownCenter", "crownShoulder", "nPitches"].forEach(function (id) {
+    on($("cpAutoLoad"), "change", function () { drawEditor(); markStale(); });
+    ["nsd", "draft", "sipes", "sipeDepth", "shore", "poisson", "mode", "sipeModel", "quality", "curv", "wheelR", "crownCenter", "crownShoulder", "nPitches"].forEach(function (id) {
       on($(id), "input", function () { refreshValidation(); markStale(); });
       on($(id), "change", function () { refreshValidation(); markStale(); });
     });
@@ -807,7 +961,6 @@
     syncShapeFields();
     refreshValidation();
     $("cpY").disabled = $("cpAutoY").checked;
-    $("cpLoad").disabled = $("cpAutoLoad").checked;
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

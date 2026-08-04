@@ -167,3 +167,76 @@ def test_build_is_self_contained():
     assert "How to read this report" in html  # the guide is embedded
     assert "SECTION" in html and "ENTITIES" in html  # the sample DXF is embedded
     assert "loadPattern" in html and "sweepLean" in html
+
+
+def test_no_dead_data_in_the_worker_to_ui_pipeline():
+    """Anything the worker computes and ships must be rendered or exported.
+
+    The discrete block count cost 54% of the sweep and was never displayed; the
+    pressure-weighted area was a whole extra kernel transform per lean whose
+    result was dropped on the floor.  This test keeps the pipeline honest.
+    """
+    worker = open(os.path.join(APP, "worker.js"), encoding="utf-8").read()
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+
+    shipped = ["contact_area", "land_ratio", "kx", "ky", "kz", "block_count",
+               "centroid_y", "zone_area", "block_count_discrete", "theta_discrete",
+               "theta_deg", "patch_area", "shape"]
+    for field in shipped:
+        assert field in worker, f"{field} is expected to be shipped by the worker"
+        assert field in ui, f"{field} is shipped but never read by the UI -- dead transport"
+
+    # and the redundant correlation must stay gone from the JS engine
+    engine = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    assert "pressure_area" not in engine, "the pressure-weighted correlation is redundant for a flat patch"
+
+
+def test_no_orphan_control_ids_in_the_page():
+    """Every id the UI reads must exist in the template, and every input in the
+    template must be read.  A hidden input nobody can reach used to drive the
+    load model while the visible checkbox beside it did something else."""
+    import re
+
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+
+    template_ids = set(re.findall(r'<(?:input|select|button|canvas)[^>]*\bid="([^"]+)"', tpl))
+    # ids reach the UI three ways: $("x"), the num("x") helper, and the
+    # id lists used to attach change handlers.
+    read_ids = set(re.findall(r'\$\("([A-Za-z0-9_]+)"\)', ui))
+    read_ids |= set(re.findall(r'\bnum\("([A-Za-z0-9_]+)"\)', ui))
+    read_ids |= set(re.findall(r'"([A-Za-z0-9_]+)"', ui)) & template_ids
+
+    missing = {i for i in read_ids if i not in template_ids and f'id="{i}"' not in tpl}
+    assert not missing, f"UI reads ids that the template does not define: {sorted(missing)}"
+
+    interactive = {i for i in template_ids
+                   if re.search(rf'<(?:input|select)[^>]*\bid="{re.escape(i)}"', tpl)}
+    unread = {i for i in interactive if i not in read_ids}
+    assert not unread, f"template defines inputs nothing reads: {sorted(unread)}"
+
+
+def test_load_checkbox_drives_the_load_model():
+    """The visible box is labelled 'load rises with lean'; it must actually set
+    load_rises_with_lean, not a hidden twin."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert 'load_rises_with_lean: $("cpAutoLoad").checked' in ui
+    assert 'id="loadLean"' not in tpl, "the hidden twin input is gone"
+    assert "loadLean" not in ui
+
+
+def test_export_paths_exist_and_are_wired():
+    """The pipeline must not end at the screen."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    for fn in ("exportCSV", "exportJSON", "exportSummary"):
+        assert f"function {fn}(" in ui, f"{fn} is missing"
+    for btn in ("exportCsv", "exportJson", "exportTxt"):
+        assert f'id="{btn}"' in tpl, f"{btn} button missing from the template"
+        assert f'on($("{btn}"), "click"' in ui, f"{btn} has no click handler"
+    # the CSV must carry the settings that produced it
+    assert "# 2W tread pattern evaluation" in ui
+    assert "gamma_deg" in ui and "centroid_y_mm" in ui
+    # exports must be gated on having results
+    assert "refreshExportButtons" in ui
