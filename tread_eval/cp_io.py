@@ -16,9 +16,26 @@ do not supply one separately.
 plus the load each was taken at.  This is the format to use once you have more
 than one footprint.
 
-Coordinates: ``x`` is circumferential (the outline is re-centred on its own
-centroid, so the origin does not matter), ``y`` is lateral from the tread
-centreline, in mm.  ``--cp-units`` handles files in cm or inches.
+Coordinates
+-----------
+``x`` is circumferential.  The outline is always re-centred on its own centroid,
+so where the origin sat in your CAD file does not matter.
+
+``y`` is lateral, measured from the tread centreline.  A footprint traced in CAD
+usually has an arbitrary origin here too, so the lateral placement is decided by
+``lateral``:
+
+* ``"auto"`` (default) -- if the outline already lies within the tread, its
+  coordinates are taken as real tread positions.  If it does not, it is moved so
+  its lateral centre sits at ``y_center`` (or the centreline), and a warning says
+  so.  This is what makes a footprint exported from CAD "just work".
+* ``"centre"`` -- always move the lateral centre to ``y_center`` (or 0).
+* ``"absolute"`` -- trust the file's ``y`` coordinates exactly.
+
+For a **leaned** footprint the lateral position is real information, so pass
+``y_center`` explicitly (``--cp-y``) or use ``absolute``.
+
+``--cp-units`` handles files in cm or inches.
 """
 
 from __future__ import annotations
@@ -51,6 +68,47 @@ class CPImportResult:
 
 
 # ---------------------------------------------------------------------------
+def place_outline(
+    outline: np.ndarray,
+    tread_width: float,
+    lateral: str = "auto",
+    y_center: float | None = None,
+) -> tuple[np.ndarray, list[str]]:
+    """Decide where an imported outline sits across the tread.
+
+    Returns the placed outline and any warnings.  Getting this wrong is silent
+    and destructive -- an outline outside the tread is clipped flat to the edge
+    and reports zero width -- so the decision is explicit and always reported.
+    """
+    out = np.asarray(outline, dtype=float).reshape(-1, 2).copy()
+    half = tread_width / 2.0
+    warnings: list[str] = []
+    lo, hi = float(out[:, 1].min()), float(out[:, 1].max())
+    cy = 0.5 * (lo + hi)
+    fits = lo >= -half - 1e-9 and hi <= half + 1e-9
+
+    if lateral == "absolute":
+        if not fits:
+            warnings.append(
+                f"lateral='absolute' but the outline spans y {lo:.1f}..{hi:.1f} mm, outside the "
+                f"+-{half:.1f} mm tread -- it will be clipped at the tread edge"
+            )
+        return out, warnings
+
+    if lateral == "auto" and fits and y_center is None:
+        return out, warnings  # the file already carries real tread coordinates
+
+    target = 0.0 if y_center is None else float(y_center)
+    out[:, 1] += target - cy
+    if lateral == "auto":
+        warnings.append(
+            f"the outline spanned y {lo:.1f}..{hi:.1f} mm, which is not a position on a "
+            f"{tread_width:.1f} mm tread, so it was re-centred to y={target:.1f} mm. "
+            "Pass an explicit lateral position (--cp-y) if the footprint is leaned."
+        )
+    return out, warnings
+
+
 def _scale(points: np.ndarray, units: str) -> np.ndarray:
     factor = UNIT_SCALE.get(units)
     if factor is None:
@@ -160,7 +218,9 @@ def load_outline(path: str, units: str = "mm") -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
-def load_cp_manifest(path: str, tread_width: float) -> CPImportResult:
+def load_cp_manifest(
+    path: str, tread_width: float, lateral: str = "auto"
+) -> CPImportResult:
     """Load several footprints from a JSON manifest.
 
     ::
@@ -207,6 +267,10 @@ def load_cp_manifest(path: str, tread_width: float) -> CPImportResult:
                 f"{gamma:g} deg: outline derived from the pressure map's loaded area "
                 "(convex hull); supply an explicit outline if the footprint is concave"
             )
+        outline, placed_warnings = place_outline(
+            outline, tread_width, entry.get("lateral", lateral), entry.get("y_center")
+        )
+        warnings += [f"{gamma:g} deg: {w}" for w in placed_warnings]
         patches.append(
             measured_patch(
                 gamma_deg=gamma,
@@ -230,6 +294,8 @@ def load_cp_any(
     dy: float | None = None,
     load_n: float | None = None,
     as_pressure: bool = False,
+    lateral: str = "auto",
+    y_center: float | None = None,
 ) -> CPImportResult:
     """Import whatever the user pointed at: manifest, outline, or pressure map."""
     ext = os.path.splitext(path)[1].lower()
@@ -237,26 +303,29 @@ def load_cp_any(
         with open(path) as fh:
             data = json.load(fh)
         if isinstance(data, dict) and "patches" in data:
-            return load_cp_manifest(path, tread_width)
+            return load_cp_manifest(path, tread_width, lateral)
 
+    warnings: list[str] = []
+    grid = None
     if as_pressure:
         grid = load_pressure_csv(path, units, pressure_units, dx, dy)
         outline = grid.outline()
-        patch = measured_patch(
-            gamma_deg, outline, tread_width, pressure_grid=grid, normal_load=load_n,
-            label=f"measured pressure map at {gamma_deg:g} deg",
-        )
-        return CPImportResult(
-            [patch],
-            ["outline derived from the pressure map's loaded area (convex hull)"],
-        )
+        warnings.append("outline derived from the pressure map's loaded area (convex hull)")
+        label = f"measured pressure map at {gamma_deg:g} deg"
+    else:
+        outline = load_outline(path, units)
+        label = f"measured outline at {gamma_deg:g} deg ({os.path.basename(path)})"
 
-    outline = load_outline(path, units)
+    placed, placed_warnings = place_outline(outline, tread_width, lateral, y_center)
+    warnings += placed_warnings
+    if grid is not None:
+        # keep the pressure map with its outline
+        grid = PressureGrid(x=grid.x, y=grid.y + (placed[:, 1].mean() - outline[:, 1].mean()), p=grid.p)
+
     patch = measured_patch(
-        gamma_deg, outline, tread_width, normal_load=load_n,
-        label=f"measured outline at {gamma_deg:g} deg",
+        gamma_deg, placed, tread_width, pressure_grid=grid, normal_load=load_n, label=label,
     )
-    return CPImportResult([patch], [])
+    return CPImportResult([patch], warnings)
 
 
 # ---------------------------------------------------------------------------

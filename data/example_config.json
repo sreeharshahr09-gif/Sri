@@ -1,0 +1,89 @@
+{
+  "_comment": [
+    "Every input for one tyre. Run with:  python build_report.py --config this_file.json",
+    "Paths are relative to this file. Command-line flags override anything here.",
+    "Delete any key to fall back to its default."
+  ],
+  "name": "130/80R17 Tramplr XR",
+  "pattern": {
+    "_comment": "Tread geometry. A 2D DXF has no depth, so NSD/draft/sipes are stated here.",
+    "dxf": "130_80R17_Tramplr_XR_tread_plan.dxf",
+    "nsd_mm": 8.5,
+    "draft_deg": 3.0,
+    "lateral_sipes": 1,
+    "nsd_by_zone": {
+      "shoulder": 7.5,
+      "intermediate": 8.2,
+      "center": 8.8
+    },
+    "sipes_by_zone": {
+      "center": 2,
+      "intermediate": 1,
+      "shoulder": 0
+    },
+    "n_pitches": null,
+    "curvature_correction": false
+  },
+  "tyre": {
+    "_comment": "Crown radii set where the patch sits at each lean angle. Measure if you can.",
+    "wheel_radius_mm": 320.0,
+    "section_width_mm": 130.0,
+    "aspect_ratio": 80.0,
+    "rim_diameter_in": 17.0,
+    "inflation_kpa": 250.0,
+    "crown_r_center_mm": 125.0,
+    "crown_r_shoulder_mm": 55.0,
+    "crown_section_csv": null
+  },
+  "compound": {
+    "shore_a": 60.0,
+    "poisson": 0.49,
+    "boundary": "parallel"
+  },
+  "load": {
+    "vertical_N": 1500.0,
+    "rises_with_lean": true
+  },
+  "contact_patch": {
+    "_comment": [
+      "Three ways to define the patch, tried in this order:",
+      "  import  - a measured footprint (.csv/.dxf/.json outline, or a pressure map)",
+      "  shapes  - standard shapes with your own dimensions, one per lean angle",
+      "  model   - generated, where neither of the above covers a lean angle",
+      "Shapes: rectangle, rounded, stadium, ellipse, superellipse, trapezoid, diamond"
+    ],
+    "model": "winkler",
+    "import": {},
+    "shapes": [
+      {
+        "gamma_deg": 0,
+        "shape": "rounded",
+        "length": 92,
+        "width": 50,
+        "corner_radius": 12
+      },
+      {
+        "gamma_deg": 40,
+        "shape": "trapezoid",
+        "length": 105,
+        "width": 34,
+        "taper": 0.25
+      }
+    ],
+    "allow_transfer": true
+  },
+  "analysis": {
+    "lean_angles": [
+      0,
+      10,
+      20,
+      30,
+      40
+    ],
+    "resolution_mm": 0.35
+  },
+  "output": {
+    "path": "out/tramplr.html",
+    "theta_points": 720
+  }
+}

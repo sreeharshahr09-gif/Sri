@@ -99,6 +99,7 @@ def build_payload(
     stiffness_params: StiffnessParams,
     theta_points: int = 720,
     notes: str = "",
+    config=None,
 ) -> dict:
     """Everything the browser needs, as plain JSON-able data."""
     grid = pack.grid
@@ -193,6 +194,9 @@ def build_payload(
             },
             "zone_bounds": zone_bounds(pattern.tread_width),
             "thresholds": M.THRESHOLDS,
+            # The full configuration, so the report is self-documenting and the
+            # run can be reproduced from the file alone.
+            "config": (config.to_dict() if config is not None else None),
             # Per-input provenance, so the report can state exactly which parts
             # are measured and which are modelled rather than carrying a blanket
             # "everything is a placeholder" disclaimer that stops being true.
@@ -314,8 +318,11 @@ def write_report(
     plotly_mode: str = "embed",
     plotly_js: str | None = None,
     notes: str = "",
+    config=None,
 ) -> dict:
-    payload = build_payload(pattern, pack, results, cp_params, stiffness_params, theta_points, notes)
+    payload = build_payload(
+        pattern, pack, results, cp_params, stiffness_params, theta_points, notes, config
+    )
     html = render_html(payload, plotly_mode, plotly_js)
     os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:

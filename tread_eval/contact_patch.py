@@ -613,8 +613,8 @@ def transferred_patch(
         tread_half_width=half_width,
         source="transferred",
         provenance=(
-            f"measured at {base.gamma_deg:g} deg, rescaled to {gamma_deg:g} deg by the Winkler lean "
-            f"trend (length x{sx:.3f}, width x{sy:.3f})"
+            f"{base.source} patch at {base.gamma_deg:g} deg, rescaled to {gamma_deg:g} deg by the "
+            f"Winkler lean trend (length x{sx:.3f}, width x{sy:.3f})"
         ),
         pressure_grid=grid,
         y_center=tgt.y_center,
@@ -663,8 +663,8 @@ def interpolated_patch(
         tread_half_width=tread_width / 2.0,
         source="interpolated",
         provenance=(
-            f"interpolated between measured footprints at {low.gamma_deg:g} and "
-            f"{high.gamma_deg:g} deg (t={t:.2f})"
+            f"interpolated between the {low.source} patch at {low.gamma_deg:g} deg and the "
+            f"{high.source} patch at {high.gamma_deg:g} deg (t={t:.2f})"
         ),
         y_center=cy,
         normal_load=(1 - t) * low.normal_load + t * high.normal_load,
@@ -701,10 +701,10 @@ def _radial_profile(patch: ContactPatch, n: int) -> tuple[Array, tuple[float, fl
 class CPLibrary:
     """Resolves a contact patch for any lean angle, from whatever is available.
 
-    Register measured footprints with :meth:`add_measured`; ask for any lean
-    angle with :meth:`patch_for`.  The fallback order is fixed and documented at
-    the top of this module, and every returned patch carries the provenance of
-    the rung it came from.
+    Register known patches -- measured footprints or user-specified shapes --
+    with :meth:`add_measured`; ask for any lean angle with :meth:`patch_for`.
+    The fallback order is fixed and documented at the top of this module, and
+    every returned patch carries the provenance of the rung it came from.
     """
 
     crown: CrownProfile

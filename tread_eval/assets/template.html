@@ -73,13 +73,21 @@
     </div>
     <div class="card">
       <h2>Full revolution overview</h2>
-      <p class="hint">Contact area around the whole tyre; the cursor marks the window above. Ticks are pitch boundaries.</p>
-      <div id="overviewPlot" class="plot mid"></div>
+      <p class="hint">Contact area around the whole tyre, with the rolled-out pattern on the same
+      rotation axis beneath it. The cursor marks the window above; ticks are pitch boundaries.</p>
+      <div id="overviewPlot" class="plot" style="height:430px"></div>
     </div>
   </div>
 
   <!-- 2. contact ------------------------------------------------------ -->
   <div class="panel" id="tab-contact" hidden>
+    <div class="card highlight">
+      <h2>Every &theta; signal, aligned with the tread pattern</h2>
+      <p class="hint">All four signals share one rotation axis, with the rolled-out pattern drawn
+      underneath on the same scale &mdash; so a dip in the curve lines up with the block or groove
+      that caused it. The vertical line follows the &theta; slider.</p>
+      <div id="thetaStackPlot" class="plot" style="height:780px"></div>
+    </div>
     <div class="card">
       <h2>Contact area vs. rotation angle</h2>
       <p class="hint">One curve per lean angle. Shaded bands mark abnormally fast changes

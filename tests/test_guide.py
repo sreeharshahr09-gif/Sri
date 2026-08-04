@@ -111,10 +111,12 @@ def test_guide_explains_the_core_vocabulary():
 def test_guide_renders_without_leftover_markdown():
     out = md.render(open(GUIDE, encoding="utf-8").read())
     assert len(out) > 10000
-    # no stray markdown syntax survived into the HTML
-    assert not re.search(r"\*\*[^<]", out)
-    assert "](" not in out
-    assert re.search(r"^\s*#{1,6}\s", out, re.M) is None
+    # Code blocks legitimately contain '#' (shell comments) and '*', so check
+    # only the prose.
+    prose = re.sub(r"<pre>.*?</pre>", "", out, flags=re.S)
+    assert not re.search(r"\*\*[^<]", prose)
+    assert "](" not in prose
+    assert re.search(r"^\s*#{1,6}\s", prose, re.M) is None
 
 
 def test_guide_is_embedded_in_the_report():

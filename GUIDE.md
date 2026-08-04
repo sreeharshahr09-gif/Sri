@@ -77,6 +77,28 @@ Then come back for the detail.
 
 ---
 
+## Running it on your own tyre
+
+The report you are reading is an **output**. Inputs go in on the command line or
+in a config file — there is no upload box in the page itself.
+
+```bash
+python build_report.py --write-example-config my_tyre.json
+# edit my_tyre.json: point `pattern.dxf` at your drawing, set nsd_mm, etc.
+python build_report.py --config my_tyre.json
+```
+
+The **About** tab records every setting this particular report was built with, so
+you can always see — and reproduce — how a number was produced.
+
+Two inputs matter more than the rest and neither is in a 2D drawing:
+
+- **`nsd_mm`** — non-skid depth, i.e. block height. It sets both the bending
+  length of every block and the Gent shape factor, so it drives stiffness hard.
+- **crown radii** — they decide where the contact patch sits at each lean angle
+  and how much it narrows. A measured cross-section (`crown_section_csv`) removes
+  the guess.
+
 ## Reading the header
 
 **The chips** across the top are the run's facts: circumference, tread width,
@@ -162,8 +184,15 @@ itself.
 ### Full revolution overview
 
 **What it is.** Contact area for the entire 360° of the wheel, one curve per
-lean angle. The white vertical line is where the θ slider is. Small ticks along
-the bottom mark pitch boundaries.
+lean angle, **with the rolled-out tread pattern drawn underneath on the same
+rotation axis**. The white vertical line is where the θ slider is. Small ticks
+along the bottom mark pitch boundaries.
+
+**How to use the strip.** Find a dip in the curve, read straight down, and you
+are looking at the piece of tread that caused it — usually a groove crossing the
+patch. That is the whole point of putting them on a shared axis: it turns "the
+area drops at 137°" into "the area drops because *this* groove is passing
+through".
 
 **How to read it.** The **wiggliness is the story**, not the height. A flat line
 would be a perfect tyre. Regular sawtooth = a repeating pattern beating
@@ -176,8 +205,27 @@ patch is a different size — that's expected and not a finding by itself.
 
 ## Tab 2 — Contact & stiffness
 
-All four charts here share the same x-axis: rotation angle θ, 0–360°. One curve
-per lean angle, the selected one bold.
+### Every θ signal, aligned with the tread pattern ⭐
+
+**What it is.** Contact area, K<sub>x</sub>, K<sub>y</sub>, K<sub>z</sub> and
+block count stacked in one figure, all sharing a single rotation axis, with the
+rolled-out pattern along the bottom on that same axis.
+
+**How to read it.** Pick any feature — a dip, a spike, a flat spot — and read
+vertically. Every row is showing you the same instant of the same revolution, and
+the bottom row shows you which blocks were under the patch at that instant.
+
+This is the chart for answering "*why* does the curve do that". A dip in all four
+signals at once means a groove crossing the whole patch. A dip in K<sub>x</sub>
+alone with area unchanged means the blocks in contact swapped for softer ones.
+
+The individual charts below repeat these signals larger, with anomaly bands
+marked, when you want to look at one in detail.
+
+### The individual signal charts
+
+All of them share the same x-axis: rotation angle θ, 0–360°. One curve per lean
+angle, the selected one bold.
 
 ### Contact area vs. rotation angle
 

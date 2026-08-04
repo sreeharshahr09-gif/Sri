@@ -180,7 +180,7 @@ function showTab(id) {
   TABS.forEach(([t]) => { $("#tab-" + t).hidden = t !== id; });
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === id));
   // Plotly needs a resize nudge for plots drawn while their tab was hidden.
-  document.querySelectorAll("#tab-" + id + " .plot").forEach((el) => {
+  document.querySelectorAll("#tab-" + id + " .js-plotly-plot").forEach((el) => {
     if (el.data) Plotly.Plots.resize(el);
   });
   // The rotation slider only means something where theta is on screen.
@@ -487,18 +487,27 @@ function renderPatchStats() {
 
 /* full-revolution overview ------------------------------------------ */
 function drawOverview() {
-  const traces = D.leans.map((l, i) => ({
-    x: l.theta_deg, y: l.contact_area, type: "scatter", mode: "lines",
+  const STRIP = 0.34;
+  const traces = patternStripTraces("y");
+  D.leans.forEach((l, i) => traces.push({
+    x: l.theta_deg, y: l.contact_area, type: "scatter", mode: "lines", yaxis: "y2",
     name: fmt(l.gamma_deg, 0) + "°",
     line: { color: leanColor(i), width: i === state.gamma ? 2.2 : 1 },
     opacity: i === state.gamma ? 1 : 0.32,
     hovertemplate: "θ %{x:.1f}°<br>%{y:.0f} mm²<extra>" + fmt(l.gamma_deg, 0) + "°</extra>"
   }));
   Plotly.react("overviewPlot", traces, layout({
-    margin: { l: 58, r: 18, t: 26, b: 38 },
-    xaxis: ax("rotation angle θ (deg)", { range: [0, 360], dtick: 45 }),
-    yaxis: ax("contact area (mm²)"),
-    shapes: [cursorShape()].concat(pitchTicks())
+    margin: { l: 58, r: 18, t: 26, b: 40 },
+    xaxis: ax("rotation angle θ (deg)", { range: [0, 360], dtick: 45, anchor: "y" }),
+    yaxis: ax("tread (mm)", {
+      domain: [0, STRIP], range: [-HALF_W, HALF_W], zeroline: false,
+      tickvals: [-Math.round(HALF_W), 0, Math.round(HALF_W)]
+    }),
+    yaxis2: ax("contact area (mm²)", { domain: [STRIP + 0.05, 1] }),
+    shapes: [{
+      type: "line", x0: state.theta, x1: state.theta, yref: "paper", y0: 0, y1: 1,
+      line: { color: THEME.patchLine, width: 1.4 }
+    }].concat(pitchTicks())
   }), CONFIG);
 }
 
@@ -514,6 +523,91 @@ function pitchTicks() {
     type: "line", x0: (s / C) * 360, x1: (s / C) * 360, yref: "paper", y0: 0, y1: 0.055,
     line: { color: THEME.muted, width: 1 }
   }));
+}
+
+/* ------------------------------------------------------------------ */
+/* the rolled-out pattern, drawn against rotation angle                 */
+/* ------------------------------------------------------------------ */
+/* Blocks in theta coordinates, so the pattern can sit directly beneath a
+   theta-axis chart and be read off against it. A block straddling the seam is
+   drawn twice, shifted +-360, and the axis range clips the copy that is out of
+   view -- simpler and more robust than splitting the polygon. */
+function patternStripTraces(yaxis) {
+  const acc = {};
+  ZONES.forEach((z) => (acc[z] = { x: [], y: [] }));
+  for (const blk of D.pattern.blocks) {
+    const th = blk.poly.map((p) => (p[0] / C) * 360);
+    const span = Math.max(...th) - Math.min(...th);
+    const offsets = span > 180 ? [0, 360, -360] : [0];
+    for (const off of offsets) {
+      const a = acc[blk.zone];
+      for (let i = 0; i < blk.poly.length; i++) {
+        let t = th[i] + off;
+        if (span > 180 && t < 0) t += 360;   // pull the wrapped half into view
+        a.x.push(t);
+        a.y.push(blk.poly[i][1]);
+      }
+      a.x.push(a.x[a.x.length - blk.poly.length]);
+      a.y.push(a.y[a.y.length - blk.poly.length]);
+      a.x.push(null); a.y.push(null);
+    }
+  }
+  return ZONES.map((z) => ({
+    x: acc[z].x, y: acc[z].y, name: z, type: "scatter", mode: "lines",
+    fill: "toself", fillcolor: ZONE_COLOR[z] + "55",
+    line: { color: ZONE_COLOR[z], width: 0.6 },
+    yaxis: yaxis, hoverinfo: "skip", showlegend: false
+  }));
+}
+
+/* Build a stacked figure: N signal rows plus the pattern strip at the bottom,
+   all sharing one x-axis so a feature in a curve lines up with the block that
+   caused it. Plotly has no cross-figure axis linking, so they must live in the
+   same figure for the alignment to be exact. */
+function drawThetaStack(div, rows, stripFraction) {
+  const nRows = rows.length;
+  const gap = 0.035;
+  const stripH = stripFraction || 0.2;
+  const each = (1 - stripH - gap * nRows) / nRows;
+
+  const traces = [];
+  const lay = layout({
+    margin: { l: 66, r: 18, t: 26, b: 44 },
+    showlegend: true,
+    legend: { orientation: "h", y: 1.03, x: 0, font: { size: 10.5 } },
+    hovermode: "x unified",
+    xaxis: ax("rotation angle θ (deg)", { range: [0, 360], dtick: 45, anchor: "y" })
+  });
+
+  // bottom-up: strip first, then the signal rows above it
+  lay.yaxis = ax("tread (mm)", {
+    domain: [0, stripH], range: [-HALF_W, HALF_W], zeroline: false,
+    tickvals: [-Math.round(HALF_W), 0, Math.round(HALF_W)]
+  });
+  traces.push(...patternStripTraces("y"));
+
+  rows.forEach((row, i) => {
+    const axName = "yaxis" + (i + 2);
+    const y0 = stripH + gap + i * (each + gap);
+    lay[axName] = ax(row.title, { domain: [y0, y0 + each] });
+    const key = "y" + (i + 2);
+    D.leans.forEach((l, gi) => {
+      traces.push({
+        x: l.theta_deg, y: l[row.key], yaxis: key, type: "scatter", mode: "lines",
+        name: fmt(l.gamma_deg, 0) + "°",
+        legendgroup: "g" + gi, showlegend: i === rows.length - 1,
+        line: { color: leanColor(gi), width: gi === state.gamma ? 2.1 : 1 },
+        opacity: gi === state.gamma ? 1 : 0.3,
+        hovertemplate: "%{y:.4s}<extra>" + fmt(l.gamma_deg, 0) + "°</extra>"
+      });
+    });
+  });
+
+  lay.shapes = [{
+    type: "line", x0: state.theta, x1: state.theta,
+    yref: "paper", y0: 0, y1: 1, line: { color: THEME.patchLine, width: 1.3 }
+  }];
+  Plotly.react(div, traces, lay, CONFIG);
 }
 
 /* ------------------------------------------------------------------ */
@@ -547,6 +641,13 @@ function drawFamily(div, key, unit, title, kind) {
 }
 
 function drawContactTab() {
+  drawThetaStack("thetaStackPlot", [
+    { key: "block_count", title: "blocks in contact" },
+    { key: "kz", title: "K_z (N/mm)" },
+    { key: "ky", title: "K_y (N/mm)" },
+    { key: "kx", title: "K_x (N/mm)" },
+    { key: "contact_area", title: "contact area (mm²)" }
+  ], 0.22);
   drawFamily("areaPlot", "contact_area", "mm2", "contact area (mm²)", "area");
   drawFamily("kxPlot", "kx", "N/mm", "Kₓ (N/mm)", "kx");
   drawFamily("kyPlot", "ky", "N/mm", "Kᵧ (N/mm)", "ky");
@@ -1054,9 +1155,14 @@ function onThetaChange() {
     fmt(state.theta, 1) + "°  (" + fmt(thetaMM(), 1) + " mm)  ·  area " +
     fmt(sampleAt(curLean(), "contact_area", state.theta), 0) + " mm²";
   updatePattern();
+  const full = [{
+    type: "line", x0: state.theta, x1: state.theta, yref: "paper", y0: 0, y1: 1,
+    line: { color: THEME.patchLine, width: 1.4 }
+  }];
   const cur = [cursorShape()];
-  Plotly.relayout("overviewPlot", { shapes: cur.concat(pitchTicks()) });
+  Plotly.relayout("overviewPlot", { shapes: full.concat(pitchTicks()) });
   if (state.tab === "contact") {
+    Plotly.relayout("thetaStackPlot", { shapes: full });
     ["areaPlot:area", "kxPlot:kx", "kyPlot:ky", "anisoPlot:", "blockPlot:"].forEach((s) => {
       const [div, kind] = s.split(":");
       Plotly.relayout(div, { shapes: (kind ? anomalyShapes(kind) : []).concat(cur) });
@@ -1099,7 +1205,9 @@ function init() {
   window.__treadReady = true;
   onThetaChange();
   window.addEventListener("resize", () => {
-    document.querySelectorAll(".plot").forEach((el) => { if (el.data) Plotly.Plots.resize(el); });
+    document.querySelectorAll(".js-plotly-plot").forEach((el) => {
+      if (el.data) Plotly.Plots.resize(el);
+    });
   });
 }
 

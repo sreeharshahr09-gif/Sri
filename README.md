@@ -22,20 +22,70 @@ no build step to view it.
 
 The report states this per-run in its own header, so it never claims more than it has.
 
-## Quick start
+## Running it on your own tyre
+
+The tool is a command-line program: you give it inputs, it writes a report. The
+report is the **output** — there is no file-upload box inside it.
+
+The easiest way in is a config file holding every input:
 
 ```bash
 pip install -r requirements.txt
 
-# analyse a real tread plan
-python build_report.py --dxf data/130_80R17_Tramplr_XR_tread_plan.dxf --nsd 8.5 --draft 3 --sipes 1
+python build_report.py --write-example-config my_tyre.json
+```
 
-# with a measured footprint, so every lean angle is anchored to real data
-python build_report.py --dxf data/130_80R17_Tramplr_XR_tread_plan.dxf \
-    --cp data/footprints/upright_00deg.csv --cp-load 1500
+That writes a commented `my_tyre.json`. Point `pattern.dxf` at your drawing, set
+the non-skid depth and the rest, then:
 
-# no inputs at all: synthetic pattern, generated patch
-python build_report.py
+```bash
+python build_report.py --config my_tyre.json
+```
+
+Everything is in one file you can keep beside the design, diff, and re-run. Use
+`--show-config` to print the effective settings without running.
+
+### Or straight from the command line
+
+```bash
+python build_report.py --dxf my_plan.dxf --nsd 8.5 --draft 3 --sipes 1
+```
+
+Flags override the config, so the two mix freely. `--save-config out.json` turns
+a working command line into a reusable file:
+
+```bash
+python build_report.py --dxf my_plan.dxf --nsd 8.5 --save-config my_tyre.json
+```
+
+### The inputs
+
+| Config | Flag | What it is |
+|---|---|---|
+| `pattern.dxf` | `--dxf` | your tread-plan DXF |
+| `pattern.nsd_mm` | `--nsd` | non-skid depth (block height) — **not in a 2D drawing, you must supply it** |
+| `pattern.draft_deg` | `--draft` | mould draft angle |
+| `pattern.lateral_sipes` | `--sipes` | sipes per block (or `sipes_by_zone`) |
+| `pattern.n_pitches` | `--n-pitches` | override the inferred pitch count |
+| `pattern.dxf_layers` | `--dxf-layers` | import only these DXF layers |
+| `tyre.crown_r_center_mm` / `_shoulder_mm` | `--crown-r-center` / `-shoulder` | crown radii — these set where the patch sits at each lean |
+| `tyre.crown_section_csv` | `--crown-section` | a measured cross-section instead of the radii above |
+| `compound.shore_a` | `--shore` | tread compound hardness |
+| `load.vertical_N` | `--load` | vertical load |
+| `contact_patch.*` | `--cp*` | see [Contact patch](#contact-patch) |
+| `analysis.lean_angles` | `--lean` | lean angles to sweep |
+| `analysis.resolution_mm` | `--resolution` | raster resolution |
+| `output.path` | `-o` | where to write the report |
+
+`--help` lists every flag. Unknown keys in a config file are an error rather
+than a silent no-op, so a typo stops the run instead of being ignored.
+
+Every value the run used is recorded in the report's **About** tab, so a report
+always says how it was produced.
+
+```bash
+python build_report.py                 # no inputs: synthetic pattern, generated patch
+python -m pytest tests/ -q             # includes the stiffness cross-check
 ```
 
 Open `out/tread_report.html` in any browser. The terminal also prints a summary
@@ -179,11 +229,37 @@ lean angle, and never draws a generated patch the same way as a measured one.
 needs a rig almost nobody has. Importing a single upright footprint upgrades
 *every* lean angle from `generated` to `transferred`.
 
-### Importing
+### Standard shapes, with your own dimensions
+
+If you know the footprint's *dimensions* but not its outline, state a shape:
 
 ```bash
-# one footprint outline (csv of x,y in mm; also .json, .dxf)
-python build_report.py --cp footprint_00deg.csv --cp-gamma 0 --cp-load 1500
+python build_report.py --cp-shape rounded --cp-length 92 --cp-width 50 --cp-corner-radius 12
+```
+
+`rectangle`, `rounded`, `stadium`, `ellipse`, `superellipse`, `trapezoid`,
+`diamond`. `length` is circumferential, `width` lateral; every shape also takes
+`y_center`, `rotation` and `load_N`. In a config file you can give one per lean
+angle and the tool interpolates between them:
+
+```json
+"contact_patch": {
+  "shapes": [
+    {"gamma_deg": 0,  "shape": "rounded",   "length": 92,  "width": 50, "corner_radius": 12},
+    {"gamma_deg": 40, "shape": "trapezoid", "length": 105, "width": 34, "taper": 0.25}
+  ]
+}
+```
+
+Editing numbers and re-running is the way to explore: the sweep is a full
+recompute (a few seconds), not a live redraw, so shapes are not draggable in the
+report.
+
+### Importing a measured footprint
+
+```bash
+# an outline: .csv of x,y in mm, or .json, or .dxf (largest closed loop)
+python build_report.py --cp footprint_00deg.dxf --cp-gamma 0 --cp-load 1500
 
 # a pressure map from film or FEA
 python build_report.py --cp pressure_00deg.csv --cp-pressure --cp-pressure-dx 0.5 --cp-pressure-dy 0.5
@@ -191,6 +267,12 @@ python build_report.py --cp pressure_00deg.csv --cp-pressure --cp-pressure-dx 0.
 # several lean angles via a manifest
 python build_report.py --cp footprints.json
 ```
+
+**Lateral placement.** A footprint traced in CAD has an arbitrary origin. The
+circumferential origin never matters (the outline is re-centred), but the
+lateral one does. By default (`--cp-lateral auto`) an outline that does not fit
+on the tread is re-centred and the tool says so. For a **leaned** footprint the
+lateral position is real information — pass `--cp-y` or `--cp-lateral absolute`.
 
 Manifest format:
 
@@ -279,6 +361,8 @@ tread_eval/
   sweep.py          the FFT θ×γ sweep
   metrics.py        diagnostics and flags (THRESHOLDS live here)
   summary.py        terminal summary
+  config.py         the config file: every input, one place
+  cp_shapes.py      standard patch shapes (rectangle, rounded, ellipse, ...)
   report.py         payload assembly + HTML rendering
   markdown.py       minimal Markdown -> HTML, so GUIDE.md stays single-source
   assets/           template.html, app.css, app.js
