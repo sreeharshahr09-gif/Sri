@@ -1,0 +1,541 @@
+# How to read this report
+
+A plain-language guide to every chart and number. No tyre-mechanics background
+assumed. If you only read one section, read **Start here** and **The five
+minutes that matter**.
+
+---
+
+## Start here
+
+The tool answers one question, over and over:
+
+> **As the wheel turns, and as the bike leans over, what part of the tread is
+> actually touching the road — and how stiff is it?**
+
+Everything else follows from that. Two things vary:
+
+- **θ (theta) — rotation angle.** Where the wheel is in its turn, 0° to 360°.
+  θ = 0 and θ = 360 are the same place on the tyre.
+- **γ (gamma) — lean angle.** How far the bike is banked over. 0° is upright,
+  40° is hard cornering.
+
+At every combination of θ and γ, the tool works out which blocks are inside the
+contact patch and adds up their area and stiffness. Charts that plot against θ
+show you *what happens as the wheel spins*. Charts that plot against γ show you
+*what happens as you lean into a corner*.
+
+### The one idea behind most of the diagnostics
+
+A tyre would ideally present the *same* amount of rubber to the road at every
+instant. Real patterns can't — blocks and grooves alternate. So the contact area
+ripples up and down as the wheel turns.
+
+**That ripple is what you're hunting.** A big ripple means the force under the
+tyre pulses, and pulsing force is noise, vibration and uneven wear. A small
+ripple means the tyre feels smooth and wears evenly.
+
+The ripple gets worse when fewer blocks are in contact at once, because there's
+less averaging. And on a motorcycle, the contact patch **shrinks as you lean**.
+That's the whole reason this tool sweeps lean angle instead of just looking at
+the tyre upright.
+
+---
+
+## Vocabulary
+
+| Term | What it means |
+|---|---|
+| **Contact patch** | The bit of tyre actually touching the road at one instant. Roughly the size of a credit card, sometimes smaller. |
+| **Block** (or lug) | One raised island of rubber in the tread. |
+| **Groove** | The channel between blocks. |
+| **Land ratio** | Fraction of the surface that is rubber rather than groove. 0.69 means 69% rubber. Higher = more grip on dry, less water clearing. |
+| **Pitch** | One repeat of the pattern going around the tyre. A tyre might have 24 pitches. |
+| **Order** | How many times something happens per wheel revolution. "Order 24" = 24 times per revolution. Noise engineers think in orders. |
+| **NSD** | Non-skid depth — the block height in mm. How deep the tread is. |
+| **Kx / Ky / Kz** | Stiffness. Kx resists braking and acceleration forces, Ky resists cornering forces, Kz resists the tyre being squashed vertically. Units are N/mm: a Kx of 500 means it takes 500 newtons to shove the block 1 mm forwards. |
+| **CoV** | Coefficient of variation — the ripple size as a percentage of the average. 5% CoV means the value wobbles by about ±5%. **Lower is better.** |
+| **Zone** | The tread split into three lateral bands: **centre** (used upright, straight-line), **intermediate** (used in the transition into a corner), **shoulder** (used at full lean). |
+
+---
+
+## The five minutes that matter
+
+If you're short on time, look at these four things in this order:
+
+1. **The banner at the top.** It tells you what's real data and what's modelled
+   in *this particular run*. Everything below is only as good as that.
+2. **Diagnostics tab.** Red items first. Each one names the number, the lean
+   angle it's worst at, and what it means.
+3. **Lean sweep → Fluctuation vs. lean angle.** The single most 2W-specific
+   chart. Does the ripple get worse as you lean?
+4. **Order content → the tall bars.** One dominant bar means a tonal whine at
+   that order. A spread of small bars means broadband hiss, which is much less
+   annoying.
+
+Then come back for the detail.
+
+---
+
+## Reading the header
+
+**The chips** across the top are the run's facts: circumference, tread width,
+how many blocks and pitches, the raster resolution the maths ran at, the
+steepest lean the crown profile can reach, and whether curvature correction is
+on.
+
+**The coloured banner** below them is the honesty statement. It lists what came
+from real data ("tread geometry (from DXF)") and what is modelled or assumed
+("crown profile (guessed)"). **If a number surprises you, check the banner
+first** — the surprise may be an assumption, not a finding.
+
+**The theme buttons** (Auto / Light / Dark) at the right change the colour
+scheme. Auto follows your operating system.
+
+---
+
+## Controls bar
+
+- **Lean angle γ** — pick which lean angle is *highlighted*. On most charts all
+  lean angles are drawn together; the selected one is bold and opaque, the rest
+  are faded. This lets you follow one condition through without losing context.
+- **Rotation θ** — slide the wheel round. The ▶ button animates it.
+- **Overlay** — toggles for the pressure contours, travel-direction arrows and
+  centroid markers on the pattern map.
+
+---
+
+## Tab 1 — Pattern & patch
+
+### Rolled-out pattern with contact patch
+
+**What it is.** The tread cut open and laid flat, like peeling the label off a
+bottle. Left–right is the way the wheel rolls; up–down is across the tyre from
+one shoulder to the other. The window follows the θ slider.
+
+**How to read it.**
+- Coloured shapes are blocks, tinted by zone — blue **centre**, yellow
+  **intermediate**, pink **shoulder**. Black between them is groove.
+- The **white outline** is the contact patch: the only part touching the road
+  right now.
+- **Dotted rings inside it** are pressure contours — labelled 25% p₀, 50%, 75%
+  of the peak pressure. Tightly bunched rings mean pressure falls off fast from
+  the middle.
+- **Short cyan lines** show which way the rubber is actually travelling. Upright
+  they're all parallel. Leaned over they fan out, because a cornering tyre
+  pivots as well as rolls.
+- **Two markers** in the middle: a grey circle for where the patch centre *is*,
+  a red ✕ for where the rubber's centre of area actually sits. If they separate,
+  the pattern is pulling the effective contact off-centre.
+
+**What to look for.** Drag θ slowly and watch how many blocks the white outline
+covers. If it swings between, say, 1 and 3 blocks, that's exactly the ripple the
+rest of the report quantifies. Then switch γ to 40° and watch the patch move out
+to the shoulder and get narrower.
+
+### Crown section
+
+**What it is.** A cross-section of the tyre, as if you sliced it like a bagel.
+The grey curve is the tread surface, the dashed cyan line is the road, the red
+dot is where they touch.
+
+**How to read it.** Change the lean angle and the red dot walks outward along
+the curve. That's the physical reason the contact patch moves toward the
+shoulder when you lean — the tyre is simply rolling onto a different part of
+itself.
+
+### Patch stats (the list below the crown section)
+
+| Row | What it tells you |
+|---|---|
+| patch length / width | Size of the contact patch in mm. Watch it narrow with lean. |
+| patch area | mm². A credit card is about 4600 mm² for scale. |
+| lateral centre | How far off the centreline the patch sits. 0 upright, ~74 mm at 40°. |
+| peak pressure | Highest contact pressure, MPa. Rises as the patch shrinks. |
+| normal load | The vertical force being carried, newtons. |
+| lateral radius | How sharply the tyre is curved where it's touching. Small = shoulder. |
+| path radius | The corner radius this lean angle implies. ∞ = going straight. |
+| compactness | Perimeter²/area. **4π ≈ 12.6 is a perfect circle**; higher means a longer, thinner or more ragged patch. |
+| aspect L/W | Length ÷ width. Above 1 means longer than it is wide. |
+| clipped by tread edge | **"yes" is a warning** — the patch is running off the edge of the tread, so those numbers lean more on the model. Normal near maximum lean. |
+
+### Full revolution overview
+
+**What it is.** Contact area for the entire 360° of the wheel, one curve per
+lean angle. The white vertical line is where the θ slider is. Small ticks along
+the bottom mark pitch boundaries.
+
+**How to read it.** The **wiggliness is the story**, not the height. A flat line
+would be a perfect tyre. Regular sawtooth = a repeating pattern beating
+regularly. Irregular = a varied pitch sequence.
+
+Curves for different lean angles sit at different heights simply because the
+patch is a different size — that's expected and not a finding by itself.
+
+---
+
+## Tab 2 — Contact & stiffness
+
+All four charts here share the same x-axis: rotation angle θ, 0–360°. One curve
+per lean angle, the selected one bold.
+
+### Contact area vs. rotation angle
+
+**What it is.** How many mm² of rubber are inside the patch, as the wheel turns.
+
+**How to read it.** Look at the *peak-to-trough* swing. A curve that runs between
+1900 and 2100 mm² is wobbling ±5%; between 1500 and 2500 it's wobbling ±25% and
+that will be felt.
+
+**Red shaded bands** mark places where the area changes abnormally fast — a
+block snapping into or out of contact. Isolated narrow bands are normal. Lots of
+them, or wide ones, mean abrupt transitions.
+
+### In-contact stiffness Kx and Ky
+
+**What it is.** Add up the stiffness of every block currently in the patch. Kx is
+the fore–aft direction (braking, accelerating), Ky is sideways (cornering).
+Blocks only partly inside count in proportion.
+
+**How to read it.** Same as area: the *ripple* matters more than the level. If Kx
+swings a lot through a revolution, the tyre's response to a brake input depends
+on where the wheel happens to be — which the rider feels as a slight
+inconsistency, and which shows up as uneven wear.
+
+Ky mattering most at high lean, Kx most upright, is a reasonable rule of thumb.
+
+### Anisotropy Kx/Ky
+
+**What it is.** The ratio of the two. **1.0 means the tyre is equally stiff in
+both directions.**
+
+**How to read it.** Above 1, the pattern resists braking better than cornering;
+below 1, the reverse. What matters is less the value than **how much it moves**
+through a revolution — a ratio that swings means the tyre's character changes
+depending on wheel position.
+
+### Blocks in contact
+
+**What it is.** How many blocks are in the patch at once. It's fractional
+("effective") because a block half inside counts as 0.5.
+
+**How to read it.** **This is the most important number in the report and the
+easiest to understand.** More blocks = more averaging = smoother everything.
+
+- **Below ~2**: very little averaging. Every block transition shows up in the
+  force. Expect a ripply area curve.
+- **4 to 8**: comfortable.
+- Big-lug patterns naturally sit low. That's a design consequence, not an error.
+
+---
+
+## Tab 3 — Order content
+
+### Rotation order content of contact area
+
+**What it is.** The contact-area wiggle broken into "how many times per
+revolution". This is the noise engineer's view.
+
+**How to read it.**
+- x-axis = order = **events per wheel revolution**. Order 24 means something
+  happens 24 times per turn of the wheel.
+- y-axis = how big that component is, as a % of the average contact area.
+- **One tall isolated bar = a pure tone.** A whine at a single frequency, which
+  the human ear picks out easily and finds annoying.
+- **Many small bars = broadband.** Sounds like hiss. Much less objectionable
+  even at the same total energy.
+
+**The design goal is usually to flatten this chart**, not to reduce its total —
+spreading the same energy across many orders is what pitch modulation is for.
+
+**Rough frequency conversion.** At 60 km/h a 2 m circumference wheel turns about
+8 times a second, so order 24 lands near 200 Hz — squarely in the range you can
+hear.
+
+### Pitch length sequence
+
+**What it is.** The length of each pitch, going round the tyre. The dashed line
+is the average.
+
+**How to read it.** All bars the same height = **no pitch modulation** — the
+pattern simply repeats, which concentrates noise into one order. Bars varying =
+the designer has deliberately varied the pitch to smear the noise out.
+
+Watch for a big jump between two *neighbouring* bars: an abrupt change can be
+felt as a beat even when the overall spread is good.
+
+### Spectrum of the pitch sequence itself
+
+**What it is.** The same order analysis, but of the pitch lengths rather than the
+contact response. It looks at the *design intent* independent of any contact
+model.
+
+**How to read it.** One dominant bar = tonal sequence. Many small bars = well
+spread. Compare it with the contact-area orders: if both peak at the same order,
+you've traced the noise straight back to the pitch sequence.
+
+### Polar summary
+
+**What it is.** The same contact-area curve, wrapped into a circle so it looks
+like the tyre. Radius = contact area relative to its own average, so 1.0 is a
+perfect circle.
+
+**How to read it.** **A smooth circle is good.** Lumps, flat spots or a
+star-shaped outline show you *where around the tyre* the weak spots are — which
+is hard to see on a straight line chart.
+
+---
+
+## Tab 4 — Lean sweep
+
+Everything here plots against lean angle γ instead of rotation.
+
+### Fluctuation vs. lean angle ⭐
+
+**What it is.** The headline chart. For each lean angle, how big is the ripple
+(as CoV, a percentage) in contact area, Kx, Ky and block count.
+
+**How to read it.** **Lower is better, everywhere.** The shape of the curve is
+the message:
+
+- **Rising with lean** — the classic 2W problem. The patch shrinks when you lean,
+  holds fewer blocks, averages less, ripples more. Exactly when the rider is
+  most committed and least tolerant of surprises.
+- **Flat** — the pattern behaves consistently through the lean range. Good.
+- **Peaking mid-lean then falling** — often means the shoulder blocks are smaller
+  and more numerous than the centre ones, so averaging partially recovers at full
+  lean. Worth understanding rather than "fixing".
+
+### Blocks in contact vs. lean
+
+**What it is.** Three lines: the **effective** (fractional) count, the
+**discrete** count of blocks more than half inside, and the **worst θ** — the
+fewest blocks at any point in the revolution.
+
+**How to read it.** The **worst θ line is the one that bites.** An average of 3
+blocks with a worst case of 1 means there's a point in every revolution where
+the tyre is standing on a single block.
+
+### Patch size and shape vs. lean
+
+**What it is.** Patch length, width (left axis, mm) and area (right axis, mm²).
+
+**How to read it.** The expected motorcycle signature is **width falling, length
+rising, area falling** as lean increases — the patch turns from a stubby oval
+into a narrow stripe as the tyre rolls onto its tightly curved shoulder. If your
+chart doesn't do that, question the crown profile.
+
+### Centroid wander: geometric vs. residual
+
+**What it is.** Where the effective centre of contact sits, split into two parts.
+
+- The **grey line (geometric)** is where lean and the crown profile *have* to put
+  it. Not a flaw — it's just geometry, and it will be large (tens of mm).
+- The **bars (residual)** are what the block layout adds on top. Split further
+  into a constant **bias** and the **wander** that varies as the wheel turns, plus
+  the peak-to-peak spread.
+
+**How to read it.** **Ignore the grey line for design purposes** — you cannot
+change it without changing the tyre profile. **The bars are the actionable part.**
+A few mm of residual wander means the pattern is tugging the effective contact
+point side to side once per pitch, which is felt as a slight weave and shows as
+asymmetric wear.
+
+### Per-lean summary table
+
+Every number above in one table. Useful for copying into a report, and for
+spotting the "clipped: yes" rows where the patch runs off the tread.
+
+---
+
+## Tab 5 — Zones
+
+### Land ratio by lateral position
+
+**What it is.** Going across the tread from one shoulder to the other, what
+fraction is rubber? Bars are coloured by zone; the dashed white line is the
+overall average.
+
+**How to read it.** **Deep dips are grooves** — expected and fine. What matters
+is the *general level* of each region:
+
+- A zone much lower than the others has less rubber carrying load there, so it
+  runs hotter and wears faster.
+- A big difference between the left and right halves means the tyre behaves
+  differently leaning left versus right. That's usually unintended.
+
+### Zone share of the contact patch vs. lean
+
+**What it is.** A stacked bar per lean angle showing which zones actually carry
+the contact.
+
+**How to read it.** This should be nearly **100% centre when upright** and
+progressively **hand over to the shoulder as lean increases**. It's the clearest
+picture in the whole report of "which part of the tread is doing the work when".
+
+If the shoulder is still barely involved at high lean, either the pattern's zone
+boundaries don't match how the tyre is used, or the crown profile is wrong.
+
+### Zone statistics
+
+Land ratio, rubber per mm of circumference, block count and mean block area for
+each zone. Note that **land ratio here is geometric** (where the rubber is) while
+**block count is by ownership** (which zone a block's centre falls in) — they
+answer different questions, so they won't line up exactly.
+
+---
+
+## Tab 6 — Grooves
+
+### Groove angle relative to instantaneous rolling direction
+
+**What it is.** How obliquely the grooves cross the direction the rubber is
+actually travelling.
+
+**How to read it.**
+- **90° = a groove running straight across** the direction of travel. Good at
+  pumping water sideways out of the patch; noisier, because the whole edge
+  strikes the road at once.
+- **0° = a groove running along** the direction of travel. Quieter; poorer at
+  clearing water across the patch.
+- Most patterns sweep progressively from steep at the centre to shallow at the
+  shoulder. The white line shows that sweep.
+
+**The shaded bands** are the part unique to motorcycles. A leaning tyre is
+cornering, so the patch pivots slightly as it rolls. The *same groove* therefore
+meets the flow at a different angle entering and leaving the patch. The band
+width is that swing. It is **zero when upright** (no pivot) and grows with lean —
+usually a few degrees. Wide bands mean the groove's effective angle is smeared,
+so its water-clearing behaviour is less consistent than the drawing suggests.
+
+### Block property distribution
+
+**What it is.** One dot per block: plan area across, stiffness Kx up, coloured by
+zone. Hover for that block's height, draft and sipe count.
+
+**How to read it.** Look for **outliers**. A block far below the trend is much
+softer than its neighbours and will squirm and wear early. Tight clusters per
+zone mean a consistent design; a wide scatter within one zone means blocks in the
+same rib behave quite differently from one another.
+
+---
+
+## Tab 7 — Contact patch
+
+### Contact patch definition
+
+**What it is.** The outline of the patch at every lean angle, all overlaid, drawn
+in tread coordinates. Dashed grey lines are the tread edges.
+
+**How to read it.**
+- **Solid outline = measured.** A real footprint you supplied.
+- **Dotted outline = not measured.** Derived from a measurement, or generated.
+- Watch the outlines march outward and narrow as lean increases. Any outline
+  touching the dashed tread edge is running off the tyre.
+
+### Where each patch came from
+
+The provenance table. `measured` → `interpolated` → `transferred` → `winkler` /
+`rhyne`, in descending order of how much you should trust it. The last column
+spells out exactly how each was obtained.
+
+**Why this matters.** Contact area, stiffness — everything — is computed through
+this window. If the window is modelled, the numbers inherit that. This table
+stops a generated patch from ever being mistaken for a measured one.
+
+### Supplying your own
+
+The instructions for importing a footprint. The short version: **one upright
+static footprint is worth a lot** — it upgrades every lean angle from "generated"
+to "transferred", because the measured shape is kept and only the change with
+lean is modelled.
+
+---
+
+## Tab 8 — Diagnostics
+
+### Design flags
+
+Each check as a card, worst first.
+
+- **red `flag`** — outside the expected range, look at it
+- **amber `watch`** — borderline
+- **green `ok`** — fine
+
+Each card gives the number, where it was worst, and a sentence on why it matters.
+
+**Important caveat: the thresholds are uncalibrated engineering judgement**, not
+correlated against measured noise or wear data. So:
+
+- **Comparing two designs is trustworthy.** If design A has 5% area CoV and design
+  B has 9%, B really is rippling more.
+- **A single verdict is not.** "flag" does not mean the tyre will fail. It means
+  this number is high relative to a guess.
+
+### Pitch sequence table
+
+| Row | How to read it |
+|---|---|
+| pitch count | How many repeats around the tyre. |
+| mean / min / max length | The spread of pitch lengths in mm. |
+| distinct lengths | **1 means no modulation at all.** More is generally better for noise. |
+| modulation index | (max − min) / mean. 0 = uniform; 0.3–0.4 is a healthy spread. |
+| largest adjacent step | Biggest jump between *neighbouring* pitches. Large jumps spread the spectrum but can be felt as a beat. |
+| dominant sequence order | Which order the sequence concentrates on, and how strongly. |
+| spectral concentration | 0–1. **~0.5 is noise-like and good. Near 1.0 means all the energy sits on one order** — a pure tone. |
+| closure error | Should be ~0. Non-zero means the pitches don't add up to the circumference, which points at a digitising or import problem. |
+| shoulder phase | How far the two shoulders are offset from each other, in pitches. **Near 0 means both shoulders strike together** and their excitation adds up. An offset interleaves them, which is usually deliberate and better. |
+
+### Wear proxies
+
+| Column | How to read it |
+|---|---|
+| slenderness | Block height ÷ its smallest plan dimension. **Higher = more squirm.** A tall narrow block bends under load, which shows as heel-and-toe wear and lost stiffness. Below ~0.5 is stubby and stiff; above ~1.4 is worth attention. |
+| p90 | The 90th percentile — the worst blocks, not the average. |
+| mean sipes | Average sipes per block in that zone. |
+| mean / min area | Block sizes. A very small min area next to a large mean means a few undersized blocks that will wear first. |
+
+---
+
+## Tab 9 — About
+
+Per-run provenance, in detail: which parts are verified, which are exact, which
+are assumed. Plus the exact settings the run used — load, pressure, compound
+hardness, resolution, lean angles.
+
+**Read this before quoting any absolute number to anyone.**
+
+---
+
+## Common questions
+
+**Why do the lean-angle curves sit at different heights?**
+Because the contact patch is a different size at each lean angle. That's
+expected. Compare the *ripple*, not the level.
+
+**Is a high land ratio good?**
+It depends. More rubber means more dry grip and more even wear, but less room to
+clear water. 0.6–0.75 is typical for a road motorcycle tyre.
+
+**The contact area at 40° lean is much lower than upright. Is that a problem?**
+Not by itself — the patch really is smaller when leaned. Check whether the
+*ripple* got worse, and whether "clipped by tread edge" says yes (in which case
+part of the patch is hanging off the tyre and the model is being stretched).
+
+**What if a chart looks flat and boring?**
+That's usually good news. Flat means consistent.
+
+**Why is my stiffness value different from the standalone stiffness tool?**
+It shouldn't be. The block-level model is a verified port, agreeing to about 1
+part in 10¹¹. But this tool reports the **sum over all blocks in the contact
+patch**, not one block in isolation — so the numbers are naturally larger and
+change with θ and γ.
+
+**Everything is flagged red. Now what?**
+Check the banner and the About tab first. If the crown profile or the contact
+patch is modelled rather than measured, the flags may be reacting to the model
+rather than to your pattern. Fix the inputs, then re-read the flags.
+
+**Which single change usually helps most?**
+Getting more blocks into the contact patch — smaller blocks, or more of them.
+Nearly every ripple metric improves with better spatial averaging.

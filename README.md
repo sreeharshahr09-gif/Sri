@@ -41,6 +41,11 @@ python build_report.py
 Open `out/tread_report.html` in any browser. The terminal also prints a summary
 table and the flag list, which is enough to compare design variants in CI.
 
+**New to the charts?** [`GUIDE.md`](GUIDE.md) explains every graph and number in
+plain language — what it shows, how to read it, and what good and bad look like.
+The same guide is embedded in the report as the **How to read this** tab, so it
+travels with the file.
+
 ```bash
 python build_report.py --lean 0,15,30,45 --resolution 0.25          # finer sweep
 python build_report.py --curvature-correction                       # digitised competitor pattern
@@ -275,8 +280,10 @@ tread_eval/
   metrics.py        diagnostics and flags (THRESHOLDS live here)
   summary.py        terminal summary
   report.py         payload assembly + HTML rendering
+  markdown.py       minimal Markdown -> HTML, so GUIDE.md stays single-source
   assets/           template.html, app.css, app.js
 build_report.py     CLI
+GUIDE.md            plain-language reader's guide (also embedded as a report tab)
 verify/             functions extracted verbatim from the v6.4 HTML tool
 data/               sample tread plan and footprint
 tests/              geometry, pipeline, DXF/CP, and the stiffness cross-check

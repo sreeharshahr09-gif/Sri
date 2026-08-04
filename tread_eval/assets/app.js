@@ -155,6 +155,7 @@ const TABS = [
   ["grooves", "Grooves"],
   ["patch", "Contact patch"],
   ["diagnostics", "Diagnostics"],
+  ["guide", "How to read this"],
   ["about", "About"]
 ];
 

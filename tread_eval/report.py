@@ -21,6 +21,7 @@ from typing import Any, Sequence
 
 import numpy as np
 
+from . import markdown as _md
 from . import metrics as M
 from .contact_patch import CPParams, max_supported_lean
 from .raster import RasterPack
@@ -29,6 +30,7 @@ from .stiffness import StiffnessParams
 from .sweep import LeanResult
 
 ASSETS = os.path.join(os.path.dirname(__file__), "assets")
+GUIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "GUIDE.md")
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +279,13 @@ def render_html(payload: dict, plotly_mode: str = "embed", plotly_js: str | None
         src, provenance = _find_plotly(plotly_js)
         plotly_block = "<script>" + src + "</script>"
 
+    # The reader's guide is authored once in GUIDE.md and converted here, so
+    # the repo copy and the in-report tab cannot drift apart.
+    guide_html = ""
+    if os.path.exists(GUIDE):
+        with open(GUIDE, encoding="utf-8") as fh:
+            guide_html = _md.render(fh.read())
+
     data = json.dumps(payload, separators=(",", ":"), allow_nan=False)
     # Guard against the payload closing the enclosing <script> element.
     data = data.replace("</", "<\\/")
@@ -286,6 +295,7 @@ def render_html(payload: dict, plotly_mode: str = "embed", plotly_js: str | None
         .replace("/*__DATA__*/", data)
         .replace("/*__APP__*/", js)
         .replace("<!--__PLOTLY__-->", plotly_block)
+        .replace("<!--__GUIDE__-->", guide_html)
         # Escaped: the pattern name comes from a filename or a DXF, and it is
         # substituted into markup, not into the JSON payload.
         .replace("__TITLE__", _html.escape(f"{payload['meta']['name']} - 2W tread pattern evaluation"))
