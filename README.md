@@ -26,6 +26,7 @@ reference — so the numbers the page shows are the numbers the test suite check
 
 | | Status |
 |---|---|
+| **Sipe model** | **Your choice.** `layered` (default) reproduces the reference tool exactly, including its artifact that a shallow sipe comes out stiffer than no sipe (+2% parallel / +4% free, worst at 25-50% of NSD). `continuous` removes it: zero-depth sipes become exact no-ops and stiffness falls monotonically with depth. |
 | **Block stiffness** | **Verified.** Okonieski et al. (2003) beam mechanics + Gent (1959) compression, ported from *Tread Pattern Stiffness Estimation Tool v6.4* and checked against that tool's own JavaScript over randomised geometry — agreement to ~1 part in 10¹¹. |
 | **Tread geometry** | **Real**, when a tread-plan DXF is imported. Depth (NSD, draft, sipes) is not in a 2D drawing and must be supplied; it is recorded as an assumption. |
 | **Contact patch** | **Your choice.** Import a measured footprint of any shape, generate one from load + inflation pressure, or let the crown-based model produce it. Every lean angle is labelled with which of those it used. |

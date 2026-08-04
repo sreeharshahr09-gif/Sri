@@ -38,6 +38,13 @@
         <div class="field"><label>Boundary mode</label>
           <select id="mode"><option value="parallel">parallel (gripping)</option><option value="free">free (cantilever)</option></select>
         </div>
+        <div class="field" title="How a partially-siped block is decomposed. 'v6.4-compatible' stacks independently guided layers at each sipe root and reproduces the reference tool exactly — but a shallow sipe then comes out STIFFER than no sipe (up to +2% parallel / +4% free), because two guided half-length beams are 4x stiffer in bending than one full-length beam. 'continuous beam' integrates the moment-weighted compliance over one beam of varying section: a zero-depth sipe becomes an exact no-op and stiffness falls monotonically with sipe depth. Only affects blocks that actually have sipes.">
+          <label>Sipe model</label>
+          <select id="sipeModel">
+            <option value="layered">v6.4-compatible (layered)</option>
+            <option value="continuous">continuous beam (corrected)</option>
+          </select>
+        </div>
       </div>
 
       <div class="group">

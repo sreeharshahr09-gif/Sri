@@ -223,4 +223,26 @@ check("order spectrum of a non-power-of-two signal stays clean", () => {
     `resampling leakage too high: ${pairs[1][1]} vs peak ${pairs[0][1]}`);
 });
 
+// --- 8. sipe models ----------------------------------------------------
+check("continuous sipe model: zero-depth no-op, monotonic, never stiffens", () => {
+  const poly = [[0, 0], [20, 0], [20, 10], [0, 10]], NSD = 8, E_ = 6.89, NU = 0.49;
+  const sipe = (d, w) => [{ p1: [10, -5], p2: [10, 15], depth: d, width: w == null ? 1e-6 : w }];
+  for (const mode of ["parallel", "free"]) {
+    const plain = E.effectiveK(poly, NSD, E_, NU, 0, mode, [], 40).Kx;
+    const zero = E.effectiveK(poly, NSD, E_, NU, 0, mode, sipe(0, 0.5), 40, "continuous").Kx;
+    assert(Math.abs(zero - plain) < 1e-9, `${mode}: zero-depth sipe must be a no-op (${zero} vs ${plain})`);
+    let prev = Infinity;
+    for (const d of [0.5, 1, 2, 4, 6, 8]) {
+      const k = E.effectiveK(poly, NSD, E_, NU, 0, mode, sipe(d, 0.5), 40, "continuous").Kx;
+      assert(k <= plain + 1e-9, `${mode}: sipe depth ${d} stiffened the block (${k} > ${plain})`);
+      assert(k <= prev + 1e-9, `${mode}: not monotonic at depth ${d} (${k} > ${prev})`);
+      prev = k;
+    }
+  }
+  // the layered default must still show the reference artifact
+  const plainP = E.effectiveK(poly, NSD, E_, NU, 0, "parallel", [], 40).Kx;
+  const shallow = E.effectiveK(poly, NSD, E_, NU, 0, "parallel", sipe(2, 0.5), 40, "layered").Kx;
+  assert(shallow > plainP, "layered model must still reproduce v6.4 bit-for-bit, artifact included");
+});
+
 console.log(`\n${passed} checks passed`);

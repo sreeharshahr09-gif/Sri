@@ -307,12 +307,73 @@
     return out;
   }
 
-  function effectiveK(verts, nsd, E, nu, draft, mode, sipes, nSlices) {
+  // Siped block as ONE beam of height-varying section (no layer stacking).
+  // Above a sipe root the sub-blocks bend as independent parallel springs, so
+  // their second moments and areas add; below it the section is whole. The
+  // moment-weighted compliance is integrated in a single pass, exactly as the
+  // unsiped path does, so no artificial zero-rotation constraint is introduced
+  // at a sipe root. Mirrors tread_eval.stiffness._effective_k_continuous.
+  function effectiveKContinuous(polyAt, hasDraft, nsd, E, G, mode, sipes, nSlices) {
+    const dz = nsd / nSlices;
+    let CxxB = 0, CyyB = 0, CxyB = 0, Sh = 0, nValid = 0, nSubs = 1;
+    const splitCache = {};
+    for (let i = 0; i < nSlices; i++) {
+      const z = (i + 0.5) * dz;
+      const active = [];
+      for (let j = 0; j < sipes.length; j++) if (sipes[j].depth >= nsd - z - 1e-12) active.push(j);
+      const key = active.join(",");
+      let subs;
+      if (!hasDraft && splitCache[key]) {
+        subs = splitCache[key];
+      } else {
+        subs = [polyAt(z)];
+        for (const j of active) {
+          const next = [];
+          for (const sp of subs) next.push(...splitBySipe(sp, sipes[j].p1, sipes[j].p2, sipes[j].width));
+          subs = next;
+        }
+        subs = subs.filter((sp) => { const p = polygonProps(sp); return p && p.A > 1e-9; });
+        if (!hasDraft) splitCache[key] = subs;
+      }
+      if (!subs.length) continue;
+      nSubs = Math.max(nSubs, subs.length);
+      let ixx = 0, iyy = 0, ixy = 0, area = 0;
+      for (const sp of subs) {
+        const p = polygonProps(sp);
+        if (!p || p.A < 1e-12) continue;
+        ixx += p.Ixx; iyy += p.Iyy; ixy += p.Ixy || 0; area += p.A;
+      }
+      if (area <= 1e-12) continue;
+      const detI = ixx * iyy - ixy * ixy;
+      if (detI <= 1e-15) continue;
+      const w = mode === "parallel" ? (z - nsd / 2) * (z - nsd / 2) : (nsd - z) * (nsd - z);
+      CxxB += (w * ixx) / detI * dz;
+      CyyB += (w * iyy) / detI * dz;
+      CxyB += (w * -ixy) / detI * dz;
+      Sh += dz / area;
+      nValid++;
+    }
+    if (!nValid) return { Kx: 0, Ky: 0, Kxy: 0, nSubs: nSubs };
+    const shearFactor = mode === "parallel" ? 1 : 6 / 5;
+    const Cxx = CxxB / E + (shearFactor * Sh) / G;
+    const Cyy = CyyB / E + (shearFactor * Sh) / G;
+    const Cxy = CxyB / E;
+    const detC = Cxx * Cyy - Cxy * Cxy;
+    if (detC <= 1e-18) return { Kx: 0, Ky: 0, Kxy: 0, nSubs: nSubs };
+    const Kx = Cyy / detC, Ky = Cxx / detC;
+    let Kxy = -Cxy / detC;
+    if (Math.abs(Kxy) < 1e-6 * Math.max(Kx, Ky)) Kxy = 0;
+    return { Kx: Kx, Ky: Ky, Kxy: Kxy, nSubs: nSubs };
+  }
+
+  function effectiveK(verts, nsd, E, nu, draft, mode, sipes, nSlices, sipeModel) {
     const G = calcG(E, nu);
     if (nsd <= 0 || E <= 0 || G <= 0 || verts.length < 3) return { Kx: 0, Ky: 0, Kxy: 0, nSubs: 1 };
-    const hasDraft = draft && Math.abs(draft) > 1e-12;
+    const hasDraft = !!(draft && Math.abs(draft) > 1e-12);
     function polyAt(z) { return hasDraft ? offsetPoly(verts, draft, nsd - z) : verts; }
     sipes = sipes || [];
+    if (sipes.length && sipeModel === "continuous")
+      return effectiveKContinuous(polyAt, hasDraft, nsd, E, G, mode, sipes, nSlices || 40);
 
     if (!sipes.length) {
       const L = nsd, nSl = nSlices || 40, dz = L / nSl;
@@ -403,7 +464,7 @@
       k = params.k_override != null ? params.k_override : shoreK(params.shore_a);
     }
     const sipes = effectiveSipes(block);
-    const sh = effectiveK(verts, block.height, E, params.poisson, block.draft_angle || 0, params.mode, sipes, params.n_slices || 40);
+    const sh = effectiveK(verts, block.height, E, params.poisson, block.draft_angle || 0, params.mode, sipes, params.n_slices || 40, params.sipe_model);
     const kzr = computeKz(verts, block.height, E, k, sipes, params.bulk_modulus || 1100);
     // slenderness = height / min plan dimension
     let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;

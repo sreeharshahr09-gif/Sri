@@ -110,6 +110,30 @@ class StiffnessParams:
     n_slices: int = 40  # Castigliano slices along the height
     e_override: float | None = None  # N/mm^2, bypasses the Shore table
     k_override: float | None = None  # Gent k, bypasses the Shore table
+    sipe_model: str = "layered"
+    """How a partially-siped block is decomposed.  ``layered`` | ``continuous``.
+
+    ``layered`` (default) reproduces the reference tool exactly: the block is cut
+    into layers at each sipe root, every layer is solved as an independently
+    *guided* beam, and the layers are stacked in series.  Keep this when the
+    numbers must match ``Tread_Pattern_Stiffness_Estimation_Tool_v6.4``.
+
+    It carries a known artifact.  Guided-beam bending compliance goes as
+    ``L^3``, so two layers of ``L/2`` in series are four times stiffer in
+    bending than one layer of ``L``.  The artificial zero-rotation constraint
+    the decomposition imposes at each sipe root therefore *stiffens* the block
+    more than the sipe softens it, and a shallow sipe comes out stiffer than no
+    sipe at all -- by up to +2% (parallel) or +4% (free) around a sipe depth of
+    a quarter to a half of NSD.  Sipes deeper than about 0.6 NSD are past the
+    crossover and soften correctly.
+
+    ``continuous`` removes the artifact by treating the block as one beam whose
+    section varies with height: at each Castigliano slice the active sipes split
+    the section, the sub-blocks act as parallel springs (their second moments
+    add), and the moment-weighted compliance is integrated over the full height
+    exactly as the unsiped path does.  A zero-depth sipe becomes an exact no-op
+    and stiffness falls monotonically with sipe depth.
+    """
 
     def youngs(self) -> float:
         return self.e_override if self.e_override is not None else shore_e(self.shore_a)
@@ -404,6 +428,7 @@ def effective_k(
     mode: Mode = "parallel",
     sipes: Sequence[Sipe] = (),
     n_slices: int = 40,
+    sipe_model: str = "layered",
 ) -> tuple[float, float, float, int]:
     """Shear stiffness (Kx, Ky, Kxy, n_sub_blocks) of one block, N/mm."""
     g = calc_g(e, nu)
@@ -415,6 +440,9 @@ def effective_k(
 
     def poly_at(z: float) -> np.ndarray:
         return offset_poly(v, draft, nsd - z) if has_draft else v
+
+    if sipes and sipe_model == "continuous":
+        return _effective_k_continuous(v, poly_at, nsd, e, g, mode, sipes, n_slices)
 
     # --- no sipes: Castigliano slice integration over the tapered beam ---
     if not sipes:
@@ -500,6 +528,109 @@ def effective_k(
     return kx, ky, kxy, n_subs
 
 
+def _effective_k_continuous(
+    verts: np.ndarray,
+    poly_at,
+    nsd: float,
+    e: float,
+    g: float,
+    mode: Mode,
+    sipes: Sequence[Sipe],
+    n_slices: int,
+) -> tuple[float, float, float, int]:
+    """Siped block as one beam of height-varying section (no layer stacking).
+
+    At height ``z`` the sipes that reach that high split the section into
+    sub-blocks.  Above a sipe root those sub-blocks bend as independent parallel
+    springs, so their second moments and areas **add**; below it the section is
+    whole.  The moment-weighted compliance is then integrated over the whole
+    height in one pass -- the same integral the unsiped path evaluates:
+
+        C_bend = (1/E) int w(z) . I_eff(z)^-1 dz
+        C_shear = kappa/G int dz / A_eff(z)
+
+    Because there is only ever one beam, no artificial zero-rotation constraint
+    is introduced at a sipe root.  That is the whole difference from the
+    ``layered`` model, and it is what makes a zero-depth sipe an exact no-op and
+    stiffness fall monotonically with sipe depth.
+
+    The section only changes where a sipe root sits, so the split is computed
+    once per distinct set of active sipes rather than once per slice.
+    """
+    dz = nsd / n_slices
+    cxx_b = cyy_b = cxy_b = sh = 0.0
+    n_valid = 0
+    n_subs = 1
+    cache: dict[tuple[int, ...], None] = {}
+    split_cache: dict[tuple[int, ...], list[np.ndarray]] = {}
+
+    for i in range(n_slices):
+        z = (i + 0.5) * dz
+        # A sipe is present at height z when it reaches down at least to z,
+        # i.e. its root (nsd - depth) lies below z.
+        key = tuple(j for j, s in enumerate(sipes) if s.depth >= (nsd - z) - 1e-12)
+        base = poly_at(z)
+        if key not in split_cache or _has_draft_variation(poly_at, nsd):
+            subs = [base]
+            for j in key:
+                nxt: list[np.ndarray] = []
+                for sp in subs:
+                    nxt.extend(_split_polygon_by_sipe(sp, sipes[j]))
+                subs = nxt
+            subs = [sp for sp in subs if (pp := polygon_props(sp)) is not None and pp.area > 1e-9]
+            if not _has_draft_variation(poly_at, nsd):
+                split_cache[key] = subs
+        else:
+            subs = split_cache[key]
+        if not subs:
+            continue
+        n_subs = max(n_subs, len(subs))
+
+        # Parallel springs: second moments and areas add.
+        ixx = iyy = ixy = area = 0.0
+        for sp in subs:
+            p = polygon_props(sp)
+            if p is None or p.area < 1e-12:
+                continue
+            ixx += p.ixx
+            iyy += p.iyy
+            ixy += p.ixy
+            area += p.area
+        if area <= 1e-12:
+            continue
+        det_i = ixx * iyy - ixy * ixy
+        if det_i <= 1e-15:
+            continue
+        w = (z - nsd / 2.0) ** 2 if mode == "parallel" else (nsd - z) ** 2
+        cxx_b += w * ixx / det_i * dz
+        cyy_b += w * iyy / det_i * dz
+        cxy_b += w * (-ixy) / det_i * dz
+        sh += dz / area
+        n_valid += 1
+
+    if n_valid == 0:
+        return 0.0, 0.0, 0.0, n_subs
+    shear_factor = 1.0 if mode == "parallel" else 6.0 / 5.0
+    cxx = cxx_b / e + shear_factor * sh / g
+    cyy = cyy_b / e + shear_factor * sh / g
+    cxy = cxy_b / e
+    det_c = cxx * cyy - cxy * cxy
+    if det_c <= 1e-18:
+        return 0.0, 0.0, 0.0, n_subs
+    kx = cyy / det_c
+    ky = cxx / det_c
+    kxy = -cxy / det_c
+    if abs(kxy) < 1e-6 * max(kx, ky):
+        kxy = 0.0
+    return kx, ky, kxy, n_subs
+
+
+def _has_draft_variation(poly_at, nsd: float) -> bool:
+    """True when the section changes with height, so splits cannot be cached."""
+    a, b = poly_at(0.0), poly_at(nsd)
+    return a.shape != b.shape or not np.allclose(a, b)
+
+
 def _split_polygon_by_sipe(poly: np.ndarray, sipe: Sipe) -> list[np.ndarray]:
     pts = sipe.polyline()
     if len(pts) < 2:
@@ -555,7 +686,7 @@ def block_stiffness(block: Block, params: StiffnessParams = DEFAULT_PARAMS) -> B
     sipes = block.effective_sipes()
     kx, ky, kxy, n_subs = effective_k(
         verts, block.height, e, params.poisson, block.draft_angle,
-        params.mode, sipes, params.n_slices,
+        params.mode, sipes, params.n_slices, params.sipe_model,
     )
     kz, s, e_eff, a_net = compute_kz(verts, block.height, e, k, sipes, params.bulk_modulus)
 

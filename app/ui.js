@@ -84,7 +84,7 @@
   function readStiffParams() {
     return {
       shore_a: num("shore"), poisson: num("poisson"), mode: $("mode").value,
-      bulk_modulus: 1100, n_slices: 40,
+      bulk_modulus: 1100, n_slices: 40, sipe_model: $("sipeModel").value,
     };
   }
   function readCpParams() {
@@ -672,7 +672,7 @@
     on($("cpAutoY"), "change", function () { $("cpY").disabled = $("cpAutoY").checked; drawEditor(); markStale(); });
     on($("cpScaleLean"), "change", function () { drawEditor(); markStale(); });
     on($("cpAutoLoad"), "change", function () { $("cpLoad").disabled = $("cpAutoLoad").checked; markStale(); });
-    ["nsd", "draft", "sipes", "sipeDepth", "shore", "poisson", "mode", "quality", "curv", "wheelR", "loadLean", "crownCenter", "crownShoulder", "nPitches"].forEach(function (id) {
+    ["nsd", "draft", "sipes", "sipeDepth", "shore", "poisson", "mode", "sipeModel", "quality", "curv", "wheelR", "loadLean", "crownCenter", "crownShoulder", "nPitches"].forEach(function (id) {
       on($(id), "input", markStale);
       on($(id), "change", markStale);
     });

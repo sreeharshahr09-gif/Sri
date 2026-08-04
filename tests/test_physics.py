@@ -21,9 +21,9 @@ import pytest
 from tread_eval.contact_patch import (CPParams, lean_scale_factors, max_supported_lean,
                                       winkler_patch)
 from tread_eval.cp_shapes import ShapeSpec, shape_patch
-from tread_eval.schema import Block, CrownProfile
+from tread_eval.schema import Block, CrownProfile, Sipe
 from tread_eval.stiffness import (SHORE_E_TABLE, StiffnessParams, block_stiffness, calc_g,
-                                  effective_k, shore_e, shore_k, shore_range_warning)
+                                  compute_kz, effective_k, shore_e, shore_k, shore_range_warning)
 
 L, W, H = 20.0, 10.0, 8.0          # mm: circumferential, lateral, NSD
 E = shore_e(60)                     # 6.89 N/mm^2
@@ -117,6 +117,86 @@ def test_positive_draft_stiffens_the_block():
     plain = block_stiffness(_block(draft_angle=0.0), StiffnessParams(shore_a=60))
     drafted = block_stiffness(_block(draft_angle=4.0), StiffnessParams(shore_a=60))
     assert drafted.kx > plain.kx and drafted.ky > plain.ky
+
+
+# --- sipe mechanics ----------------------------------------------------
+def _sipe(depth: float, width: float = 1e-6) -> Sipe:
+    """One lateral sipe cutting the 20 x 10 reference block in half across x."""
+    return Sipe(p1=(L / 2, -5.0), p2=(L / 2, W + 5.0), depth=depth, width=width)
+
+
+@pytest.mark.parametrize("model", ["layered", "continuous"])
+def test_a_sipe_cut_clean_through_gives_two_parallel_sub_blocks(model):
+    """Both models must agree here: at full depth there is only one layer, so the
+    layer stack degenerates and the block is simply two half-blocks in parallel."""
+    through = effective_k(np.asarray(RECT, float), H, E, NU, 0.0, "parallel", [_sipe(H)], 40, model)
+    half_poly = np.asarray([(0, 0), (L / 2, 0), (L / 2, W), (0, W)], float)
+    half = effective_k(half_poly, H, E, NU, 0.0, "parallel", (), 40)
+    assert through[0] == pytest.approx(2 * half[0], rel=3e-3)
+    assert through[1] == pytest.approx(2 * half[1], rel=3e-3)
+
+
+def test_siping_softens_the_block_in_the_cut_direction():
+    plain = effective_k(np.asarray(RECT, float), H, E, NU, 0.0, "parallel", (), 40)
+    siped = effective_k(np.asarray(RECT, float), H, E, NU, 0.0, "parallel", [_sipe(H)], 40)
+    assert siped[0] < plain[0]
+
+
+@pytest.mark.parametrize("mode", ["parallel", "free"])
+def test_continuous_model_makes_a_zero_depth_sipe_an_exact_no_op(mode):
+    """A sipe of zero depth removes no material and must change nothing at all."""
+    plain = effective_k(np.asarray(RECT, float), H, E, NU, 0.0, mode, (), 40)
+    zero = effective_k(np.asarray(RECT, float), H, E, NU, 0.0, mode, [_sipe(0.0, 0.5)], 40, "continuous")
+    assert zero[0] == pytest.approx(plain[0], abs=1e-12)
+    assert zero[1] == pytest.approx(plain[1], abs=1e-12)
+
+
+@pytest.mark.parametrize("mode", ["parallel", "free"])
+def test_continuous_model_is_monotonic_in_sipe_depth(mode):
+    """Cutting deeper can only soften.  The layered model violates this at shallow
+    depths -- an artificial zero-rotation constraint at the sipe root stiffens the
+    block more than the sipe softens it -- which is why this mode exists."""
+    depths = [0.0, 1.0, 2.0, 4.0, 6.0, H]
+    kx = []
+    for d in depths:
+        sipes = [_sipe(d, 0.5)] if d > 0 else []
+        kx.append(effective_k(np.asarray(RECT, float), H, E, NU, 0.0, mode, sipes, 40, "continuous")[0])
+    assert kx == sorted(kx, reverse=True), f"stiffness must fall with sipe depth: {kx}"
+
+
+@pytest.mark.parametrize("mode", ["parallel", "free"])
+def test_continuous_model_never_stiffens_relative_to_no_sipe(mode):
+    plain = effective_k(np.asarray(RECT, float), H, E, NU, 0.0, mode, (), 40)[0]
+    for d in (0.5, 1.0, 2.0, 3.0, 4.0, 6.0):
+        kx = effective_k(np.asarray(RECT, float), H, E, NU, 0.0, mode, [_sipe(d, 0.5)], 40, "continuous")[0]
+        assert kx <= plain + 1e-9, f"sipe of depth {d} stiffened the block: {kx} > {plain}"
+
+
+def test_layered_model_still_reproduces_the_reference_artifact():
+    """Pinned deliberately: 'layered' exists to match v6.4 bit-for-bit, artifact
+    and all.  If this ever stops being true the default has silently changed."""
+    plain = effective_k(np.asarray(RECT, float), H, E, NU, 0.0, "parallel", (), 40)[0]
+    shallow = effective_k(np.asarray(RECT, float), H, E, NU, 0.0, "parallel", [_sipe(2.0, 0.5)], 40, "layered")[0]
+    assert shallow > plain, "the layered model's known stiffening artifact has changed"
+
+
+def test_sipe_model_choice_only_affects_siped_blocks():
+    unsiped = _block()
+    a = block_stiffness(unsiped, StiffnessParams(shore_a=60, sipe_model="layered"))
+    b = block_stiffness(unsiped, StiffnessParams(shore_a=60, sipe_model="continuous"))
+    assert a.kx == pytest.approx(b.kx, abs=1e-12)
+    assert a.kz == pytest.approx(b.kz, abs=1e-12)
+
+
+def test_kz_uses_net_area_and_gross_perimeter():
+    """Kz is unaffected by the sipe model -- it comes from area, not beam theory."""
+    sipe = Sipe(p1=(L / 2, -5.0), p2=(L / 2, W + 5.0), depth=6.0, width=0.6)
+    kz, s, e_eff, a_net = compute_kz(np.asarray(RECT, float), H, E, K_GENT, [sipe], 1100.0)
+    a_hand = L * W - W * 0.6           # slot removes (clipped length x width)
+    assert a_net == pytest.approx(a_hand, rel=1e-12)
+    assert s == pytest.approx(a_hand / (H * 2 * (L + W)), rel=1e-12)  # gross perimeter
+    eu = E * (1 + 2 * K_GENT * s * s)
+    assert kz == pytest.approx(eu / (1 + eu / 1100.0) * a_hand / H, rel=1e-12)
 
 
 # --- contact patch -----------------------------------------------------
