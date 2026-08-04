@@ -211,6 +211,13 @@ class Config:
         *field* of this dataclass (the load case), and a method of the same name
         silently becomes that field's default value.
         """
+        if not os.path.exists(path):
+            raise ValueError(
+                f"config file not found: {path}. Write a starting point with "
+                f"--write-example-config {path}"
+            )
+        if os.path.isdir(path):
+            raise ValueError(f"config path is a directory, not a file: {path}")
         with open(path, encoding="utf-8") as fh:
             raw = json.load(fh)
         cfg = cls.from_dict(raw)

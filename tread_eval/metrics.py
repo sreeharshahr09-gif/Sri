@@ -303,8 +303,10 @@ def groove_angle_profile(pattern: Pattern, patch: ContactPatch, n_bins: int = 24
     angle = np.where(weights > 0, sums / np.maximum(weights, 1e-9), np.nan)
 
     # Half-length of the patch at each lateral position -> local spin spread.
-    with np.errstate(invalid="ignore"):
-        inside = 1.0 - ((centers - patch.y_center) / patch.b) ** 2
+    # A patch clipped away to nothing has b == 0; divide there rather than
+    # letting numpy raise a divide-by-zero warning on every call.
+    with np.errstate(invalid="ignore", divide="ignore"):
+        inside = 1.0 - ((centers - patch.y_center) / max(patch.b, 1e-9)) ** 2
     a_local = patch.a * np.sqrt(np.clip(inside, 0.0, 1.0))
     spread = np.abs(np.asarray(patch.travel_direction_deg(a_local)) - patch.slip_angle_deg)
     spread = np.where(a_local > 0, spread, np.nan)

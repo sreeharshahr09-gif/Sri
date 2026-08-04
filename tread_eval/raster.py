@@ -14,6 +14,7 @@ Target resolution is 0.2-0.5 mm so sipes and narrow grooves survive.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -60,6 +61,14 @@ class Grid:
 
 
 def make_grid(pattern: Pattern, resolution: float = 0.35) -> Grid:
+    # A non-positive resolution used to fall through the max() below and quietly
+    # produce a 64-column grid -- a garbage-resolution run that looked normal.
+    if not math.isfinite(resolution) or resolution <= 0:
+        raise ValueError(f"raster resolution must be a positive number of mm, got {resolution!r}")
+    if not math.isfinite(pattern.tyre_circumference) or pattern.tyre_circumference <= 0:
+        raise ValueError(f"tyre circumference must be positive, got {pattern.tyre_circumference!r}")
+    if not math.isfinite(pattern.tread_width) or pattern.tread_width <= 0:
+        raise ValueError(f"tread width must be positive, got {pattern.tread_width!r}")
     nx = max(64, int(round(pattern.tyre_circumference / resolution)))
     ny = max(16, int(round(pattern.tread_width / resolution)))
     return Grid(

@@ -298,6 +298,16 @@ def shape_patch(
     patch.a = patch.length() / 2.0
     patch.b = patch.width() / 2.0
     area = patch.area()
+    # A patch clipped away to nothing is not a thin patch -- it is a patch that
+    # missed the tyre.  Left alone it sweeps to contact area zero at every angle
+    # and reports a confident-looking page of zeros.
+    if area <= 1e-9:
+        raise ValueError(
+            f"the contact patch does not overlap the tread: it is centred at "
+            f"y = {y_c:.1f} mm on a tread running -{tread_width / 2:.1f} to "
+            f"+{tread_width / 2:.1f} mm, so clipping leaves no area. Move the patch "
+            f"laterally, make it wider, or check the lean angle."
+        )
     # Uniform pressure over the actual (post-clip) area, so the load still balances.
     patch.peak_pressure = load / area if area > 0 else 0.0
     return patch

@@ -69716,6 +69716,16 @@ return Plotly;
     patch.a = patchLength(patch) / 2;
     patch.b = patchWidth(patch) / 2;
     const area = patchArea(patch);
+    // A patch clipped away to nothing is not a thin patch -- it is a patch that
+    // missed the tyre. Left alone it sweeps to zero contact area at every angle
+    // and reports a confident-looking page of zeros.
+    if (area <= 1e-9)
+      throw new Error(
+        "the contact patch does not overlap the tread: it is centred at y = " + yC.toFixed(1) +
+        " mm on a tread running -" + half.toFixed(1) + " to +" + half.toFixed(1) +
+        " mm, so clipping leaves no area. Move the patch laterally, make it wider, " +
+        "or check the lean angle."
+      );
     patch.peak_pressure = area > 0 ? load / area : 0;
     return patch;
   }

@@ -204,7 +204,14 @@ def apply_overrides(cfg: Config, a: argparse.Namespace) -> Config:
         cfg.contact_patch.shapes = [spec]
 
     if a.lean:
-        cfg.analysis.lean_angles = [float(v) for v in a.lean.split(",") if v.strip()]
+        try:
+            cfg.analysis.lean_angles = [float(v) for v in a.lean.split(",") if v.strip()]
+        except ValueError as exc:
+            raise ValueError(
+                f"--lean must be a comma-separated list of angles in degrees, got {a.lean!r} ({exc})"
+            ) from None
+        if not cfg.analysis.lean_angles:
+            raise ValueError("--lean listed no angles")
     setif(cfg.analysis, "resolution_mm", a.resolution)
     setif(cfg.analysis, "discrete_samples", a.discrete_samples)
 
@@ -375,5 +382,28 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _cli() -> int:
+    """Entry point that turns expected failures into readable messages.
+
+    Everything a user can get wrong -- a missing file, a bad number, a config
+    typo, an unwritable output path -- surfaces as a one-line ``error:`` rather
+    than a traceback.  Set ``TREAD_DEBUG=1`` to get the traceback back when the
+    failure is genuinely a bug in this code.
+    """
+    try:
+        return main()
+    except SystemExit:
+        raise
+    except KeyboardInterrupt:
+        print("\ninterrupted", file=sys.stderr)
+        return 130
+    except (ValueError, OSError) as exc:
+        if os.environ.get("TREAD_DEBUG"):
+            raise
+        print(f"error: {exc}", file=sys.stderr)
+        print("(set TREAD_DEBUG=1 for the full traceback)", file=sys.stderr)
+        return 2
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_cli())

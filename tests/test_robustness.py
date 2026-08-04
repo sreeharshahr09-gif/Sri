@@ -196,3 +196,115 @@ def test_js_engine_rejects_the_same_degenerate_inputs():
     assert "positive number" in (res["bad_nsd"] or "")
     assert "implausible" in (res["bad_pitches"] or "")
     assert res["small_ok"] is None, res["small_ok"]
+
+
+# --- the command-line path ---------------------------------------------
+def _cli(*args, cwd=None):
+    """Run build_report.py and return (returncode, combined output)."""
+    proc = subprocess.run(
+        ["python3", os.path.join(REPO, "build_report.py"), *args],
+        capture_output=True, text=True, cwd=cwd or REPO, timeout=120,
+    )
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+@pytest.mark.parametrize("args,fragment", [
+    (["--config", "/nonexistent/x.json"], "config file not found"),
+    (["--dxf", "/nonexistent/plan.dxf"], "DXF not found"),
+    (["--dxf", REAL_DXF, "--nsd", "-5"], "must be a positive number"),
+    (["--dxf", REAL_DXF, "--nsd", "0"], "must be a positive number"),
+    (["--synthetic", "--lean", "0,abc,30"], "--lean must be a comma-separated"),
+    (["--synthetic", "--lean", ","], "listed no angles"),
+    (["--synthetic", "--resolution", "0"], "resolution must be a positive"),
+    (["--synthetic", "--resolution", "-1"], "resolution must be a positive"),
+])
+def test_cli_reports_user_errors_without_a_traceback(args, fragment, tmp_path):
+    """A bad flag is a user error, not a crash. It must read as one line of
+    English -- a Python traceback tells the user nothing they can act on."""
+    rc, out = _cli(*args, "-o", str(tmp_path / "r.html"))
+    assert rc != 0
+    assert "Traceback" not in out, f"leaked a traceback:\n{out[-800:]}"
+    assert fragment in out, f"expected {fragment!r} in:\n{out[-500:]}"
+
+
+def test_cli_debug_env_restores_the_traceback(tmp_path):
+    """The traceback must still be reachable when the failure is a real bug."""
+    env = dict(os.environ, TREAD_DEBUG="1")
+    proc = subprocess.run(
+        ["python3", os.path.join(REPO, "build_report.py"), "--synthetic", "--resolution", "0",
+         "-o", str(tmp_path / "r.html")],
+        capture_output=True, text=True, cwd=REPO, timeout=120, env=env,
+    )
+    assert proc.returncode != 0
+    assert "Traceback" in proc.stdout + proc.stderr
+
+
+def test_negative_resolution_no_longer_silently_downgrades_the_grid():
+    """max(64, round(C / -1)) used to yield a 64-column grid: a garbage-
+    resolution run that looked entirely normal."""
+    from tread_eval.raster import make_grid
+    from tread_eval.synthetic import SyntheticParams, generate_pattern
+
+    pattern = generate_pattern(SyntheticParams(seed=1))
+    for bad in (0.0, -1.0, float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="resolution must be a positive"):
+            make_grid(pattern, bad)
+
+
+# --- report generation --------------------------------------------------
+def test_report_payload_cannot_close_its_own_script_tag():
+    """The payload is embedded in a <script> element; a pattern name coming from
+    a filename must not be able to break out of it."""
+    from tread_eval.contact_patch import CPParams
+    from tread_eval.raster import make_grid, rasterise
+    from tread_eval.report import build_payload, render_html
+    from tread_eval.stiffness import DEFAULT_PARAMS
+    from tread_eval.sweep import sweep
+    from tread_eval.synthetic import SyntheticParams, generate_pattern
+
+    pattern = generate_pattern(SyntheticParams(seed=1))
+    pattern.name = "evil</script><img src=x onerror=alert(1)>"
+    pack = rasterise(pattern, make_grid(pattern, 1.5))
+    results = sweep(pattern, pack, [0.0])
+    payload = build_payload(pattern, pack, results, CPParams(), DEFAULT_PARAMS, theta_points=30)
+    html = render_html(payload, plotly_mode="cdn")
+    assert "</script><img" not in html
+    assert "<\\/script>" in html  # neutralised, not merely dropped
+
+
+def test_a_patch_that_misses_the_tread_is_rejected():
+    """Clipped away to nothing, it swept to zero contact at every angle and
+    produced a confident-looking page of zeros."""
+    from tread_eval.contact_patch import CPParams
+    from tread_eval.cp_shapes import ShapeSpec, shape_patch
+    from tread_eval.schema import CrownProfile
+
+    crown = CrownProfile.dual_radius(159.0)
+    spec = ShapeSpec(shape="rectangle", length=90.0, width=50.0, y_center=200.0,
+                     scale_with_lean=False)
+    with pytest.raises(ValueError, match="does not overlap the tread"):
+        shape_patch(spec, crown, 159.0, CPParams())
+
+
+def test_groove_metrics_do_not_divide_by_zero(recwarn):
+    """A heavily clipped patch has b -> 0; that used to emit a numpy
+    divide-by-zero warning on every call."""
+    import warnings
+
+    import numpy as np
+
+    from tread_eval.contact_patch import CPParams
+    from tread_eval.cp_shapes import ShapeSpec, shape_patch
+    from tread_eval.metrics import groove_angle_profile
+    from tread_eval.schema import CrownProfile
+    from tread_eval.synthetic import SyntheticParams, generate_pattern
+
+    pattern = generate_pattern(SyntheticParams(seed=1))
+    crown = CrownProfile.dual_radius(pattern.tread_width)
+    patch = shape_patch(ShapeSpec(shape="rectangle", length=40.0, width=6.0,
+                                  scale_with_lean=False),
+                        crown, pattern.tread_width, CPParams())
+    patch.b = 0.0  # the degenerate case the guard exists for
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        groove_angle_profile(pattern, patch)
