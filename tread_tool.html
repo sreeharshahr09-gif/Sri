@@ -70317,15 +70317,49 @@ return Plotly;
     reader.readAsText(file);
   }
 
-  // Rebuild the pattern when depth defaults change (they are baked into blocks).
-  function rebuildIfLoaded() {
+  // Bring the loaded pattern back into line with every input that derives from
+  // it, without re-parsing the DXF.
+  //
+  // This used to update only the block depths. The crown radii and the pitch
+  // count were baked in at import, so typing a new crown radius and pressing
+  // Run silently recomputed with the *old* crown -- and the crown sets where
+  // the contact point sits at every lean, so the whole lean sweep was wrong
+  // with nothing on screen to say so. Everything derived is rebuilt here.
+  function reconcilePattern() {
     if (!state.pattern) return;
-    // Re-apply per-zone depth defaults onto existing blocks without re-parsing.
+    var p = state.pattern;
+
+    // 1. depth attributes, which live on each block
     var d = readDefaults();
-    for (var i = 0; i < state.pattern.blocks.length; i++) {
-      var b = state.pattern.blocks[i];
+    for (var i = 0; i < p.blocks.length; i++) {
+      var b = p.blocks[i];
       b.height = d.height; b.draft_angle = d.draft_angle;
       b.n_lateral_sipes = d.n_lateral_sipes; b.sipe_depth_fraction = d.sipe_depth_fraction;
+    }
+
+    // 2. the crown profile, which sets the contact point at every lean
+    var rc = $("crownCenter").value.trim(), rs = $("crownShoulder").value.trim();
+    p.crown = E.crownDualRadius(
+      p.tread_width,
+      rc === "" ? undefined : parseFloat(rc),
+      rs === "" ? undefined : parseFloat(rs)
+    );
+
+    // 3. the pitch division, which the order chart marks against
+    var npRaw = $("nPitches").value.trim();
+    var n = npRaw === "" ? E.estimatePitchCount(p.blocks, p.tyre_circumference)
+                         : parseInt(npRaw, 10);
+    n = Math.max(1, n || 1);
+    var len = p.tyre_circumference / n;
+    p.pitches = [];
+    for (var k = 0; k < n; k++) {
+      p.pitches.push({ id: "P" + String(k).padStart(3, "0"),
+                       circumferential_start: k * len, circumferential_length: len });
+    }
+    for (var j = 0; j < p.blocks.length; j++) {
+      var c = E.polygonCentroid(p.blocks[j].polygon);
+      var cx = ((c[0] % p.tyre_circumference) + p.tyre_circumference) % p.tyre_circumference;
+      p.blocks[j].pitch_id = p.pitches[Math.min(p.pitches.length - 1, Math.floor(cx / len))].id;
     }
   }
 
@@ -70386,6 +70420,7 @@ return Plotly;
       ctx.fillText("Load a DXF to place the contact patch", W / 2, H / 2);
       return;
     }
+    reconcilePattern();   // the preview must reflect the crown the user just typed
     var p = state.pattern, tw = p.tread_width, C = p.tyre_circumference;
     var spec = readSpec();
     var patch;
@@ -70622,7 +70657,7 @@ return Plotly;
   function run() {
     if (!state.pattern || state.running) return;
     if (refreshValidation().length) return;   // never compute on invalid input
-    rebuildIfLoaded();
+    reconcilePattern();
     state.running = true;
     $("overlay").classList.add("on");
     $("progress").textContent = "";
@@ -71124,8 +71159,8 @@ return Plotly;
     on($("cpScaleLean"), "change", function () { drawEditor(); markStale(); });
     on($("cpAutoLoad"), "change", function () { drawEditor(); markStale(); });
     ["nsd", "draft", "sipes", "sipeDepth", "shore", "poisson", "mode", "sipeModel", "quality", "curv", "wheelR", "crownCenter", "crownShoulder", "nPitches"].forEach(function (id) {
-      on($(id), "input", function () { refreshValidation(); markStale(); });
-      on($(id), "change", function () { refreshValidation(); markStale(); });
+      on($(id), "input", function () { refreshValidation(); drawEditor(); markStale(); });
+      on($(id), "change", function () { refreshValidation(); drawEditor(); markStale(); });
     });
 
     on($("gammaSel"), "change", function () { state.gammaShown = state.results[parseInt(this.value, 10)].gamma_deg; renderAll(); });

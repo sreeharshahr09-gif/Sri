@@ -47,6 +47,31 @@ const fs = require("fs");
     await page.screenshot({ path: path.join(outDir, `tab-${t}.png`), fullPage: false });
   }
 
+  // Inputs that the pattern derives from must take effect without re-importing
+  // the DXF. The crown used to be baked in at load time, so a new crown radius
+  // was silently ignored while the lean sweep kept using the old one.
+  {
+    const leansOf = async () => page.evaluate(() =>
+      Array.from(document.getElementById("gammaSel").options).map((o) => o.textContent).join(","));
+    const rerun = async () => {
+      await page.click("#runBtn");
+      await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 60000 });
+      return leansOf();
+    };
+    const before = await leansOf();
+    await page.fill("#crownCenter", "300"); await page.fill("#crownShoulder", "300");
+    await page.waitForTimeout(150);
+    const tightened = await rerun();
+    if (tightened === before) errors.push("crown radius change had no effect without re-importing the DXF");
+    if (tightened.split(",").length >= before.split(",").length)
+      errors.push(`a 300/300 crown should reduce the reachable leans: ${before} -> ${tightened}`);
+    await page.fill("#crownCenter", ""); await page.fill("#crownShoulder", "");
+    await page.waitForTimeout(150);
+    const restored = await rerun();
+    if (restored !== before) errors.push(`clearing the crown override should restore the default: ${before} -> ${restored}`);
+    console.log(`crown reconciliation: ${before.split(",").length} leans -> ${tightened.split(",").length} -> ${restored.split(",").length}`);
+  }
+
   // export: every format must download and be self-describing
   const dlDir = require("fs").mkdtempSync(require("path").join(require("os").tmpdir(), "tt-"));
   for (const [id, label] of [["exportCsv", "CSV"], ["exportJson", "JSON"], ["exportTxt", "Summary"]]) {

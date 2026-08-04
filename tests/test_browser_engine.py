@@ -240,3 +240,22 @@ def test_export_paths_exist_and_are_wired():
     assert "gamma_deg" in ui and "centroid_y_mm" in ui
     # exports must be gated on having results
     assert "refreshExportButtons" in ui
+
+
+def test_pattern_derived_inputs_are_reconciled_before_every_run():
+    """The crown and the pitch division are derived from inputs, not from the
+    DXF.  They used to be baked in at import, so typing a new crown radius and
+    pressing Run recomputed the whole lean sweep against the *old* crown -- and
+    the crown decides where the contact point sits at every lean angle."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    assert "function reconcilePattern(" in ui
+    assert "rebuildIfLoaded" not in ui, "the old depth-only rebuild must be gone"
+    # run() must reconcile before dispatching to the worker
+    run_body = ui[ui.index("function run()"):ui.index("function populateGammaSelect")]
+    assert "reconcilePattern();" in run_body
+    assert run_body.index("reconcilePattern();") < run_body.index("postMessage")
+    # and it must rebuild all three derived things
+    body = ui[ui.index("function reconcilePattern("):ui.index("// ---- banner")]
+    assert "crownDualRadius" in body, "crown is not rebuilt"
+    assert "estimatePitchCount" in body or "nPitches" in body, "pitch division is not rebuilt"
+    assert "b.height" in body, "block depths are not reapplied"

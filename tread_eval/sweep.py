@@ -49,6 +49,17 @@ class LeanResult:
     shape: dict[str, float] = field(default_factory=dict)
 
     def as_dict(self, stride: int = 1) -> dict:
+        """Serialise for the report payload.
+
+        Deliberately narrower than the dataclass.  ``pressure_area``,
+        ``zone_area``, ``theta_discrete``, ``block_count_discrete``,
+        ``patch_load`` and ``patch_perimeter`` are all still available on the
+        object -- and the report's own metrics read them there -- but nothing
+        in the page reads the per-angle arrays, so shipping them only made the
+        embedded JSON 15% bigger.  Zones reach the page through
+        ``payload['zones']`` and ``summary[].zone_share``; the discrete block
+        count reaches it as a per-lean mean.
+        """
         s = slice(None, None, stride)
         return {
             "gamma_deg": self.gamma_deg,
@@ -59,14 +70,8 @@ class LeanResult:
             "ky": self.ky[s].tolist(),
             "kz": self.kz[s].tolist(),
             "block_count": self.block_count[s].tolist(),
-            "block_count_discrete": self.block_count_discrete.tolist(),
-            "theta_discrete": self.theta_discrete.tolist(),
             "centroid_y": self.centroid_y[s].tolist(),
-            "zone_area": {z: self.zone_area[z][s].tolist() for z in self.zone_area},
-            "pressure_area": self.pressure_area[s].tolist(),
             "patch_area": self.patch_area,
-            "patch_perimeter": self.patch_perimeter,
-            "patch_load": self.patch_load,
             "patch": {
                 "source": self.patch.source,
                 "provenance": self.patch.provenance,
@@ -236,7 +241,6 @@ def sweep_lean(
     binary, pressure = _patch_kernels(patch, grid)
 
     kb = np.fft.rfft(binary, axis=1)
-    kp = np.fft.rfft(pressure, axis=1)
 
     def corr(key: str, weight_map: np.ndarray, kernel_fft: np.ndarray) -> np.ndarray:
         return _correlate(cache.get(key, weight_map), kernel_fft, grid.nx)
@@ -247,8 +251,18 @@ def sweep_lean(
     kz = corr("kz", pack.kz, kb)
     block_count = corr("block_frac", pack.block_frac, kb)
     y_moment = corr("y_moment", pack.y_moment, kb)
-    pressure_area = corr("area", pack.area, kp)
     zone_area = {z: corr(f"zone_{z}", pack.zone_area[z], kb) for z in ZONES}
+
+    # Pressure-weighted contact area.  With a flat pressure field this is
+    # exactly ``contact_area * p0``, so the extra kernel transform and
+    # correlation it used to cost bought nothing.  Only an imported pressure
+    # map makes the weighting carry information, and only then is it computed.
+    if patch.pressure_grid is not None:
+        pressure_area = _correlate(
+            cache.get("area", pack.area), np.fft.rfft(pressure, axis=1), grid.nx
+        )
+    else:
+        pressure_area = contact_area * float(patch.peak_pressure)
 
     shape = _shape_metrics(patch, binary, pressure, grid)
     patch_area = shape["area_mm2"]
