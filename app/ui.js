@@ -1,0 +1,643 @@
+/* tread_tool -- main-thread application logic.
+ * Uses window.TreadEngine (same engine the worker runs) for the live patch
+ * editor and metrics, and Plotly (embedded) for the charts. */
+(function () {
+  "use strict";
+  var E = window.TreadEngine;
+  var Plotly = window.Plotly;
+
+  // ---- application state ----------------------------------------------
+  var state = {
+    pattern: null,       // parsed Pattern
+    report: null,        // DXF import report
+    results: null,       // array of per-lean results from the worker
+    stiffness: null,     // per-zone stiffness summary
+    grid: null,          // {nx, ny, dx, dy} actually used
+    gammaShown: 0,       // which lean the theta-stack shows
+    heatMetric: "kz",
+    orderMetric: "kz",
+    worker: null,
+    editorTheta: 0,      // reference viewing angle for the editor window (deg)
+    running: false,
+  };
+
+  var DEFAULT_LEANS = [0, 5, 10, 15, 20, 25, 30, 35, 40];
+
+  // ---- element helpers -------------------------------------------------
+  function $(id) { return document.getElementById(id); }
+  function num(id) { return parseFloat($(id).value); }
+  function on(el, ev, fn) { el.addEventListener(ev, fn); }
+
+  // ---- theme -----------------------------------------------------------
+  function currentTheme() {
+    var t = document.documentElement.getAttribute("data-theme");
+    if (t) return t;
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  }
+  function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    try { localStorage.setItem("tread_theme", theme); } catch (e) {}
+    $("themeToggle").textContent = theme === "light" ? "☾ Dark" : "☀ Light";
+    drawEditor();
+    if (state.results) renderAll();
+  }
+  function initTheme() {
+    var saved = null;
+    try { saved = localStorage.getItem("tread_theme"); } catch (e) {}
+    if (saved) document.documentElement.setAttribute("data-theme", saved);
+    $("themeToggle").textContent = currentTheme() === "light" ? "☾ Dark" : "☀ Light";
+    on($("themeToggle"), "click", function () { applyTheme(currentTheme() === "light" ? "dark" : "light"); });
+  }
+
+  function plotTheme() {
+    return {
+      paper_bgcolor: cssVar("--panel"),
+      plot_bgcolor: cssVar("--panel"),
+      font: { color: cssVar("--ink"), size: 12 },
+      grid: cssVar("--grid"),
+      accent: cssVar("--accent"),
+      accent2: cssVar("--accent-2"),
+      good: cssVar("--good"), warn: cssVar("--warn"), bad: cssVar("--bad"),
+      inkDim: cssVar("--ink-dim"),
+    };
+  }
+  function ax(title) { return { title: { text: title, font: { size: 11 } } }; }
+
+  // ---- reading controls into spec / params -----------------------------
+  function readSpec() {
+    return {
+      shape: $("shape").value,
+      length: num("cpLength"),
+      width: num("cpWidth"),
+      corner_radius: num("cpCorner"),
+      exponent: num("cpExp"),
+      taper: num("cpTaper"),
+      rotation: num("cpRot"),
+      y_center: $("cpAutoY").checked ? null : num("cpY"),
+      gamma_deg: 0,
+      load_N: $("cpAutoLoad").checked ? null : num("cpLoad"),
+      label: "",
+    };
+  }
+  function readStiffParams() {
+    return {
+      shore_a: num("shore"), poisson: num("poisson"), mode: $("mode").value,
+      bulk_modulus: 1100, n_slices: 40,
+    };
+  }
+  function readCpParams() {
+    return { vertical_load: num("cpLoad"), wheel_radius: num("wheelR"), load_rises_with_lean: $("loadLean").checked };
+  }
+  function readDefaults() {
+    return { height: num("nsd"), draft_angle: num("draft"), n_lateral_sipes: parseInt($("sipes").value, 10), sipe_depth_fraction: num("sipeDepth"), shore_a: null };
+  }
+
+  // ---- shape parameter visibility --------------------------------------
+  function syncShapeFields() {
+    var s = $("shape").value;
+    $("rowCorner").style.display = s === "rounded" ? "" : "none";
+    $("rowExp").style.display = s === "superellipse" ? "" : "none";
+    $("rowTaper").style.display = s === "trapezoid" ? "" : "none";
+  }
+
+  // ---- DXF loading -----------------------------------------------------
+  function buildPatternFromText(text, name) {
+    var defaults = readDefaults();
+    var opts = { name: name };
+    var cr = $("crownCenter").value, csh = $("crownShoulder").value;
+    if (cr) opts.crown_r_center = parseFloat(cr);
+    if (csh) opts.crown_r_shoulder = parseFloat(csh);
+    var np = $("nPitches").value; if (np) opts.n_pitches = parseInt(np, 10);
+    var out = E.loadPattern(text, defaults, opts);
+    state.pattern = out.pattern;
+    state.report = out.report;
+    state.results = null;
+    state.editorTheta = 0;
+    renderBanner();
+    drawEditor();
+    $("runBtn").disabled = false;
+    $("emptyHint").style.display = "none";
+  }
+
+  function loadFile(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      try { buildPatternFromText(String(reader.result), file.name.replace(/\.dxf$/i, "")); }
+      catch (err) { alert("Could not read DXF: " + err.message); }
+    };
+    reader.readAsText(file);
+  }
+
+  // Rebuild the pattern when depth defaults change (they are baked into blocks).
+  function rebuildIfLoaded() {
+    if (!state.pattern) return;
+    // Re-apply per-zone depth defaults onto existing blocks without re-parsing.
+    var d = readDefaults();
+    for (var i = 0; i < state.pattern.blocks.length; i++) {
+      var b = state.pattern.blocks[i];
+      b.height = d.height; b.draft_angle = d.draft_angle;
+      b.n_lateral_sipes = d.n_lateral_sipes; b.sipe_depth_fraction = d.sipe_depth_fraction;
+    }
+  }
+
+  // ---- banner ----------------------------------------------------------
+  function renderBanner() {
+    var b = $("banner");
+    if (!state.pattern) { b.style.display = "none"; return; }
+    b.style.display = "";
+    var r = state.report, p = state.pattern;
+    var warn = r.warnings && r.warnings.length;
+    b.className = "banner" + (warn ? " warn" : "");
+    var html = "<span class='src'>" + p.source.toUpperCase() + "</span><b>" + escapeHtml(p.name) + "</b> — " +
+      r.n_blocks + " blocks (" + r.n_wrapped + " wrapped), " +
+      p.tyre_circumference.toFixed(1) + " × " + p.tread_width.toFixed(1) + " mm, land ratio " + r.land_ratio.toFixed(3) +
+      ", " + p.pitches.length + " pitches";
+    if (p.meta && p.meta.geometric_repeat_mm) html += ", geometric repeat " + p.meta.geometric_repeat_mm.toFixed(1) + " mm";
+    if (warn) {
+      html += "<ul>";
+      for (var i = 0; i < r.warnings.length; i++) html += "<li>" + escapeHtml(r.warnings[i]) + "</li>";
+      html += "</ul>";
+    }
+    b.innerHTML = html;
+  }
+
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+
+  // ---- the draggable patch editor --------------------------------------
+  var editor = { canvas: null, ctx: null, drag: null, scale: 1, ox: 0, oy: 0, winX: 200 };
+
+  function editorSetup() {
+    editor.canvas = $("editor");
+    editor.ctx = editor.canvas.getContext("2d");
+    on(editor.canvas, "pointerdown", editorDown);
+    on(editor.canvas, "pointermove", editorMove);
+    on(editor.canvas, "pointerup", editorUp);
+    on(editor.canvas, "pointerleave", editorUp);
+    window.addEventListener("resize", function () { drawEditor(); });
+  }
+
+  // data(mm) -> canvas(px). x is circumferential relative to window centre.
+  function mapX(x) { return editor.ox + x * editor.scale; }
+  function mapY(y) { return editor.oy - y * editor.scale; }
+  function invX(px) { return (px - editor.ox) / editor.scale; }
+  function invY(py) { return (editor.oy - py) / editor.scale; }
+
+  function drawEditor() {
+    if (!editor.ctx) return;
+    var c = editor.canvas, ctx = editor.ctx;
+    var rect = c.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    c.width = Math.round(rect.width * dpr); c.height = Math.round(rect.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var W = rect.width, H = rect.height;
+    ctx.clearRect(0, 0, W, H);
+
+    if (!state.pattern) {
+      ctx.fillStyle = cssVar("--ink-dim"); ctx.font = "13px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("Load a DXF to place the contact patch", W / 2, H / 2);
+      return;
+    }
+    var p = state.pattern, tw = p.tread_width, C = p.tyre_circumference;
+    var spec = readSpec();
+    var patch = E.shapePatch(Object.assign({}, spec, { gamma_deg: state.gammaShown }), p.crown, tw, readCpParams());
+
+    // window: circumferential span sized to the patch, vertical = full tread + margin
+    var patchLen = E.patchLength(patch);
+    editor.winX = Math.max(160, patchLen * 2.2);
+    var winY = tw * 1.08;
+    var sx = (W - 20) / editor.winX, sy = (H - 20) / winY;
+    editor.scale = Math.min(sx, sy);
+    editor.ox = W / 2; editor.oy = H / 2;
+
+    var xref = (state.editorTheta / 360) * C;
+
+    // tread band
+    ctx.fillStyle = cssVar("--panel-2");
+    ctx.fillRect(mapX(-editor.winX / 2), mapY(tw / 2), editor.winX * editor.scale, tw * editor.scale);
+    // centreline
+    ctx.strokeStyle = cssVar("--edge"); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(mapX(-editor.winX / 2), mapY(0)); ctx.lineTo(mapX(editor.winX / 2), mapY(0)); ctx.stroke();
+
+    // blocks intersecting the window
+    var zoneColor = { center: cssVar("--accent"), intermediate: cssVar("--good"), shoulder: cssVar("--accent-2") };
+    ctx.globalAlpha = 0.32;
+    for (var bi = 0; bi < p.blocks.length; bi++) {
+      var blk = p.blocks[bi];
+      var pieces = E.splitAtSeam(blk.polygon, C);
+      for (var pc = 0; pc < pieces.length; pc++) {
+        // also try shifted by +/- C so wrap shows in the window
+        for (var shift = -C; shift <= C; shift += C) {
+          var poly = pieces[pc];
+          var xmin = Infinity, xmax = -Infinity;
+          for (var v = 0; v < poly.length; v++) { var xx = poly[v][0] + shift - xref; if (xx < xmin) xmin = xx; if (xx > xmax) xmax = xx; }
+          if (xmax < -editor.winX / 2 || xmin > editor.winX / 2) continue;
+          ctx.fillStyle = zoneColor[blk.zone] || cssVar("--accent");
+          ctx.beginPath();
+          for (var v2 = 0; v2 < poly.length; v2++) {
+            var X = mapX(poly[v2][0] + shift - xref), Y = mapY(poly[v2][1]);
+            if (v2 === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
+          }
+          ctx.closePath(); ctx.fill();
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    // patch outline
+    ctx.strokeStyle = cssVar("--accent"); ctx.lineWidth = 2;
+    ctx.fillStyle = hexA(cssVar("--accent"), 0.16);
+    ctx.beginPath();
+    for (var i = 0; i < patch.outline.length; i++) {
+      var pt = patch.outline[i];
+      var X2 = mapX(pt[0]), Y2 = mapY(pt[1]);
+      if (i === 0) ctx.moveTo(X2, Y2); else ctx.lineTo(X2, Y2);
+    }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+
+    // handles
+    var yc = patch.y_center, a = patch.a, b = patch.b;
+    editor._handles = {
+      center: [0, yc], east: [a, yc], north: [0, yc + b],
+    };
+    ctx.fillStyle = cssVar("--accent");
+    for (var hk in editor._handles) {
+      var hh = editor._handles[hk];
+      ctx.beginPath(); ctx.arc(mapX(hh[0]), mapY(hh[1]), 5, 0, 2 * Math.PI); ctx.fill();
+    }
+    // labels
+    ctx.fillStyle = cssVar("--ink-dim"); ctx.font = "11px sans-serif"; ctx.textAlign = "left";
+    ctx.fillText(E.describeSpec(spec) + "  |  y_c=" + yc.toFixed(1) + " mm  |  γ=" + state.gammaShown + "°", 8, 14);
+  }
+
+  function hexA(hex, a) {
+    hex = hex.trim();
+    if (hex[0] !== "#") return hex;
+    var r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), bb = parseInt(hex.slice(5, 7), 16);
+    return "rgba(" + r + "," + g + "," + bb + "," + a + ")";
+  }
+
+  function editorDown(ev) {
+    if (!state.pattern) return;
+    editor.canvas.setPointerCapture(ev.pointerId);
+    var rect = editor.canvas.getBoundingClientRect();
+    var px = ev.clientX - rect.left, py = ev.clientY - rect.top;
+    var best = null, bestD = 14;
+    for (var hk in editor._handles) {
+      var hh = editor._handles[hk];
+      var d = Math.hypot(px - mapX(hh[0]), py - mapY(hh[1]));
+      if (d < bestD) { bestD = d; best = hk; }
+    }
+    editor.drag = best || "pan";
+    editor.canvas.classList.add("dragging");
+  }
+
+  function editorMove(ev) {
+    if (!editor.drag) return;
+    var rect = editor.canvas.getBoundingClientRect();
+    var px = ev.clientX - rect.left, py = ev.clientY - rect.top;
+    var dx = invX(px), dy = invY(py);
+    if (editor.drag === "center") {
+      $("cpAutoY").checked = false; $("cpY").disabled = false;
+      $("cpY").value = clamp(dy, -state.pattern.tread_width / 2, state.pattern.tread_width / 2).toFixed(1);
+    } else if (editor.drag === "east") {
+      $("cpLength").value = Math.max(6, Math.abs(dx) * 2).toFixed(1);
+    } else if (editor.drag === "north") {
+      var yc = $("cpAutoY").checked ? E.crownContactLateral(state.pattern.crown, state.gammaShown) : num("cpY");
+      $("cpWidth").value = Math.max(6, Math.abs(dy - yc) * 2).toFixed(1);
+    } else if (editor.drag === "pan") {
+      // scrub the viewing angle
+      state.editorTheta = ((state.editorTheta - (dx) * 0) + 360) % 360; // pan disabled; keep simple
+    }
+    drawEditor();
+  }
+
+  function editorUp(ev) {
+    if (!editor.drag) return;
+    editor.drag = null;
+    editor.canvas.classList.remove("dragging");
+    // a shape change invalidates results -> offer re-run
+    markStale();
+  }
+
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  function markStale() {
+    if (state.results) $("runBtn").textContent = "▶ Re-run (inputs changed)";
+  }
+
+  // ---- run: worker orchestration ---------------------------------------
+  function makeWorker() {
+    var engineSrc = $("engine-src").textContent;
+    var workerSrc = $("worker-src").textContent;
+    var blob = new Blob([engineSrc + "\n" + workerSrc], { type: "text/javascript" });
+    return new Worker(URL.createObjectURL(blob));
+  }
+
+  function run() {
+    if (!state.pattern || state.running) return;
+    rebuildIfLoaded();
+    state.running = true;
+    $("overlay").classList.add("on");
+    $("progress").textContent = "";
+    var nx = parseInt($("quality").value, 10);
+    var ny = Math.max(48, Math.round(state.pattern.tread_width / (state.pattern.tyre_circumference / nx)));
+    // keep transported arrays reasonable: stride so ~1024 points per curve
+    var stride = Math.max(1, Math.round(nx / 1024));
+    if (state.worker) state.worker.terminate();
+    state.worker = makeWorker();
+    state.worker.onmessage = function (ev) {
+      var m = ev.data;
+      if (m.type === "progress") { $("progress").textContent = "lean " + m.done + " / " + m.total; }
+      else if (m.type === "done") {
+        state.results = m.results; state.stiffness = m.stiffness; state.grid = m.grid;
+        state.running = false; $("overlay").classList.remove("on");
+        $("runBtn").textContent = "▶ Run";
+        $("timing").textContent = "computed in " + (m.timing.total / 1000).toFixed(1) + " s (raster " + m.timing.raster + " ms), grid " + m.grid.nx + "×" + m.grid.ny;
+        populateGammaSelect();
+        renderAll();
+      } else if (m.type === "error") {
+        state.running = false; $("overlay").classList.remove("on");
+        alert("Compute failed: " + m.message);
+      }
+    };
+    state.worker.postMessage({
+      cmd: "sweep", pattern: state.pattern, gridNx: nx, gridNy: ny,
+      stiffParams: readStiffParams(), cpParams: readCpParams(), spec: readSpec(),
+      leans: DEFAULT_LEANS, discreteSamples: 360, curvatureCorrection: $("curv").checked, stride: stride,
+    });
+  }
+
+  function populateGammaSelect() {
+    var sel = $("gammaSel"); sel.innerHTML = "";
+    for (var i = 0; i < state.results.length; i++) {
+      var o = document.createElement("option");
+      o.value = i; o.textContent = state.results[i].gamma_deg + "°";
+      sel.appendChild(o);
+    }
+    sel.value = 0; state.gammaShown = state.results[0].gamma_deg;
+  }
+
+  // ---- rendering all charts --------------------------------------------
+  function currentResult() {
+    if (!state.results) return null;
+    for (var i = 0; i < state.results.length; i++) if (state.results[i].gamma_deg === state.gammaShown) return state.results[i];
+    return state.results[0];
+  }
+
+  function renderAll() {
+    if (!state.results) return;
+    renderCards();
+    renderThetaStack();
+    renderPatternStrip();
+    renderLeanHeatmap();
+    renderOrders();
+    renderZones();
+    renderPatchPreview();
+    renderDiagnostics();
+    drawEditor();
+  }
+
+  function renderCards() {
+    var r = currentResult();
+    var kz = E.fluctuationStats(r.kz), ca = E.fluctuationStats(r.contact_area), bc = E.fluctuationStats(r.block_count);
+    var spec = E.orderSpectrum(r.kz, 60), dom = E.dominantOrders(spec, 1)[0];
+    var cards = [
+      ["Patch area", r.patch_area.toFixed(0), "mm²"],
+      ["Mean contact area", ca.mean.toFixed(0), "mm² (" + (100 * ca.mean / r.patch_area).toFixed(0) + "% land)"],
+      ["Mean vertical Kz", kz.mean.toFixed(0), "N/mm"],
+      ["Kz fluctuation", (kz.cov * 100).toFixed(1), "% CoV over θ"],
+      ["Blocks in patch", bc.mean.toFixed(1), "avg"],
+      ["Dominant Kz order", dom ? String(dom.order) : "–", "per rev"],
+    ];
+    var html = "";
+    for (var i = 0; i < cards.length; i++)
+      html += "<div class='card'><div class='k'>" + cards[i][0] + "</div><div class='v'>" + cards[i][1] + "</div><div class='u'>" + cards[i][2] + "</div></div>";
+    $("cards").innerHTML = html;
+  }
+
+  function renderThetaStack() {
+    var r = currentResult(), th = plotTheme();
+    var x = r.theta_deg;
+    var rows = [
+      { y: r.contact_area, name: "Contact area", unit: "mm²", color: th.accent },
+      { y: r.kz, name: "Kz (vertical)", unit: "N/mm", color: th.good },
+      { y: r.kx, name: "Kx (long.)", unit: "N/mm", color: th.accent2 },
+      { y: r.ky, name: "Ky (lateral)", unit: "N/mm", color: th.bad },
+      { y: r.block_count, name: "Blocks in patch", unit: "count", color: th.inkDim },
+    ];
+    var data = [], layout = {
+      paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+      showlegend: false, margin: { l: 64, r: 16, t: 24, b: 40 },
+      height: 560, grid: { rows: rows.length, columns: 1, pattern: "independent", roworder: "top to bottom" },
+      title: { text: "In-patch aggregates vs rotation angle θ  (γ = " + r.gamma_deg + "°)", font: { size: 13 } },
+    };
+    for (var i = 0; i < rows.length; i++) {
+      var xa = "x" + (i + 1), ya = "y" + (i + 1);
+      data.push({ x: x, y: rows[i].y, xaxis: xa, yaxis: ya, type: "scatter", mode: "lines", line: { color: rows[i].color, width: 1.5 }, name: rows[i].name });
+      layout["xaxis" + (i + 1)] = { gridcolor: th.grid, zeroline: false, range: [0, 360], showticklabels: i === rows.length - 1, title: i === rows.length - 1 ? { text: "rotation angle θ (deg)", font: { size: 11 } } : undefined, tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] };
+      layout["yaxis" + (i + 1)] = { gridcolor: th.grid, zeroline: false, title: { text: rows[i].name + " (" + rows[i].unit + ")", font: { size: 10 } } };
+    }
+    Plotly.react($("thetaStack"), data, layout, { responsive: true, displayModeBar: false });
+  }
+
+  function renderPatternStrip() {
+    var p = state.pattern, th = plotTheme(), C = p.tyre_circumference;
+    var shapes = [], zoneColor = { center: th.accent, intermediate: th.good, shoulder: th.accent2 };
+    for (var bi = 0; bi < p.blocks.length; bi++) {
+      var blk = p.blocks[bi];
+      var pieces = E.splitAtSeam(blk.polygon, C);
+      for (var pc = 0; pc < pieces.length; pc++) {
+        var poly = pieces[pc], path = "";
+        for (var v = 0; v < poly.length; v++) {
+          var TH = (poly[v][0] / C) * 360;
+          path += (v === 0 ? "M" : "L") + TH.toFixed(3) + "," + poly[v][1].toFixed(3) + " ";
+        }
+        path += "Z";
+        shapes.push({ type: "path", path: path, xref: "x", yref: "y", fillcolor: hexA(zoneColor[blk.zone] || th.accent, 0.55), line: { width: 0 } });
+      }
+    }
+    var layout = {
+      paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+      margin: { l: 64, r: 16, t: 24, b: 40 }, height: 200, shapes: shapes,
+      title: { text: "Rolled-out tread pattern (same θ axis)", font: { size: 13 } },
+      xaxis: { range: [0, 360], gridcolor: th.grid, zeroline: false, title: { text: "rotation angle θ (deg)", font: { size: 11 } }, tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
+      yaxis: { range: [-p.tread_width / 2, p.tread_width / 2], gridcolor: th.grid, zeroline: false, title: { text: "lateral y (mm)", font: { size: 10 } }, scaleanchor: undefined },
+    };
+    Plotly.react($("patternStrip"), [{ x: [0], y: [0], type: "scatter", mode: "markers", marker: { opacity: 0 }, hoverinfo: "skip" }], layout, { responsive: true, displayModeBar: false });
+  }
+
+  function renderLeanHeatmap() {
+    var th = plotTheme();
+    var metric = state.heatMetric;
+    var x = state.results[0].theta_deg;
+    var y = [], z = [];
+    for (var i = 0; i < state.results.length; i++) { y.push(state.results[i].gamma_deg); z.push(state.results[i][metric]); }
+    var label = { kz: "Kz (N/mm)", kx: "Kx (N/mm)", ky: "Ky (N/mm)", contact_area: "Contact area (mm²)", block_count: "Blocks", land_ratio: "Land ratio" }[metric];
+    var data = [{ z: z, x: x, y: y, type: "heatmap", colorscale: "Viridis", colorbar: { title: { text: label, font: { size: 11 } } } }];
+    var layout = {
+      paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+      margin: { l: 60, r: 20, t: 30, b: 44 }, height: 420,
+      title: { text: label + " across rotation θ and lean γ", font: { size: 13 } },
+      xaxis: { title: { text: "rotation angle θ (deg)", font: { size: 11 } }, range: [0, 360] },
+      yaxis: { title: { text: "lean angle γ (deg)", font: { size: 11 } } },
+    };
+    Plotly.react($("leanHeat"), data, layout, { responsive: true, displayModeBar: false });
+  }
+
+  function renderOrders() {
+    var r = currentResult(), th = plotTheme();
+    var metric = state.orderMetric;
+    var spec = E.orderSpectrum(r[metric], 60);
+    var colors = spec.orders.map(function (o) {
+      if (state.pattern.pitches && o === state.pattern.pitches.length) return th.bad;
+      if (state.pattern.meta && state.pattern.meta.geometric_repeat_mm && o === Math.round(state.pattern.tyre_circumference / state.pattern.meta.geometric_repeat_mm)) return th.accent2;
+      return th.accent;
+    });
+    var data = [{ x: spec.orders, y: spec.amplitude, type: "bar", marker: { color: colors } }];
+    var label = { kz: "Kz", kx: "Kx", ky: "Ky", contact_area: "contact area", block_count: "block count" }[metric];
+    var layout = {
+      paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+      margin: { l: 60, r: 16, t: 40, b: 44 }, height: 380,
+      title: { text: "Order content of " + label + " (γ = " + r.gamma_deg + "°)  — red bar = pitch count, orange = geometric repeat", font: { size: 12 } },
+      xaxis: { title: { text: "order (events per revolution)", font: { size: 11 } }, gridcolor: th.grid },
+      yaxis: { title: { text: "amplitude", font: { size: 11 } }, gridcolor: th.grid },
+    };
+    Plotly.react($("orders"), data, layout, { responsive: true, displayModeBar: false });
+  }
+
+  function renderZones() {
+    var r = currentResult(), th = plotTheme();
+    var x = r.theta_deg;
+    var data = [];
+    var colors = { center: th.accent, intermediate: th.good, shoulder: th.accent2 };
+    for (var z in r.zone_area)
+      data.push({ x: x, y: r.zone_area[z], type: "scatter", mode: "lines", stackgroup: "one", name: z, line: { width: 0.5, color: colors[z] }, fillcolor: hexA(colors[z], 0.55) });
+    var layout = {
+      paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+      margin: { l: 60, r: 16, t: 40, b: 44 }, height: 380, legend: { orientation: "h" },
+      title: { text: "Zone contact area vs θ (γ = " + r.gamma_deg + "°)", font: { size: 13 } },
+      xaxis: { title: { text: "rotation angle θ (deg)", font: { size: 11 } }, range: [0, 360], gridcolor: th.grid },
+      yaxis: { title: { text: "contact area (mm²)", font: { size: 11 } }, gridcolor: th.grid },
+    };
+    Plotly.react($("zones"), data, layout, { responsive: true, displayModeBar: false });
+  }
+
+  function renderPatchPreview() {
+    var r = currentResult(), th = plotTheme(), p = state.pattern;
+    var out = r.patch.outline;
+    var xs = out.map(function (q) { return q[0]; }).concat([out[0][0]]);
+    var ys = out.map(function (q) { return q[1]; }).concat([out[0][1]]);
+    var data = [
+      { x: [-p.tread_width, p.tread_width], y: [0, 0], type: "scatter", mode: "lines", line: { color: th.grid, dash: "dot" }, hoverinfo: "skip", showlegend: false },
+      { x: xs, y: ys, type: "scatter", mode: "lines", fill: "toself", line: { color: th.accent, width: 2 }, fillcolor: hexA(th.accent, 0.18), name: "patch @ γ=" + r.gamma_deg + "°" },
+    ];
+    var layout = {
+      paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+      margin: { l: 60, r: 16, t: 40, b: 44 }, height: 420,
+      title: { text: r.patch.provenance, font: { size: 12 } },
+      xaxis: { title: { text: "circumferential x (mm)", font: { size: 11 } }, gridcolor: th.grid, zeroline: false },
+      yaxis: { title: { text: "lateral y (mm)", font: { size: 11 } }, gridcolor: th.grid, zeroline: false, scaleanchor: "x", scaleratio: 1, range: [-p.tread_width / 2, p.tread_width / 2] },
+    };
+    Plotly.react($("patchPrev"), data, layout, { responsive: true, displayModeBar: false });
+    var s = r.shape;
+    $("patchStats").innerHTML =
+      row("Shape", r.patch.provenance) +
+      row("Area", s.area_mm2.toFixed(0) + " mm²") +
+      row("Length × width", s.length_mm.toFixed(1) + " × " + s.width_mm.toFixed(1) + " mm") +
+      row("Perimeter", s.perimeter_mm.toFixed(1) + " mm") +
+      row("Compactness (P²/A)", s.compactness.toFixed(2)) +
+      row("Aspect ratio", s.aspect_ratio.toFixed(2)) +
+      row("Lateral centre y", s.y_center_mm.toFixed(1) + " mm") +
+      row("Normal load", r.patch.normal_load.toFixed(0) + " N") +
+      row("Mean pressure", s.mean_pressure_mpa.toFixed(3) + " MPa") +
+      row("Clipped to tread edge", s.clipped ? "yes" : "no");
+  }
+  function row(k, v) { return "<tr><th>" + k + "</th><td class='num'>" + v + "</td></tr>"; }
+
+  function renderDiagnostics() {
+    var st = state.stiffness;
+    var html = "<table class='metrics'><tr><th>Zone</th><th>Blocks</th><th>Kx mean</th><th>Ky mean</th><th>Kz mean</th><th>Kz CoV</th><th>Area mean</th></tr>";
+    var zones = ["center", "intermediate", "shoulder"];
+    for (var i = 0; i < zones.length; i++) {
+      var z = st.zones[zones[i]];
+      html += "<tr><td>" + zones[i] + "</td><td class='num'>" + z.kx.n + "</td><td class='num'>" + z.kx.mean.toFixed(0) +
+        "</td><td class='num'>" + z.ky.mean.toFixed(0) + "</td><td class='num'>" + z.kz.mean.toFixed(0) +
+        "</td><td class='num'>" + (z.kz.cov * 100).toFixed(1) + "%</td><td class='num'>" + z.area.mean.toFixed(0) + " mm²</td></tr>";
+    }
+    var o = st.overall;
+    html += "<tr><td><b>overall</b></td><td class='num'>" + o.kx.n + "</td><td class='num'>" + o.kx.mean.toFixed(0) +
+      "</td><td class='num'>" + o.ky.mean.toFixed(0) + "</td><td class='num'>" + o.kz.mean.toFixed(0) +
+      "</td><td class='num'>" + (o.kz.cov * 100).toFixed(1) + "%</td><td class='num'>" + o.area.mean.toFixed(0) + " mm²</td></tr>";
+    html += "</table>";
+
+    // build flags
+    var r = currentResult();
+    var kzf = E.fluctuationStats(r.kz), kyf = E.fluctuationStats(r.ky);
+    var flags = [];
+    var centerKz = st.zones.center.kz.mean, shoulderKz = st.zones.shoulder.kz.mean;
+    var imbalance = shoulderKz > 0 && centerKz > 0 ? Math.abs(shoulderKz - centerKz) / ((shoulderKz + centerKz) / 2) : 0;
+    flags.push(flag(kzf.cov < 0.05 ? "good" : kzf.cov < 0.12 ? "warn" : "bad", "Kz fluctuation " + (kzf.cov * 100).toFixed(1) + "% over θ"));
+    flags.push(flag(imbalance < 0.25 ? "good" : imbalance < 0.5 ? "warn" : "bad", "centre/shoulder Kz imbalance " + (imbalance * 100).toFixed(0) + "%"));
+    var dom = E.dominantOrders(E.orderSpectrum(r.kz, 60), 3);
+    var domTxt = dom.map(function (d) { return "O" + d.order; }).join(", ");
+    flags.push(flag("good", "dominant Kz orders: " + domTxt));
+    if (state.pattern.meta && state.pattern.meta.uniform_array) flags.push(flag("warn", "uniform array — no pitch modulation in the drawing"));
+    $("flags").innerHTML = flags.join(" ");
+    $("diagTable").innerHTML = html;
+  }
+  function flag(kind, text) { return "<span class='flag " + kind + "'>" + text + "</span>"; }
+
+  // ---- tabs ------------------------------------------------------------
+  function initTabs() {
+    var btns = document.querySelectorAll(".tabs button");
+    for (var i = 0; i < btns.length; i++) {
+      (function (btn) {
+        on(btn, "click", function () {
+          document.querySelectorAll(".tabs button").forEach(function (b) { b.classList.remove("on"); });
+          document.querySelectorAll(".panel").forEach(function (p) { p.classList.remove("on"); });
+          btn.classList.add("on");
+          $("panel-" + btn.dataset.tab).classList.add("on");
+          // Plotly needs a resize nudge when a hidden plot becomes visible
+          if (state.results) window.dispatchEvent(new Event("resize"));
+        });
+      })(btns[i]);
+    }
+  }
+
+  // ---- wire up ---------------------------------------------------------
+  function init() {
+    initTheme();
+    initTabs();
+    editorSetup();
+
+    on($("fileInput"), "change", function (e) { if (e.target.files[0]) loadFile(e.target.files[0]); });
+    on($("sampleBtn"), "click", function () {
+      var t = $("sample-dxf").textContent;
+      buildPatternFromText(t, "130/80R17 Tramplr XR (sample)");
+    });
+    on($("runBtn"), "click", run);
+    on($("shape"), "change", function () { syncShapeFields(); drawEditor(); markStale(); });
+
+    ["cpLength", "cpWidth", "cpCorner", "cpExp", "cpTaper", "cpRot", "cpY", "cpLoad"].forEach(function (id) {
+      on($(id), "input", function () { drawEditor(); markStale(); });
+    });
+    on($("cpAutoY"), "change", function () { $("cpY").disabled = $("cpAutoY").checked; drawEditor(); markStale(); });
+    on($("cpAutoLoad"), "change", function () { $("cpLoad").disabled = $("cpAutoLoad").checked; markStale(); });
+    ["nsd", "draft", "sipes", "sipeDepth", "shore", "poisson", "mode", "quality", "curv", "wheelR", "loadLean", "crownCenter", "crownShoulder", "nPitches"].forEach(function (id) {
+      on($(id), "input", markStale);
+      on($(id), "change", markStale);
+    });
+
+    on($("gammaSel"), "change", function () { state.gammaShown = state.results[parseInt(this.value, 10)].gamma_deg; renderAll(); });
+    on($("heatMetric"), "change", function () { state.heatMetric = this.value; renderLeanHeatmap(); });
+    on($("orderMetric"), "change", function () { state.orderMetric = this.value; renderOrders(); });
+
+    syncShapeFields();
+    $("cpY").disabled = $("cpAutoY").checked;
+    $("cpLoad").disabled = $("cpAutoLoad").checked;
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();

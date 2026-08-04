@@ -219,3 +219,7 @@ __marimo__/
 
 # Project
 .pytest_cache/
+
+# tread_eval build/run artifacts
+out/
+tread_report.html

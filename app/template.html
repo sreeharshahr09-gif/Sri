@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>2W Tread Pattern Evaluation Tool</title>
+  <style>/*__STYLE__*/</style>
+</head>
+<body>
+  <header>
+    <h1>2W Tread Pattern Evaluation</h1>
+    <span class="sub">θ × γ contact &amp; stiffness — runs entirely in your browser</span>
+    <span class="spacer"></span>
+    <span id="timing" class="sub"></span>
+    <button id="themeToggle" class="theme-toggle">☀ Light</button>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="group">
+        <div class="title">1 · Tread plan</div>
+        <div class="filerow">
+          <label class="btn secondary" for="fileInput">Load DXF…</label>
+          <input id="fileInput" type="file" accept=".dxf" style="display:none" />
+          <button id="sampleBtn" class="btn secondary">Load sample</button>
+        </div>
+        <div class="hint">A mould tread-plan DXF (LINE/ARC/POLYLINE). Depth, draft and sipes are supplied below — a 2D plan has none.</div>
+      </div>
+
+      <div class="group">
+        <div class="title">2 · Block depth &amp; compound</div>
+        <div class="field"><label>NSD / block height (mm)</label><input id="nsd" type="number" value="8.5" step="0.5" /></div>
+        <div class="field"><label>Draft angle (deg)</label><input id="draft" type="number" value="3.0" step="0.5" /></div>
+        <div class="field"><label>Lateral sipes / block</label><input id="sipes" type="number" value="0" step="1" min="0" /></div>
+        <div class="field"><label>Sipe depth (frac of NSD)</label><input id="sipeDepth" type="number" value="0.6" step="0.05" min="0" max="1" /></div>
+        <div class="field"><label>Shore A hardness</label><input id="shore" type="number" value="60" step="1" /></div>
+        <div class="field"><label>Poisson ν</label><input id="poisson" type="number" value="0.49" step="0.01" /></div>
+        <div class="field"><label>Boundary mode</label>
+          <select id="mode"><option value="parallel">parallel (gripping)</option><option value="free">free (cantilever)</option></select>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="title">3 · Contact patch (shape)</div>
+        <div class="field"><label>Shape</label>
+          <select id="shape">
+            <option value="rounded">rounded rectangle</option>
+            <option value="rectangle">rectangle</option>
+            <option value="stadium">stadium</option>
+            <option value="ellipse">ellipse</option>
+            <option value="superellipse">superellipse</option>
+            <option value="trapezoid">trapezoid</option>
+            <option value="diamond">diamond</option>
+          </select>
+        </div>
+        <div class="field"><label>Length — circumf. (mm)</label><input id="cpLength" type="number" value="90" step="1" /></div>
+        <div class="field"><label>Width — lateral (mm)</label><input id="cpWidth" type="number" value="50" step="1" /></div>
+        <div class="field" id="rowCorner"><label>Corner radius (mm)</label><input id="cpCorner" type="number" value="12" step="1" /></div>
+        <div class="field" id="rowExp"><label>Exponent</label><input id="cpExp" type="number" value="3" step="0.2" /></div>
+        <div class="field" id="rowTaper"><label>Taper (-1…1)</label><input id="cpTaper" type="number" value="0.3" step="0.1" /></div>
+        <div class="field"><label>Rotation (deg)</label><input id="cpRot" type="number" value="0" step="1" /></div>
+        <div class="field"><label>Lateral centre y (mm)</label><input id="cpY" type="number" value="0" step="1" /></div>
+        <div class="field"><label><input id="cpAutoY" type="checkbox" checked /> auto y from crown/lean</label></div>
+
+        <div class="editor-wrap">
+          <canvas id="editor"></canvas>
+          <div class="editor-legend">Drag the dots: centre = move laterally, right = length, top = width. Blue/green/orange blocks = centre/intermediate/shoulder zones.</div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="title">4 · Load &amp; advanced</div>
+        <div class="field"><label>Vertical load Fz (N)</label><input id="cpLoad" type="number" value="1500" step="50" /></div>
+        <div class="field"><label><input id="cpAutoLoad" type="checkbox" checked /> load rises with lean</label></div>
+        <div class="field" style="display:none"><label><input id="loadLean" type="checkbox" checked /> Fz/cos γ</label></div>
+        <div class="field"><label>Wheel radius (mm)</label><input id="wheelR" type="number" value="320" step="5" /></div>
+        <div class="field"><label>Crown R centre (mm)</label><input id="crownCenter" type="number" placeholder="125" step="5" /></div>
+        <div class="field"><label>Crown R shoulder (mm)</label><input id="crownShoulder" type="number" placeholder="55" step="5" /></div>
+        <div class="field"><label>Pitch count (override)</label><input id="nPitches" type="number" placeholder="auto" step="1" /></div>
+        <div class="field"><label><input id="curv" type="checkbox" /> curvature correction</label></div>
+        <div class="field"><label>Grid quality (nx)</label>
+          <select id="quality"><option value="1024">draft (fast)</option><option value="2048" selected>standard</option><option value="4096">fine (slow)</option></select>
+        </div>
+      </div>
+
+      <button id="runBtn" class="btn block" disabled>▶ Run</button>
+      <input id="loadLean2" type="hidden" />
+    </aside>
+
+    <main class="main">
+      <div id="emptyHint" class="banner">Load a tread-plan DXF (or the bundled sample) to begin. Everything runs locally in your browser — nothing is uploaded.</div>
+      <div id="banner" class="banner" style="display:none"></div>
+
+      <div style="display:flex;gap:14px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <label class="hint">Lean γ shown: <select id="gammaSel" class="field"></select></label>
+        <span id="progress" class="hint"></span>
+      </div>
+
+      <div class="tabs">
+        <button class="on" data-tab="stack">θ sweep + pattern</button>
+        <button data-tab="lean">Lean map</button>
+        <button data-tab="orders">Order content</button>
+        <button data-tab="zones">Zones</button>
+        <button data-tab="patch">Contact patch</button>
+        <button data-tab="diag">Diagnostics</button>
+        <button data-tab="guide">How to read this</button>
+      </div>
+
+      <section id="panel-stack" class="panel on">
+        <div id="cards" class="cards"></div>
+        <div id="thetaStack" class="plot"></div>
+        <div id="patternStrip" class="plot"></div>
+      </section>
+
+      <section id="panel-lean" class="panel">
+        <div class="field wide"><label>Metric</label>
+          <select id="heatMetric"><option value="kz">Kz (vertical)</option><option value="kx">Kx (longitudinal)</option><option value="ky">Ky (lateral)</option><option value="contact_area">contact area</option><option value="block_count">blocks in patch</option><option value="land_ratio">land ratio</option></select>
+        </div>
+        <div id="leanHeat" class="plot"></div>
+      </section>
+
+      <section id="panel-orders" class="panel">
+        <div class="field wide"><label>Metric</label>
+          <select id="orderMetric"><option value="kz">Kz</option><option value="kx">Kx</option><option value="ky">Ky</option><option value="contact_area">contact area</option><option value="block_count">block count</option></select>
+        </div>
+        <div id="orders" class="plot"></div>
+      </section>
+
+      <section id="panel-zones" class="panel">
+        <div id="zones" class="plot"></div>
+      </section>
+
+      <section id="panel-patch" class="panel">
+        <div id="patchPrev" class="plot"></div>
+        <table class="metrics" style="max-width:520px;margin-top:12px"><tbody id="patchStats"></tbody></table>
+      </section>
+
+      <section id="panel-diag" class="panel">
+        <div id="flags" style="margin-bottom:12px"></div>
+        <div id="diagTable"></div>
+      </section>
+
+      <section id="panel-guide" class="panel">
+        <div class="guide"><!--__GUIDE__--></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="overlay" class="overlay">
+    <div class="box"><div class="spinner"></div><div>Computing sweep…</div><div id="progressBig" class="hint"></div></div>
+  </div>
+
+  <script type="text/plain" id="sample-dxf"><!--__SAMPLE_DXF__--></script>
+  <script>/*__PLOTLY__*/</script>
+  <script id="engine-src">/*__ENGINE__*/</script>
+  <script type="text/plain" id="worker-src">/*__WORKER__*/</script>
+  <script>/*__UI__*/</script>
+</body>
+</html>

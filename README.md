@@ -6,8 +6,21 @@ how much of the pattern is in contact and how stiff that contact is — so that
 pitch-sequence-induced flaws (uneven stiffness, noise-prone pitch orders,
 shoulder imbalance) can be caught before a mould is cut.
 
-Output is a single self-contained interactive HTML file: no server, no network,
-no build step to view it.
+There are two ways to use it, sharing one verified compute core:
+
+1. **`tread_tool.html` — a standalone browser app.** Open the file in a browser,
+   load a DXF, type the inputs, drag the contact-patch shape, and the charts
+   update in place. No server, no install, no network — everything runs locally
+   in a Web Worker. This is the interactive tool, the counterpart to the v6.4
+   stiffness tool.
+2. **`build_report.py` — a command-line report generator.** Give it a config
+   file or flags and it writes a static HTML report. Good for batch runs, CI,
+   and as the test oracle the browser app is verified against.
+
+The browser app's engine (`app/engine.js`) is a JavaScript port of the Python
+pipeline, cross-checked against it to a tight tolerance
+(`tests/test_browser_engine.py`), which is in turn verified against the v6.4
+reference — so the numbers the page shows are the numbers the test suite checks.
 
 ### What rests on what
 
@@ -22,10 +35,31 @@ no build step to view it.
 
 The report states this per-run in its own header, so it never claims more than it has.
 
-## Running it on your own tyre
+## The standalone browser app (`tread_tool.html`)
 
-The tool is a command-line program: you give it inputs, it writes a report. The
-report is the **output** — there is no file-upload box inside it.
+The quickest way to try it: build the single file and open it.
+
+```bash
+pip install -r requirements.txt   # numpy, scipy, plotly (build-time only)
+python build_app.py               # writes tread_tool.html (self-contained)
+```
+
+Then open `tread_tool.html` in any modern browser (double-click it). Load your
+own tread-plan DXF with **Load DXF…**, or click **Load sample** to try the
+bundled Tramplr plan. Set the block depth / draft / sipes / compound on the
+left, pick a contact-patch shape and drag its handles, then **Run** — the sweep
+runs in a background Web Worker (about 2–4 s) and every chart updates in place:
+the θ sweep with the rolled-out pattern beneath it on the same angle axis, the
+θ×γ lean map, order content, zone balance, the contact patch, and a diagnostics
+table. A dark/light toggle and a built-in *How to read this* guide are included.
+
+Nothing is uploaded; the file works offline from `file://`.
+
+## Running it on your own tyre (command-line report)
+
+The `build_report.py` path is a command-line program: you give it inputs, it
+writes a static HTML **report** — there is no file-upload box inside that
+report (for the interactive box, use `tread_tool.html` above).
 
 The easiest way in is a config file holding every input:
 
