@@ -16,14 +16,18 @@
       <p id="subtitle" class="sub"></p>
     </div>
   </div>
-  <div id="metaChips" class="chips"></div>
+  <div class="header-right">
+    <div id="metaChips" class="chips"></div>
+    <div id="themeToggle" class="theme-toggle" title="Colour theme"></div>
+  </div>
 </header>
 
+<!-- Filled in by renderBanner() from the run's actual provenance. The static
+     text below is only what a browser with JS disabled would see. -->
 <div id="placeholderBanner" class="banner">
-  <strong>Baseline build.</strong>
-  <span>Pattern geometry, block stiffness and the contact-patch-vs-lean footprint are all
-  placeholder models. Trends and relative comparisons are meaningful; absolute values are not.
-  <a href="#tab-about" data-goto="about">What is a placeholder &rarr;</a></span>
+  <strong>What is measured, what is modelled.</strong>
+  <span>Enable JavaScript to see this run's provenance.
+  <a href="#tab-about" data-goto="about">Details &rarr;</a></span>
 </div>
 
 <nav class="tabs" id="tabs"></nav>
@@ -198,7 +202,26 @@
     </div>
   </div>
 
-  <!-- 7. diagnostics -------------------------------------------------- -->
+  <!-- 7. contact patch -------------------------------------------------- -->
+  <div class="panel" id="tab-patch" hidden>
+    <div class="card">
+      <h2>Contact patch definition</h2>
+      <p class="hint" id="patchCoverageNote"></p>
+      <div id="patchOutlinePlot" class="plot tall"></div>
+    </div>
+    <div class="card">
+      <h2>Where each patch came from</h2>
+      <p class="hint">A generated patch and a measured one are never presented the same way.
+      Solid outlines above are measured; dotted ones are derived or generated.</p>
+      <div id="patchSourceTable" class="tablewrap"></div>
+    </div>
+    <div class="card">
+      <h2>Supplying your own contact patch</h2>
+      <div id="patchHowTo"></div>
+    </div>
+  </div>
+
+  <!-- 8. diagnostics -------------------------------------------------- -->
   <div class="panel" id="tab-diagnostics" hidden>
     <div class="card">
       <h2>Design flags</h2>

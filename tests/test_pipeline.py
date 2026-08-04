@@ -48,7 +48,6 @@ def rect(x0, y0, w, h, **kw):
     kw.setdefault("zone", "center")
     kw.setdefault("height", 8.0)
     kw.setdefault("draft_angle", 0.0)
-    kw.setdefault("nsd", 0.0)
     return Block(polygon=[(x0, y0), (x0 + w, y0), (x0 + w, y0 + h), (x0, y0 + h)], **kw)
 
 
@@ -57,12 +56,26 @@ def test_stiffness_responds_to_geometry_the_right_way():
     base = block_stiffness(rect(0, 0, 20, 20))
     assert block_stiffness(rect(0, 0, 30, 30)).kx > base.kx  # bigger block, stiffer
     assert block_stiffness(rect(0, 0, 20, 20, height=14.0)).kx < base.kx  # taller, softer
-    assert block_stiffness(rect(0, 0, 20, 20, nsd=3.0)).kx < base.kx  # siped, softer
-    assert block_stiffness(rect(0, 0, 20, 20, draft_angle=9.0)).kx < base.kx  # drafted, softer
+    assert block_stiffness(rect(0, 0, 20, 20, n_lateral_sipes=3)).kx < base.kx  # siped, softer
+
+
+def test_positive_draft_stiffens_and_undercut_softens():
+    """Draft adds material toward the base, so a drafted block is stiffer.
+
+    Worth pinning down because the intuition can run the other way: draft does
+    shrink the *contact* face, but the beam model integrates the section over
+    the whole height, and a positive draft widens everything below the surface.
+    """
+    base = block_stiffness(rect(0, 0, 20, 20))
+    assert block_stiffness(rect(0, 0, 20, 20, draft_angle=9.0)).kx > base.kx
+    assert block_stiffness(rect(0, 0, 20, 20, draft_angle=-4.0)).kx < base.kx
 
 
 def test_sipes_soften_circumferential_more_than_lateral():
-    plain, siped = block_stiffness(rect(0, 0, 20, 20)), block_stiffness(rect(0, 0, 20, 20, nsd=2.0))
+    plain = block_stiffness(rect(0, 0, 20, 20))
+    siped = block_stiffness(rect(0, 0, 20, 20, n_lateral_sipes=2))
+    # Lateral sipes cut the block across x, so they relieve circumferential
+    # shear far more than lateral shear.
     assert (siped.kx / plain.kx) < (siped.ky / plain.ky)
 
 
@@ -73,10 +86,11 @@ def test_stiffness_is_directional_for_an_elongated_block():
     assert block_stiffness(rect(0, 0, 8, 40)).kx < block_stiffness(rect(0, 0, 8, 40)).ky
 
 
-def test_stiffness_scales_with_shear_modulus():
-    soft = block_stiffness(rect(0, 0, 20, 20), StiffnessParams(shear_modulus=1.0))
-    stiff = block_stiffness(rect(0, 0, 20, 20), StiffnessParams(shear_modulus=2.0))
+def test_stiffness_scales_with_compound_hardness():
+    soft = block_stiffness(rect(0, 0, 20, 20), StiffnessParams(shore_a=40))
+    stiff = block_stiffness(rect(0, 0, 20, 20), StiffnessParams(shore_a=70))
     assert stiff.kx > soft.kx
+    assert stiff.kz > soft.kz
 
 
 def test_degenerate_block_is_zero_not_an_exception():
@@ -152,7 +166,7 @@ def test_max_supported_lean_is_the_profile_edge_tangent():
 
 def test_measured_footprint_bypasses_the_parametric_model():
     p = contact_patch_from_footprint(25.0, length=90.0, width=40.0, y_center=50.0, tread_width=159.0)
-    assert p.source == "measured-footprint"
+    assert p.source == "measured"
     assert (p.a, p.b) == pytest.approx((45.0, 20.0))
 
 
@@ -164,7 +178,7 @@ def test_fft_sweep_matches_a_brute_force_masked_sum(analysis):
     patch = contact_patch(20.0, pattern.crown(), tread_width=pattern.tread_width)
     result = sweep_lean(pattern, pack, 20.0, patch_override=patch)
 
-    mask, _ = patch.masks(grid.x_rel(), grid.y)
+    mask, _ = patch.masks(grid)
     for theta_idx in (0, 137, 1801, grid.nx // 3):
         shifted = np.roll(mask, theta_idx, axis=1)
         brute_area = float((pack.area * shifted).sum())
@@ -214,8 +228,10 @@ def test_upright_patch_is_centred_and_symmetric(analysis):
     _, _, results = analysis
     upright = results[0]
     assert upright.patch.y_center == pytest.approx(0.0, abs=1e-9)
-    assert upright.shape["pressure_skew_y"] == pytest.approx(0.0, abs=1e-6)
-    assert upright.shape["pressure_skew_x"] == pytest.approx(0.0, abs=1e-6)
+    # Skew is computed on the rasterised pressure field, so it carries a little
+    # discretisation noise; it should be zero to well within a pixel's worth.
+    assert upright.shape["pressure_skew_y"] == pytest.approx(0.0, abs=1e-3)
+    assert upright.shape["pressure_skew_x"] == pytest.approx(0.0, abs=1e-3)
 
 
 def test_patch_compactness_is_near_circular_for_a_round_patch():

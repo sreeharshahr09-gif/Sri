@@ -72,6 +72,18 @@ def _decimate_polygon(poly: Sequence[tuple[float, float]], tol: float = 0.15) ->
     return keep
 
 
+def _cp_provenance(results) -> str:
+    """One word for how the contact patches were obtained across the sweep."""
+    sources = {r.patch.source for r in results}
+    if sources == {"measured"}:
+        return "measured"
+    if "measured" in sources:
+        return "partly-measured"
+    if sources & {"transferred", "interpolated"}:
+        return "derived-from-measured"
+    return "generated"
+
+
 def _display_stride(n: int, target: int) -> int:
     return max(1, int(round(n / max(target, 1))))
 
@@ -128,10 +140,14 @@ def build_payload(
                 "poly": poly,
                 "kx": s.kx,
                 "ky": s.ky,
+                "kxy": s.kxy,
+                "kz": s.kz,
                 "area": s.area,
+                "net_area": s.net_area,
+                "shape_factor": s.shape_factor,
                 "h": b.height,
                 "draft": b.draft_angle,
-                "nsd": b.nsd,
+                "sipes": len(b.effective_sipes()),
                 "slender": s.slenderness,
             }
         )
@@ -163,13 +179,38 @@ def build_payload(
                 "slip_angle_deg": cp_params.lateral_slip_angle,
             },
             "stiffness_params": {
-                "shear_modulus_MPa": stiffness_params.shear_modulus,
-                "youngs_modulus_MPa": stiffness_params.youngs_modulus,
-                "nsd_x_compliance": stiffness_params.nsd_x_compliance,
-                "nsd_y_compliance": stiffness_params.nsd_y_compliance,
+                "shore_a": stiffness_params.shore_a,
+                "youngs_modulus_MPa": stiffness_params.youngs(),
+                "shear_modulus_MPa": stiffness_params.shear(),
+                "gent_k": stiffness_params.gent_k(),
+                "poisson": stiffness_params.poisson,
+                "boundary_mode": stiffness_params.mode,
+                "bulk_modulus_MPa": stiffness_params.bulk_modulus,
+                "model": "Okonieski et al. (2003) beam mechanics + Gent (1959) compression",
+                "verified_against": "Tread_Pattern_Stiffness_Estimation_Tool_v6.4",
             },
             "zone_bounds": zone_bounds(pattern.tread_width),
             "thresholds": M.THRESHOLDS,
+            # Per-input provenance, so the report can state exactly which parts
+            # are measured and which are modelled rather than carrying a blanket
+            # "everything is a placeholder" disclaimer that stops being true.
+            "provenance": {
+                "geometry": (
+                    "measured" if pattern.source == "dxf"
+                    else ("imported" if pattern.source not in ("synthetic",) else "synthetic")
+                ),
+                "geometry_detail": (
+                    f"imported from {os.path.basename(pattern.meta.get('dxf_path', ''))}"
+                    if pattern.source == "dxf" else "generated placeholder pattern"
+                ),
+                "block_depth": (
+                    "assumed" if pattern.source == "dxf" else "synthetic"
+                ),
+                "stiffness": "model",
+                "crown": "measured" if crown.measured else "assumed",
+                "contact_patch": _cp_provenance(results),
+                "thresholds": "uncalibrated",
+            },
         },
         "pattern": {
             "blocks": blocks,

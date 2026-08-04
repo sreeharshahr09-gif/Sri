@@ -248,6 +248,10 @@ def _shoulder_phase(pattern: Pattern, pack: RasterPack) -> dict:
     pitches = mm / mean_pitch if mean_pitch and np.isfinite(mean_pitch) else float("nan")
     if np.isfinite(pitches):
         pitches = float(pitches - round(pitches))
+        # Report the offset in mm consistent with the folded pitch fraction --
+        # a raw lag of one whole pitch is no offset at all, and printing it as
+        # "+91 mm, 0.00 pitch" reads like a contradiction.
+        mm = pitches * mean_pitch
     return {
         "shoulder_phase_mm": float(mm),
         "shoulder_phase_pitches": pitches,
@@ -323,13 +327,13 @@ def wear_proxies(pattern: Pattern, pack: RasterPack, results: Sequence[LeanResul
         if not blocks:
             continue
         sl = np.array([pack.stiffness[b.id].slenderness for b in blocks])
-        nsd = np.array([b.nsd for b in blocks])
+        n_sipes = np.array([len(b.effective_sipes()) for b in blocks])
         area = np.array([b.area() for b in blocks])
         per_zone[z] = {
             "slenderness_mean": float(sl.mean()),
             "slenderness_max": float(sl.max()),
             "slenderness_p90": float(np.percentile(sl, 90)),
-            "nsd_mean": float(nsd.mean()),
+            "sipes_mean": float(n_sipes.mean()),
             "area_mean": float(area.mean()),
             "area_min": float(area.min()),
             "n_blocks": len(blocks),

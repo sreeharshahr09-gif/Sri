@@ -8,8 +8,43 @@ const META = D.meta;
 const C = META.circumference;
 const HALF_W = META.tread_width / 2;
 
-const ZONE_COLOR = { center: "#7cc4ff", intermediate: "#ffd166", shoulder: "#ff8fa3" };
-const LEAN_COLORS = ["#5ec9e8", "#6ba9f0", "#a186e8", "#d96fc0", "#f2726f", "#ff9f45", "#ffd166"];
+/* Chart colours come from the stylesheet, so light and dark themes are
+   defined in exactly one place and the plots cannot drift from the chrome. */
+function cssVar(name, fallback) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+let ZONE_COLOR = {};
+let LEAN_COLORS = [];
+let THEME = {};
+function readTheme() {
+  ZONE_COLOR = {
+    center: cssVar("--center", "#7cc4ff"),
+    intermediate: cssVar("--intermediate", "#ffd166"),
+    shoulder: cssVar("--shoulder", "#ff8fa3")
+  };
+  THEME = {
+    text: cssVar("--text", "#e3eaf2"),
+    muted: cssVar("--muted", "#8fa0b3"),
+    grid: cssVar("--grid", "#1f2937"),
+    axis: cssVar("--axis", "#2b3947"),
+    accent: cssVar("--accent", "#4dd0e1"),
+    flag: cssVar("--flag", "#ff6b6b"),
+    ok: cssVar("--ok", "#5ed6a0"),
+    watch: cssVar("--watch", "#ffc857"),
+    patchLine: cssVar("--patch-line", "#ffffff"),
+    panel: cssVar("--panel", "#141b24")
+  };
+  const dark = isDark();
+  LEAN_COLORS = dark
+    ? ["#5ec9e8", "#6ba9f0", "#a186e8", "#d96fc0", "#f2726f", "#ff9f45", "#ffd166"]
+    : ["#0d7f8f", "#2f6fb5", "#6a4fb8", "#a8327f", "#c62828", "#b35c00", "#8a6d0b"];
+}
+function isDark() {
+  const explicit = document.documentElement.getAttribute("data-theme");
+  if (explicit) return explicit === "dark";
+  return !window.matchMedia("(prefers-color-scheme: light)").matches;
+}
 const leanColor = (i) => LEAN_COLORS[i % LEAN_COLORS.length];
 
 const state = {
@@ -28,23 +63,25 @@ const pct = (v, n = 1) => (v === null || !isFinite(v) ? "–" : (100 * v).toFixe
 /* ------------------------------------------------------------------ */
 /* plotly defaults                                                     */
 /* ------------------------------------------------------------------ */
-const AXIS = {
-  gridcolor: "#1f2937", zerolinecolor: "#2b3947", linecolor: "#2b3947",
-  tickfont: { size: 10.5, color: "#8fa0b3" },
-  automargin: true
-};
+function axisBase() {
+  return {
+    gridcolor: THEME.grid, zerolinecolor: THEME.axis, linecolor: THEME.axis,
+    tickfont: { size: 10.5, color: THEME.muted },
+    automargin: true
+  };
+}
 /* Plotly 3 removed the `titlefont` axis attribute; a title is now {text, font}.
    Every axis goes through here so that stays true in one place. */
 function ax(title, extra) {
-  const a = Object.assign({}, AXIS, extra || {});
-  if (title) a.title = { text: title, font: { size: 11.5, color: "#8fa0b3" } };
+  const a = Object.assign(axisBase(), extra || {});
+  if (title) a.title = { text: title, font: { size: 11.5, color: THEME.muted } };
   return a;
 }
 function layout(extra) {
   return Object.assign({
     paper_bgcolor: "rgba(0,0,0,0)",
     plot_bgcolor: "rgba(0,0,0,0)",
-    font: { color: "#c9d5e2", size: 11.5 },
+    font: { color: THEME.text, size: 11.5 },
     margin: { l: 58, r: 18, t: 10, b: 40 },
     hovermode: "closest",
     showlegend: true,
@@ -58,6 +95,31 @@ const CONFIG = { displayModeBar: false, responsive: true };
 /* ------------------------------------------------------------------ */
 /* header                                                              */
 /* ------------------------------------------------------------------ */
+function renderBanner() {
+  const pv = META.provenance || {};
+  const el = $("#placeholderBanner");
+  const modelled = [];
+  const measured = [];
+  (pv.geometry === "measured" ? measured : modelled).push(
+    pv.geometry === "measured" ? "tread geometry (from DXF)" : "tread geometry (synthetic)");
+  if (pv.block_depth === "assumed") modelled.push("non-skid depth and draft (assumed, not in the drawing)");
+  if (pv.crown === "measured") measured.push("crown profile"); else modelled.push("crown profile (guessed)");
+  if (pv.contact_patch === "measured") measured.push("contact patch (measured at every lean angle)");
+  else if (pv.contact_patch === "partly-measured") measured.push("contact patch (measured, rescaled to unmeasured lean angles)");
+  else if (pv.contact_patch === "derived-from-measured") modelled.push("contact patch (derived from a measurement)");
+  else modelled.push("contact patch (generated)");
+
+  const stiffNote =
+    "Block stiffness is the Okonieski beam model, verified number-for-number against " +
+    "Tread Pattern Stiffness Estimation Tool v6.4.";
+  el.innerHTML =
+    "<strong>What is measured, what is modelled.</strong><span>" +
+    (measured.length ? "<b>From data:</b> " + measured.join("; ") + ". " : "") +
+    (modelled.length ? "<b>Modelled or assumed:</b> " + modelled.join("; ") + ". " : "") +
+    stiffNote +
+    ' Flag thresholds are uncalibrated. <a href="#tab-about" data-goto="about">Details &rarr;</a></span>';
+}
+
 function renderHeader() {
   $("#subtitle").textContent =
     META.name + " · " + META.source + " source · generated " + META.generated;
@@ -91,6 +153,7 @@ const TABS = [
   ["lean", "Lean sweep"],
   ["zones", "Zones"],
   ["grooves", "Grooves"],
+  ["patch", "Contact patch"],
   ["diagnostics", "Diagnostics"],
   ["about", "About"]
 ];
@@ -121,6 +184,51 @@ function showTab(id) {
   });
   // The rotation slider only means something where theta is on screen.
   $("#controls").style.display = (id === "pattern" || id === "contact") ? "" : "none";
+}
+
+/* ------------------------------------------------------------------ */
+/* theme                                                               */
+/* ------------------------------------------------------------------ */
+const THEME_KEY = "treadeval-theme";
+
+function applyTheme(mode) {
+  if (mode === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", mode);
+  try { localStorage.setItem(THEME_KEY, mode); } catch (e) { /* private mode */ }
+  document.querySelectorAll("#themeToggle button").forEach((b) =>
+    b.classList.toggle("on", b.dataset.theme === mode));
+  readTheme();
+  redrawAll();
+}
+
+function renderTheme() {
+  let saved = "auto";
+  try { saved = localStorage.getItem(THEME_KEY) || "auto"; } catch (e) { /* ignore */ }
+  $("#themeToggle").innerHTML = [["auto", "Auto"], ["light", "Light"], ["dark", "Dark"]]
+    .map(([v, label]) => '<button data-theme="' + v + '">' + label + "</button>").join("");
+  $("#themeToggle").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-theme]");
+    if (b) applyTheme(b.dataset.theme);
+  });
+  // Follow the OS while in auto mode.
+  window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+    if (!document.documentElement.getAttribute("data-theme")) { readTheme(); redrawAll(); }
+  });
+  applyTheme(saved);
+}
+
+function redrawAll() {
+  if (!window.__treadReady) return;
+  drawPattern();
+  drawCrown();
+  drawOverview();
+  drawContactTab();
+  drawOrders();
+  drawLeanTab();
+  drawZones();
+  drawGrooves();
+  drawPatchTab();
+  onThetaChange();
 }
 
 function renderControls() {
@@ -240,7 +348,7 @@ function patternTraces() {
   const oy = P.outline.map((p) => p[1]);
   traces.push({
     x: ox, y: oy, name: "contact patch", type: "scatter", mode: "lines",
-    line: { color: "#ffffff", width: 2 }, hoverinfo: "skip"
+    line: { color: THEME.patchLine, width: 2 }, hoverinfo: "skip"
   });
 
   // pressure contours: p/p0 = 1 - (x/a)^2 - ((y-yc)/b)^2
@@ -258,7 +366,7 @@ function patternTraces() {
       traces.push({
         x: xs, y: ys, type: "scatter", mode: "lines",
         name: (f * 100).toFixed(0) + "% p₀",
-        line: { color: "rgba(255,255,255," + (0.55 - k * 0.12) + ")", width: 1, dash: "dot" },
+        line: { color: THEME.patchLine, width: 1, dash: "dot" }, opacity: 0.55 - k * 0.12,
         hoverinfo: "skip", showlegend: k === 0
       });
     });
@@ -277,7 +385,7 @@ function patternTraces() {
     });
     traces.push({
       x: xs, y: ys, type: "scatter", mode: "lines", name: "travel direction",
-      line: { color: "#4dd0e1", width: 2 }, hoverinfo: "skip"
+      line: { color: THEME.accent, width: 2 }, hoverinfo: "skip"
     });
   }
 
@@ -287,7 +395,7 @@ function patternTraces() {
     traces.push({
       x: [cx, cx], y: [P.y_center, cy], type: "scatter", mode: "markers",
       name: "centroid: geometric / actual",
-      marker: { color: ["#8fa0b3", "#ff6b6b"], size: [8, 10], symbol: ["circle-open", "x"] },
+      marker: { color: [THEME.muted, THEME.flag], size: [8, 10], symbol: ["circle-open", "x"] },
       hovertemplate: "y = %{y:.2f} mm<extra></extra>"
     });
   }
@@ -313,7 +421,7 @@ function zoneShapes() {
   [b.center[1], b.intermediate[1]].forEach((v) => {
     [-v, v].forEach((yy) => out.push({
       type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: yy, y1: yy,
-      line: { color: "#3a4b5e", width: 1, dash: "dot" }, layer: "below"
+      line: { color: THEME.axis, width: 1, dash: "dot" }, layer: "below"
     }));
   });
   return out;
@@ -333,18 +441,18 @@ function drawCrown() {
   const traces = [
     {
       x: cr.y_proj, y: cr.z, type: "scatter", mode: "lines", name: "crown",
-      line: { color: "#8fa0b3", width: 2 },
+      line: { color: THEME.muted, width: 2 },
       hovertemplate: "y' %{x:.1f} mm<br>drop %{y:.2f} mm<extra></extra>"
     },
     {
       x: [yp - roadLen * Math.cos(phi), yp + roadLen * Math.cos(phi)],
       y: [zp - roadLen * Math.sin(phi), zp + roadLen * Math.sin(phi)],
       type: "scatter", mode: "lines", name: "road plane",
-      line: { color: "#4dd0e1", width: 2, dash: "dash" }, hoverinfo: "skip"
+      line: { color: THEME.accent, width: 2, dash: "dash" }, hoverinfo: "skip"
     },
     {
       x: [yp], y: [zp], type: "scatter", mode: "markers", name: "contact point",
-      marker: { color: "#ff6b6b", size: 9 }, hoverinfo: "skip"
+      marker: { color: THEME.flag, size: 9 }, hoverinfo: "skip"
     }
   ];
   Plotly.react("crownPlot", traces, layout({
@@ -396,14 +504,14 @@ function drawOverview() {
 function cursorShape() {
   return {
     type: "line", x0: state.theta, x1: state.theta, yref: "paper", y0: 0, y1: 1,
-    line: { color: "#ffffff", width: 1.4 }
+    line: { color: THEME.patchLine, width: 1.4 }
   };
 }
 
 function pitchTicks() {
   return D.pattern.pitch_starts.map((s) => ({
     type: "line", x0: (s / C) * 360, x1: (s / C) * 360, yref: "paper", y0: 0, y1: 0.055,
-    line: { color: "#5b6b7d", width: 1 }
+    line: { color: THEME.muted, width: 1 }
   }));
 }
 
@@ -424,7 +532,7 @@ function anomalyShapes(kind) {
   const bands = (curLean().anomalies || {})[kind] || [];
   return bands.map((b) => ({
     type: "rect", x0: b.start, x1: Math.max(b.end, b.start + 0.6), yref: "paper", y0: 0, y1: 1,
-    fillcolor: "rgba(255,107,107,0.16)", line: { width: 0 }, layer: "below"
+    fillcolor: THEME.flag, opacity: 0.16, line: { width: 0 }, layer: "below"
   }));
 }
 
@@ -465,7 +573,7 @@ function drawOrders() {
   const P = D.pitch;
   Plotly.react("pitchSeqPlot", [{
     x: P.lengths.map((_, i) => i), y: P.lengths, type: "bar",
-    marker: { color: "#4dd0e1" }, name: "pitch length",
+    marker: { color: THEME.accent }, name: "pitch length",
     hovertemplate: "pitch %{x}<br>%{y:.2f} mm<extra></extra>"
   }], layout({
     showlegend: false,
@@ -474,14 +582,14 @@ function drawOrders() {
     yaxis: ax("length (mm)"),
     shapes: [{
       type: "line", xref: "paper", x0: 0, x1: 1, y0: P.mean, y1: P.mean,
-      line: { color: "#8fa0b3", width: 1, dash: "dash" }
+      line: { color: THEME.muted, width: 1, dash: "dash" }
     }]
   }), CONFIG);
 
   if (P.sequence_spectrum) {
     Plotly.react("pitchSpecPlot", [{
       x: P.sequence_spectrum.orders, y: P.sequence_spectrum.amplitude, type: "bar",
-      marker: { color: "#a186e8" },
+      marker: { color: leanColor(2) },
       hovertemplate: "order %{x}<br>%{y:.3f}<extra></extra>"
     }], layout({
       showlegend: false,
@@ -507,8 +615,8 @@ function drawOrders() {
     margin: { l: 30, r: 30, t: 30, b: 30 },
     polar: {
       bgcolor: "rgba(0,0,0,0)",
-      radialaxis: { gridcolor: "#1f2937", linecolor: "#2b3947", tickfont: { size: 9.5, color: "#8fa0b3" }, angle: 90 },
-      angularaxis: { direction: "clockwise", rotation: 90, gridcolor: "#1f2937", linecolor: "#2b3947", tickfont: { size: 9.5, color: "#8fa0b3" } }
+      radialaxis: { gridcolor: THEME.grid, linecolor: THEME.axis, tickfont: { size: 9.5, color: THEME.muted }, angle: 90 },
+      angularaxis: { direction: "clockwise", rotation: 90, gridcolor: THEME.grid, linecolor: THEME.axis, tickfont: { size: 9.5, color: THEME.muted } }
     }
   }), CONFIG);
 }
@@ -520,10 +628,10 @@ function drawLeanTab() {
   const S = D.summary;
   const g = S.map((r) => r.gamma_deg);
   const series = [
-    ["area_cov", "contact area", "#5ec9e8"],
-    ["kx_cov", "Kₓ", "#ffd166"],
-    ["ky_cov", "Kᵧ", "#ff8fa3"],
-    ["block_count_cov", "blocks in contact", "#a186e8"]
+    ["area_cov", "contact area", leanColor(0)],
+    ["kx_cov", "Kₓ", ZONE_COLOR.intermediate],
+    ["ky_cov", "Kᵧ", ZONE_COLOR.shoulder],
+    ["block_count_cov", "blocks in contact", leanColor(2)]
   ].map(([k, name, color]) => ({
     x: g, y: S.map((r) => r[k]), type: "scatter", mode: "lines+markers", name: name,
     line: { color: color, width: 2 }, marker: { size: 7 },
@@ -538,15 +646,15 @@ function drawLeanTab() {
   Plotly.react("blockLeanPlot", [
     {
       x: g, y: S.map((r) => r.block_count_mean), type: "scatter", mode: "lines+markers",
-      name: "effective (area-weighted)", line: { color: "#5ec9e8", width: 2 }, marker: { size: 7 }
+      name: "effective (area-weighted)", line: { color: leanColor(0), width: 2 }, marker: { size: 7 }
     },
     {
       x: g, y: S.map((r) => r.block_count_discrete_mean), type: "scatter", mode: "lines+markers",
-      name: "discrete (>50% inside)", line: { color: "#a186e8", width: 2, dash: "dot" }, marker: { size: 7 }
+      name: "discrete (>50% inside)", line: { color: leanColor(2), width: 2, dash: "dot" }, marker: { size: 7 }
     },
     {
       x: g, y: S.map((r) => r.block_count_min), type: "scatter", mode: "lines",
-      name: "worst θ", line: { color: "#ff6b6b", width: 1, dash: "dash" }
+      name: "worst θ", line: { color: THEME.flag, width: 1, dash: "dash" }
     }
   ], layout({
     margin: { l: 58, r: 16, t: 30, b: 42 },
@@ -555,9 +663,9 @@ function drawLeanTab() {
   }), CONFIG);
 
   Plotly.react("shapeLeanPlot", [
-    { x: g, y: S.map((r) => r.patch_length), type: "scatter", mode: "lines+markers", name: "length", line: { color: "#5ec9e8", width: 2 } },
-    { x: g, y: S.map((r) => r.patch_width), type: "scatter", mode: "lines+markers", name: "width", line: { color: "#ffd166", width: 2 } },
-    { x: g, y: S.map((r) => r.patch_area), type: "scatter", mode: "lines+markers", name: "area", yaxis: "y2", line: { color: "#ff8fa3", width: 2, dash: "dot" } }
+    { x: g, y: S.map((r) => r.patch_length), type: "scatter", mode: "lines+markers", name: "length", line: { color: leanColor(0), width: 2 } },
+    { x: g, y: S.map((r) => r.patch_width), type: "scatter", mode: "lines+markers", name: "width", line: { color: ZONE_COLOR.intermediate, width: 2 } },
+    { x: g, y: S.map((r) => r.patch_area), type: "scatter", mode: "lines+markers", name: "area", yaxis: "y2", line: { color: ZONE_COLOR.shoulder, width: 2, dash: "dot" } }
   ], layout({
     margin: { l: 58, r: 62, t: 30, b: 42 },
     xaxis: ax("lean angle γ (deg)"),
@@ -568,19 +676,19 @@ function drawLeanTab() {
   Plotly.react("centroidPlot", [
     {
       x: g, y: S.map((r) => r.centroid_geometric_mm), type: "scatter", mode: "lines+markers",
-      name: "geometric (lean + crown)", line: { color: "#8fa0b3", width: 2 }, marker: { size: 7 }
+      name: "geometric (lean + crown)", line: { color: THEME.muted, width: 2 }, marker: { size: 7 }
     },
     {
       x: g, y: S.map((r) => r.centroid_residual_p2p_mm), type: "bar",
-      name: "residual, peak-to-peak", marker: { color: "#ff6b6b" }, yaxis: "y2"
+      name: "residual, peak-to-peak", marker: { color: THEME.flag }, yaxis: "y2"
     },
     {
       x: g, y: S.map((r) => r.centroid_residual_wander_rms_mm), type: "bar",
-      name: "residual wander, RMS", marker: { color: "#ffd166" }, yaxis: "y2"
+      name: "residual wander, RMS", marker: { color: THEME.watch }, yaxis: "y2"
     },
     {
       x: g, y: S.map((r) => r.centroid_residual_bias_mm), type: "bar",
-      name: "residual bias (constant offset)", marker: { color: "#5b6b7d" }, yaxis: "y2"
+      name: "residual bias (constant offset)", marker: { color: THEME.muted }, yaxis: "y2"
     }
   ], layout({
     barmode: "group",
@@ -639,7 +747,7 @@ function drawZones() {
     yaxis: ax("land ratio", { tickformat: ".0%", range: [0, 1] }),
     shapes: [{
       type: "line", xref: "paper", x0: 0, x1: 1, y0: Z.overall_land_ratio, y1: Z.overall_land_ratio,
-      line: { color: "#ffffff", width: 1, dash: "dash" }
+      line: { color: THEME.patchLine, width: 1, dash: "dash" }
     }]
   }), CONFIG);
 
@@ -695,7 +803,7 @@ function drawGrooves() {
 
   traces.push({
     x: base.bin_centers, y: base.angle_to_travel, type: "scatter", mode: "lines+markers",
-    name: "groove angle (pattern)", line: { color: "#ffffff", width: 2.2 }, marker: { size: 5 },
+    name: "groove angle (pattern)", line: { color: THEME.patchLine, width: 2.2 }, marker: { size: 5 },
     hovertemplate: "y %{x:.0f} mm<br>%{y:.1f}° to travel<extra></extra>"
   });
 
@@ -712,7 +820,7 @@ function drawGrooves() {
     x: (byZone[z] || []).map((b) => b.area),
     y: (byZone[z] || []).map((b) => b.kx),
     text: (byZone[z] || []).map((b) => b.id + "<br>h " + fmt(b.h, 2) + " mm, draft " + fmt(b.draft, 1) +
-      "°, nsd " + fmt(b.nsd, 2)),
+      "°, " + b.sipes + " sipes"),
     mode: "markers", type: "scatter", name: z,
     marker: { color: ZONE_COLOR[z], size: 7, opacity: 0.75, line: { width: 0 } },
     hovertemplate: "%{text}<br>area %{x:.0f} mm²<br>Kₓ %{y:.0f} N/mm<extra></extra>"
@@ -728,14 +836,102 @@ function zoneShapesVertical() {
   [b.center[1], b.intermediate[1]].forEach((v) => {
     [-v, v].forEach((xx) => out.push({
       type: "line", x0: xx, x1: xx, yref: "paper", y0: 0, y1: 1,
-      line: { color: "#3a4b5e", width: 1, dash: "dot" }, layer: "below"
+      line: { color: THEME.axis, width: 1, dash: "dot" }, layer: "below"
     }));
   });
   return out;
 }
 
 /* ------------------------------------------------------------------ */
-/* 7. diagnostics                                                      */
+/* 7. contact patch definition                                          */
+/* ------------------------------------------------------------------ */
+function drawPatchTab() {
+  // Outlines of every lean angle's patch, drawn in tread coordinates.
+  const EDGE = 1.15 * Math.max(...D.leans.map((l) => l.shape.length_mm)) / 2;
+  const traces = D.leans.map((l, i) => {
+    const o = l.patch.outline;
+    return {
+      x: o.map((p) => p[0]).concat([o[0][0]]),
+      y: o.map((p) => p[1]).concat([o[0][1]]),
+      type: "scatter", mode: "lines", fill: "toself",
+      fillcolor: leanColor(i) + (i === state.gamma ? "44" : "18"),
+      line: { color: leanColor(i), width: i === state.gamma ? 2.4 : 1.2,
+              dash: l.patch.measured ? "solid" : "dot" },
+      name: fmt(l.gamma_deg, 0) + "° · " + l.patch.source,
+      hovertemplate: "x %{x:.1f}<br>y %{y:.1f} mm<extra>" + fmt(l.gamma_deg, 0) + "°</extra>"
+    };
+  });
+  traces.push({
+    x: [-EDGE, EDGE, null, -EDGE, EDGE], y: [-HALF_W, -HALF_W, null, HALF_W, HALF_W],
+    type: "scatter", mode: "lines", name: "tread edge",
+    line: { color: THEME.muted, width: 1, dash: "dash" }, hoverinfo: "skip"
+  });
+  Plotly.react("patchOutlinePlot", traces, layout({
+    margin: { l: 58, r: 16, t: 30, b: 42 },
+    xaxis: ax("circumferential offset from patch centre (mm)"),
+    yaxis: ax("lateral (mm)", { scaleanchor: "x", scaleratio: 1 })
+  }), CONFIG);
+
+  // Where each lean angle's patch came from.
+  const rows = D.leans.map((l) => [
+    fmt(l.gamma_deg, 0) + "°",
+    '<span class="src src-' + l.patch.source + '">' + l.patch.source + "</span>",
+    fmt(l.shape.length_mm, 1) + " × " + fmt(l.shape.width_mm, 1),
+    fmt(l.patch_area, 0),
+    fmt(l.patch.y_center, 1),
+    fmt(l.patch.peak_pressure, 2),
+    l.patch.normal_load === null ? "–" : fmt(l.patch.normal_load, 0),
+    l.patch.clipped ? "yes" : "no",
+    l.patch.provenance || "–"
+  ]);
+  $("#patchSourceTable").innerHTML = table(
+    ["γ", "source", "L × W (mm)", "area (mm²)", "centre y (mm)", "peak p (MPa)",
+     "load (N)", "clipped", "how this patch was obtained"], rows);
+
+  const measured = D.leans.filter((l) => l.patch.measured).length;
+  const note = measured === D.leans.length
+    ? "Every lean angle uses a measured footprint."
+    : measured
+      ? measured + " of " + D.leans.length + " lean angles use a measured footprint; the rest are " +
+        "derived from it or generated. Dotted outlines above are not measured."
+      : "No measured footprint was supplied, so every patch is generated from the model. " +
+        "Importing even a single upright footprint improves all of them — see below.";
+  $("#patchCoverageNote").textContent = note;
+
+  $("#patchHowTo").innerHTML = `
+    <p>The contact patch is an <strong>input</strong>, not a fixed assumption. It can be any closed
+    shape: the sweep only ever rasterises the outline, so a traced footprint with ragged edges works
+    exactly like a generated ellipse.</p>
+    <h3>Import a measured footprint</h3>
+    <p>An outline (<code>.csv</code> of <code>x,y</code> in mm, <code>.json</code>, or <code>.dxf</code>),
+    a pressure map (<code>.csv</code> matrix from pressure film or FEA), or both:</p>
+    <pre>python build_report.py --cp footprint_00deg.csv --cp-gamma 0 --cp-load 1500</pre>
+    <p>For several lean angles, list them in a manifest and pass that instead:</p>
+    <pre>python build_report.py --cp footprints.json</pre>
+    <h3>Generate one from inputs you already have</h3>
+    <pre>python build_report.py --cp-model rhyne --inflation 250 --load 1500 --section-width 130</pre>
+    <p><code>rhyne</code> derives the footprint from load and inflation pressure — the same relations
+    the stiffness tool uses. <code>winkler</code> (the default) derives it from the crown profile by
+    elastic-foundation contact, and is the only model that produces the lean trend from first
+    principles.</p>
+    <h3>When a measurement is missing for a lean angle</h3>
+    <p>A static upright footprint is easy to capture; a leaned one needs a rig almost nobody has.
+    So the tool falls back in a fixed order, and labels every patch with the rung it landed on:</p>
+    <ol>
+      <li><strong>measured</strong> — a footprint at that exact lean angle.</li>
+      <li><strong>interpolated</strong> — two measured footprints bracket it; the shapes are morphed.</li>
+      <li><strong>transferred</strong> — a measured footprint at another lean angle, rescaled by the
+      length, width and centroid trend the model predicts. The measured <em>shape</em> is kept, and only
+      the <em>change</em> with lean is modelled — which is the part a model gets right and a
+      measurement cannot give you.</li>
+      <li><strong>generated</strong> — no measurement anywhere; the parametric model supplies everything.</li>
+    </ol>
+    <p>That ordering is why importing one upright footprint is worth so much: it upgrades every lean
+    angle from <em>generated</em> to <em>transferred</em>.</p>`;
+}
+
+/* ------------------------------------------------------------------ */
+/* 8. diagnostics                                                      */
 /* ------------------------------------------------------------------ */
 function drawDiagnostics() {
   $("#flagList").innerHTML = D.flags.map((f) =>
@@ -764,10 +960,10 @@ function drawDiagnostics() {
   const W = D.wear.per_zone;
   const wrows = Object.keys(W).map((z) => [
     z, fmt(W[z].slenderness_mean, 3), fmt(W[z].slenderness_p90, 3),
-    fmt(W[z].nsd_mean, 2), fmt(W[z].area_mean, 0), fmt(W[z].area_min, 0), W[z].n_blocks
+    fmt(W[z].sipes_mean, 2), fmt(W[z].area_mean, 0), fmt(W[z].area_min, 0), W[z].n_blocks
   ]);
   $("#wearTable").innerHTML = table(
-    ["zone", "slenderness mean", "p90", "mean NSD", "mean area", "min area", "blocks"], wrows) +
+    ["zone", "slenderness mean", "p90", "mean sipes", "mean area", "min area", "blocks"], wrows) +
     '<p class="hint" style="margin-top:8px">Slenderness is block height divided by its smallest plan dimension; ' +
     "higher means more squirm.</p>";
 }
@@ -777,35 +973,56 @@ function drawDiagnostics() {
 /* ------------------------------------------------------------------ */
 function drawAbout() {
   const m = META;
+  const pv = m.provenance || {};
   $("#aboutBody").innerHTML = `
-    <p>This build proves the pipeline, not the numbers. Three models in it are stand-ins,
-    each isolated in one place so it can be replaced without touching anything else.</p>
-    <h3>1. Pattern geometry &mdash; <code>tread_eval/synthetic.py</code></h3>
-    <p>A generated directional block pattern${m.pattern_meta && m.pattern_meta.repeat_length_mm
-      ? " built on a " + fmt(m.pattern_meta.repeat_length_mm, 2) + " mm repeat arrayed " +
-        m.pattern_meta.n_repeats + " times" : ""}.
-    Replaced by a DXF parser that emits the same <code>Pattern</code> schema.</p>
-    <h3>2. Block stiffness &mdash; <code>tread_eval/stiffness.py</code></h3>
-    <p>Bonded-rubber-pad shear with a shape-factor correction, in series with cantilever bending,
-    softened by draft angle and sipe density. Replaced by the Winkler beam-mechanics model
-    (Okonieski et al. 2003) from the existing block-stiffness tool. Only
-    <code>block_stiffness()</code> changes.</p>
-    <h3>3. Contact patch vs. lean &mdash; <code>tread_eval/contact_patch.py</code></h3>
-    <p>Winkler elastic-foundation contact on a doubly curved crown: the contact point walks to where
-    the tread tangent is horizontal, the lateral radius there sets the patch width, and the load
-    closes the system. Replaced by measured footprint-vs-lean data through
-    <code>contact_patch_from_footprint()</code>, which bypasses the parametric model entirely.</p>
-    <h3>Also provisional</h3>
-    <ul>
-      <li>The crown profile is ${m.crown_measured ? "measured." : "a dual-radius guess, not a measured cross-section."}</li>
-      <li>Flag thresholds are uncalibrated; the ranking between designs is more trustworthy than any single verdict.</li>
-      <li>Curvature correction is ${m.curvature_correction ? "ON" : "OFF"}. Leave it off for mould DXFs, which are already
-      developed correctly; turn it on for competitor patterns digitised flat, where the shoulder is compressed.</li>
-    </ul>
-    <h3>What is not a placeholder</h3>
-    <p>The rasterisation, the FFT-based &theta; sweep, the zone binning, the order analysis, the
-    centroid decomposition and the groove-angle-to-travel geometry are exact given their inputs.
-    Feed real geometry in and those numbers are real.</p>`;
+    <p>Different parts of this analysis rest on very different footings. They are listed
+    separately below rather than behind one blanket disclaimer, because treating a verified
+    model and a guessed constant the same way helps nobody.</p>
+
+    <h3>Verified against the reference tool</h3>
+    <p><strong>Block stiffness</strong> (<code>tread_eval/stiffness.py</code>) is the Okonieski
+    et al. (2003) beam-mechanics model with Gent (1959) compression: Castigliano slice integration
+    of the draft-tapered section for K<sub>x</sub>/K<sub>y</sub>/K<sub>xy</sub>, and the
+    Gent&ndash;Lindley shape factor with bulk correction for K<sub>z</sub>. It is a port of
+    <code>effectiveK()</code> and <code>computeKz()</code> from
+    <em>Tread Pattern Stiffness Estimation Tool v6.4</em>. The test suite executes that tool's own
+    JavaScript and compares both implementations over randomised block geometry &mdash; prismatic,
+    drafted, siped, and drafted&#8209;and&#8209;siped &mdash; agreeing to about 1 part in 10<sup>11</sup>.</p>
+
+    <h3>Exact, given their inputs</h3>
+    <p>Rasterisation, the FFT &theta;&times;&gamma; sweep, zone binning, order analysis, the
+    centroid decomposition and the groove-angle-to-travel geometry involve no fitted constants.
+    Feed real geometry in and these numbers are real.</p>
+
+    <h3>${pv.geometry === "measured" ? "Measured" : "Placeholder"} &mdash; tread geometry</h3>
+    <p>${pv.geometry === "measured"
+        ? "Imported from a tread-plan DXF: block outlines are the drawing's own geometry. " +
+          "What the drawing cannot carry is depth &mdash; non-skid depth, draft angle and sipe " +
+          "layout were supplied as inputs, and they drive stiffness strongly, so they are worth " +
+          "getting right before reading absolute K values."
+        : "A generated placeholder pattern. Import a real tread plan with <code>--dxf</code>."}</p>
+
+    <h3>${pv.contact_patch === "measured" ? "Measured" : pv.contact_patch === "partly-measured" ? "Partly measured" : "Modelled"} &mdash; contact patch</h3>
+    <p>See the <a href="#tab-patch" data-goto="patch">Contact patch</a> tab for exactly which lean
+    angle used which source. The patch can be any closed shape, imported as an outline or a pressure
+    map; where no measurement exists it is generated, and where a measurement exists at a different
+    lean angle it is rescaled rather than replaced.</p>
+
+    <h3>Assumed &mdash; crown profile</h3>
+    <p>${m.crown_measured
+        ? "A measured cross-section is in use."
+        : "A dual-radius guess, not a measured cross-section. It sets where the contact point sits " +
+          "at each lean angle and how much the patch narrows, so it matters as much as the patch " +
+          "model itself. Supply a measured section to remove this assumption."}</p>
+
+    <h3>Uncalibrated &mdash; flag thresholds</h3>
+    <p>The pass/watch/flag limits are engineering guesses, not correlated against measured noise or
+    wear. The <em>ranking</em> between two designs is far more trustworthy than any single verdict.</p>
+
+    <h3>Curvature correction</h3>
+    <p>Currently ${m.curvature_correction ? "ON" : "OFF"}. Leave it off for mould DXFs, which are
+    already developed correctly; turn it on for competitor patterns digitised flat, where the
+    shoulder is compressed by the projection.</p>`;
 
   const rows = [
     ["pattern", m.name + " (" + m.source + ")"],
@@ -854,12 +1071,16 @@ function onLeanChange() {
   drawContactTab();
   drawOrders();
   drawGrooves();
+  drawPatchTab();
   onThetaChange();
 }
 
 function init() {
+  readTheme();
   renderHeader();
+  renderBanner();
   renderTabs();
+  renderTheme();
   renderControls();
   drawPattern();
   drawCrown();
@@ -870,9 +1091,11 @@ function init() {
   drawLeanTab();
   drawZones();
   drawGrooves();
+  drawPatchTab();
   drawDiagnostics();
   drawAbout();
   showTab("pattern");
+  window.__treadReady = true;
   onThetaChange();
   window.addEventListener("resize", () => {
     document.querySelectorAll(".plot").forEach((el) => { if (el.data) Plotly.Plots.resize(el); });

@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .contact_patch import CPParams, ContactPatch, DEFAULT_CP_PARAMS, contact_patch
+from .contact_patch import CPLibrary, CPParams, ContactPatch, DEFAULT_CP_PARAMS, contact_patch
 from .raster import Grid, RasterPack
 from .schema import Pattern, ZONES
 
@@ -36,6 +36,7 @@ class LeanResult:
     land_ratio: np.ndarray  # contact_area / patch area
     kx: np.ndarray  # N/mm, summed over blocks in contact
     ky: np.ndarray
+    kz: np.ndarray  # N/mm, vertical compression summed over blocks in contact
     block_count: np.ndarray  # effective (sum of per-block area fractions)
     block_count_discrete: np.ndarray  # blocks with >50% of their area inside
     theta_discrete: np.ndarray
@@ -56,6 +57,7 @@ class LeanResult:
             "land_ratio": self.land_ratio[s].tolist(),
             "kx": self.kx[s].tolist(),
             "ky": self.ky[s].tolist(),
+            "kz": self.kz[s].tolist(),
             "block_count": self.block_count[s].tolist(),
             "block_count_discrete": self.block_count_discrete.tolist(),
             "theta_discrete": self.theta_discrete.tolist(),
@@ -66,6 +68,9 @@ class LeanResult:
             "patch_perimeter": self.patch_perimeter,
             "patch_load": self.patch_load,
             "patch": {
+                "source": self.patch.source,
+                "provenance": self.patch.provenance,
+                "measured": self.patch.source == "measured",
                 "y_center": self.patch.y_center,
                 "a": self.patch.a,
                 "b": self.patch.b,
@@ -76,8 +81,7 @@ class LeanResult:
                 "normal_load": self.patch.normal_load,
                 "path_radius": (None if not np.isfinite(self.patch.path_radius) else self.patch.path_radius),
                 "clipped": bool(self.patch.clipped),
-                "outline": self.patch.outline(121).tolist(),
-                "source": self.patch.source,
+                "outline": self.patch.outline.tolist(),
             },
             "shape": self.shape,
         }
@@ -108,8 +112,13 @@ class MapFFTCache:
 
 
 def _patch_kernels(patch: ContactPatch, grid: Grid) -> tuple[np.ndarray, np.ndarray]:
-    """Binary and pressure kernels, centred on column 0 with wraparound."""
-    binary, pressure = patch.masks(grid.x_rel(), grid.y)
+    """Binary and pressure kernels, centred on column 0 with wraparound.
+
+    Delegated to the patch itself, which scanline-fills its outline -- so an
+    imported footprint of any shape produces a kernel exactly like a generated
+    ellipse does, and the rest of the sweep cannot tell them apart.
+    """
+    binary, pressure = patch.masks(grid)
     return binary.astype(np.float32), pressure.astype(np.float32)
 
 
@@ -162,11 +171,7 @@ def _shape_metrics(patch: ContactPatch, binary: np.ndarray, pressure: np.ndarray
     """Metrics of the patch itself -- independent of where it sits on the pattern."""
     px = grid.pixel_area
     area = float(binary.sum()) * px
-    # Deduplicate the clamped run along the tread edge before measuring, so a
-    # clipped patch does not accumulate perimeter from coincident points.
-    outline = patch.outline(721)
-    keep = np.concatenate([[True], np.hypot(*(np.diff(outline, axis=0).T)) > 1e-9])
-    per = _polygon_perimeter(outline[keep])
+    per = patch.perimeter()
     x_rel = grid.x_rel()
     xx = np.broadcast_to(x_rel[None, :], binary.shape)
     yy = np.broadcast_to(grid.y[:, None], binary.shape)
@@ -212,11 +217,22 @@ def sweep_lean(
     discrete_samples: int = 360,
     patch_override: ContactPatch | None = None,
     cache: "MapFFTCache | None" = None,
+    library: CPLibrary | None = None,
 ) -> LeanResult:
-    """Full 360 deg rotation sweep at one lean angle."""
+    """Full 360 deg rotation sweep at one lean angle.
+
+    The patch comes from ``patch_override`` if given, otherwise from
+    ``library`` (which resolves measured / interpolated / transferred /
+    generated in that order), otherwise from the default generator.
+    """
     grid = pack.grid
     cache = cache or MapFFTCache(pack)
-    patch = patch_override or contact_patch(gamma_deg, pattern.crown(), cp_params, pattern.tread_width)
+    if patch_override is not None:
+        patch = patch_override
+    elif library is not None:
+        patch = library.patch_for(gamma_deg)
+    else:
+        patch = contact_patch(gamma_deg, pattern.crown(), cp_params, pattern.tread_width)
     binary, pressure = _patch_kernels(patch, grid)
 
     kb = np.fft.rfft(binary, axis=1)
@@ -228,6 +244,7 @@ def sweep_lean(
     contact_area = corr("area", pack.area, kb)
     kx = corr("kx", pack.kx, kb)
     ky = corr("ky", pack.ky, kb)
+    kz = corr("kz", pack.kz, kb)
     block_count = corr("block_frac", pack.block_frac, kb)
     y_moment = corr("y_moment", pack.y_moment, kb)
     pressure_area = corr("area", pack.area, kp)
@@ -251,6 +268,7 @@ def sweep_lean(
         land_ratio=land_ratio,
         kx=np.maximum(kx, 0.0),
         ky=np.maximum(ky, 0.0),
+        kz=np.maximum(kz, 0.0),
         block_count=np.maximum(block_count, 0.0),
         block_count_discrete=count_d,
         theta_discrete=theta_d,
@@ -270,6 +288,10 @@ def sweep(
     lean_angles: list[float],
     cp_params: CPParams = DEFAULT_CP_PARAMS,
     discrete_samples: int = 360,
+    library: CPLibrary | None = None,
 ) -> list[LeanResult]:
     cache = MapFFTCache(pack)
-    return [sweep_lean(pattern, pack, g, cp_params, discrete_samples, cache=cache) for g in lean_angles]
+    return [
+        sweep_lean(pattern, pack, g, cp_params, discrete_samples, cache=cache, library=library)
+        for g in lean_angles
+    ]

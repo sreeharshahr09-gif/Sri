@@ -20,6 +20,8 @@ import sys
 import time
 
 from tread_eval.contact_patch import CPParams, max_supported_lean
+from tread_eval.cp_io import build_library, load_cp_any
+from tread_eval.dxf import BlockDefaults, load_pattern as load_dxf_pattern
 from tread_eval.raster import make_grid, rasterise
 from tread_eval.report import write_report
 from tread_eval.schema import Pattern
@@ -33,7 +35,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 
     src = p.add_argument_group("pattern source")
+    src.add_argument("--dxf", help="tread-plan DXF to analyse (the production input)")
     src.add_argument("--pattern", help="load a Pattern from JSON instead of generating one")
+    src.add_argument("--nsd", type=float, default=8.0,
+                     help="non-skid depth (block height) in mm for DXF import (default: 8.0)")
+    src.add_argument("--draft", type=float, default=3.0, help="mould draft angle, deg (default: 3.0)")
+    src.add_argument("--sipes", type=int, default=0,
+                     help="lateral sipes per block for DXF import (default: 0)")
+    src.add_argument("--n-pitches", type=int, help="override the pitch count inferred from the DXF")
     src.add_argument("--pitch-mode", default="random", choices=["random", "tonal_group", "uniform"],
                      help="synthetic pitch sequencing strategy (default: random)")
     src.add_argument("--circumference", type=float, help="override tyre circumference, mm")
@@ -54,6 +63,31 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     help="keep Fz constant with lean instead of Fz/cos(gamma)")
     an.add_argument("--slip-angle", type=float, default=0.0,
                     help="steady sideslip added to the travel direction, deg")
+    an.add_argument("--shore", type=float, default=60.0, help="tread compound Shore A (default: 60)")
+    an.add_argument("--poisson", type=float, default=0.49, help="Poisson ratio (default: 0.49)")
+    an.add_argument("--boundary", choices=["parallel", "free"], default="parallel",
+                    help="block top boundary condition; parallel = held flat by friction (default)")
+
+    cp = p.add_argument_group("contact patch")
+    cp.add_argument("--cp", help="measured footprint: outline (.csv/.json/.dxf), pressure map, or a manifest (.json)")
+    cp.add_argument("--cp-gamma", type=float, default=0.0,
+                    help="lean angle of a single imported footprint, deg (default: 0)")
+    cp.add_argument("--cp-pressure", action="store_true",
+                    help="treat --cp as a pressure map rather than an outline")
+    cp.add_argument("--cp-units", default="mm", choices=["mm", "cm", "m", "in"])
+    cp.add_argument("--cp-pressure-units", default="MPa", choices=["MPa", "kPa", "bar", "psi", "N/mm2"])
+    cp.add_argument("--cp-pressure-dx", type=float, help="pressure map cell size in x, mm")
+    cp.add_argument("--cp-pressure-dy", type=float, help="pressure map cell size in y, mm")
+    cp.add_argument("--cp-load", type=float, help="normal load the imported footprint was taken at, N")
+    cp.add_argument("--cp-model", choices=["winkler", "rhyne"], default="winkler",
+                    help="generator used where no measurement is available (default: winkler)")
+    cp.add_argument("--no-cp-transfer", action="store_true",
+                    help="do not rescale a measured footprint to unmeasured lean angles; generate instead")
+    cp.add_argument("--inflation", type=float, default=250.0, help="inflation pressure, kPa (rhyne)")
+    cp.add_argument("--section-width", type=float, default=130.0, help="section width, mm (rhyne)")
+    cp.add_argument("--aspect-ratio", type=float, default=80.0, help="aspect ratio, %% (rhyne)")
+    cp.add_argument("--rim-diameter", type=float, default=17.0, help="rim diameter, in (rhyne)")
+    cp.add_argument("--tyre-type", default="2w", choices=["2w", "pcr", "tbr", "lt"])
     an.add_argument("--discrete-samples", type=int, default=360,
                     help="theta samples for the discrete block count (default: 360)")
 
@@ -74,7 +108,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     t0 = time.time()
 
-    if args.pattern:
+    if args.dxf:
+        defaults = BlockDefaults(
+            height=args.nsd, draft_angle=args.draft, n_lateral_sipes=args.sipes
+        )
+        pattern, import_report = load_dxf_pattern(
+            args.dxf, defaults, n_pitches=args.n_pitches
+        )
+        if not args.quiet:
+            print(import_report.summary())
+    elif args.pattern:
         pattern = Pattern.load_json(args.pattern)
     else:
         sp = SyntheticParams(pitch_mode=args.pitch_mode)
@@ -110,8 +153,30 @@ def main(argv: list[str] | None = None) -> int:
         wheel_radius=args.wheel_radius,
         load_rises_with_lean=not args.no_lean_load_rise,
         lateral_slip_angle=args.slip_angle,
+        inflation_kpa=args.inflation,
+        section_width_mm=args.section_width,
+        aspect_ratio=args.aspect_ratio,
+        rim_diameter_in=args.rim_diameter,
+        tyre_type=args.tyre_type,
     )
-    stiffness_params = StiffnessParams()
+    stiffness_params = StiffnessParams(
+        shore_a=args.shore, poisson=args.poisson, mode=args.boundary
+    )
+
+    imported = None
+    if args.cp:
+        imported = load_cp_any(
+            args.cp, pattern.tread_width, gamma_deg=args.cp_gamma, units=args.cp_units,
+            pressure_units=args.cp_pressure_units, dx=args.cp_pressure_dx,
+            dy=args.cp_pressure_dy, load_n=args.cp_load, as_pressure=args.cp_pressure,
+        )
+        if not args.quiet:
+            print(imported.summary())
+    library = build_library(
+        pattern.crown(), pattern.tread_width, cp_params,
+        generator=args.cp_model, imported=imported,
+        allow_transfer=not args.no_cp_transfer,
+    )
 
     grid = make_grid(pattern, args.resolution)
     if not args.quiet:
@@ -120,7 +185,11 @@ def main(argv: list[str] | None = None) -> int:
 
     pack = rasterise(pattern, grid, curvature_correction=args.curvature_correction,
                      stiffness_params=stiffness_params)
-    results = sweep(pattern, pack, lean_angles, cp_params, args.discrete_samples)
+    results = sweep(pattern, pack, lean_angles, cp_params, args.discrete_samples, library=library)
+    if not args.quiet:
+        print("\ncontact patch source by lean angle:")
+        for row in library.coverage(lean_angles):
+            print(f"  {row['gamma_deg']:5.1f} deg  {row['source']:<13} {row['provenance']}")
 
     payload = write_report(
         args.output, pattern, pack, results, cp_params, stiffness_params,

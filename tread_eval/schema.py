@@ -40,6 +40,31 @@ class Pitch:
 
 
 @dataclass
+class Sipe:
+    """A sipe (thin slot) cutting into a block from the tread surface.
+
+    Either a straight cut between ``p1`` and ``p2``, or a polyline through
+    ``points``.  ``depth`` is measured down from the tread surface, so a sipe
+    with ``depth == block.height`` cuts the block clean through.  The stiffness
+    model splits the block into sub-blocks along these lines, which act as
+    parallel springs above the sipe's root and as one block below it.
+    """
+
+    p1: tuple[float, float] | None = None
+    p2: tuple[float, float] | None = None
+    points: list[tuple[float, float]] = field(default_factory=list)
+    depth: float = 0.0  # mm below the tread surface
+    width: float = 0.5  # mm slot thickness
+
+    def polyline(self) -> list[tuple[float, float]]:
+        if self.points:
+            return [tuple(p) for p in self.points]
+        if self.p1 is not None and self.p2 is not None:
+            return [tuple(self.p1), tuple(self.p2)]
+        return []
+
+
+@dataclass
 class Block:
     """A single tread element (land area) of the unwrapped pattern.
 
@@ -52,9 +77,50 @@ class Block:
     pitch_id: str
     polygon: list[tuple[float, float]]
     zone: Zone
-    height: float  # mm, block height above groove base
-    draft_angle: float  # deg, per-side mould draft
-    nsd: float  # sipe/void density proxy, 0 = no sipes
+    height: float
+    """Non-skid depth (NSD) in mm -- the block height above the groove base.
+
+    This is the quantity the reference stiffness tool calls ``nsd``.  It sets
+    both the bending length of the block and the Gent shape factor, so it is the
+    single most influential per-block number in the stiffness model.
+    """
+    draft_angle: float = 0.0  # deg, per-side mould draft (positive = base wider)
+    sipes: list[Sipe] = field(default_factory=list)
+    n_lateral_sipes: int = 0
+    """Convenience: evenly spaced lateral sipes to synthesise when ``sipes`` is empty.
+
+    A DXF outline does not carry sipe geometry, and a designer usually thinks in
+    "three sipes across this block" rather than in coordinates.  This is expanded
+    into real :class:`Sipe` objects by :meth:`effective_sipes`, matching the
+    reference tool's sipe-count path, so the stiffness model only ever sees
+    explicit geometry.
+    """
+    sipe_depth_fraction: float = 0.6  # of NSD, for synthesised sipes
+    sipe_width: float = 0.5  # mm, for synthesised sipes
+    shore_a: float | None = None  # per-block compound; None = pattern default
+
+    def effective_sipes(self) -> list[Sipe]:
+        """Explicit sipes, synthesising evenly spaced ones from the count if needed."""
+        if self.sipes:
+            return self.sipes
+        if self.n_lateral_sipes <= 0:
+            return []
+        p = np.asarray(self.polygon, dtype=float)
+        xmin, xmax = float(p[:, 0].min()), float(p[:, 0].max())
+        ymin, ymax = float(p[:, 1].min()), float(p[:, 1].max())
+        ext = max(xmax - xmin, ymax - ymin) * 0.2
+        depth = min(self.sipe_depth_fraction * self.height, self.height)
+        out = []
+        for i in range(self.n_lateral_sipes):
+            f = (i + 1) / (self.n_lateral_sipes + 1)
+            xc = xmin + f * (xmax - xmin)
+            out.append(Sipe(p1=(xc, ymin - ext), p2=(xc, ymax + ext), depth=depth, width=self.sipe_width))
+        return out
+
+    @property
+    def nsd(self) -> float:
+        """Alias for :attr:`height` -- the reference tool's name for it."""
+        return self.height
 
     # --- derived geometry -------------------------------------------------
     def area(self) -> float:
@@ -340,18 +406,7 @@ class Pattern:
             tyre_circumference=float(d["tyre_circumference"]),
             tread_width=float(d["tread_width"]),
             pitches=[Pitch(**p) for p in d["pitches"]],
-            blocks=[
-                Block(
-                    id=b["id"],
-                    pitch_id=b["pitch_id"],
-                    polygon=[tuple(pt) for pt in b["polygon"]],
-                    zone=b["zone"],
-                    height=b["height"],
-                    draft_angle=b["draft_angle"],
-                    nsd=b["nsd"],
-                )
-                for b in d["blocks"]
-            ],
+            blocks=[_block_from_dict(b) for b in d["blocks"]],
             crown_radius_profile=crown,
             name=d.get("name", "pattern"),
             source=d.get("source", "unknown"),
@@ -366,6 +421,23 @@ class Pattern:
     def load_json(cls, path: str) -> "Pattern":
         with open(path) as fh:
             return cls.from_dict(json.load(fh))
+
+
+def _block_from_dict(b: dict) -> Block:
+    """Rebuild a Block from JSON, tolerating patterns written before sipes existed."""
+    return Block(
+        id=b["id"],
+        pitch_id=b["pitch_id"],
+        polygon=[tuple(pt) for pt in b["polygon"]],
+        zone=b["zone"],
+        height=b["height"],
+        draft_angle=b.get("draft_angle", 0.0),
+        sipes=[Sipe(**s) for s in b.get("sipes", [])],
+        n_lateral_sipes=int(b.get("n_lateral_sipes", 0)),
+        sipe_depth_fraction=b.get("sipe_depth_fraction", 0.6),
+        sipe_width=b.get("sipe_width", 0.5),
+        shore_a=b.get("shore_a"),
+    )
 
 
 def zone_bounds(tread_width: float, center_frac: float = 0.34, intermediate_frac: float = 0.72) -> dict[str, tuple[float, float]]:

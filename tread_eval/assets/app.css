@@ -1,3 +1,7 @@
+/* Two themes. `data-theme` on <html> wins over the OS preference, so the
+   in-page toggle can override a dark-mode desktop and vice versa. Plot colours
+   are read back out of these variables at draw time, which is why every chart
+   redraws on a theme switch rather than being restyled piecemeal. */
 :root {
   --bg: #0c1016;
   --panel: #141b24;
@@ -6,13 +10,74 @@
   --text: #e3eaf2;
   --muted: #8fa0b3;
   --accent: #4dd0e1;
+  --grid: #1f2937;
+  --axis: #2b3947;
   --center: #7cc4ff;
   --intermediate: #ffd166;
   --shoulder: #ff8fa3;
   --flag: #ff6b6b;
   --watch: #ffc857;
   --ok: #5ed6a0;
+  --patch-line: #ffffff;
+  --banner-bg: #2a2312;
+  --banner-line: #4a3b16;
+  --banner-text: #f0dfb0;
+  --banner-strong: #ffd166;
+  --seg-on: #23384a;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #f4f6f9;
+  --panel: #ffffff;
+  --panel-2: #eef2f7;
+  --line: #d3dbe5;
+  --text: #16202b;
+  --muted: #5b6b7d;
+  --accent: #0d7f8f;
+  --grid: #e3e9f0;
+  --axis: #c2cdda;
+  --center: #1f6fb2;
+  --intermediate: #b8860b;
+  --shoulder: #c2185b;
+  --flag: #c62828;
+  --watch: #a06800;
+  --ok: #1b7a4b;
+  --patch-line: #101820;
+  --banner-bg: #fdf5e0;
+  --banner-line: #e4d09a;
+  --banner-text: #6b5410;
+  --banner-strong: #8a6d0b;
+  --seg-on: #d7e6f2;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --bg: #f4f6f9;
+    --panel: #ffffff;
+    --panel-2: #eef2f7;
+    --line: #d3dbe5;
+    --text: #16202b;
+    --muted: #5b6b7d;
+    --accent: #0d7f8f;
+    --grid: #e3e9f0;
+    --axis: #c2cdda;
+    --center: #1f6fb2;
+    --intermediate: #b8860b;
+    --shoulder: #c2185b;
+    --flag: #c62828;
+    --watch: #a06800;
+    --ok: #1b7a4b;
+    --patch-line: #101820;
+    --banner-bg: #fdf5e0;
+    --banner-line: #e4d09a;
+    --banner-text: #6b5410;
+    --banner-strong: #8a6d0b;
+    --seg-on: #d7e6f2;
+    color-scheme: light;
+  }
 }
 
 * { box-sizing: border-box; }
@@ -35,19 +100,20 @@ html, body {
   flex-wrap: wrap;
   padding: 16px 24px;
   border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, #121924, #0e141c);
+  background: var(--panel);
 }
 .brand { display: flex; align-items: center; gap: 14px; }
 .brand .mark {
   width: 34px; height: 34px; border-radius: 8px; flex: none;
   background:
     repeating-linear-gradient(115deg, var(--accent) 0 3px, transparent 3px 9px),
-    linear-gradient(160deg, #1d6f7d, #0f3d47);
-  box-shadow: inset 0 0 0 1px #2b4551;
+    color-mix(in srgb, var(--accent) 30%, var(--panel-2));
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 .topbar h1 { margin: 0; font-size: 17px; letter-spacing: .2px; font-weight: 600; }
 .sub { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; }
 
+.header-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .chip {
   font: 11.5px/1 var(--mono);
@@ -63,12 +129,12 @@ html, body {
 .banner {
   display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
   margin: 0; padding: 10px 24px;
-  background: #2a2312;
-  border-bottom: 1px solid #4a3b16;
-  color: #f0dfb0;
+  background: var(--banner-bg);
+  border-bottom: 1px solid var(--banner-line);
+  color: var(--banner-text);
   font-size: 12.5px;
 }
-.banner strong { color: #ffd166; }
+.banner strong { color: var(--banner-strong); }
 .banner a { color: var(--accent); text-decoration: none; }
 .banner a:hover { text-decoration: underline; }
 
@@ -76,7 +142,7 @@ html, body {
 .tabs {
   display: flex; gap: 2px; padding: 0 16px; flex-wrap: wrap;
   border-bottom: 1px solid var(--line);
-  background: #0e141c;
+  background: var(--bg);
   position: sticky; top: 0; z-index: 20;
 }
 .tabs button {
@@ -110,7 +176,7 @@ html, body {
 }
 .seg button:last-child { border-right: 0; }
 .seg button:hover { color: var(--text); }
-.seg button.on { background: #23384a; color: #fff; }
+.seg button.on { background: var(--seg-on); color: var(--text); }
 .seg button.on[data-lean] { box-shadow: inset 0 -2px 0 currentColor; }
 
 .slider-row { display: flex; align-items: center; gap: 10px; }
@@ -119,7 +185,7 @@ html, body {
   width: 30px; height: 30px; flex: none; border-radius: 6px; cursor: pointer;
   border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
 }
-.icon-btn:hover { background: #23384a; }
+.icon-btn:hover { background: var(--seg-on); }
 .mono { font-family: var(--mono); color: var(--text); }
 
 /* ---------- layout ---------- */
@@ -138,7 +204,7 @@ main { padding: 18px 24px 40px; }
   padding: 14px 16px 10px;
   min-width: 0;
 }
-.card.highlight { border-color: #2e5b6b; box-shadow: 0 0 0 1px #1b3d49 inset; }
+.card.highlight { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .card h2 { margin: 0 0 2px; font-size: 14px; font-weight: 600; letter-spacing: .1px; }
 .card .hint { margin: 0 0 8px; color: var(--muted); font-size: 12px; max-width: 90ch; }
 
@@ -153,7 +219,7 @@ table { border-collapse: collapse; width: 100%; font: 12px/1.45 var(--mono); }
 th, td { padding: 6px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
 th:first-child, td:first-child { text-align: left; }
 thead th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); }
-tbody tr:hover { background: #18222e; }
+tbody tr:hover { background: var(--panel-2); }
 
 /* ---------- stats / flags ---------- */
 .statlist { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; font: 12px/1.6 var(--mono); padding-top: 8px; }
@@ -174,9 +240,9 @@ tbody tr:hover { background: #18222e; }
 .flag .val { font: 12px/1.4 var(--mono); color: var(--text); text-align: right; white-space: nowrap; }
 
 .pill { display: inline-block; padding: 1px 7px; border-radius: 20px; font: 10.5px/17px var(--mono); }
-.pill.flag { background: #43151b; color: #ff9a9a; }
-.pill.watch { background: #40361a; color: var(--watch); }
-.pill.ok { background: #16382b; color: var(--ok); }
+.pill.flag { background: color-mix(in srgb, var(--flag) 22%, transparent); color: var(--flag); }
+.pill.watch { background: color-mix(in srgb, var(--watch) 22%, transparent); color: var(--watch); }
+.pill.ok { background: color-mix(in srgb, var(--ok) 22%, transparent); color: var(--ok); }
 
 #aboutBody h3 { font-size: 13px; margin: 16px 0 4px; }
 #aboutBody p, #aboutBody li { color: var(--muted); font-size: 12.5px; max-width: 95ch; }
@@ -188,3 +254,31 @@ footer {
   color: var(--muted); font-size: 11.5px;
 }
 .muted { color: var(--muted); }
+
+/* theme toggle ------------------------------------------------------- */
+.theme-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--line); border-radius: 7px; overflow: hidden;
+}
+.theme-toggle button {
+  appearance: none; border: 0; background: var(--panel-2); color: var(--muted);
+  padding: 6px 10px; font: 11.5px/1 var(--mono); cursor: pointer;
+}
+.theme-toggle button.on { background: var(--seg-on); color: var(--text); }
+.theme-toggle button:hover { color: var(--text); }
+
+/* contact-patch source badges ---------------------------------------- */
+.src { display: inline-block; padding: 1px 7px; border-radius: 4px; font: 10.5px/17px var(--mono); }
+.src-measured     { background: color-mix(in srgb, var(--ok) 22%, transparent); color: var(--ok); }
+.src-interpolated { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+.src-transferred  { background: color-mix(in srgb, var(--watch) 22%, transparent); color: var(--watch); }
+.src-winkler, .src-rhyne { background: color-mix(in srgb, var(--muted) 22%, transparent); color: var(--muted); }
+
+#patchHowTo h3 { font-size: 13px; margin: 16px 0 4px; }
+#patchHowTo p, #patchHowTo li { color: var(--muted); font-size: 12.5px; max-width: 95ch; }
+#patchHowTo code { font-family: var(--mono); color: var(--accent); font-size: 12px; }
+#patchHowTo pre {
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: 8px 10px; font: 11.5px/1.5 var(--mono); color: var(--text);
+  overflow-x: auto; margin: 6px 0 10px;
+}

@@ -9,29 +9,44 @@ shoulder imbalance) can be caught before a mould is cut.
 Output is a single self-contained interactive HTML file: no server, no network,
 no build step to view it.
 
-> **This is a baseline / proof-of-pipeline build.** Real tread geometry and the
-> real stiffness formula are not available yet, so three models are placeholders.
-> Each is isolated behind one function so it can be swapped without touching
-> anything else — see [Swap-in points](#swap-in-points). The pipeline around them
-> (rasterisation, the FFT sweep, zoning, order analysis, centroid decomposition,
-> groove-angle geometry) is exact given its inputs.
+### What rests on what
+
+| | Status |
+|---|---|
+| **Block stiffness** | **Verified.** Okonieski et al. (2003) beam mechanics + Gent (1959) compression, ported from *Tread Pattern Stiffness Estimation Tool v6.4* and checked against that tool's own JavaScript over randomised geometry — agreement to ~1 part in 10¹¹. |
+| **Tread geometry** | **Real**, when a tread-plan DXF is imported. Depth (NSD, draft, sipes) is not in a 2D drawing and must be supplied; it is recorded as an assumption. |
+| **Contact patch** | **Your choice.** Import a measured footprint of any shape, generate one from load + inflation pressure, or let the crown-based model produce it. Every lean angle is labelled with which of those it used. |
+| **Rasterisation, FFT sweep, zoning, orders, centroid split, groove geometry** | Exact given their inputs — no fitted constants. |
+| **Crown profile** | Assumed (dual-radius) unless a measured cross-section is supplied. |
+| **Flag thresholds** | Uncalibrated. The *ranking* between designs is trustworthy; a single verdict is not. |
+
+The report states this per-run in its own header, so it never claims more than it has.
 
 ## Quick start
 
 ```bash
 pip install -r requirements.txt
-python build_report.py                 # writes out/tread_report.html
+
+# analyse a real tread plan
+python build_report.py --dxf data/130_80R17_Tramplr_XR_tread_plan.dxf --nsd 8.5 --draft 3 --sipes 1
+
+# with a measured footprint, so every lean angle is anchored to real data
+python build_report.py --dxf data/130_80R17_Tramplr_XR_tread_plan.dxf \
+    --cp data/footprints/upright_00deg.csv --cp-load 1500
+
+# no inputs at all: synthetic pattern, generated patch
+python build_report.py
 ```
 
 Open `out/tread_report.html` in any browser. The terminal also prints a summary
 table and the flag list, which is enough to compare design variants in CI.
 
 ```bash
-python build_report.py --pitch-mode tonal_group -o out/tonal.html   # a deliberately tonal sequence
 python build_report.py --lean 0,15,30,45 --resolution 0.25          # finer sweep
 python build_report.py --curvature-correction                       # digitised competitor pattern
-python build_report.py --pattern my_pattern.json                    # analyse a saved Pattern
-python -m pytest tests/ -q
+python build_report.py --shore 65 --boundary free                   # compound / boundary condition
+python build_report.py --cp-model rhyne --inflation 250             # footprint from inflation pressure
+python -m pytest tests/ -q                                          # includes the stiffness cross-check
 ```
 
 ## What it computes
@@ -98,41 +113,140 @@ angle `φ(y)`, drop `z(y)`, projected position `y_proj(y)` and local radius
 is what makes its three consumers agree: the lean model inverts `φ`, the
 curvature correction is `1/cos φ`, and the contact model reads `r`.
 
-## Swap-in points
+## Block stiffness
 
-| Placeholder | Where | Replace with |
-|---|---|---|
-| Synthetic pitch/block generator | `tread_eval/synthetic.py` → `generate_pattern()` | a DXF parser emitting the same `Pattern` schema |
-| Geometric Kx/Ky formula | `tread_eval/stiffness.py` → `block_stiffness()` | the Winkler beam-mechanics model (Okonieski et al. 2003) from the existing block-stiffness HTML tool |
-| Parametric CP-vs-lean model | `tread_eval/contact_patch.py` → `contact_patch()` | measured footprint-vs-lean data, fed through `contact_patch_from_footprint()` which bypasses the parametric model entirely |
-| Guessed crown profile | `CrownProfile.dual_radius()` | `CrownProfile.from_cross_section(y_projected, z)` from a measured section |
-| Flag thresholds | `tread_eval/metrics.py` → `THRESHOLDS` | values calibrated against real noise/wear correlation |
+`tread_eval/stiffness.py` is a port of `effectiveK()` / `computeKz()` from
+*Tread Pattern Stiffness Estimation Tool v6.4*:
 
-Each is one function. Nothing else in the pipeline reads their internals.
+- **Shear (Kx, Ky, Kxy)** — Castigliano slice integration along the block
+  height. At each height the draft-tapered cross-section contributes a bending
+  compliance weighted by the local moment arm and a shear compliance from its
+  area; the 2×2 inverse gives the stiffness matrix, so `Ixy` couples the two
+  directions. Sipes split the block into sub-blocks acting as parallel springs
+  within a layer, and layers stack in series up the height.
+- **Compression (Kz)** — Gent shape factor `S = A_net/(NSD·P)`, effective
+  modulus `E_eff = E(1 + 2kS²)` with the bulk-compressibility correction, then
+  `Kz = E_eff·A/NSD`.
+- **Compound** — Shore A maps to E and the Gent k through Gent's Table 8.1.
 
-### What the placeholders actually do
+**NSD is non-skid depth** — the block height in mm. It is `Block.height`.
 
-**Block stiffness.** A block is a short rubber column bonded top and bottom.
-Bulk shear `G·A/h` stiffened by the bonded-pad shape factor `(1 + 2kS²)`, in
-series with cantilever bending `3EI/h³`, using the polygon's own second moments
-so the result is directional. Draft angle tapers the load-bearing area; sipe
-density (NSD) adds compliance, more in the circumferential direction than the
-lateral one.
+### Verifying the port
 
-**Contact patch vs. lean.** Winkler elastic-foundation contact on a doubly
-curved crown. The interference `u = δ − x²/2R_eff − (y−y_c)²/2R_lat` makes the
-patch an ellipse with `a = √(2·R_eff·δ)`, `b = √(2·R_lat·δ)`, and requiring the
-pressure to carry the load closes it: `δ = √(Fz / (k_f·π·√(R_eff·R_lat)))`.
-Lean enters geometrically, not by fitting: the contact point walks to where the
-tread tangent is horizontal, the (much smaller) lateral radius there narrows the
-patch, and the normal load rises as `Fz/cos γ`. The patch is clipped at the
-tread edge, and that clipping is reported rather than hidden.
+`verify/tool_v64_reference.js` holds those functions extracted verbatim from the
+HTML tool. `tests/test_stiffness_vs_tool.py` executes them with node and
+compares against the Python over randomised geometry — prismatic, drafted,
+siped, and drafted-and-siped — plus `polygonProps`, `offsetPoly` and the Shore
+tables. Worst observed relative error is ~1e-11. If node is absent the tests
+skip and say the port is unverified.
+
+```bash
+python -m pytest tests/test_stiffness_vs_tool.py -q -s   # prints the worst error per quantity
+```
+
+One deliberate inheritance: the reference clips sipe lines to the polygon with
+Liang–Barsky, which treats the block as convex. For a concave block that
+slightly over-reports the sipe slot length, so `Kz` is a little conservative
+there. Kept as-is so the two implementations agree; the shear path does a proper
+polygon split and is unaffected.
+
+## Contact patch
+
+The patch is an **input**, not a hidden assumption, and it can be **any closed
+shape** — the sweep only rasterises the outline, so a traced footprint with
+ragged edges behaves exactly like a generated ellipse.
+
+### Sources, in order of trust
+
+| Source | What it is |
+|---|---|
+| `measured` | A footprint you imported at that lean angle: outline and/or pressure map. |
+| `interpolated` | Two measured footprints bracket that lean angle; shapes are morphed on a common radial parametrisation. |
+| `transferred` | A measured footprint at *another* lean angle, rescaled by the length/width/centroid trend the model predicts. **The measured shape is kept; only the change with lean is modelled.** |
+| `rhyne` | Generated from load and inflation pressure — the same relations as `computeContactPatch()` in the stiffness tool, with a `2w` row added. |
+| `winkler` | Generated from the crown profile by elastic-foundation contact. The only source that is lean-native from first principles, hence the last-resort default. |
+
+`CPLibrary.patch_for(gamma)` applies that order and records which rung it landed
+on. The report's **Contact patch** tab shows the outline and provenance of every
+lean angle, and never draws a generated patch the same way as a measured one.
+
+**Why this matters:** a static upright footprint is easy to capture; a leaned one
+needs a rig almost nobody has. Importing a single upright footprint upgrades
+*every* lean angle from `generated` to `transferred`.
+
+### Importing
+
+```bash
+# one footprint outline (csv of x,y in mm; also .json, .dxf)
+python build_report.py --cp footprint_00deg.csv --cp-gamma 0 --cp-load 1500
+
+# a pressure map from film or FEA
+python build_report.py --cp pressure_00deg.csv --cp-pressure --cp-pressure-dx 0.5 --cp-pressure-dy 0.5
+
+# several lean angles via a manifest
+python build_report.py --cp footprints.json
+```
+
+Manifest format:
+
+```json
+{ "units": "mm", "pressure_units": "MPa",
+  "patches": [
+    {"gamma_deg": 0,  "outline": "fp_00.csv", "load_N": 1500},
+    {"gamma_deg": 25, "pressure": "fp_25.csv", "load_N": 1650}
+  ] }
+```
+
+`--no-cp-transfer` disables rescaling if you would rather see the generated
+patch than a derived one. `--cp-units` handles cm/inch files.
+
+### The Winkler generator
+
+`u = δ − x²/2R_eff − (y−y_c)²/2R_lat` makes the patch an ellipse with
+`a = √(2·R_eff·δ)`, `b = √(2·R_lat·δ)`; requiring the pressure to carry the load
+closes it: `δ = √(Fz / (k_f·π·√(R_eff·R_lat)))`. Lean enters geometrically: the
+contact point walks to where the tread tangent is horizontal, the much smaller
+lateral radius there narrows the patch, and the load rises as `Fz/cos γ`. The
+patch is clipped at the tread edge, and the clipping is reported.
 
 **Travel direction.** A leaning tyre corners, so the patch spins about the
-vertical at `V/R_path`. A point `x` ahead of the patch centre travels at
+vertical at `V/R_path`. A point `x` ahead of the centre travels at
 `atan(x/R_path)` to the centreline — which is why groove angles are scored
-against travel and not against the tyre axis, and why the groove chart shows a
-swing band that is zero upright and several degrees at lean.
+against travel, and why the groove chart shows a swing band that is zero upright
+and several degrees at lean.
+
+## DXF import
+
+```bash
+python build_report.py --dxf tread_plan.dxf --nsd 8.5 --draft 3 --sipes 1
+```
+
+A tread plan exports as a soup of LINE/ARC entities with no polygon structure,
+so `tread_eval/dxf.py` stitches segments into chains by shared endpoints, closes
+blocks that wrap across the seam by translating one half a full circumference,
+drops construction geometry, and shifts the lateral origin to the centreline.
+No `ezdxf` dependency — the entity subset a tread plan needs is small.
+
+It also reports two things the drawing does not state outright:
+
+- the **geometric repeat** (smallest circumferential shift that maps the layout
+  onto itself), which is not the same as the pitch spacing when lateral bands
+  are staggered;
+- whether the drawing is a **uniform array** — if every repeat is identical, the
+  drawing carries no pitch modulation, and the order analysis will show the
+  single-order tone of an array rather than the real tyre.
+
+Depth attributes are not in a 2D drawing. `--nsd`, `--draft` and `--sipes` (or
+per-zone values via `BlockDefaults`) supply them, and they are recorded in
+`Pattern.meta['assumed']` and shown in the report.
+
+### Remaining swap-in points
+
+| Assumed | Where | Replace with |
+|---|---|---|
+| Crown profile | `CrownProfile.dual_radius()` | `CrownProfile.from_cross_section(y_projected, z)` from a measured section |
+| Flag thresholds | `tread_eval/metrics.py` → `THRESHOLDS` | values calibrated against measured noise/wear |
+| `2w` Rhyne constants | `tread_eval/contact_patch.py` → `_RHYNE_RATIO`, `_RHYNE_K_WC` | fitted to one static footprint |
 
 ## Curvature correction
 
@@ -150,10 +264,12 @@ closure error, which is exactly how stitching distortion announces itself.
 
 ```
 tread_eval/
-  schema.py         Pattern / Pitch / Block / CrownProfile — the source-agnostic contract
-  synthetic.py      SWAP 1 — placeholder pattern generator
-  stiffness.py      SWAP 2 — placeholder per-block Kx/Ky
-  contact_patch.py  SWAP 3 — placeholder footprint vs. lean
+  schema.py         Pattern / Pitch / Block / Sipe / CrownProfile — the source-agnostic contract
+  dxf.py            tread-plan DXF import (production geometry source)
+  synthetic.py      placeholder pattern generator, for when there is no DXF
+  stiffness.py      Okonieski/Gent block stiffness — verified against the v6.4 tool
+  contact_patch.py  patch of any shape: measured, interpolated, transferred, generated
+  cp_io.py          importing footprints (outline / pressure map / manifest)
   raster.py         polygon fill, seam splitting, weight maps, curvature correction
   sweep.py          the FFT θ×γ sweep
   metrics.py        diagnostics and flags (THRESHOLDS live here)
@@ -161,8 +277,10 @@ tread_eval/
   report.py         payload assembly + HTML rendering
   assets/           template.html, app.css, app.js
 build_report.py     CLI
-tests/              geometry and pipeline tests
-out/tread_report.html   the deliverable (regenerate with build_report.py)
+verify/             functions extracted verbatim from the v6.4 HTML tool
+data/               sample tread plan and footprint
+tests/              geometry, pipeline, DXF/CP, and the stiffness cross-check
+out/                generated reports
 ```
 
 `plotly` is a **build-time** dependency only — the report embeds its bundle, so
@@ -179,8 +297,17 @@ the HTML itself needs nothing installed and no network.
 - **Lean-specific footprints as direct input** are already possible via
   `contact_patch_from_footprint()` and `sweep_lean(..., patch_override=...)`.
 
-## Defaults
+## Sample data
 
-Taken from the reference mould drawing supplied with the brief: a 182.78 mm
-repeat arrayed 11 times (circumference 2010.58 mm) across a 159 mm developed
-tread width, each repeat subdivided into three pitches — 33 pitches, 264 blocks.
+`data/130_80R17_Tramplr_XR_tread_plan.dxf` — a real tread plan: 2193.40 mm
+circumference × 159.00 mm developed width, 168 blocks (3 wrapping the seam),
+land ratio 0.690. Its geometric repeat is 182.784 mm arrayed 12 times, and every
+repeat is identical, so the drawing carries no pitch modulation.
+
+The synthetic generator defaults to the same 182.78 mm repeat for comparison.
+
+## Interface
+
+The report is one self-contained HTML file with a dark/light/auto theme toggle
+(remembered per browser, following the OS in auto). Chart colours are read from
+the stylesheet at draw time, so both themes are defined in exactly one place.

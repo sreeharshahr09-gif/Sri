@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .schema import Block, Pattern, ZONES
+from .schema import Block, Pattern, ZONES, zone_bounds
 from .stiffness import BlockStiffness, StiffnessParams, DEFAULT_PARAMS, stiffness_table
 
 
@@ -208,6 +208,7 @@ class RasterPack:
     area: np.ndarray  # pixel area, curvature-corrected if enabled
     kx: np.ndarray  # per-pixel Kx density: block Kx spread over its pixels
     ky: np.ndarray
+    kz: np.ndarray  # per-pixel Kz density (vertical compression)
     block_frac: np.ndarray  # 1/npix of the owning block -> sums to block count
     zone_area: dict[str, np.ndarray]
     y_moment: np.ndarray  # area * y, for the in-patch lateral centroid
@@ -270,6 +271,7 @@ def rasterise(
     # correlation returns sum_b (fraction of block b inside patch) * quantity_b.
     kx_per_px = np.zeros(len(pattern.blocks), dtype=np.float32)
     ky_per_px = np.zeros(len(pattern.blocks), dtype=np.float32)
+    kz_per_px = np.zeros(len(pattern.blocks), dtype=np.float32)
     frac_per_px = np.zeros(len(pattern.blocks), dtype=np.float32)
     for idx, block in enumerate(pattern.blocks):
         n = block_pixel_count[idx]
@@ -278,20 +280,28 @@ def rasterise(
         s = stiff[block.id]
         kx_per_px[idx] = s.kx / n
         ky_per_px[idx] = s.ky / n
+        kz_per_px[idx] = s.kz / n
         frac_per_px[idx] = 1.0 / n
 
     safe = np.maximum(labels, 0)
     inside = labels >= 0
     kx = np.where(inside, kx_per_px[safe], 0.0).astype(np.float32)
     ky = np.where(inside, ky_per_px[safe], 0.0).astype(np.float32)
+    kz = np.where(inside, kz_per_px[safe], 0.0).astype(np.float32)
     block_frac = np.where(inside, frac_per_px[safe], 0.0).astype(np.float32)
 
-    zone_of_block = np.array([b.zone for b in pattern.blocks], dtype=object)
+    # Zone area is a question about *where the rubber is*, so it is split by the
+    # lateral position of each pixel, not by which block owns it. Splitting by
+    # block would let a wide block whose centroid sits in the centre band
+    # contribute area out in the intermediate band -- which pushed the centre
+    # zone's land ratio above 100% on a real pattern with large blocks.
+    bounds = zone_bounds(pattern.tread_width)
     zone_area: dict[str, np.ndarray] = {}
+    abs_y = np.abs(grid.y)
     for zone in ZONES:
-        sel = np.zeros(len(pattern.blocks), dtype=np.float32)
-        sel[[i for i, z in enumerate(zone_of_block) if z == zone]] = 1.0
-        zone_area[zone] = (np.where(inside, sel[safe], 0.0) * row_area[:, None]).astype(np.float32)
+        lo, hi = bounds[zone]
+        rows = ((abs_y >= lo) & (abs_y < hi + 1e-9)).astype(np.float32)
+        zone_area[zone] = (land * (row_area * rows)[:, None]).astype(np.float32)
 
     y_moment = (area * grid.y[:, None]).astype(np.float32)
 
@@ -301,6 +311,7 @@ def rasterise(
         area=area,
         kx=kx,
         ky=ky,
+        kz=kz,
         block_frac=block_frac,
         zone_area=zone_area,
         y_moment=y_moment,

@@ -73,8 +73,11 @@ class SyntheticParams:
     height_shoulder: tuple[float, float] = (6.2, 7.0)
     draft_center: tuple[float, float] = (2.0, 3.5)
     draft_shoulder: tuple[float, float] = (4.0, 7.0)
-    nsd_center: tuple[float, float] = (0.6, 1.8)
-    nsd_shoulder: tuple[float, float] = (0.0, 0.8)
+    # Lateral sipes per block, by zone. The stiffness model needs sipe geometry,
+    # not a density scalar, so these counts are expanded into explicit sipes.
+    sipes_center: tuple[int, int] = (1, 3)
+    sipes_shoulder: tuple[int, int] = (0, 1)
+    sipe_depth_fraction: float = 0.6
 
     crown_r_center: float = 125.0
     crown_r_shoulder: float = 55.0
@@ -200,15 +203,15 @@ def generate_pattern(params: SyntheticParams | None = None, name: str | None = N
                 if zone == "shoulder":
                     height = _uniform(rng, p.height_shoulder)
                     draft = _uniform(rng, p.draft_shoulder)
-                    nsd = _uniform(rng, p.nsd_shoulder)
+                    n_sipes = int(rng.integers(p.sipes_shoulder[0], p.sipes_shoulder[1] + 1))
                 elif zone == "intermediate":
                     height = _uniform(rng, p.height_intermediate)
                     draft = _uniform(rng, (p.draft_center[0], p.draft_shoulder[1]))
-                    nsd = _uniform(rng, (p.nsd_shoulder[0], p.nsd_center[1]))
+                    n_sipes = int(rng.integers(p.sipes_shoulder[0], p.sipes_center[1] + 1))
                 else:
                     height = _uniform(rng, p.height_center)
                     draft = _uniform(rng, p.draft_center)
-                    nsd = _uniform(rng, p.nsd_center)
+                    n_sipes = int(rng.integers(p.sipes_center[0], p.sipes_center[1] + 1))
 
                 blocks.append(
                     Block(
@@ -218,7 +221,8 @@ def generate_pattern(params: SyntheticParams | None = None, name: str | None = N
                         zone=zone,  # type: ignore[arg-type]
                         height=height,
                         draft_angle=draft,
-                        nsd=nsd,
+                        n_lateral_sipes=n_sipes,
+                        sipe_depth_fraction=p.sipe_depth_fraction,
                     )
                 )
 

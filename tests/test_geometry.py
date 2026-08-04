@@ -16,7 +16,6 @@ def square(x0, y0, s, **kw):
     kw.setdefault("zone", "center")
     kw.setdefault("height", 8.0)
     kw.setdefault("draft_angle", 3.0)
-    kw.setdefault("nsd", 1.0)
     return Block(polygon=[(x0, y0), (x0 + s, y0), (x0 + s, y0 + s), (x0, y0 + s)], **kw)
 
 
@@ -33,7 +32,7 @@ def test_block_area_is_orientation_independent():
     b = square(0.0, 0.0, 3.0)
     reversed_b = Block(
         id="r", pitch_id="p", polygon=list(reversed(b.polygon)), zone="center",
-        height=8.0, draft_angle=3.0, nsd=1.0,
+        height=8.0, draft_angle=3.0,
     )
     assert reversed_b.area() == pytest.approx(b.area())
 
