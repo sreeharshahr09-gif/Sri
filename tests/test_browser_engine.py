@@ -101,6 +101,41 @@ def test_js_python_sweep_parity():
         assert max_err < 2e-3, f"{key} parity: max relative error {max_err:.2e}"
 
 
+def test_order_spectrum_definition_matches_python():
+    """Both engines must report the SAME quantity under the label 'amplitude'.
+
+    The JS used to return absolute amplitude while Python returns a fraction of
+    the mean, so the browser's order chart and the report's order chart showed
+    different numbers on identically-labelled axes.
+    """
+    node = _node()
+    from tread_eval.metrics import order_spectrum
+
+    n, mean, amp, order = 2048, 50.0, 2.0, 12
+    sig = mean + amp * np.sin(2 * np.pi * order * np.arange(n) / n)
+
+    py = order_spectrum(sig, max_order=40)
+    script = (
+        "const E=require('./app/engine.js');"
+        f"const n={n},mean={mean},amp={amp},order={order};"
+        "const s=new Float64Array(n);"
+        "for(let i=0;i<n;i++)s[i]=mean+amp*Math.sin(2*Math.PI*order*i/n);"
+        "process.stdout.write(JSON.stringify(E.orderSpectrum(s,40)));"
+    )
+    proc = subprocess.run([node, "-e", script], capture_output=True, text=True, cwd=REPO)
+    assert proc.returncode == 0, proc.stderr
+    js = json.loads(proc.stdout)
+
+    assert js["orders"] == [float(o) for o in py["orders"]] or js["orders"] == list(py["orders"])
+    a_js = np.asarray(js["amplitude"], dtype=float)
+    a_py = np.asarray(py["amplitude"], dtype=float)
+    assert np.max(np.abs(a_js - a_py)) < 1e-9, "order spectra disagree between engines"
+    # and the value is the documented one: a fraction of the mean
+    k = list(py["orders"]).index(order)
+    assert a_py[k] == pytest.approx(amp / mean, rel=1e-9)
+    assert a_js[k] == pytest.approx(amp / mean, rel=1e-9)
+
+
 def test_build_is_self_contained():
     """The built page must embed everything -- no external script/style/font/image URLs."""
     import build_app

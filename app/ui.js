@@ -78,6 +78,7 @@
       gamma_deg: 0,
       load_N: $("cpAutoLoad").checked ? null : num("cpLoad"),
       label: "",
+      scale_with_lean: $("cpScaleLean").checked,
     };
   }
   function readStiffParams() {
@@ -200,7 +201,18 @@
     }
     var p = state.pattern, tw = p.tread_width, C = p.tyre_circumference;
     var spec = readSpec();
-    var patch = E.shapePatch(Object.assign({}, spec, { gamma_deg: state.gammaShown }), p.crown, tw, readCpParams());
+    var patch;
+    try {
+      patch = E.shapePatch(Object.assign({}, spec, { gamma_deg: state.gammaShown }), p.crown, tw, readCpParams());
+      setSpecError("");
+    } catch (err) {
+      // Half-typed or invalid geometry: say why, keep the last good drawing off
+      // the screen rather than throwing inside a paint handler.
+      setSpecError(err.message);
+      ctx.fillStyle = cssVar("--bad"); ctx.font = "12px sans-serif"; ctx.textAlign = "center";
+      wrapText(ctx, err.message, W / 2, H / 2 - 10, W - 24, 15);
+      return;
+    }
 
     // window: circumferential span sized to the patch, vertical = full tread + margin
     var patchLen = E.patchLength(patch);
@@ -268,6 +280,26 @@
     // labels
     ctx.fillStyle = cssVar("--ink-dim"); ctx.font = "11px sans-serif"; ctx.textAlign = "left";
     ctx.fillText(E.describeSpec(spec) + "  |  y_c=" + yc.toFixed(1) + " mm  |  γ=" + state.gammaShown + "°", 8, 14);
+  }
+
+  function setSpecError(msg) {
+    var el = $("specError");
+    if (!el) return;
+    el.textContent = msg || "";
+    el.style.display = msg ? "" : "none";
+    $("runBtn").disabled = !state.pattern || !!msg;
+  }
+
+  function wrapText(ctx, text, cx, cy, maxWidth, lineHeight) {
+    var words = String(text).split(" "), line = "", lines = [];
+    for (var i = 0; i < words.length; i++) {
+      var test = line ? line + " " + words[i] : words[i];
+      if (ctx.measureText(test).width > maxWidth && line) { lines.push(line); line = words[i]; }
+      else line = test;
+    }
+    if (line) lines.push(line);
+    var y = cy - ((lines.length - 1) * lineHeight) / 2;
+    for (var j = 0; j < lines.length; j++) ctx.fillText(lines[j], cx, y + j * lineHeight);
   }
 
   function hexA(hex, a) {
@@ -351,6 +383,7 @@
       if (m.type === "progress") { $("progress").textContent = "lean " + m.done + " / " + m.total; }
       else if (m.type === "done") {
         state.results = m.results; state.stiffness = m.stiffness; state.grid = m.grid;
+        state.notes = m.notes || []; state.maxLean = m.maxLean;
         state.running = false; $("overlay").classList.remove("on");
         $("runBtn").textContent = "▶ Run";
         $("timing").textContent = "computed in " + (m.timing.total / 1000).toFixed(1) + " s (raster " + m.timing.raster + " ms), grid " + m.grid.nx + "×" + m.grid.ny;
@@ -387,6 +420,7 @@
 
   function renderAll() {
     if (!state.results) return;
+    renderNotes();
     renderCards();
     renderThetaStack();
     renderPatternStrip();
@@ -396,6 +430,19 @@
     renderPatchPreview();
     renderDiagnostics();
     drawEditor();
+  }
+
+  // Physics caveats raised by the compute pass (skipped leans, clipping,
+  // out-of-range compound).  Shown above the charts so a number is never read
+  // without the reason it might not mean what it looks like.
+  function renderNotes() {
+    var el = $("notes");
+    if (!state.notes || !state.notes.length) { el.style.display = "none"; el.innerHTML = ""; return; }
+    el.style.display = "";
+    el.className = "banner warn";
+    var html = "<b>Physics notes</b><ul>";
+    for (var i = 0; i < state.notes.length; i++) html += "<li>" + escapeHtml(state.notes[i]) + "</li>";
+    el.innerHTML = html + "</ul>";
   }
 
   function renderCards() {
@@ -501,7 +548,7 @@
       margin: { l: 60, r: 16, t: 40, b: 44 }, height: 380,
       title: { text: "Order content of " + label + " (γ = " + r.gamma_deg + "°)  — red bar = pitch count, orange = geometric repeat", font: { size: 12 } },
       xaxis: { title: { text: "order (events per revolution)", font: { size: 11 } }, gridcolor: th.grid },
-      yaxis: { title: { text: "amplitude", font: { size: 11 } }, gridcolor: th.grid },
+      yaxis: { title: { text: "amplitude (fraction of mean)", font: { size: 11 } }, gridcolor: th.grid, tickformat: ".1%" },
     };
     Plotly.react($("orders"), data, layout, { responsive: true, displayModeBar: false });
   }
@@ -623,6 +670,7 @@
       on($(id), "input", function () { drawEditor(); markStale(); });
     });
     on($("cpAutoY"), "change", function () { $("cpY").disabled = $("cpAutoY").checked; drawEditor(); markStale(); });
+    on($("cpScaleLean"), "change", function () { drawEditor(); markStale(); });
     on($("cpAutoLoad"), "change", function () { $("cpLoad").disabled = $("cpAutoLoad").checked; markStale(); });
     ["nsd", "draft", "sipes", "sipeDepth", "shore", "poisson", "mode", "quality", "curv", "wheelR", "loadLean", "crownCenter", "crownShoulder", "nPitches"].forEach(function (id) {
       on($(id), "input", markStale);

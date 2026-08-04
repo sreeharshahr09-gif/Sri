@@ -110,4 +110,117 @@ check("Tramplr DXF imports to known geometry", () => {
   assert(Math.abs(report.tread_width - 159.0) < 5, `tread width ${report.tread_width}`);
 });
 
+// --- 4. physics: hand-calc reference ----------------------------------
+check("Kx/Ky/Kz match the closed-form hand calculation", () => {
+  // rect 20 x 10 mm, NSD 8 mm, Shore 60 -> E=6.89, nu=0.49, k=0.64
+  const L = 20, W = 8 && 10, H = 8, E_ = 6.89, NU = 0.49, KG = 0.64;
+  const G_ = E_ / (2 * (1 + NU));
+  const area = L * W, perim = 2 * (L + W);
+  const S = area / (H * perim);
+  const eu = E_ * (1 + 2 * KG * S * S);
+  const eEff = eu / (1 + eu / 1100);
+  const kzHand = (eEff * area) / H;
+  const Iyy = (W * L ** 3) / 12, Ixx = (L * W ** 3) / 12;
+  const cB = H ** 3 / (12 * E_), cS = H / (G_ * area);
+  const kxHand = 1 / (cB / Iyy + cS), kyHand = 1 / (cB / Ixx + cS);
+
+  const got = E.blockStiffness(
+    { polygon: [[0, 0], [L, 0], [L, W], [0, W]], height: H, draft_angle: 0, sipes: [], n_lateral_sipes: 0 },
+    { shore_a: 60, poisson: NU, mode: "parallel", bulk_modulus: 1100, n_slices: 40 });
+  const rel = (a, b) => Math.abs(a - b) / Math.abs(b);
+  assert(rel(got.kz, kzHand) < 1e-9, `kz ${got.kz} vs hand ${kzHand}`);
+  assert(rel(got.kx, kxHand) < 3e-4, `kx ${got.kx} vs hand ${kxHand}`);
+  assert(rel(got.ky, kyHand) < 3e-4, `ky ${got.ky} vs hand ${kyHand}`);
+  assert(rel(got.kz, 208.928315) < 1e-6, `kz vs worked number: ${got.kz}`);
+});
+
+// --- 5. the FFT must refuse a length it cannot transform ---------------
+check("non-power-of-two FFT length is refused, not silently NaN", () => {
+  let threw = false;
+  try { E.fftRadix2(new Float64Array(100), new Float64Array(100), false); }
+  catch (e) { threw = true; assert(/power of two/.test(e.message), "message must name the cause: " + e.message); }
+  assert(threw, "fftRadix2(100) must throw -- it used to return NaN and poison the whole sweep");
+  let threw2 = false;
+  try { E.makeGrid({ tyre_circumference: 1000, tread_width: 100 }, 500, 32); }
+  catch (e) { threw2 = true; assert(/power of two/.test(e.message), e.message); }
+  assert(threw2, "makeGrid must reject a non-power-of-two nx");
+  // and the valid sizes the UI offers must all still work
+  for (const nx of [1024, 2048, 4096]) E.makeGrid({ tyre_circumference: 1000, tread_width: 100 }, nx, 32);
+});
+
+// --- 6. lean scaling + validation parity with Python -------------------
+check("lean scaling narrows the patch and matches the Winkler trend", () => {
+  const crown = E.crownDualRadius(159);
+  const params = { vertical_load: 1500, wheel_radius: 320, load_rises_with_lean: true };
+  const sf = E.leanScaleFactors(crown, 40, params, 0);
+  assert(sf[1] > 0.7 && sf[1] < 0.85, `width scale at 40deg should be ~0.81, got ${sf[1]}`);
+  assert(sf[0] > 1.0, `length scale should exceed 1, got ${sf[0]}`);
+  const base = { shape: "rounded", length: 90, width: 50, corner_radius: 12 };
+  const up = E.shapePatch(Object.assign({}, base, { gamma_deg: 0 }), crown, 159, params);
+  const lean = E.shapePatch(Object.assign({}, base, { gamma_deg: 40 }), crown, 159, params);
+  assert(E.patchWidth(lean) < 0.75 * E.patchWidth(up), "leaned patch must be narrower");
+  const held = E.shapePatch(Object.assign({}, base, { gamma_deg: 40, scale_with_lean: false }), crown, 159, params);
+  assert(Math.abs(E.patchLength(held) - 90) < 1e-6, "opting out must hold the stated length");
+});
+
+check("invalid patch geometry is rejected with a specific message", () => {
+  const crown = E.crownDualRadius(159);
+  const params = { vertical_load: 1500, wheel_radius: 320, load_rises_with_lean: true };
+  const cases = [
+    [{ shape: "rounded", length: 0, width: 50 }, /length must be positive/],
+    [{ shape: "rounded", length: 90, width: -50 }, /width must be positive/],
+    [{ shape: "rounded", length: NaN, width: 50 }, /finite number/],
+    [{ shape: "hexagon", length: 90, width: 50 }, /unknown contact patch shape/],
+    [{ shape: "trapezoid", length: 90, width: 50, taper: 1 }, /taper must lie strictly/],
+  ];
+  for (const [spec, re] of cases) {
+    let threw = false;
+    try { E.shapePatch(spec, crown, 159, params); }
+    catch (e) { threw = true; assert(re.test(e.message), `wrong message for ${JSON.stringify(spec)}: ${e.message}`); }
+    assert(threw, `must reject ${JSON.stringify(spec)}`);
+  }
+});
+
+check("shore hardness outside the Gent table is flagged", () => {
+  assert(E.shoreRangeWarning(60) === null, "60A is inside the table");
+  const w = E.shoreRangeWarning(95);
+  assert(w && /70/.test(w) && /outside the validated/.test(w), "95A must warn and name the substitute: " + w);
+});
+
+check("max supported lean is the steepest tread tangent", () => {
+  const crown = E.crownDualRadius(159);
+  const ml = E.maxSupportedLean(crown);
+  assert(ml > 40 && ml < 55, `dual-radius 159mm crown should reach ~45 deg, got ${ml}`);
+  // beyond it the contact point pins to the tread edge
+  assert(Math.abs(E.crownContactLateral(crown, 89) - 79.5) < 1e-6, "must saturate at the tread edge");
+});
+
+// --- 7. order spectrum definition --------------------------------------
+check("order spectrum is normalised by the mean, like the Python report", () => {
+  // A +-4% modulation at order 12 on a mean of 50 must read as 0.04 at order 12,
+  // NOT as the absolute amplitude 2.0. The two implementations share one guide.
+  const n = 2048, mean = 50, amp = 2.0, order = 12;
+  const sig = new Float64Array(n);
+  for (let i = 0; i < n; i++) sig[i] = mean + amp * Math.sin((2 * Math.PI * order * i) / n);
+  const sp = E.orderSpectrum(sig, 40);
+  const k = sp.orders.indexOf(order);
+  assert(Math.abs(sp.amplitude[k] - amp / mean) < 1e-9,
+    `order ${order} should be ${amp / mean} (fraction of mean), got ${sp.amplitude[k]}`);
+  // every other order must be essentially empty
+  for (let i = 0; i < sp.orders.length; i++)
+    if (sp.orders[i] !== order) assert(sp.amplitude[i] < 1e-9, `spurious energy at order ${sp.orders[i]}`);
+});
+
+check("order spectrum of a non-power-of-two signal stays clean", () => {
+  const n = 360, mean = 10, amp = 1.0, order = 12;
+  const sig = new Float64Array(n);
+  for (let i = 0; i < n; i++) sig[i] = mean + amp * Math.sin((2 * Math.PI * order * i) / n);
+  const sp = E.orderSpectrum(sig, 30);
+  const pairs = sp.orders.map((o, i) => [o, sp.amplitude[i]]).sort((a, b) => b[1] - a[1]);
+  assert(pairs[0][0] === order, `peak should be order ${order}, got ${pairs[0][0]}`);
+  // linear interpolation must keep the leakage far below the peak
+  assert(pairs[1][1] < 0.02 * pairs[0][1],
+    `resampling leakage too high: ${pairs[1][1]} vs peak ${pairs[0][1]}`);
+});
+
 console.log(`\n${passed} checks passed`);

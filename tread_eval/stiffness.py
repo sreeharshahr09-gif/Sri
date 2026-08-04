@@ -54,8 +54,29 @@ SHORE_K_TABLE: dict[int, float] = {30: 0.93, 40: 0.85, 50: 0.73, 60: 0.64, 70: 0
 Mode = str  # "free" | "parallel"
 
 
+SHORE_MIN, SHORE_MAX = min(SHORE_E_TABLE), max(SHORE_E_TABLE)
+
+
 def nearest_shore_key(shore: float) -> int:
     return min(SHORE_E_TABLE, key=lambda k: abs(k - shore))
+
+
+def shore_range_warning(shore: float) -> str | None:
+    """Message describing the clamp when ``shore`` falls outside the lookup table.
+
+    Gent's table covers Shore A 30-70.  Outside that the nearest entry is used,
+    so a hard 95A compound is silently evaluated as 70A -- a factor of two or
+    more error in E.  Returning the message rather than warning here lets the
+    caller decide where it belongs (report banner, CLI stderr, browser banner).
+    """
+    if SHORE_MIN <= shore <= SHORE_MAX:
+        return None
+    key = nearest_shore_key(shore)
+    return (
+        f"Shore A {shore:g} is outside the validated Gent table ({SHORE_MIN}-{SHORE_MAX} A); "
+        f"properties of {key} A were used (E={SHORE_E_TABLE[key]} N/mm^2, k={SHORE_K_TABLE[key]}). "
+        f"Supply an explicit modulus override for compounds outside this range."
+    )
 
 
 def shore_e(shore: float) -> float:

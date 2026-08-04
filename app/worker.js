@@ -18,7 +18,28 @@
       var tRaster = Date.now() - t0;
 
       var cache = new E.MapFFTCache(pack);
-      var leans = m.leans;
+      var notes = [];
+
+      // Past the crown's steepest tangent there is no contact point: the
+      // position saturates at the tread edge and every derived number is an
+      // extrapolation. Drop those leans rather than report them as computed.
+      var maxLean = E.maxSupportedLean(pattern.crown);
+      var leans = [], dropped = [];
+      for (var li = 0; li < m.leans.length; li++) {
+        if (m.leans[li] <= maxLean + 1e-9) leans.push(m.leans[li]);
+        else dropped.push(m.leans[li]);
+      }
+      if (dropped.length) {
+        notes.push("lean " + dropped.join("°, ") + "° exceeds the crown's maximum reachable lean of " +
+          maxLean.toFixed(1) + "° and was skipped — past that angle the tyre is riding the tread edge. " +
+          "Supply a wider-arc crown (smaller shoulder radius) if the real tyre reaches these angles.");
+      }
+      if (!leans.length) throw new Error(
+        "no requested lean angle is reachable on this crown (maximum " + maxLean.toFixed(1) + "°)");
+
+      var shoreNote = E.shoreRangeWarning(m.stiffParams.shore_a);
+      if (shoreNote) notes.push(shoreNote);
+
       var results = [];
       for (var i = 0; i < leans.length; i++) {
         var r = E.sweepLean(pattern, pack, leans[i], m.spec, m.cpParams, cache, m.discreteSamples);
@@ -27,10 +48,21 @@
       }
       // per-block stiffness summary for the diagnostics tab
       var stiffSummary = summariseStiffness(pattern, pack);
+      // Any patch clipped by the tread edge is geometry the model did not
+      // intend -- surface it rather than let it read as a real narrowing.
+      var clippedAt = [];
+      for (var ci = 0; ci < results.length; ci++)
+        if (results[ci].patch.clipped) clippedAt.push(results[ci].gamma_deg);
+      if (clippedAt.length)
+        notes.push("the contact patch is clipped by the tread edge at " + clippedAt.join("°, ") +
+          "° — the patch is wider than the tread has room for there, so its area is truncated, not physical.");
+
       self.postMessage({
         type: "done",
         results: results,
         stiffness: stiffSummary,
+        notes: notes,
+        maxLean: maxLean,
         timing: { raster: tRaster, total: Date.now() - t0 },
         grid: { nx: grid.nx, ny: grid.ny, dx: grid.dx, dy: grid.dy },
       });

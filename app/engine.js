@@ -257,6 +257,19 @@
   }
   function shoreE(s) { const v = SHORE_E_TABLE[nearestShoreKey(+s)]; return v == null ? 6.89 : v; }
   function shoreK(s) { const v = SHORE_K_TABLE[nearestShoreKey(+s)]; return v == null ? 0.64 : v; }
+
+  const SHORE_MIN = 30, SHORE_MAX = 70;
+  // Gent's table covers 30-70 A. Outside it the nearest row is used, so a hard
+  // 95A compound is silently evaluated as 70A -- a >2x error in E. Surface it.
+  function shoreRangeWarning(s) {
+    s = +s;
+    if (!Number.isFinite(s)) return "Shore A must be a number, got " + s;
+    if (s >= SHORE_MIN && s <= SHORE_MAX) return null;
+    const key = nearestShoreKey(s);
+    return "Shore A " + s + " is outside the validated Gent table (" + SHORE_MIN + "-" + SHORE_MAX +
+      " A); properties of " + key + " A were used (E=" + SHORE_E_TABLE[key] + " N/mm^2, k=" +
+      SHORE_K_TABLE[key] + "). Treat absolute stiffness values with caution.";
+  }
   function calcG(E, nu) { return E / (2 * (1 + nu)); }
 
   function beamKMatrix(A, Ixx, Iyy, Ixy, L, E, G, mode) {
@@ -751,9 +764,21 @@
   // =====================================================================
   // 5. FFT -- radix-2 complex + rfft/irfft helpers
   // =====================================================================
+  function isPowerOfTwo(n) { return Number.isInteger(n) && n > 0 && (n & (n - 1)) === 0; }
+
   function fftRadix2(re, im, inverse) {
     const n = re.length;
     if (n <= 1) return;
+    // This is a radix-2 transform: the butterfly loop only reaches `n` when `n`
+    // is a power of two.  With any other length it silently returns garbage
+    // (NaN, in practice) which then propagates through every aggregate in the
+    // sweep with no visible failure -- so refuse rather than corrupt.
+    if (!isPowerOfTwo(n)) {
+      throw new Error(
+        "FFT length must be a power of two, got " + n +
+        ". The circumferential grid size (nx) sets this; use 1024, 2048, 4096, ..."
+      );
+    }
     // bit reversal
     for (let i = 1, j = 0; i < n; i++) {
       let bit = n >> 1;
@@ -802,6 +827,23 @@
   // 6. rasterisation (port of tread_eval/raster.py)
   // =====================================================================
   function makeGrid(pattern, nx, ny) {
+    // Caught here as well as in fftRadix2 so the error names the real cause at
+    // the point the caller can still fix it.
+    if (!isPowerOfTwo(nx)) {
+      throw new Error(
+        "grid nx must be a power of two (the sweep uses a radix-2 FFT along the " +
+        "circumference), got " + nx + ". Use 1024, 2048 or 4096."
+      );
+    }
+    if (!Number.isInteger(ny) || ny < 2) {
+      throw new Error("grid ny must be an integer >= 2, got " + ny);
+    }
+    if (!(pattern.tyre_circumference > 0) || !(pattern.tread_width > 0)) {
+      throw new Error(
+        "pattern must have positive circumference and tread width, got " +
+        pattern.tyre_circumference + " x " + pattern.tread_width + " mm"
+      );
+    }
     return {
       nx: nx, ny: ny,
       dx: pattern.tyre_circumference / nx, dy: pattern.tread_width / ny,
@@ -1017,13 +1059,78 @@
   }
   function fmt(v) { return Number(v.toFixed(4)).toString(); }
 
+  // Largest lean the crown can actually reach: past the steepest tread tangent
+  // there is no contact point and the position saturates at the tread edge.
+  function maxSupportedLean(crown) {
+    let mx = 0;
+    for (let i = 0; i < crown.phi.length; i++) mx = Math.max(mx, Math.abs(crown.phi[i]));
+    return (mx * 180) / Math.PI;
+  }
+
+  // Winkler semi-axes at a lean angle -- the shared basis of the lean trend.
+  function winklerAxes(crown, gammaDeg, params) {
+    const yC = crownContactLateral(crown, gammaDeg);
+    const rLat = crownLocalRadius(crown, yC);
+    const rEff = Math.max(50, params.wheel_radius - crownDrop(crown, yC));
+    const g = (gammaDeg * Math.PI) / 180;
+    const fz = params.load_rises_with_lean
+      ? params.vertical_load / Math.max(Math.cos(g), 0.2)
+      : params.vertical_load;
+    // k_f cancels in the ratios these axes are used for, so any positive value
+    // gives the same scale factors; 1 keeps the arithmetic simple.
+    const delta = Math.sqrt(fz / (1 * Math.PI * Math.sqrt(rEff * rLat)));
+    return { a: Math.sqrt(2 * rEff * delta), b: Math.sqrt(2 * rLat * delta), yC: yC, rLat: rLat, rEff: rEff };
+  }
+
+  // (s_length, s_width) carrying a patch stated at gammaRef to gammaDeg.
+  // Mirrors tread_eval.contact_patch.lean_scale_factors.
+  function leanScaleFactors(crown, gammaDeg, params, gammaRefDeg) {
+    const ref = winklerAxes(crown, gammaRefDeg || 0, params);
+    const tgt = winklerAxes(crown, gammaDeg, params);
+    return [tgt.a / Math.max(ref.a, 1e-9), tgt.b / Math.max(ref.b, 1e-9)];
+  }
+
+  // Reject geometry that would silently produce a valid-looking but wrong patch
+  // (a negative width still has positive shoelace area; a NaN propagates).
+  function validateSpec(spec) {
+    if (SHAPES.indexOf(String(spec.shape || "").toLowerCase()) < 0)
+      throw new Error("unknown contact patch shape '" + spec.shape + "'; expected one of " + SHAPES.join(", "));
+    const dims = { length: "circumferential", width: "lateral" };
+    for (const name in dims) {
+      const v = Number(spec[name]);
+      if (!Number.isFinite(v)) throw new Error("contact patch " + name + " must be a finite number, got " + spec[name]);
+      if (v <= 0) throw new Error("contact patch " + name + " must be positive, got " + v + " mm (" + name + " is the " + dims[name] + " size)");
+    }
+    for (const name of ["corner_radius", "exponent", "taper", "rotation", "gamma_deg"]) {
+      if (spec[name] != null && !Number.isFinite(Number(spec[name])))
+        throw new Error("contact patch " + name + " must be a finite number, got " + spec[name]);
+    }
+    if (spec.corner_radius != null && spec.corner_radius < 0) throw new Error("corner_radius must be >= 0, got " + spec.corner_radius + " mm");
+    if (spec.exponent != null && spec.exponent <= 0) throw new Error("superellipse exponent must be positive, got " + spec.exponent);
+    if (spec.taper != null && !(spec.taper > -1 && spec.taper < 1)) throw new Error("trapezoid taper must lie strictly between -1 and 1, got " + spec.taper);
+    if (spec.load_N != null && (!Number.isFinite(spec.load_N) || spec.load_N <= 0)) throw new Error("contact patch load must be positive, got " + spec.load_N + " N");
+    if (spec.y_center != null && !Number.isFinite(spec.y_center)) throw new Error("contact patch y_center must be a finite number, got " + spec.y_center);
+  }
+
   // Build a placed ContactPatch object from a shape spec.
   // params: {vertical_load, wheel_radius, load_rises_with_lean}
   function shapePatch(spec, crown, treadWidth, params) {
     params = Object.assign({ vertical_load: 1500, wheel_radius: 320, load_rises_with_lean: true }, params || {});
+    validateSpec(spec);
+    if (!(params.vertical_load > 0) || !Number.isFinite(params.vertical_load))
+      throw new Error("vertical load must be a positive finite number, got " + params.vertical_load + " N");
     const gamma = spec.gamma_deg || 0;
     const yC = spec.y_center != null ? spec.y_center : crownContactLateral(crown, gamma);
-    let out = shapeOutline(spec).map((p) => [p[0], p[1] + yC]);
+    let base = shapeOutline(spec);
+
+    // Stated dimensions describe the UPRIGHT patch; carry them to this lean.
+    let scaleNote = "";
+    if (spec.scale_with_lean !== false && Math.abs(gamma) > 1e-9) {
+      const sf = leanScaleFactors(crown, gamma, params, 0);
+      base = base.map((p) => [p[0] * sf[0], p[1] * sf[1]]);
+      scaleNote = ", scaled to " + fmt(gamma) + " deg lean (x" + sf[0].toFixed(3) + " long, x" + sf[1].toFixed(3) + " wide)";
+    }
+    let out = base.map((p) => [p[0], p[1] + yC]);
     // clip to tread half width
     const half = treadWidth / 2;
     let clipped = false;
@@ -1036,7 +1143,7 @@
 
     const patch = {
       gamma_deg: gamma, outline: out, tread_half_width: half, source: "shape",
-      provenance: "user-specified shape: " + describeSpec(spec) + (spec.label ? " -- " + spec.label : ""),
+      provenance: "user-specified shape: " + describeSpec(spec) + scaleNote + (spec.label ? " -- " + spec.label : ""),
       y_center: yC, r_eff: rEff, r_lat: crownLocalRadius(crown, yC), normal_load: load,
       path_radius: gamma <= 1e-9 ? Infinity : rEff / Math.tan(g), delta: 0, clipped: clipped,
     };
@@ -1277,18 +1384,42 @@
   }
 
   // Order spectrum of a signal sampled uniformly over one revolution.
-  // Returns {orders:[1..maxOrder], amplitude:[...]} where amplitude is 2*|X_k|/N.
+  //
+  // Order k means k events per wheel revolution.  Amplitude is single-sided and
+  // **normalised by the signal mean**, so 0.04 at order 12 reads as "a +-4%
+  // modulation of the mean, twelve times per revolution".  That is the same
+  // definition as tread_eval.metrics.order_spectrum -- the two must agree,
+  // because the report and this page share one reader's guide.
   function orderSpectrum(signal, maxOrder) {
     const n = signal.length;
-    // resample to nearest power of 2 for the radix-2 FFT
-    const p2 = 1 << Math.ceil(Math.log2(n));
-    const re = new Float64Array(p2), im = new Float64Array(p2);
+    if (!n) return { orders: [], amplitude: [] };
     let mean = 0; for (let i = 0; i < n; i++) mean += signal[i]; mean /= n;
-    for (let i = 0; i < p2; i++) { const src = Math.min(n - 1, Math.round((i * n) / p2)); re[i] = signal[src] - mean; }
+
+    let src, p2;
+    if (isPowerOfTwo(n)) {
+      p2 = n; src = signal;              // exact: no resampling at all
+    } else {
+      // Linear interpolation onto the next power of two. Nearest-neighbour
+      // here put ~1% of spurious energy into unrelated orders, which on an
+      // order chart reads as a pitch problem that does not exist.
+      p2 = 1 << Math.ceil(Math.log2(n));
+      src = new Float64Array(p2);
+      for (let i = 0; i < p2; i++) {
+        const t = (i * n) / p2, i0 = Math.floor(t), f = t - i0;
+        src[i] = signal[i0 % n] * (1 - f) + signal[(i0 + 1) % n] * f;
+      }
+    }
+    const re = new Float64Array(p2), im = new Float64Array(p2);
+    for (let i = 0; i < p2; i++) re[i] = src[i] - mean;
     fftRadix2(re, im, false);
+
     maxOrder = Math.min(maxOrder || 60, p2 >> 1);
+    const scale = mean > 0 ? 1 / mean : 1;
     const orders = [], amplitude = [];
-    for (let k = 1; k <= maxOrder; k++) { orders.push(k); amplitude.push((2 * Math.hypot(re[k], im[k])) / p2); }
+    for (let k = 1; k <= maxOrder; k++) {
+      orders.push(k);
+      amplitude.push(((2 * Math.hypot(re[k], im[k])) / p2) * scale);
+    }
     return { orders: orders, amplitude: amplitude };
   }
 
@@ -1303,7 +1434,7 @@
     // geometry
     ensureCCW, polygonProps, polygonPerimeter, polygonArea, polygonCentroid, offsetPoly, clipPoly, splitBySipe, sipeClippedLength, netContactArea,
     // stiffness
-    SHORE_E_TABLE, SHORE_K_TABLE, shoreE, shoreK, calcG, beamKMatrix, effectiveK, computeKz, blockStiffness, effectiveSipes,
+    SHORE_E_TABLE, SHORE_K_TABLE, shoreE, shoreK, shoreRangeWarning, calcG, beamKMatrix, effectiveK, computeKz, blockStiffness, effectiveSipes,
     // dxf
     readDxfEntities, entitiesToSegments, buildLoops, closeAcrossSeam, loadPattern, estimatePitchCount, geometricRepeat,
     // zones + crown
@@ -1314,6 +1445,7 @@
     makeGrid, gridY, gridXRel, gridThetaDeg, splitAtSeam, rasterise,
     // shapes + patch
     SHAPES, shapeOutline, describeSpec, shapePatch, patchMasks, patchContains, patchArea, patchPerimeter, patchLength, patchWidth,
+    validateSpec, leanScaleFactors, maxSupportedLean, isPowerOfTwo,
     // sweep
     MapFFTCache, sweepLean, sweep,
     // metrics

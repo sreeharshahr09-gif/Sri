@@ -38,7 +38,7 @@ from typing import Sequence
 
 import numpy as np
 
-from .contact_patch import ContactPatch, CPParams
+from .contact_patch import ContactPatch, CPParams, lean_scale_factors
 from .schema import CrownProfile
 
 Array = np.ndarray
@@ -130,6 +130,58 @@ class ShapeSpec:
     gamma_deg: float = 0.0
     load_N: float | None = None
     label: str = ""
+    scale_with_lean: bool = True
+    """Let the stated dimensions describe the **upright** patch and scale from there.
+
+    A real 2W footprint narrows sharply as the bike leans, because the contact
+    point walks onto the shoulder where the lateral crown radius collapses.  With
+    this on, ``length`` and ``width`` are taken as the patch at ``gamma = 0`` and
+    carried to other lean angles by
+    :func:`~tread_eval.contact_patch.lean_scale_factors` -- the same Winkler
+    trend a transferred measured footprint uses.
+
+    Turn it off to hold the stated dimensions at every lean, which is what you
+    want for a sensitivity study (change one number, see what it does) or when
+    you have measured footprints at each lean and are stating them directly.
+    Off, the patch keeps its full width until it runs off the tread edge and is
+    clipped there -- so check the ``clipped`` flag before reading those numbers.
+    """
+
+    def validate(self) -> None:
+        """Raise :class:`ValueError` with a specific message for unusable geometry.
+
+        Called by :func:`shape_patch`.  Without it a negative width silently
+        produces a valid-looking patch (the shoelace area takes an absolute
+        value) and a NaN dimension propagates all the way to the charts.
+        """
+        if self.shape.lower() not in SHAPES:
+            raise ValueError(
+                f"unknown contact patch shape {self.shape!r}; expected one of {', '.join(SHAPES)}"
+            )
+        for name in ("length", "width"):
+            v = float(getattr(self, name))
+            if not math.isfinite(v):
+                raise ValueError(f"contact patch {name} must be a finite number, got {v!r}")
+            if v <= 0.0:
+                raise ValueError(
+                    f"contact patch {name} must be positive, got {v:g} mm "
+                    f"({name} is the {'circumferential' if name == 'length' else 'lateral'} size)"
+                )
+        for name in ("corner_radius", "exponent", "taper", "rotation", "gamma_deg"):
+            v = float(getattr(self, name))
+            if not math.isfinite(v):
+                raise ValueError(f"contact patch {name} must be a finite number, got {v!r}")
+        if self.corner_radius < 0.0:
+            raise ValueError(f"corner_radius must be >= 0, got {self.corner_radius:g} mm")
+        if self.exponent <= 0.0:
+            raise ValueError(f"superellipse exponent must be positive, got {self.exponent:g}")
+        if not -1.0 < self.taper < 1.0:
+            raise ValueError(f"trapezoid taper must lie strictly between -1 and 1, got {self.taper:g}")
+        if self.load_N is not None:
+            if not math.isfinite(self.load_N) or self.load_N <= 0.0:
+                raise ValueError(f"contact patch load_N must be positive, got {self.load_N!r} N")
+        if self.y_center is not None and not math.isfinite(self.y_center):
+            raise ValueError(f"contact patch y_center must be a finite number, got {self.y_center!r}")
 
     def outline(self) -> Array:
         s = self.shape.lower()
@@ -175,6 +227,7 @@ class ShapeSpec:
             "corner_radius": self.corner_radius, "exponent": self.exponent,
             "taper": self.taper, "y_center": self.y_center, "rotation": self.rotation,
             "gamma_deg": self.gamma_deg, "load_N": self.load_N, "label": self.label,
+            "scale_with_lean": self.scale_with_lean,
         }
 
     @classmethod
@@ -202,10 +255,22 @@ def shape_patch(
     you know better.
     """
     params = params or CPParams()
+    spec.validate()
     gamma = spec.gamma_deg
     y_c = spec.y_center if spec.y_center is not None else crown.contact_lateral_position(gamma)
 
     out = spec.outline().copy()
+
+    # Carry the stated (upright) dimensions to this lean angle.  Done on the
+    # outline rather than on `length`/`width` so it works for every shape,
+    # including the rotated and tapered ones.
+    scale_note = ""
+    if spec.scale_with_lean and abs(gamma) > 1e-9:
+        s_len, s_wid = lean_scale_factors(crown, gamma, params)
+        out[:, 0] *= s_len
+        out[:, 1] *= s_wid
+        scale_note = f", scaled to {gamma:g} deg lean (x{s_len:.3f} long, x{s_wid:.3f} wide)"
+
     out[:, 1] += y_c
 
     g = math.radians(gamma)
@@ -219,7 +284,8 @@ def shape_patch(
         outline=out,
         tread_half_width=tread_width / 2.0,
         source="shape",
-        provenance=f"user-specified shape: {spec.describe()}" + (f" -- {spec.label}" if spec.label else ""),
+        provenance=f"user-specified shape: {spec.describe()}{scale_note}"
+        + (f" -- {spec.label}" if spec.label else ""),
         y_center=y_c,
         r_eff=r_eff,
         r_lat=float(np.asarray(crown.local_radius(y_c)).ravel()[0]),

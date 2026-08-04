@@ -61,7 +61,10 @@
         <div class="field"><label>Rotation (deg)</label><input id="cpRot" type="number" value="0" step="1" /></div>
         <div class="field"><label>Lateral centre y (mm)</label><input id="cpY" type="number" value="0" step="1" /></div>
         <div class="field"><label><input id="cpAutoY" type="checkbox" checked /> auto y from crown/lean</label></div>
+        <div class="field" title="A real 2W patch narrows sharply as you lean, because the contact point moves onto the shoulder where the crown radius collapses. With this on, the dimensions above describe the UPRIGHT patch and are scaled to each lean by the Winkler trend. Turn off to hold the stated size at every lean (sensitivity studies, or when you have measured footprints per lean).">
+          <label><input id="cpScaleLean" type="checkbox" checked /> scale patch with lean (crown physics)</label></div>
 
+        <div id="specError" class="spec-error" style="display:none"></div>
         <div class="editor-wrap">
           <canvas id="editor"></canvas>
           <div class="editor-legend">Drag the dots: centre = move laterally, right = length, top = width. Blue/green/orange blocks = centre/intermediate/shoulder zones.</div>
@@ -78,8 +81,13 @@
         <div class="field"><label>Crown R shoulder (mm)</label><input id="crownShoulder" type="number" placeholder="55" step="5" /></div>
         <div class="field"><label>Pitch count (override)</label><input id="nPitches" type="number" placeholder="auto" step="1" /></div>
         <div class="field"><label><input id="curv" type="checkbox" /> curvature correction</label></div>
-        <div class="field"><label>Grid quality (nx)</label>
-          <select id="quality"><option value="1024">draft (fast)</option><option value="2048" selected>standard</option><option value="4096">fine (slow)</option></select>
+        <div class="field" title="Circumferential grid cells. Fluctuation percentages (CoV) are stable at every setting; absolute stiffness values are not. Measured against a converged 8192 grid: draft is about 3% high, standard about 0.6%, fine about 0.01%.">
+          <label>Grid quality (nx)</label>
+          <select id="quality">
+            <option value="1024">draft — fast, ~3% on absolute values</option>
+            <option value="2048" selected>standard — ~0.6%</option>
+            <option value="4096">fine — slow, ~0.01%</option>
+          </select>
         </div>
       </div>
 
@@ -90,6 +98,7 @@
     <main class="main">
       <div id="emptyHint" class="banner">Load a tread-plan DXF (or the bundled sample) to begin. Everything runs locally in your browser — nothing is uploaded.</div>
       <div id="banner" class="banner" style="display:none"></div>
+      <div id="notes" class="banner warn" style="display:none"></div>
 
       <div style="display:flex;gap:14px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
         <label class="hint">Lean γ shown: <select id="gammaSel" class="field"></select></label>

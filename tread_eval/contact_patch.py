@@ -396,6 +396,12 @@ def winkler_patch(
 
     g = math.radians(gamma_deg)
     fz = params.vertical_load / max(math.cos(g), 0.2) if params.load_rises_with_lean else params.vertical_load
+    if not math.isfinite(fz) or fz < 0.0:
+        raise ValueError(f"vertical load must be a finite non-negative number, got {params.vertical_load!r} N")
+    if params.foundation_modulus <= 0.0:
+        raise ValueError(
+            f"foundation modulus k_f must be positive, got {params.foundation_modulus!r} N/mm^3"
+        )
     delta = math.sqrt(fz / (params.foundation_modulus * math.pi * math.sqrt(r_eff * r_lat)))
     a = math.sqrt(2.0 * r_eff * delta)
     b = math.sqrt(2.0 * r_lat * delta)
@@ -765,8 +771,47 @@ class CPLibrary:
 
 
 def max_supported_lean(crown: CrownProfile) -> float:
-    """Largest lean angle the crown profile can actually reach, degrees."""
+    """Largest lean angle the crown profile can actually reach, degrees.
+
+    The contact point sits where the tread tangent has rotated to horizontal, so
+    a lean beyond the steepest tangent on the crown has no contact point: the
+    tyre would be riding on the very edge of the tread.  Past this angle the
+    contact position saturates at the tread edge and every derived number is an
+    extrapolation, which is why callers are expected to clamp and say so.
+    """
     return float(np.degrees(np.max(crown.tangent_angle(crown.y))))
+
+
+def lean_scale_factors(
+    crown: CrownProfile,
+    gamma_deg: float,
+    params: CPParams = DEFAULT_CP_PARAMS,
+    gamma_ref_deg: float = 0.0,
+) -> tuple[float, float]:
+    """How a patch's length and width change between two lean angles.
+
+    Returns ``(s_length, s_width)`` -- the factors that carry a patch measured
+    (or stated) at ``gamma_ref_deg`` to ``gamma_deg``.
+
+    The trend comes from the Winkler solution, which is the only generator here
+    that produces it from first principles: with ``a = sqrt(2 R_eff delta)`` and
+    ``b = sqrt(2 R_lat delta)``, leaning does three things at once --
+
+    * the contact point walks out to the shoulder, where the **lateral radius
+      collapses** (125 -> 59 mm on a typical 2W crown), which narrows the patch;
+    * the effective rolling radius drops slightly, which lengthens it;
+    * the normal load rises as ``Fz/cos(gamma)``, which grows both.
+
+    Taking a *ratio* cancels the foundation modulus entirely, so these factors
+    depend only on the crown geometry and the load model -- not on ``k_f``,
+    which is the least knowable constant in the generator.  That is what makes
+    the trend safe to apply to a shape or a measured footprint whose absolute
+    size came from somewhere else.
+    """
+    tread_width = float(crown.y[-1] - crown.y[0])
+    ref = winkler_patch(gamma_ref_deg, crown, params, tread_width)
+    tgt = winkler_patch(gamma_deg, crown, params, tread_width)
+    return tgt.a / max(ref.a, 1e-9), tgt.b / max(ref.b, 1e-9)
 
 
 # Backwards-compatible aliases -----------------------------------------------
