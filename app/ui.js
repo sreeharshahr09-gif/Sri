@@ -19,9 +19,70 @@
     worker: null,
     editorTheta: 0,      // reference viewing angle for the editor window (deg)
     running: false,
+    compare: [],         // runs held for comparison (this session + loaded files)
+    bandEdges: null,     // rib cuts the last run used
+    bandMetric: "contact_area",
+    compareMetric: "kz",
   };
 
   var DEFAULT_LEANS = [0, 5, 10, 15, 20, 25, 30, 35, 40];
+
+  // Typical values per tyre class. A TBR crown is nearly flat where a 2W one is
+  // tightly curved, and the loads differ by more than an order of magnitude, so
+  // running a truck tread on motorcycle defaults is not a small error.
+  // Lean angles differ too: a truck barely leans, a motorcycle lives at 40 deg.
+  var TYRE_PRESETS = {
+    "2w":  { crownCenter: 125, crownShoulder: 55,  wheelR: 320, cpLoad: 1500,
+             cpLength: 90,  cpWidth: 50,  cpCorner: 12, nsd: 8.5,
+             leans: [0, 5, 10, 15, 20, 25, 30, 35, 40], label: "2W — motorcycle" },
+    "pcr": { crownCenter: 700, crownShoulder: 90,  wheelR: 315, cpLoad: 4000,
+             cpLength: 140, cpWidth: 160, cpCorner: 25, nsd: 8.0,
+             leans: [0, 2, 4, 6, 8, 10], label: "PCR — passenger car" },
+    "tbr": { crownCenter: 1500, crownShoulder: 120, wheelR: 520, cpLoad: 26000,
+             cpLength: 230, cpWidth: 250, cpCorner: 30, nsd: 16.0,
+             leans: [0, 2, 4, 6, 8], label: "TBR — truck & bus" },
+  };
+
+  function currentLeans() {
+    var t = TYRE_PRESETS[$("tyreType").value];
+    return (t && t.leans) || DEFAULT_LEANS;
+  }
+
+  // Class physics that must reach the engine on every run, preset or not.
+  function tyreClassPhysics() { return E.tyreClass($("tyreType").value); }
+
+  function applyTyrePreset() {
+    var t = TYRE_PRESETS[$("tyreType").value];
+    if (!t) return;
+    ["crownCenter", "crownShoulder", "wheelR", "cpLoad", "cpLength", "cpWidth", "cpCorner", "nsd"]
+      .forEach(function (k) { if ($(k)) $(k).value = t[k]; });
+    // The load model differs by class: a motorcycle's normal load really does
+    // grow as Fz/cos(lean); a car or truck barely cambers, and its cornering
+    // load comes from weight transfer, which this model does not carry.
+    $("cpAutoLoad").checked = !!tyreClassPhysics().load_rises_with_lean;
+    $("crownBreak").value = tyreClassPhysics().crown_break;
+    refreshValidation(); drawEditor(); markStale();
+  }
+
+  // Band edges: either evenly spaced, or the internal cuts the user typed with
+  // the two tread edges added on.
+  function readCrownBreak() {
+    var v = parseFloat($("crownBreak").value);
+    return isFinite(v) ? v : tyreClassPhysics().crown_break;
+  }
+
+  function readBandEdges() {
+    if (!state.pattern) return null;
+    var n = parseInt($("nBands").value, 10);
+    if (!isFinite(n) || n < 1) return null;
+    var half = state.pattern.tread_width / 2;
+    var raw = $("bandEdges").value.trim();
+    if (raw === "") return E.evenBandEdges(state.pattern.tread_width, Math.min(n, 24));
+    var inner = raw.split(",").map(function (v) { return parseFloat(v.trim()); })
+                   .filter(function (v) { return isFinite(v); })
+                   .sort(function (a, b) { return a - b; });
+    return E.validateBandEdges([-half].concat(inner, [half]), state.pattern.tread_width);
+  }
 
   // ---- element helpers -------------------------------------------------
   function $(id) { return document.getElementById(id); }
@@ -113,6 +174,9 @@
     if (cr) opts.crown_r_center = parseFloat(cr);
     if (csh) opts.crown_r_shoulder = parseFloat(csh);
     var np = $("nPitches").value; if (np) opts.n_pitches = parseInt(np, 10);
+    var ph = tyreClassPhysics();
+    opts.crown_break = readCrownBreak();
+    opts.zone_center = ph.zone_center; opts.zone_intermediate = ph.zone_intermediate;
     var out = E.loadPattern(text, defaults, opts);
     state.pattern = out.pattern;
     state.report = out.report;
@@ -169,7 +233,8 @@
     p.crown = E.crownDualRadius(
       p.tread_width,
       rc === "" ? undefined : parseFloat(rc),
-      rs === "" ? undefined : parseFloat(rs)
+      rs === "" ? undefined : parseFloat(rs),
+      readCrownBreak()
     );
 
     // 3. the pitch division, which the order chart marks against
@@ -487,6 +552,8 @@
     reconcilePattern();
     state.running = true;
     state.ranInputs = captureInputs();   // frozen for the export
+    try { state.ranBands = readBandEdges(); }
+    catch (err) { failRun(err.message); return; }
     $("overlay").classList.add("on");
     $("progress").textContent = "";
     var nx = parseInt($("quality").value, 10);
@@ -507,6 +574,7 @@
         }
         state.results = m.results; state.stiffness = m.stiffness; state.grid = m.grid;
         state.notes = m.notes || []; state.maxLean = m.maxLean;
+        state.bandEdges = m.bandEdges || null;
         state.running = false; $("overlay").classList.remove("on");
         $("runBtn").textContent = "▶ Run";
         $("timing").textContent = "computed in " + (m.timing.total / 1000).toFixed(1) + " s (raster " + m.timing.raster + " ms), grid " + m.grid.nx + "×" + m.grid.ny;
@@ -529,7 +597,8 @@
     state.worker.postMessage({
       cmd: "sweep", pattern: state.pattern, gridNx: nx, gridNy: ny,
       stiffParams: readStiffParams(), cpParams: readCpParams(), spec: readSpec(),
-      leans: DEFAULT_LEANS, discreteSamples: 360, curvatureCorrection: $("curv").checked, stride: stride,
+      zoneFracs: { center: tyreClassPhysics().zone_center, intermediate: tyreClassPhysics().zone_intermediate },
+      leans: currentLeans(), discreteSamples: 360, bandEdges: state.ranBands, curvatureCorrection: $("curv").checked, stride: stride,
     });
   }
 
@@ -591,6 +660,7 @@
     showResultsChrome(true);
     renderNotes();
     refreshExportButtons();
+    refreshCompareButtons();
     renderCards();
     renderThetaStack();
     renderPatternStrip();
@@ -598,6 +668,8 @@
     renderOrders();
     renderZones();
     renderPatchPreview();
+    renderBands();
+    renderCompare();
     renderDiagnostics();
     drawEditor();
   }
@@ -623,6 +695,8 @@
       ["Patch area", r.patch_area.toFixed(0), "mm²"],
       ["Mean contact area", ca.mean.toFixed(0), "mm² (" + (100 * ca.mean / r.patch_area).toFixed(0) + "% land)"],
       ["Mean vertical Kz", kz.mean.toFixed(0), "N/mm"],
+      ["Mean Kx (longitudinal)", E.fluctuationStats(r.kx).mean.toFixed(0), "N/mm"],
+      ["Mean Ky (lateral)", E.fluctuationStats(r.ky).mean.toFixed(0), "N/mm"],
       ["Kz fluctuation", (kz.cov * 100).toFixed(1), "% CoV over θ"],
       ["Blocks in patch", bc.mean.toFixed(1), "avg"],
       ["Dominant Kz order", dom ? String(dom.order) : "–", "per rev"],
@@ -687,6 +761,14 @@
         }
         path += "Z";
         shapes.push({ type: "path", path: path, xref: "x", yref: "y", fillcolor: hexA(zoneColor[blk.zone] || th.accent, 0.55), line: { width: 0 } });
+      }
+    }
+    // The designer's rib cuts, drawn where they actually fall on the tread.
+    if (state.bandEdges) {
+      for (var bi = 0; bi < state.bandEdges.length; bi++) {
+        shapes.push({ type: "line", xref: "paper", x0: 0, x1: 1, yref: "y",
+          y0: state.bandEdges[bi], y1: state.bandEdges[bi],
+          line: { color: th.ink || cssVar("--ink"), width: 1.5 } });
       }
     }
     var layout = {
@@ -820,6 +902,168 @@
   }
   function flag(kind, text) { return "<span class='flag " + kind + "'>" + text + "</span>"; }
 
+  // ---- bands (ribs) ----------------------------------------------------
+  var BAND_LABEL = { contact_area: "contact area (mm²)", kz: "Kz (N/mm)", kx: "Kx (N/mm)",
+                     ky: "Ky (N/mm)", block_count: "blocks in patch" };
+
+  function bandName(b) { return "y " + b.y_lo.toFixed(1) + " to " + b.y_hi.toFixed(1) + " mm"; }
+
+  function renderBands() {
+    var r = currentResult();
+    var has = r && r.bands && r.bands.length;
+    $("bandsEmpty").style.display = has ? "none" : "";
+    $("bandMetricRow").style.display = has ? "" : "none";
+    if (!has) { Plotly.purge($("bandsPlot")); $("bandsTable").innerHTML = ""; return; }
+
+    var th = plotTheme(), metric = state.bandMetric || "contact_area";
+    var palette = [th.accent, th.good, th.accent2, th.bad, th.inkDim,
+                   "#9b6bff", "#00b3a4", "#e2679a", "#8a9a5b", "#c26b1f"];
+    var data = r.bands.map(function (b, i) {
+      return { x: r.theta_deg, y: b[metric], type: "scatter", mode: "lines",
+               name: bandName(b), line: { color: palette[i % palette.length], width: 1.4 } };
+    });
+    Plotly.react($("bandsPlot"), data, {
+      paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+      margin: { l: 72, r: 16, t: 40, b: 88 }, height: 460,
+      legend: { orientation: "h", y: -0.16, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
+      title: { text: BAND_LABEL[metric] + " per band vs θ  (γ = " + r.gamma_deg + "°)", font: { size: 13 } },
+      xaxis: { title: { text: "rotation angle θ (deg)", font: { size: 11 } }, range: [0, 360], gridcolor: th.grid },
+      yaxis: { title: { text: BAND_LABEL[metric], font: { size: 11 } }, gridcolor: th.grid },
+    }, { responsive: true, displayModeBar: false });
+
+    var rows = "<table class='metrics'><tr><th>Band</th><th>width</th><th>mean area</th>" +
+      "<th>mean Kx</th><th>mean Ky</th><th>mean Kz</th><th>Kz CoV</th><th>share of Kz</th></tr>";
+    var totKz = 0;
+    r.bands.forEach(function (b) { totKz += E.fluctuationStats(b.kz).mean; });
+    r.bands.forEach(function (b) {
+      var a = E.fluctuationStats(b.contact_area), z = E.fluctuationStats(b.kz);
+      rows += "<tr><td>" + escapeHtml(bandName(b)) + "</td><td class='num'>" + b.width_mm.toFixed(1) +
+        " mm</td><td class='num'>" + a.mean.toFixed(0) + " mm²</td><td class='num'>" +
+        E.fluctuationStats(b.kx).mean.toFixed(0) + "</td><td class='num'>" +
+        E.fluctuationStats(b.ky).mean.toFixed(0) + "</td><td class='num'>" + z.mean.toFixed(0) +
+        "</td><td class='num'>" + (z.cov * 100).toFixed(1) + "%</td><td class='num'>" +
+        (totKz > 0 ? (100 * z.mean / totKz).toFixed(1) : "0.0") + "%</td></tr>";
+    });
+    $("bandsTable").innerHTML = rows + "</table>" +
+      "<div class='hint' style='margin-top:6px'>Bands sum exactly to the whole-tread total — they are a partition of the same correlation, not a second calculation.</div>";
+  }
+
+  // ---- design comparison ----------------------------------------------
+  // Entries are whole runs: {label, settings, results}. A run added from this
+  // session and a run loaded from an exported JSON file are the same shape, so
+  // they compare on equal terms and survive across sessions.
+  function compareLabel(settings) {
+    var p = settings.project || {};
+    return [p.tread, p.project, p.size].filter(Boolean).join(" · ") ||
+           (settings.pattern && settings.pattern.name) || "run";
+  }
+
+  function addCurrentToComparison() {
+    if (!state.results) return;
+    state.compare.push({
+      label: compareLabel(settingsSnapshot()) + "  (" + new Date().toLocaleTimeString() + ")",
+      settings: settingsSnapshot(),
+      results: state.results,
+    });
+    renderCompare();
+  }
+
+  function loadComparisonFiles(files) {
+    var pending = files.length;
+    for (var i = 0; i < files.length; i++) {
+      (function (file) {
+        var fr = new FileReader();
+        fr.onload = function () {
+          try {
+            var j = JSON.parse(String(fr.result));
+            if (j.format !== "tread_eval.sweep" || !j.results)
+              throw new Error("not a tread_eval run export");
+            state.compare.push({ label: compareLabel(j.settings || {}) + "  [" + file.name + "]",
+                                 settings: j.settings || {}, results: j.results });
+          } catch (err) {
+            alert("Could not read " + file.name + ": " + err.message);
+          }
+          if (--pending === 0) renderCompare();
+        };
+        fr.readAsText(file);
+      })(files[i]);
+    }
+  }
+
+  function refreshCompareButtons() {
+    var n = (state.compare || []).length;
+    var badge = $("cmpCount");
+    if (badge) badge.textContent = n ? "(" + n + " held)" : "";
+    var side = $("addCompareSide");
+    if (side) side.disabled = !state.results;
+  }
+
+  function renderCompare() {
+    var list = state.compare || [];
+    refreshCompareButtons();
+    $("compareMetricRow").style.display = list.length ? "" : "none";
+    if (!list.length) {
+      $("compareList").innerHTML = "<div class='banner'><b>Nothing to compare yet.</b><br>" +
+        "Run a design, press <b>+ Add this design to comparison</b> under the Run button, then load the next " +
+        "DXF, run it and add that too. Designs stay in this browser session — no files needed. " +
+        "(Loading previously exported JSON runs also works, for designs from another day or machine.)</div>";
+      Plotly.purge($("comparePlot")); $("compareTable").innerHTML = "";
+      return;
+    }
+    $("compareList").innerHTML = "<table class='metrics'><tr><th>#</th><th>Design</th><th>Tyre</th>" +
+      "<th>NSD</th><th>Shore</th><th>leans</th><th></th></tr>" + list.map(function (e, i) {
+        var s = e.settings || {}, p = s.project || {}, bd = s.block_defaults || {};
+        return "<tr><td>" + (i + 1) + "</td><td>" + escapeHtml(e.label) + "</td><td>" +
+          escapeHtml(p.tyre_type_label || p.tyre_type || "—") + "</td><td class='num'>" +
+          (bd.height != null ? bd.height : "—") + "</td><td class='num'>" +
+          ((s.compound_and_boundary || {}).shore_a != null ? s.compound_and_boundary.shore_a : "—") +
+          "</td><td class='num'>" + e.results.length + "</td>" +
+          "<td><button class='btn secondary cmp-del' data-i='" + i + "' style='padding:2px 8px'>remove</button></td></tr>";
+      }).join("") + "</table>";
+    [].forEach.call($("compareList").querySelectorAll(".cmp-del"), function (btn) {
+      btn.addEventListener("click", function () {
+        state.compare.splice(parseInt(btn.dataset.i, 10), 1);
+        renderCompare(); refreshCompareButtons();
+      });
+    });
+
+    var th = plotTheme(), metric = state.compareMetric || "kz";
+    var palette = [th.accent, th.good, th.accent2, th.bad, th.inkDim, "#9b6bff", "#00b3a4", "#e2679a"];
+    // Compare at the lowest lean every run shares, so the curves are commensurate.
+    var common = list.map(function (e) { return e.results.map(function (r) { return r.gamma_deg; }); })
+                     .reduce(function (a, b) { return a.filter(function (g) { return b.indexOf(g) >= 0; }); });
+    var gamma = common.length ? Math.min.apply(null, common) : 0;
+    var data = list.map(function (e, i) {
+      var r = e.results.find(function (x) { return x.gamma_deg === gamma; }) || e.results[0];
+      return { x: r.theta_deg, y: r[metric], type: "scatter", mode: "lines",
+               name: e.label.slice(0, 42), line: { color: palette[i % palette.length], width: 1.4 } };
+    });
+    Plotly.react($("comparePlot"), data, {
+      paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+      margin: { l: 72, r: 16, t: 40, b: 92 }, height: 460,
+      legend: { orientation: "h", y: -0.18, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
+      title: { text: BAND_LABEL[metric] + " compared at γ = " + gamma + "°" +
+               (common.length ? "" : "  (runs share no lean angle — first of each shown)"), font: { size: 13 } },
+      xaxis: { title: { text: "rotation angle θ (deg)", font: { size: 11 } }, range: [0, 360], gridcolor: th.grid },
+      yaxis: { title: { text: BAND_LABEL[metric], font: { size: 11 } }, gridcolor: th.grid },
+    }, { responsive: true, displayModeBar: false });
+
+    var base = null;
+    var rows = "<table class='metrics'><tr><th>Design</th><th>mean</th><th>CoV</th><th>min</th>" +
+      "<th>max</th><th>vs first</th></tr>";
+    list.forEach(function (e) {
+      var r = e.results.find(function (x) { return x.gamma_deg === gamma; }) || e.results[0];
+      var st = E.fluctuationStats(r[metric]);
+      if (base === null) base = st.mean;
+      var d = base ? (100 * (st.mean - base) / base) : 0;
+      rows += "<tr><td>" + escapeHtml(e.label) + "</td><td class='num'>" + st.mean.toFixed(1) +
+        "</td><td class='num'>" + (st.cov * 100).toFixed(2) + "%</td><td class='num'>" +
+        st.min.toFixed(1) + "</td><td class='num'>" + st.max.toFixed(1) + "</td><td class='num'>" +
+        (d === 0 ? "—" : (d > 0 ? "+" : "") + d.toFixed(1) + "%") + "</td></tr>";
+    });
+    $("compareTable").innerHTML = rows + "</table>";
+  }
+
   // ---- export ----------------------------------------------------------
   // The pipeline used to end at the screen: results could be read but never
   // taken anywhere. Both formats below are self-describing so a file still
@@ -847,8 +1091,20 @@
   // 8.5 mm. An exported file has to be able to stand on its own months later,
   // so the settings are frozen at dispatch and the outputs are merged in when
   // the worker replies.
+  function projectMeta() {
+    return {
+      project: $("projName").value.trim(),
+      tread: $("treadName").value.trim(),
+      tyre_type: $("tyreType").value,
+      tyre_type_label: (TYRE_PRESETS[$("tyreType").value] || {}).label || $("tyreType").value,
+      size: $("tyreSize").value.trim(),
+      designer: $("designer").value.trim(),
+    };
+  }
+
   function captureInputs() {
     return {
+      project: projectMeta(),
       pattern: {
         name: state.pattern.name, source: state.pattern.source,
         circumference_mm: state.pattern.tyre_circumference,
@@ -869,6 +1125,7 @@
   function settingsSnapshot() {
     var base = state.ranInputs || captureInputs();
     return {
+      project: base.project,
       pattern: base.pattern,
       block_defaults: base.block_defaults,
       compound_and_boundary: base.compound_and_boundary,
@@ -891,7 +1148,7 @@
     var lines = [];
     // A header block, commented, so the numbers are never orphaned from how
     // they were produced.
-    lines.push("# 2W tread pattern evaluation - theta x gamma sweep");
+    lines.push("# Tread pattern evaluation - theta x gamma sweep");
     lines.push("# generated: " + new Date().toISOString());
     lines.push("# pattern: " + s.pattern.name + " (" + s.pattern.n_blocks + " blocks, " +
       s.pattern.circumference_mm.toFixed(2) + " x " + s.pattern.tread_width_mm.toFixed(2) + " mm)");
@@ -941,7 +1198,7 @@
   function exportSummary() {
     if (!state.results) return;
     var s = settingsSnapshot();
-    var out = ["2W TREAD PATTERN EVALUATION", "=".repeat(60), ""];
+    var out = ["TREAD PATTERN EVALUATION", "=".repeat(60), ""];
     out.push("Pattern : " + s.pattern.name);
     out.push("Geometry: " + s.pattern.circumference_mm.toFixed(1) + " x " +
       s.pattern.tread_width_mm.toFixed(1) + " mm, " + s.pattern.n_blocks + " blocks, " +
@@ -972,9 +1229,164 @@
     download(safeName() + "_summary.txt", out.join("\n"), "text/plain;charset=utf-8");
   }
 
+  // ---- PDF report ------------------------------------------------------
+  // Charts go in as PNGs rendered by Plotly itself (Plotly.toImage works
+  // offline), so the report shows exactly what is on screen rather than a
+  // redrawn approximation. jsPDF is vendored, so no network is involved.
+  var CONFIDENTIAL = "INTERNAL USE ONLY — Apollo Tyres. Not for external distribution.";
+
+  function exportPDF() {
+    if (!state.results || !window.jspdf) return;
+    var btn = $("exportPdf"), old = btn.textContent;
+    btn.disabled = true; btn.textContent = "Building…";
+
+    var doc = new window.jspdf.jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    var W = 210, H = 297, M = 14, y = 0;
+    var s0 = settingsSnapshot(), proj = s0.project || {};
+    var created = new Date();
+
+    function footer(pageNo) {
+      doc.setFontSize(7); doc.setTextColor(120);
+      doc.text(CONFIDENTIAL, M, H - 8);
+      doc.text("page " + pageNo, W - M, H - 8, { align: "right" });
+      doc.setTextColor(0);
+    }
+    function newPage() { doc.addPage(); footer(doc.getNumberOfPages()); return M + 6; }
+
+    // ---- cover ----
+    doc.setFontSize(20); doc.text("Tread Pattern Evaluation", M, M + 10);
+    doc.setFontSize(11); doc.setTextColor(90);
+    doc.text("Contact and stiffness across rotation angle θ and lean angle γ", M, M + 18);
+    doc.setTextColor(0);
+    doc.setDrawColor(180); doc.line(M, M + 22, W - M, M + 22);
+
+    y = M + 32;
+    var rows = [
+      ["Project", proj.project || "—"],
+      ["Tread / design", proj.tread || s0.pattern.name || "—"],
+      ["Tyre type", proj.tyre_type_label || "—"],
+      ["Size", proj.size || "—"],
+      ["Designer", proj.designer || "—"],
+      ["Created", created.toLocaleString()],
+      ["", ""],
+      ["Geometry", s0.pattern.circumference_mm.toFixed(1) + " x " + s0.pattern.tread_width_mm.toFixed(1) +
+        " mm, " + s0.pattern.n_blocks + " blocks, " + s0.pattern.n_pitches + " pitches"],
+      ["Block depth", "NSD " + s0.block_defaults.height + " mm, draft " + s0.block_defaults.draft_angle +
+        " deg, " + s0.block_defaults.n_lateral_sipes + " sipes"],
+      ["Compound", "Shore A " + s0.compound_and_boundary.shore_a + ", Poisson " +
+        s0.compound_and_boundary.poisson + ", " + s0.compound_and_boundary.mode + " boundary"],
+      ["Sipe model", s0.compound_and_boundary.sipe_model],
+      ["Contact patch", E.describeSpec(s0.contact_patch)],
+      ["Load", s0.load.vertical_load + " N" + (s0.load.load_rises_with_lean ? " (rises with lean)" : " (constant)")],
+      ["Lean angles", s0.analysis.lean_angles_deg.join("°, ") + "°"],
+      ["Grid", s0.analysis.grid.nx + " x " + s0.analysis.grid.ny],
+    ];
+    doc.setFontSize(9);
+    rows.forEach(function (rw) {
+      if (!rw[0] && !rw[1]) { y += 3; return; }
+      doc.setTextColor(110); doc.text(String(rw[0]), M, y);
+      doc.setTextColor(0);
+      doc.text(doc.splitTextToSize(String(rw[1]), W - M - 52), M + 40, y);
+      y += Math.max(5, 4.6 * doc.splitTextToSize(String(rw[1]), W - M - 52).length);
+    });
+
+    if ((s0.physics_notes || []).length) {
+      y += 4; doc.setFontSize(10); doc.text("Physics notes", M, y); y += 5;
+      doc.setFontSize(8); doc.setTextColor(90);
+      s0.physics_notes.forEach(function (n) {
+        var lines = doc.splitTextToSize("• " + n.replace(/\s+/g, " "), W - 2 * M);
+        doc.text(lines, M, y); y += lines.length * 3.8 + 1.5;
+      });
+      doc.setTextColor(0);
+    }
+
+    doc.setFillColor(245, 232, 232); doc.rect(M, H - 34, W - 2 * M, 12, "F");
+    doc.setFontSize(9); doc.setTextColor(150, 30, 30);
+    doc.text(CONFIDENTIAL, W / 2, H - 26, { align: "center" });
+    doc.setTextColor(0);
+    footer(1);
+
+    // ---- headline numbers ----
+    var r0 = currentResult();
+    y = newPage();
+    doc.setFontSize(13); doc.text("Summary — γ = " + r0.gamma_deg + "°", M, y); y += 8;
+    doc.setFontSize(9);
+    var cards = [
+      ["Patch area", r0.patch_area.toFixed(0) + " mm²"],
+      ["Mean contact area", E.fluctuationStats(r0.contact_area).mean.toFixed(0) + " mm²"],
+      ["Mean Kz", E.fluctuationStats(r0.kz).mean.toFixed(0) + " N/mm"],
+      ["Mean Kx", E.fluctuationStats(r0.kx).mean.toFixed(0) + " N/mm"],
+      ["Mean Ky", E.fluctuationStats(r0.ky).mean.toFixed(0) + " N/mm"],
+      ["Kz fluctuation", (E.fluctuationStats(r0.kz).cov * 100).toFixed(2) + " % CoV"],
+      ["Blocks in patch", E.fluctuationStats(r0.block_count).mean.toFixed(2)],
+    ];
+    cards.forEach(function (c) {
+      doc.setTextColor(110); doc.text(c[0], M, y);
+      doc.setTextColor(0); doc.text(c[1], M + 55, y); y += 5.4;
+    });
+    y += 4;
+    doc.setFontSize(11); doc.text("Per lean angle", M, y); y += 6;
+    doc.setFontSize(8);
+    var hdr = ["γ", "area mean", "area CoV", "Kz mean", "Kz CoV", "Kx mean", "Ky mean", "blocks"];
+    var colX = [M, M + 16, M + 42, M + 62, M + 86, M + 106, M + 130, M + 154];
+    doc.setTextColor(110);
+    hdr.forEach(function (h, i) { doc.text(h, colX[i], y); });
+    doc.setTextColor(0); y += 4;
+    state.results.forEach(function (r) {
+      var a = E.fluctuationStats(r.contact_area), z = E.fluctuationStats(r.kz);
+      var vals = [r.gamma_deg + "°", a.mean.toFixed(0), (a.cov * 100).toFixed(2) + "%",
+                  z.mean.toFixed(0), (z.cov * 100).toFixed(2) + "%",
+                  E.fluctuationStats(r.kx).mean.toFixed(0), E.fluctuationStats(r.ky).mean.toFixed(0),
+                  E.fluctuationStats(r.block_count).mean.toFixed(2)];
+      vals.forEach(function (v, i) { doc.text(String(v), colX[i], y); });
+      y += 4.2;
+    });
+
+    // ---- the charts, exactly as drawn ----
+    var plots = [
+      ["thetaStack", "In-patch aggregates vs rotation angle θ"],
+      ["patternStrip", "Rolled-out tread pattern"],
+      ["leanHeat", "Lean map"],
+      ["orders", "Order content"],
+      ["zones", "Zone contact area"],
+      ["bandsPlot", "Bands (ribs)"],
+      ["comparePlot", "Design comparison"],
+      ["patchPrev", "Contact patch"],
+    ].filter(function (pl) {
+      var el = $(pl[0]);
+      return el && el.data && el.data.length && el.querySelector(".plot-container");
+    });
+
+    var i = 0;
+    function nextPlot() {
+      if (i >= plots.length) { finish(); return; }
+      var id = plots[i][0], title = plots[i][1];
+      var el = $(id);
+      var wpx = Math.max(700, el.clientWidth || 900);
+      var hpx = Math.max(320, el.clientHeight || 460);
+      Plotly.toImage(el, { format: "png", width: wpx, height: hpx, scale: 2 })
+        .then(function (uri) {
+          var yy = newPage();
+          doc.setFontSize(12); doc.text(title, M, yy); yy += 5;
+          var availW = W - 2 * M;
+          var imgH = Math.min(availW * (hpx / wpx), H - yy - 22);
+          doc.addImage(uri, "PNG", M, yy, availW, imgH, undefined, "FAST");
+          i++; nextPlot();
+        })
+        .catch(function () { i++; nextPlot(); });
+    }
+
+    function finish() {
+      var name = [proj.project, proj.tread].filter(Boolean).join("_") || safeName();
+      doc.save(name.replace(/[^A-Za-z0-9._-]+/g, "_") + "_report.pdf");
+      btn.disabled = false; btn.textContent = old;
+    }
+    nextPlot();
+  }
+
   function refreshExportButtons() {
     var on = !!state.results;
-    ["exportCsv", "exportJson", "exportTxt"].forEach(function (id) {
+    ["exportCsv", "exportJson", "exportTxt", "exportPdf"].forEach(function (id) {
       var el = $(id); if (el) el.disabled = !on;
     });
   }
@@ -1011,6 +1423,25 @@
     on($("exportCsv"), "click", exportCSV);
     on($("exportJson"), "click", exportJSON);
     on($("exportTxt"), "click", exportSummary);
+    on($("exportPdf"), "click", exportPDF);
+    on($("applyPreset"), "click", applyTyrePreset);
+    on($("tyreType"), "change", function () { markStale(); });
+    on($("bandMetric"), "change", function () { state.bandMetric = this.value; renderBands(); });
+    on($("compareMetric"), "change", function () { state.compareMetric = this.value; renderCompare(); });
+    on($("addCompare"), "click", addCurrentToComparison);
+    on($("addCompareSide"), "click", function () {
+      addCurrentToComparison();
+      document.querySelector('.tabs button[data-tab="compare"]').click();
+    });
+    on($("clearCompare"), "click", function () { state.compare = []; renderCompare(); });
+    on($("loadCompare"), "change", function (e) { if (e.target.files.length) loadComparisonFiles(e.target.files); e.target.value = ""; });
+    ["nBands", "bandEdges"].forEach(function (id) {
+      on($(id), "input", function () { markStale(); });
+    });
+    ["projName", "treadName", "tyreSize", "designer"].forEach(function (id) {
+      on($(id), "input", function () { /* metadata only -- no recompute needed */ });
+    });
+    renderCompare();
     on($("shape"), "change", function () { syncShapeFields(); drawEditor(); markStale(); });
 
     ["cpLength", "cpWidth", "cpCorner", "cpExp", "cpTaper", "cpRot", "cpY", "cpLoad"].forEach(function (id) {

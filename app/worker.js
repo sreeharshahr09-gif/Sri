@@ -14,7 +14,7 @@
       // crown arrays survive structured clone as plain arrays; the engine reads
       // them by index so no rehydration is needed.
       var grid = E.makeGrid(pattern, m.gridNx, m.gridNy);
-      var pack = E.rasterise(pattern, grid, m.stiffParams, m.curvatureCorrection);
+      var pack = E.rasterise(pattern, grid, m.stiffParams, m.curvatureCorrection, m.zoneFracs);
       var tRaster = Date.now() - t0;
 
       var cache = new E.MapFFTCache(pack);
@@ -42,7 +42,7 @@
 
       var results = [];
       for (var i = 0; i < leans.length; i++) {
-        var r = E.sweepLean(pattern, pack, leans[i], m.spec, m.cpParams, cache, m.discreteSamples);
+        var r = E.sweepLean(pattern, pack, leans[i], m.spec, m.cpParams, cache, m.discreteSamples, m.bandEdges);
         results.push(packResult(r, m.stride || 1));
         self.postMessage({ type: "progress", done: i + 1, total: leans.length });
       }
@@ -65,6 +65,7 @@
         maxLean: maxLean,
         timing: { raster: tRaster, total: Date.now() - t0 },
         grid: { nx: grid.nx, ny: grid.ny, dx: grid.dx, dy: grid.dy },
+        bandEdges: m.bandEdges || null,
       });
     } catch (err) {
       self.postMessage({ type: "error", message: String(err && err.message ? err.message : err) });
@@ -90,6 +91,11 @@
       block_count: sub(r.block_count),
       centroid_y: sub(r.centroid_y),
       zone_area: zone,
+      bands: r.bands ? r.bands.map(function (b) {
+        return { index: b.index, y_lo: b.y_lo, y_hi: b.y_hi, width_mm: b.width_mm,
+                 contact_area: sub(b.contact_area), kx: sub(b.kx), ky: sub(b.ky),
+                 kz: sub(b.kz), block_count: sub(b.block_count) };
+      }) : null,
       block_count_discrete: Array.prototype.slice.call(r.block_count_discrete),
       theta_discrete: Array.prototype.slice.call(r.theta_discrete),
       patch: { source: r.patch.source, provenance: r.patch.provenance, y_center: r.patch.y_center,

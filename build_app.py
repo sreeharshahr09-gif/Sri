@@ -54,6 +54,7 @@ def build(out_path: str | None = None) -> str:
     replacements = {
         "/*__STYLE__*/": _read(os.path.join(APP, "style.css")),
         "/*__PLOTLY__*/": _find_plotly(),
+        "/*__JSPDF__*/": _read(os.path.join(APP, "vendor_jspdf.js")),
         "/*__ENGINE__*/": _read(os.path.join(APP, "engine.js")),
         "/*__WORKER__*/": _read(os.path.join(APP, "worker.js")),
         "/*__UI__*/": _read(os.path.join(APP, "ui.js")),

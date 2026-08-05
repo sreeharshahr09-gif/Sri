@@ -236,7 +236,7 @@ def test_export_paths_exist_and_are_wired():
         assert f'id="{btn}"' in tpl, f"{btn} button missing from the template"
         assert f'on($("{btn}"), "click"' in ui, f"{btn} has no click handler"
     # the CSV must carry the settings that produced it
-    assert "# 2W tread pattern evaluation" in ui
+    assert "# Tread pattern evaluation" in ui
     assert "gamma_deg" in ui and "centroid_y_mm" in ui
     # exports must be gated on having results
     assert "refreshExportButtons" in ui
@@ -334,3 +334,127 @@ def test_exported_settings_are_frozen_at_run_time():
     assert "state.ranInputs" in snap
     for live in ("readDefaults()", "readStiffParams()", "readSpec()", "readCpParams()"):
         assert live not in snap, f"settingsSnapshot still reads {live} live"
+
+
+# --- tyre class, divisions, comparison, PDF ---------------------------
+def test_tyre_class_changes_the_physics_not_just_the_labels():
+    """A truck crown is flat almost to the edge; a motorcycle crown is curved
+    from the centreline out.  The break fraction sets the tread tangent at every
+    lateral position, so it decides the contact point at each lean and the
+    maximum lean the tyre can reach at all -- running one class on another's
+    profile is a real error, not a rounding one."""
+    node = _node()
+    script = (
+        "const E=require('./app/engine.js');"
+        "const out={};"
+        "for (const t of ['2w','pcr','tbr']) {"
+        "  const c=E.tyreClass(t);"
+        "  const crown=E.crownDualRadius(250, t==='2w'?125:(t==='pcr'?700:1500),"
+        "                                     t==='2w'?55:(t==='pcr'?90:120), c.crown_break);"
+        "  out[t]={brk:c.crown_break, zc:c.zone_center, zi:c.zone_intermediate,"
+        "          rise:c.load_rises_with_lean, maxLean:E.maxSupportedLean(crown)};"
+        "}"
+        "process.stdout.write(JSON.stringify(out));"
+    )
+    proc = subprocess.run([node, "-e", script], capture_output=True, text=True, cwd=REPO)
+    assert proc.returncode == 0, proc.stderr
+    r = json.loads(proc.stdout)
+
+    # the crown gets progressively flatter from 2W to TBR
+    assert r["2w"]["brk"] < r["pcr"]["brk"] < r["tbr"]["brk"]
+    # which shows up as a steadily smaller reachable lean
+    assert r["2w"]["maxLean"] > r["pcr"]["maxLean"] > r["tbr"]["maxLean"]
+    assert r["2w"]["maxLean"] > 25, "a motorcycle must reach a real lean angle"
+    assert r["tbr"]["maxLean"] < 12, "a truck barely cambers"
+    # only the motorcycle carries the Fz/cos(gamma) load rise
+    assert r["2w"]["rise"] is True
+    assert r["pcr"]["rise"] is False and r["tbr"]["rise"] is False
+    # shoulder is a smaller share of the half width as the tyre gets bigger
+    assert r["2w"]["zi"] < r["pcr"]["zi"] < r["tbr"]["zi"]
+
+
+def test_bands_partition_the_total_exactly():
+    """Bands are a restriction of the same correlation, not a second
+    calculation, so they must sum to the whole-tread answer bit for bit."""
+    node = _node()
+    script = (
+        "const fs=require('fs'),E=require('./app/engine.js');"
+        "const {pattern}=E.loadPattern(fs.readFileSync('" + DXF + "','utf8'),{height:8.5,draft_angle:3},{});"
+        "const g=E.makeGrid(pattern,1024,74);"
+        "const pack=E.rasterise(pattern,g,{shore_a:60,poisson:0.49,mode:'parallel'},false);"
+        "const edges=E.evenBandEdges(pattern.tread_width,5);"
+        "const r=E.sweepLean(pattern,pack,0,{shape:'rounded',length:90,width:50,corner_radius:12},"
+        "  {vertical_load:1500,wheel_radius:320,load_rises_with_lean:true},null,60,edges);"
+        "const sum=k=>r.bands.reduce((a,b)=>a+E.fluctuationStats(b[k]).mean,0);"
+        "process.stdout.write(JSON.stringify({n:r.bands.length,"
+        "  area:[sum('contact_area'),E.fluctuationStats(r.contact_area).mean],"
+        "  kz:[sum('kz'),E.fluctuationStats(r.kz).mean],"
+        "  kx:[sum('kx'),E.fluctuationStats(r.kx).mean]}));"
+    )
+    proc = subprocess.run([node, "-e", script], capture_output=True, text=True, cwd=REPO)
+    assert proc.returncode == 0, proc.stderr
+    r = json.loads(proc.stdout)
+    assert r["n"] == 5
+    for key in ("area", "kz", "kx"):
+        band_sum, total = r[key]
+        assert abs(band_sum - total) < 1e-6 * max(abs(total), 1.0), f"{key}: {band_sum} vs {total}"
+
+
+def test_band_edges_are_validated():
+    node = _node()
+    script = (
+        "const E=require('./app/engine.js');const o={};"
+        "const t=(k,f)=>{try{f();o[k]=null}catch(e){o[k]=e.message}};"
+        "t('outside',()=>E.validateBandEdges([-100,0,100],159));"
+        "t('unsorted',()=>E.validateBandEdges([-79.5,10,-10,79.5],159));"
+        "t('single',()=>E.validateBandEdges([0],159));"
+        "t('toomany',()=>E.validateBandEdges(Array.from({length:40},(_,i)=>-79.5+i*4),159));"
+        "t('ok',()=>E.validateBandEdges([-79.5,-20,20,79.5],159));"
+        "process.stdout.write(JSON.stringify(o));"
+    )
+    proc = subprocess.run([node, "-e", script], capture_output=True, text=True, cwd=REPO)
+    assert proc.returncode == 0, proc.stderr
+    r = json.loads(proc.stdout)
+    assert "outside the tread" in (r["outside"] or "")
+    assert "must increase" in (r["unsorted"] or "")
+    assert "at least two" in (r["single"] or "")
+    assert "at most 24" in (r["toomany"] or "")
+    assert r["ok"] is None
+
+
+def test_in_session_comparison_needs_no_files():
+    """Comparing two designs must not require exporting and re-importing."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert 'id="addCompareSide"' in tpl, "the in-session add button must sit beside Run"
+    assert "function addCurrentToComparison(" in ui
+    assert "state.compare.push(" in ui
+    assert 'on($("addCompareSide"), "click"' in ui
+    # runs are removable one by one, and the count is visible
+    assert "cmp-del" in ui and 'id="cmpCount"' in tpl
+    # loading JSON stays available, but is not the only route
+    assert "function loadComparisonFiles(" in ui
+
+
+def test_pdf_report_is_available_offline_and_marked_internal():
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert "function exportPDF(" in ui
+    assert 'id="exportPdf"' in tpl and 'on($("exportPdf"), "click"' in ui
+    assert "INTERNAL USE ONLY" in ui and "Apollo" in ui
+    # project details and the creation date must reach the cover
+    for field in ("Project", "Tread / design", "Tyre type", "Designer", "Created"):
+        assert field in ui, f"PDF cover is missing {field}"
+    # jsPDF is vendored, not fetched
+    assert os.path.exists(os.path.join(APP, "vendor_jspdf.js"))
+    import build_app
+    with tempfile.TemporaryDirectory() as d:
+        html = open(build_app.build(os.path.join(d, "t.html")), encoding="utf-8").read()
+    assert "jspdf" in html.lower(), "jsPDF must be inlined into the single file"
+
+
+def test_project_metadata_reaches_every_export():
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    assert "function projectMeta(" in ui
+    snap = ui[ui.index("function settingsSnapshot("):ui.index("function exportCSV(")]
+    assert "project: base.project" in snap, "project details must be in the frozen snapshot"

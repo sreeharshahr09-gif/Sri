@@ -831,7 +831,7 @@
     for (let i = 0; i < loops.length; i++) {
       const poly = loops[i].map((p) => [p[0], p[1] - half]);
       let cy = 0; for (const p of poly) cy += p[1]; cy /= poly.length;
-      const zone = classifyZone(Math.abs(cy), width);
+      const zone = classifyZone(Math.abs(cy), width, opts.zone_center, opts.zone_intermediate);
       blocks.push({
         id: "D" + String(i).padStart(4, "0"), pitch_id: "", polygon: poly, zone: zone,
         height: defaults.height_by_zone[zone] != null ? defaults.height_by_zone[zone] : defaults.height,
@@ -875,7 +875,7 @@
 
     const pattern = {
       tyre_circumference: circ, tread_width: width, pitches: pitches, blocks: blocks,
-      crown: crownDualRadius(width, opts.crown_r_center, opts.crown_r_shoulder),
+      crown: crownDualRadius(width, opts.crown_r_center, opts.crown_r_shoulder, opts.crown_break),
       name: opts.name || "pattern", source: "dxf",
       meta: { geometric_repeat_mm: repeat, uniform_array: uniform },
     };
@@ -891,14 +891,40 @@
   // =====================================================================
   // 4. zones + crown profile (port of tread_eval/schema.py)
   // =====================================================================
+  // Class-dependent geometry.
+  //
+  // These are not cosmetic. The crown break decides where the shoulder radius
+  // starts eating into the profile, which sets the tangent angle at every
+  // lateral position -- and therefore the contact point at each lean and the
+  // maximum lean the tyre can reach at all. A truck crown is flat almost to the
+  // edge; a motorcycle crown is curved from the centreline out. Running one on
+  // the other's profile is a real error, not a rounding one.
+  //
+  // The zone fractions follow the same logic: a TBR shoulder rib is a much
+  // smaller fraction of the half width than a 2W shoulder. Typical values per
+  // class; override the crown radii and break directly when you know better.
+  var TYRE_CLASS = {
+    "2w":  { crown_break: 0.45, zone_center: 0.34, zone_intermediate: 0.72,
+             load_rises_with_lean: true,
+             note: "motorcycle: curved crown, leans far, load grows as Fz/cos(gamma)" },
+    "pcr": { crown_break: 0.72, zone_center: 0.40, zone_intermediate: 0.78,
+             load_rises_with_lean: false,
+             note: "passenger car: flat crown rolling off in the outer quarter; camber is small, so cornering load comes from weight transfer rather than lean" },
+    "tbr": { crown_break: 0.85, zone_center: 0.45, zone_intermediate: 0.82,
+             load_rises_with_lean: false,
+             note: "truck & bus: nearly flat crown with the shoulder only at the very edge; barely cambers" },
+  };
+
+  function tyreClass(name) { return TYRE_CLASS[String(name || "2w").toLowerCase()] || TYRE_CLASS["2w"]; }
+
   function zoneBounds(treadWidth, centerFrac, intermediateFrac) {
     centerFrac = centerFrac || 0.34; intermediateFrac = intermediateFrac || 0.72;
     const half = treadWidth / 2;
     return { center: [0, centerFrac * half], intermediate: [centerFrac * half, intermediateFrac * half], shoulder: [intermediateFrac * half, half] };
   }
   const ZONES = ["center", "intermediate", "shoulder"];
-  function classifyZone(yAbs, treadWidth) {
-    const b = zoneBounds(treadWidth);
+  function classifyZone(yAbs, treadWidth, cFrac, iFrac) {
+    const b = zoneBounds(treadWidth, cFrac, iFrac);
     for (const z of ZONES) if (yAbs <= b[z][1]) return z;
     return "shoulder";
   }
@@ -1119,7 +1145,7 @@
     }
   }
 
-  function rasterise(pattern, grid, stiffParams, curvatureCorrection) {
+  function rasterise(pattern, grid, stiffParams, curvatureCorrection, zoneFracs) {
     const ny = grid.ny, nx = grid.nx, N = ny * nx;
     const y0 = -grid.tread_width / 2;
     const yv = gridY(grid);
@@ -1153,7 +1179,8 @@
     }
 
     const area = new Float32Array(N), kx = new Float32Array(N), ky = new Float32Array(N), kz = new Float32Array(N), blockFrac = new Float32Array(N), yMoment = new Float32Array(N);
-    const bounds = zoneBounds(pattern.tread_width);
+    zoneFracs = zoneFracs || {};
+    const bounds = zoneBounds(pattern.tread_width, zoneFracs.center, zoneFracs.intermediate);
     const zoneArea = { center: new Float32Array(N), intermediate: new Float32Array(N), shoulder: new Float32Array(N) };
     const rowZone = new Array(ny);
     for (let r = 0; r < ny; r++) { const ay = Math.abs(yv[r]); for (const z of ZONES) { if (ay >= bounds[z][0] && ay < bounds[z][1] + 1e-9) { rowZone[r] = z; break; } } }
@@ -1454,6 +1481,72 @@
     return irfft(accRe, accIm, nx);
   }
 
+  // Per-band correlation.
+  //
+  // The global correlation sums the per-row products over every row; a band is
+  // just that same sum restricted to the rows inside it. So every band comes
+  // out of ONE pass over the already-cached map transforms -- N accumulators
+  // instead of one, then N inverse transforms. No extra forward FFTs, which is
+  // what would otherwise make N bands N times the cost.
+  //
+  // `bandOfRow[r]` is the band index for grid row r, or -1 for none.
+  function correlateByBand(mapSpec, kerRe, kerIm, nx, bandOfRow, nBands) {
+    const half = mapSpec.half, ny = mapSpec.ny;
+    const accRe = [], accIm = [];
+    for (let b = 0; b < nBands; b++) { accRe.push(new Float64Array(half)); accIm.push(new Float64Array(half)); }
+    for (let r = 0; r < ny; r++) {
+      const bi = bandOfRow[r];
+      if (bi < 0) continue;
+      const base = r * half, ar = accRe[bi], ai = accIm[bi];
+      for (let f = 0; f < half; f++) {
+        const mr = mapSpec.re[base + f], mi = mapSpec.im[base + f];
+        const kr = kerRe[base + f], ki = kerIm[base + f];
+        ar[f] += mr * kr + mi * ki;
+        ai[f] += mi * kr - mr * ki;
+      }
+    }
+    const out = [];
+    for (let b = 0; b < nBands; b++) out.push(irfft(accRe[b], accIm[b], nx));
+    return out;
+  }
+
+  // Band edges (mm from the centreline) -> per-row band index.
+  // `edges` is ascending and length nBands+1, e.g. [-79.5, -40, 0, 40, 79.5].
+  function bandRowIndex(grid, edges) {
+    const yv = gridY(grid);
+    const idx = new Int32Array(grid.ny).fill(-1);
+    for (let r = 0; r < grid.ny; r++) {
+      for (let b = 0; b + 1 < edges.length; b++) {
+        if (yv[r] >= edges[b] && (yv[r] < edges[b + 1] || b === edges.length - 2)) { idx[r] = b; break; }
+      }
+    }
+    return idx;
+  }
+
+  // Evenly spaced band edges across the full tread width.
+  function evenBandEdges(treadWidth, n) {
+    const half = treadWidth / 2, out = [];
+    for (let i = 0; i <= n; i++) out.push(-half + (2 * half * i) / n);
+    return out;
+  }
+
+  function validateBandEdges(edges, treadWidth) {
+    if (!Array.isArray(edges) || edges.length < 2)
+      throw new Error("band edges need at least two values (one band)");
+    const half = treadWidth / 2;
+    for (let i = 0; i < edges.length; i++) {
+      if (!Number.isFinite(edges[i]))
+        throw new Error("band edge " + (i + 1) + " must be a number, got " + edges[i]);
+      if (edges[i] < -half - 1e-6 || edges[i] > half + 1e-6)
+        throw new Error("band edge " + edges[i] + " mm lies outside the tread (-" +
+          half.toFixed(1) + " to +" + half.toFixed(1) + " mm)");
+      if (i && edges[i] <= edges[i - 1])
+        throw new Error("band edges must increase; " + edges[i] + " follows " + edges[i - 1]);
+    }
+    if (edges.length - 1 > 24) throw new Error("at most 24 bands (got " + (edges.length - 1) + ")");
+    return edges;
+  }
+
   function kernelSpectrum(map, grid) {
     const ny = grid.ny, nx = grid.nx, half = (nx >> 1) + 1;
     const re = new Float64Array(ny * half), im = new Float64Array(ny * half);
@@ -1528,7 +1621,7 @@
     };
   }
 
-  function sweepLean(pattern, pack, gammaDeg, spec, params, cache, discreteSamples) {
+  function sweepLean(pattern, pack, gammaDeg, spec, params, cache, discreteSamples, bandEdges) {
     const grid = pack.grid, nx = grid.nx;
     cache = cache || new MapFFTCache(pack);
     const useSpec = Object.assign({}, spec, { gamma_deg: gammaDeg });
@@ -1551,6 +1644,29 @@
     const zoneArea = {};
     for (const z of ZONES) zoneArea[z] = maxClamp(correlate(cache.get("zone_" + z, pack.zoneArea[z]), kb.re, kb.im, nx));
 
+    // Per-band aggregates, if the designer has divided the tread into ribs.
+    // Reuses the same cached map transforms as the totals above, so the extra
+    // cost is a handful of inverse transforms rather than a second sweep.
+    let bands = null;
+    if (bandEdges && bandEdges.length >= 2) {
+      const nB = bandEdges.length - 1;
+      const rowIdx = bandRowIndex(grid, bandEdges);
+      const by = (key, map) => correlateByBand(cache.get(key, map), kb.re, kb.im, nx, rowIdx, nB).map(maxClamp);
+      const bArea = by("area", pack.area), bKx = by("kx", pack.kx),
+            bKy = by("ky", pack.ky), bKz = by("kz", pack.kz),
+            bCount = by("block_frac", pack.blockFrac);
+      // Geometric width of each band, so a per-mm comparison is possible.
+      bands = [];
+      for (let b = 0; b < nB; b++) {
+        bands.push({
+          index: b,
+          y_lo: bandEdges[b], y_hi: bandEdges[b + 1],
+          width_mm: bandEdges[b + 1] - bandEdges[b],
+          contact_area: bArea[b], kx: bKx[b], ky: bKy[b], kz: bKz[b], block_count: bCount[b],
+        });
+      }
+    }
+
     const shape = shapeMetrics(patch, masks.binary, grid);
     const patchAreaVal = shape.area_mm2;
     const centroidY = new Float64Array(nx), landRatio = new Float64Array(nx);
@@ -1566,15 +1682,15 @@
       gamma_deg: gammaDeg, patch: { source: patch.source, provenance: patch.provenance, y_center: patch.y_center, a: patch.a, b: patch.b, clipped: patch.clipped, outline: patch.outline, normal_load: patch.normal_load, peak_pressure: patch.peak_pressure },
       theta_deg: gridThetaDeg(grid), contact_area: contactArea, land_ratio: landRatio,
       kx: kx, ky: ky, kz: kz, block_count: blockCount, centroid_y: centroidY,
-      zone_area: zoneArea,
+      zone_area: zoneArea, bands: bands,
       block_count_discrete: disc.count, theta_discrete: disc.theta,
       patch_area: patchAreaVal, patch_perimeter: shape.perimeter_mm, patch_load: patchLoad, shape: shape,
     };
   }
 
-  function sweep(pattern, pack, leanAngles, spec, params, discreteSamples) {
+  function sweep(pattern, pack, leanAngles, spec, params, discreteSamples, bandEdges) {
     const cache = new MapFFTCache(pack);
-    return leanAngles.map((g) => sweepLean(pattern, pack, g, spec, params, cache, discreteSamples));
+    return leanAngles.map((g) => sweepLean(pattern, pack, g, spec, params, cache, discreteSamples, bandEdges));
   }
 
   // =====================================================================
@@ -1647,7 +1763,7 @@
     readDxfEntities, entitiesToSegments, buildLoops, closeAcrossSeam, loadPattern, estimatePitchCount, geometricRepeat,
     validateBlockDefaults, validateImportOptions,
     // zones + crown
-    zoneBounds, classifyZone, ZONES, crownDualRadius, crownFromRadiusProfile, crownTangentAngle, crownLocalRadius, crownDrop, crownContactLateral,
+    zoneBounds, classifyZone, ZONES, crownDualRadius, TYRE_CLASS, tyreClass, crownFromRadiusProfile, crownTangentAngle, crownLocalRadius, crownDrop, crownContactLateral,
     // fft
     fftRadix2, rfftRow, irfft,
     // raster
@@ -1656,7 +1772,7 @@
     SHAPES, shapeOutline, describeSpec, shapePatch, patchMasks, patchContains, patchArea, patchPerimeter, patchLength, patchWidth,
     validateSpec, leanScaleFactors, maxSupportedLean, isPowerOfTwo,
     // sweep
-    MapFFTCache, sweepLean, sweep,
+    MapFFTCache, sweepLean, sweep, correlateByBand, bandRowIndex, evenBandEdges, validateBandEdges,
     // metrics
     fluctuationStats, orderSpectrum, dominantOrders,
   };
