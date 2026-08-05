@@ -70671,6 +70671,7 @@ return Plotly;
     if (refreshValidation().length) return;   // never compute on invalid input
     reconcilePattern();
     state.running = true;
+    state.ranInputs = captureInputs();   // frozen for the export
     $("overlay").classList.add("on");
     $("progress").textContent = "";
     var nx = parseInt($("quality").value, 10);
@@ -71023,7 +71024,15 @@ return Plotly;
     return n.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "tread";
   }
 
-  function settingsSnapshot() {
+  // The inputs exactly as they were when Run was pressed.
+  //
+  // Read live, this used to describe whatever was in the boxes at export time,
+  // which is not necessarily what produced the numbers beside it: edit NSD
+  // after a run and the file claimed 4.0 mm had produced results computed at
+  // 8.5 mm. An exported file has to be able to stand on its own months later,
+  // so the settings are frozen at dispatch and the outputs are merged in when
+  // the worker replies.
+  function captureInputs() {
     return {
       pattern: {
         name: state.pattern.name, source: state.pattern.source,
@@ -71037,13 +71046,26 @@ return Plotly;
       compound_and_boundary: readStiffParams(),
       contact_patch: readSpec(),
       load: readCpParams(),
+      curvature_correction: $("curv").checked,
+      import_report: state.report,
+    };
+  }
+
+  function settingsSnapshot() {
+    var base = state.ranInputs || captureInputs();
+    return {
+      pattern: base.pattern,
+      block_defaults: base.block_defaults,
+      compound_and_boundary: base.compound_and_boundary,
+      contact_patch: base.contact_patch,
+      load: base.load,
       analysis: {
         lean_angles_deg: state.results.map(function (r) { return r.gamma_deg; }),
         grid: state.grid,
-        curvature_correction: $("curv").checked,
+        curvature_correction: base.curvature_correction,
         max_supported_lean_deg: state.maxLean,
       },
-      import_report: state.report,
+      import_report: base.import_report,
       physics_notes: state.notes || [],
     };
   }

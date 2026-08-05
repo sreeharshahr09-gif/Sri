@@ -315,3 +315,22 @@ def test_first_run_gives_numbered_instructions():
     assert hint.count("<li>") >= 4, "the workflow should be spelled out as steps"
     for word in ("Load", "Run"):
         assert word in hint
+
+
+def test_exported_settings_are_frozen_at_run_time():
+    """An exported file must describe the inputs that actually produced its
+    numbers.  Read live, the settings block described whatever was in the boxes
+    at export time: edit NSD after a run and the file claimed 4.0 mm had
+    produced results computed at 8.5 mm -- which makes the self-describing
+    header worse than no header at all."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    assert "function captureInputs(" in ui
+    # frozen when the run is dispatched, before the worker is handed anything
+    run_body = ui[ui.index("function run()"):ui.index("function populateGammaSelect")]
+    assert "state.ranInputs = captureInputs();" in run_body
+    assert run_body.index("state.ranInputs") < run_body.index("postMessage")
+    # and the exports read the frozen copy, not the live controls
+    snap = ui[ui.index("function settingsSnapshot("):ui.index("function exportCSV(")]
+    assert "state.ranInputs" in snap
+    for live in ("readDefaults()", "readStiffParams()", "readSpec()", "readCpParams()"):
+        assert live not in snap, f"settingsSnapshot still reads {live} live"
