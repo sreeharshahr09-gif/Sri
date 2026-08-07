@@ -883,6 +883,36 @@
         }
 
 
+        .color-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 4px 6px 4px 5px;
+            margin: 0 5px 5px 0;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9.5px;
+        }
+        .color-chip-dot {
+            width: 14px; height: 14px;
+            border-radius: 50%;
+            border: 1px solid rgba(255,255,255,.5);
+            box-shadow: 0 0 0 1px rgba(0,0,0,.35);
+        }
+        .color-chip-txt { color: var(--text-secondary); }
+        .color-chip button {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 11px;
+            line-height: 1;
+            padding: 0 2px;
+        }
+        .color-chip button:hover { color: #ef4444; }
+
         /* ─────────────────────────────────────────────────────────────
            DXF STUDIO — viewer + profile smoother (additive module)
            Namespaced under .dxfs- so it cannot affect tracer styling.
@@ -1230,7 +1260,7 @@
                 </div>
                 
                 <div class="canvas-panel" id="edgePanel">
-                    <div class="panel-label">🔬 Edge Detection</div>
+                    <div class="panel-label" id="edgePanelLabel">🔬 Edge Detection</div>
                     <div class="canvas-container" id="edgeCanvasContainer">
                         <canvas id="edgesCanvas"></canvas>
                     </div>
@@ -1948,6 +1978,114 @@
             </div>
             
             <div class="panel-section">
+                <div class="section-header">
+                    🎨 Colour Filter
+                    <span id="colorActiveBadge" style="display:none;background:var(--accent-primary);color:#fff;font-size:9px;padding:2px 6px;border-radius:99px;letter-spacing:0;">ACTIVE</span>
+                </div>
+
+                <div class="control-group">
+                    <button class="btn btn-primary" id="colorPickBtn" onclick="toggleColorPick()" style="width:100%;font-size:11px;padding:10px;">
+                        🎯 Pick Colour from Image
+                    </button>
+                    <div class="manual-trace-note">
+                        For drawings where the outline is a distinct colour (e.g. a Tirescan footprint outline over the
+                        tread pattern). Click the outline in the image; the tool then works on that colour alone and
+                        ignores the pattern. Click more than once to add extra shades of the same line.
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Picked Colours</label>
+                    <div id="colorSwatches">
+                        <div class="manual-trace-note" style="margin:0;">No colour picked yet.</div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Tolerance</label>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="colorTolSlider" min="1" max="60" value="12" step="1">
+                        <span class="slider-value" id="colorTolValue">12</span>
+                    </div>
+                    <div id="colorStats" style="font-size:10px;color:var(--text-secondary);margin-top:6px;"></div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Matching</label>
+                    <select class="control-input" id="colorMatchMode" onchange="refreshColorMask()">
+                        <option value="rgb">Exact colour (RGB distance)</option>
+                        <option value="hue">Same hue, ignore shading</option>
+                    </select>
+                    <div class="manual-trace-note">
+                        Use <strong>Same hue</strong> when the line varies in brightness or is anti-aliased against a busy background.
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Close gaps (px)</label>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="colorClose" min="0" max="15" value="3" step="1">
+                        <span class="slider-value" id="colorCloseValue">3</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-secondary);cursor:pointer;">
+                        <input type="checkbox" id="colorFill" onchange="refreshColorMask()">
+                        Fill the area enclosed by the outline
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-secondary);cursor:pointer;margin-top:8px;">
+                        <input type="checkbox" id="colorShowMask" checked onchange="renderColorPreview()">
+                        Show the mask in the preview panel
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-secondary);cursor:pointer;margin-top:8px;">
+                        <input type="checkbox" id="colorRestrict" onchange="toggleColorFilter(this.checked)">
+                        <strong>Restrict all tracing to this colour</strong>
+                    </label>
+                    <div class="manual-trace-note">
+                        With this on, Rough Trace, Guided Trace, Refine, Auto Main Boundary and Quick Extract all see
+                        only the picked colour — every existing tool keeps working exactly as before.
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Direct extraction</label>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                        <div>
+                            <label class="control-label" style="font-size:10px;">Min area (% of image)</label>
+                            <input type="number" class="control-input" id="colorMinArea" value="0.2" step="0.05" min="0">
+                        </div>
+                        <div>
+                            <label class="control-label" style="font-size:10px;">Target points</label>
+                            <input type="number" class="control-input" id="colorTargetPoints" value="120" step="10" min="0">
+                        </div>
+                    </div>
+                    <div style="margin-top:8px;">
+                        <label class="control-label" style="font-size:10px;">Outline smoothing (px)</label>
+                        <div class="slider-container">
+                            <input type="range" class="slider" id="colorSmooth" min="0" max="10" value="1.5" step="0.5">
+                            <span class="slider-value" id="colorSmoothValue">1.5</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="extractColorOutline(false)" style="width:100%;font-size:11px;padding:10px;margin-top:8px;">
+                        ⚡ Extract Colour Outline
+                    </button>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;">
+                        <button class="btn" onclick="extractColorOutline(true)" style="font-size:10px;padding:8px;">
+                            Extract &amp; Save All
+                        </button>
+                        <button class="btn" onclick="clearColorFilter()" style="font-size:10px;padding:8px;">
+                            🗑 Clear Colour
+                        </button>
+                    </div>
+                    <div class="manual-trace-note">
+                        Traces the colour region directly, without edge detection — usually the fastest and cleanest
+                        route for a solid coloured outline.
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-section">
                 <div class="section-header">🧩 DXF Studio</div>
                 <button class="btn btn-primary" onclick="DXFStudio.open()" style="width:100%;font-size:11px;padding:10px;">
                     🧩 Open DXF Viewer &amp; Smoother
@@ -2413,6 +2551,18 @@
         }
         
         document.getElementById('imageInput').addEventListener('change', loadImg);
+
+        // Colour-filter controls: keep the readouts live and rebuild the mask.
+        [['colorTolSlider','colorTolValue'], ['colorClose','colorCloseValue'], ['colorSmooth','colorSmoothValue']]
+            .forEach(([sliderId, valueId]) => {
+                const sl = document.getElementById(sliderId);
+                const lb = document.getElementById(valueId);
+                if (!sl) return;
+                sl.addEventListener('input', () => {
+                    if (lb) lb.textContent = sl.value;
+                    if (sliderId !== 'colorSmooth') refreshColorMask(true);
+                });
+            });
         canvas.addEventListener('click', handleClick);
         
         // Drag and drop
@@ -2815,7 +2965,7 @@
         }
         
         function updateMagnifier(e) {
-            if (mode !== 'rough' && mode !== 'manualPath' && mode !== 'calibrating' && !editMode && !deletePointMode && !measureMode) {
+            if (mode !== 'rough' && mode !== 'manualPath' && mode !== 'calibrating' && !editMode && !deletePointMode && !measureMode && !colorPickMode) {
                 magnifier.classList.remove('active');
                 return;
             }
@@ -3825,12 +3975,25 @@
                     
                     ctx.drawImage(img, 0, 0);
                     
+                    // A fresh image invalidates any colour selection, and the
+                    // previous Mats must be released before new ones replace them.
+                    colorSamples = [];
+                    colorPickMode = false;
+                    colorFilterActive = false;
+                    lastMaskStats = null;
+                    if (colorMaskMat) { colorMaskMat.delete(); colorMaskMat = null; }
+                    captureSourcePixels(img);
+
                     if (ready) {
+                        if (imgMat) imgMat.delete();
+                        if (baseGrayMat) baseGrayMat.delete();
                         imgMat = cv.imread(canvas);
-                        grayMat = new cv.Mat();
-                        cv.cvtColor(imgMat, grayMat, cv.COLOR_RGBA2GRAY);
+                        baseGrayMat = new cv.Mat();
+                        cv.cvtColor(imgMat, baseGrayMat, cv.COLOR_RGBA2GRAY);
+                        grayMat = baseGrayMat;
                         updateEdges();
                     }
+                    updateColorUI();
                     
                     uploadZone.style.display = 'none';
                     canvas.style.display = 'block';
@@ -3946,6 +4109,12 @@
             const rect = canvas.getBoundingClientRect();
             let x = Math.round((e.clientX - rect.left) * (canvas.width / rect.width));
             let y = Math.round((e.clientY - rect.top) * (canvas.height / rect.height));
+
+            // Colour picking takes priority over all other click handling.
+            if (colorPickMode) {
+                addColorSampleAt(x, y);
+                return;
+            }
 
             // Free measurement takes priority over all other click handling.
             if (measureMode) {
@@ -4634,6 +4803,7 @@
             updateRangePickButtons();
             cancelDeleteModes();
             cancelMeasureMode();
+            if (typeof clearColorFilter === 'function' && colorSamples.length) clearColorFilter();
             measurements = [];
             updateMeasureUI();
             setMeasureAvailability();
@@ -6038,6 +6208,420 @@
             ctx.restore();
         }
 
+
+        /* ===== COLOUR FILTER =================================================
+           Trace one specific colour and ignore everything else.
+
+           Integration point: every tracing path in this tool (edge preview,
+           Refine, Guided Trace, Auto Main Boundary, Quick Extract, edge snap)
+           reads from `grayMat`. So when the filter is armed we simply point
+           `grayMat` at a binary mask of the picked colour. Every existing
+           feature then operates on that colour alone, with no changes to any
+           of them. Disarming restores the pristine grayscale.
+        ==================================================================== */
+
+        let colorPickMode = false;     // eyedropper armed
+        let colorSamples = [];         // [{r,g,b}] picked reference colours
+        let colorFilterActive = false; // grayMat currently points at the mask
+        let colorMaskMat = null;       // owned CV_8UC1 mask
+        let baseGrayMat = null;        // pristine grayscale, owned
+        let srcData = null;            // raw ImageData of the untouched image
+        let lastMaskStats = null;
+
+        // Raw pixels are read from an offscreen copy of the image, never from
+        // the visible canvas — that one already has trace overlays drawn on it.
+        function captureSourcePixels(image) {
+            try {
+                const c = document.createElement('canvas');
+                c.width = image.width;
+                c.height = image.height;
+                const cx = c.getContext('2d', { willReadFrequently: true });
+                cx.drawImage(image, 0, 0);
+                srcData = cx.getImageData(0, 0, c.width, c.height);
+            } catch (err) {
+                srcData = null;
+                console.error('Could not read image pixels for colour picking', err);
+            }
+        }
+
+        function rgbToHsv(r, g, b) {
+            const rn = r / 255, gn = g / 255, bn = b / 255;
+            const mx = Math.max(rn, gn, bn), mn = Math.min(rn, gn, bn);
+            const d = mx - mn;
+            let h = 0;
+            if (d > 1e-9) {
+                if (mx === rn) h = 60 * (((gn - bn) / d) % 6);
+                else if (mx === gn) h = 60 * ((bn - rn) / d + 2);
+                else h = 60 * ((rn - gn) / d + 4);
+            }
+            if (h < 0) h += 360;
+            return { h, s: mx > 1e-9 ? d / mx : 0, v: mx };
+        }
+
+        function hueDistance(a, b) {
+            const d = Math.abs(a - b) % 360;
+            return d > 180 ? 360 - d : d;
+        }
+
+        function getColorMatchMode() {
+            const el = document.getElementById('colorMatchMode');
+            return el ? el.value : 'rgb';
+        }
+
+        function getColorTolerance() {
+            const el = document.getElementById('colorTolSlider');
+            const v = el ? parseFloat(el.value) : 12;
+            return Number.isFinite(v) ? v : 12;
+        }
+
+        // Does this pixel match any of the picked reference colours?
+        function pixelMatches(r, g, b, tolPct, mode) {
+            for (const s of colorSamples) {
+                if (mode === 'hue') {
+                    // Compare chromaticity only, so shading and anti-aliasing of
+                    // the same ink still count as the same colour.
+                    const a = rgbToHsv(r, g, b);
+                    if (s.hsv.s < 0.12) {
+                        // Reference is near-grey: hue is meaningless, use RGB.
+                        const d = Math.hypot(r - s.r, g - s.g, b - s.b);
+                        if (d <= (tolPct / 100) * 441.673) return true;
+                        continue;
+                    }
+                    const hueTol = Math.max(2, (tolPct / 100) * 60);
+                    if (hueDistance(a.h, s.hsv.h) <= hueTol &&
+                        a.s >= s.hsv.s * 0.35 &&
+                        a.v >= 0.10) return true;
+                } else {
+                    const d = Math.hypot(r - s.r, g - s.g, b - s.b);
+                    if (d <= (tolPct / 100) * 441.673) return true;
+                }
+            }
+            return false;
+        }
+
+        function computeColorMaskArray() {
+            if (!srcData || !colorSamples.length) return null;
+            const { data, width, height } = srcData;
+            const out = new Uint8Array(width * height);
+            const tol = getColorTolerance();
+            const mode = getColorMatchMode();
+            let hits = 0;
+            for (let i = 0, p = 0; p < out.length; i += 4, p++) {
+                if (data[i + 3] < 8) continue;          // fully transparent
+                if (pixelMatches(data[i], data[i + 1], data[i + 2], tol, mode)) {
+                    out[p] = 255;
+                    hits++;
+                }
+            }
+            lastMaskStats = { hits, total: out.length, pct: (hits / out.length) * 100 };
+            return out;
+        }
+
+        // Build the cleaned-up binary mask as an OpenCV Mat. Caller owns it.
+        function buildColorMaskMat() {
+            const arr = computeColorMaskArray();
+            if (!arr) return null;
+            if (!ready || !cv) return null;
+            const w = srcData.width, h = srcData.height;
+            let mat = new cv.Mat(h, w, cv.CV_8UC1);
+            mat.data.set(arr);
+
+            const closePx = parseInt(document.getElementById('colorClose')?.value || '0', 10);
+            if (closePx > 0) {
+                // Bridges the gaps anti-aliasing leaves along a thin coloured line.
+                const k = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(closePx, closePx));
+                cv.morphologyEx(mat, mat, cv.MORPH_CLOSE, k);
+                k.delete();
+            }
+
+            if (document.getElementById('colorFill')?.checked) {
+                // Fill the area enclosed by the outline so the region's own
+                // boundary — not both sides of the ink stroke — gets traced.
+                let cts = new cv.MatVector(), hier = new cv.Mat();
+                try {
+                    cv.findContours(mat, cts, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+                    for (let i = 0; i < cts.size(); i++) {
+                        cv.drawContours(mat, cts, i, new cv.Scalar(255), -1);
+                    }
+                } finally { cts.delete(); hier.delete(); }
+            }
+            return mat;
+        }
+
+        function refreshColorMask(quiet) {
+            if (!colorSamples.length) {
+                if (colorMaskMat) { colorMaskMat.delete(); colorMaskMat = null; }
+                if (colorFilterActive) restoreGrayFromBase();
+                updateColorUI();
+                return;
+            }
+            if (!ready || !cv) {
+                if (!quiet) updateStatus('Waiting for OpenCV to finish loading…');
+                updateColorUI();
+                return;
+            }
+            const next = buildColorMaskMat();
+            if (!next) { updateColorUI(); return; }
+            if (colorMaskMat) colorMaskMat.delete();
+            colorMaskMat = next;
+
+            if (colorFilterActive) grayMat = colorMaskMat;
+            updateColorUI();
+            renderColorPreview();
+            edgeSnapData = null;   // force a rebuild against the new source
+        }
+
+        function restoreGrayFromBase() {
+            colorFilterActive = false;
+            if (baseGrayMat) grayMat = baseGrayMat;
+            edgeSnapData = null;
+        }
+
+        function toggleColorFilter(on) {
+            if (on && !colorSamples.length) {
+                alert('Pick a colour from the image first.');
+                const cb = document.getElementById('colorRestrict');
+                if (cb) cb.checked = false;
+                return;
+            }
+            if (on) {
+                if (!colorMaskMat) refreshColorMask(true);
+                if (!colorMaskMat) {
+                    const cb = document.getElementById('colorRestrict');
+                    if (cb) cb.checked = false;
+                    return;
+                }
+                colorFilterActive = true;
+                grayMat = colorMaskMat;
+                updateStatus('Tracing restricted to the picked colour — all trace tools now ignore everything else');
+            } else {
+                restoreGrayFromBase();
+                updateStatus('Colour restriction off — tracing uses the full image again');
+            }
+            renderColorPreview();
+            updateColorUI();
+        }
+
+        // Preview panel shows either the mask or the usual Canny edges.
+        function renderColorPreview() {
+            const showMask = document.getElementById('colorShowMask')?.checked;
+            const label = document.getElementById('edgePanelLabel');
+            if (showMask && colorMaskMat && ready) {
+                try {
+                    cv.imshow(edgesCanvas, colorMaskMat);
+                    if (label) label.textContent = '🎨 Colour Mask';
+                    return;
+                } catch (err) { /* fall through to edges */ }
+            }
+            if (label) label.textContent = '🔬 Edge Detection';
+            updateEdges();
+        }
+
+        function toggleColorPick() {
+            if (!img) { alert('Load an image first.'); return; }
+            if (!srcData) captureSourcePixels(img);
+            colorPickMode = !colorPickMode;
+            const btn = document.getElementById('colorPickBtn');
+            if (btn) btn.classList.toggle('active', colorPickMode);
+            if (colorPickMode) {
+                cancelMeasureMode();
+                cancelDeleteModes();
+                if (panMode) togglePanMode();
+                mode = 'idle';
+                clearActiveBtn();
+                updateStatus('Click the outline colour in the image · click again to add more shades · zoom in for accuracy');
+                updateMode('Picking colour');
+            } else {
+                updateStatus('Colour picking off');
+                updateMode(finalPts.length ? 'Complete' : 'Idle');
+            }
+        }
+
+        // A thin outline is only a few pixels wide, so a click very often lands on
+        // an anti-aliased blend of the line and the background. Searching a small
+        // neighbourhood for the most saturated pixel recovers the true ink colour.
+        // If nothing nearby is colourful the exact pixel is used, so picking a
+        // grey or black line still behaves as expected.
+        function pickRepresentativePixel(cx, cy, radius) {
+            const { data, width, height } = srcData;
+            const at = (x, y) => {
+                const i = (y * width + x) * 4;
+                return { r: data[i], g: data[i + 1], b: data[i + 2], a: data[i + 3] };
+            };
+            const exact = at(cx, cy);
+            let best = exact, bestS = rgbToHsv(exact.r, exact.g, exact.b).s;
+            for (let dy = -radius; dy <= radius; dy++) {
+                for (let dx = -radius; dx <= radius; dx++) {
+                    const x = cx + dx, y = cy + dy;
+                    if (x < 0 || y < 0 || x >= width || y >= height) continue;
+                    const q = at(x, y);
+                    if (q.a < 8) continue;
+                    const s = rgbToHsv(q.r, q.g, q.b).s;
+                    if (s > bestS) { bestS = s; best = q; }
+                }
+            }
+            return bestS >= 0.15 ? best : exact;
+        }
+
+        function addColorSampleAt(x, y) {
+            if (!srcData) captureSourcePixels(img);
+            if (!srcData) { updateStatus('Could not read pixels from this image'); return; }
+            const px = Math.max(0, Math.min(srcData.width - 1, Math.round(x)));
+            const py = Math.max(0, Math.min(srcData.height - 1, Math.round(y)));
+            const picked = pickRepresentativePixel(px, py, 2);
+            const r = picked.r, g = picked.g, b = picked.b;
+            const dup = colorSamples.some(s => s.r === r && s.g === g && s.b === b);
+            if (dup) { updateStatus(`Colour rgb(${r}, ${g}, ${b}) is already picked`); return; }
+            colorSamples.push({ r, g, b, hsv: rgbToHsv(r, g, b) });
+            refreshColorMask();
+            updateStatus(`Picked rgb(${r}, ${g}, ${b}) · ${colorSamples.length} colour${colorSamples.length === 1 ? '' : 's'} · ${lastMaskStats ? lastMaskStats.pct.toFixed(2) + '% of image matched' : ''}`);
+        }
+
+        function removeColorSample(i) {
+            if (i < 0 || i >= colorSamples.length) return;
+            colorSamples.splice(i, 1);
+            refreshColorMask();
+        }
+
+        function clearColorFilter() {
+            colorSamples = [];
+            colorPickMode = false;
+            const btn = document.getElementById('colorPickBtn');
+            if (btn) btn.classList.remove('active');
+            const cb = document.getElementById('colorRestrict');
+            if (cb) cb.checked = false;
+            if (colorMaskMat) { colorMaskMat.delete(); colorMaskMat = null; }
+            restoreGrayFromBase();
+            lastMaskStats = null;
+            updateColorUI();
+            renderColorPreview();
+            updateStatus('Colour filter cleared');
+        }
+
+        function updateColorUI() {
+            const sw = document.getElementById('colorSwatches');
+            if (sw) {
+                sw.innerHTML = colorSamples.length
+                    ? colorSamples.map((s, i) =>
+                        `<div class="color-chip" title="rgb(${s.r}, ${s.g}, ${s.b})">
+                            <span class="color-chip-dot" style="background:rgb(${s.r},${s.g},${s.b})"></span>
+                            <span class="color-chip-txt">${s.r},${s.g},${s.b}</span>
+                            <button onclick="removeColorSample(${i})" title="Remove">✕</button>
+                         </div>`).join('')
+                    : '<div class="manual-trace-note" style="margin:0;">No colour picked yet.</div>';
+            }
+            const stats = document.getElementById('colorStats');
+            if (stats) {
+                if (!colorSamples.length) stats.textContent = '';
+                else if (!lastMaskStats) stats.textContent = 'Mask not built yet.';
+                else {
+                    const p = lastMaskStats.pct;
+                    let advice = '';
+                    if (p < 0.02) advice = ' — almost nothing matched, raise the tolerance';
+                    else if (p > 35) advice = ' — very broad, lower the tolerance';
+                    stats.innerHTML = `<strong>${p.toFixed(2)}%</strong> of the image matches${advice}`;
+                }
+            }
+            const restrict = document.getElementById('colorRestrict');
+            if (restrict) restrict.checked = colorFilterActive;
+            const badge = document.getElementById('colorActiveBadge');
+            if (badge) badge.style.display = colorFilterActive ? 'inline-block' : 'none';
+        }
+
+        // One-click path: contour the colour mask directly. More reliable than
+        // Canny for a solid coloured outline, because the mask already IS the shape.
+        function extractColorOutline(saveAll) {
+            if (!img || !ready) { alert('Load an image and wait for OpenCV first.'); return; }
+            if (!colorSamples.length) { alert('Pick a colour from the image first.'); return; }
+
+            document.getElementById('processingOverlay').classList.add('active');
+            setTimeout(() => {
+                let mat = null, cts = null, hier = null, approx = null;
+                try {
+                    mat = buildColorMaskMat();
+                    if (!mat) { alert('Could not build the colour mask.'); return; }
+
+                    cts = new cv.MatVector();
+                    hier = new cv.Mat();
+                    cv.findContours(mat, cts, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE);
+                    if (!cts.size()) {
+                        alert('No region of that colour was found. Try a larger tolerance, or increase "Close gaps".');
+                        return;
+                    }
+
+                    const minAreaPct = parseFloat(document.getElementById('colorMinArea')?.value || '0.2');
+                    const imgArea = mat.rows * mat.cols;
+                    const minArea = imgArea * minAreaPct / 100;
+                    const smooth = parseFloat(document.getElementById('colorSmooth')?.value || '1.5');
+                    const targetN = Math.max(0, parseInt(document.getElementById('colorTargetPoints')?.value || '120', 10));
+
+                    const found = [];
+                    for (let i = 0; i < cts.size(); i++) {
+                        const c = cts.get(i);
+                        const area = Math.abs(cv.contourArea(c));
+                        if (area < minArea) continue;
+                        const ap = new cv.Mat();
+                        cv.approxPolyDP(c, ap, smooth, true);
+                        let pts = contourToPoints(ap);
+                        ap.delete();
+                        pts = removeNearDuplicatePoints(pts, 1.5);
+                        if (pts.length < 3) continue;
+                        if (targetN >= 6) pts = arcLengthResample(pts, targetN, true);
+                        found.push({ pts, area });
+                    }
+
+                    if (!found.length) {
+                        alert(`No region above ${minAreaPct}% of the image. Lower "Minimum area", raise the tolerance, or increase "Close gaps".`);
+                        return;
+                    }
+                    found.sort((a, b) => b.area - a.area);
+
+                    saveUndo('extract colour outline');
+                    if (saveAll && found.length > 1) {
+                        found.forEach((f, i) => {
+                            savedShapes.push({
+                                name: `Colour_${String(i + 1).padStart(2, '0')}`,
+                                closed: true, pts: f.pts.map(p => ({ x: p.x, y: p.y })),
+                                generatedPitch: false
+                            });
+                        });
+                        updateShapeList();
+                    }
+
+                    finalPts = found[0].pts;
+                    shapeClosed = true;
+                    setShapeClosed(true);
+                    roughPts = [];
+                    originalPts = JSON.parse(JSON.stringify(finalPts));
+                    manuallyEdited = false;
+                    mode = 'idle';
+                    traceMode = 'rough';
+                    document.getElementById('resetBtn').disabled = false;
+                    document.getElementById('refineBtn').style.display = 'none';
+                    clearActiveBtn();
+                    updatePointDisplay();
+                    draw();
+                    updateCoords();
+                    calcArea();
+                    updateMode('Complete');
+                    const pctArea = (found[0].area / imgArea * 100).toFixed(2);
+                    updateStatus(
+                        saveAll && found.length > 1
+                            ? `Extracted ${found.length} colour regions (${found[0].pts.length} pts on the largest, ${pctArea}% of image); all saved as shapes`
+                            : `Extracted colour outline: ${finalPts.length} points · ${pctArea}% of image` +
+                              (found.length > 1 ? ` · ${found.length - 1} smaller region(s) ignored — use "Save all" to keep them` : '')
+                    );
+                } catch (err) {
+                    alert('Colour outline extraction failed: ' + err.message);
+                } finally {
+                    if (mat) mat.delete();
+                    if (cts) cts.delete();
+                    if (hier) hier.delete();
+                    if (approx) approx.delete();
+                    document.getElementById('processingOverlay').classList.remove('active');
+                }
+            }, 60);
+        }
 
         /* ===== PROFILE-SMOOTH-CORE-START =====================================
            Pure, DOM-free geometry / DXF core for the DXF Studio module.
@@ -8125,6 +8709,7 @@
                     {match: 'Geometry', group: 'edit'},
                     {match: 'CAD Constraints', group: 'cad'},
                     {match: 'DXF Studio', group: 'dxf'},
+                    {match: 'Colour Filter', group: 'trace'},
                     {match: 'Measure Distance', group: 'setup'},
                     {match: 'Coordinate Output', group: 'export'},
                     {match: 'Export / Save', group: 'export'}
