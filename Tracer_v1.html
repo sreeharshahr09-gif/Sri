@@ -2056,15 +2056,23 @@
                             <input type="number" class="control-input" id="colorMinArea" value="0.2" step="0.05" min="0">
                         </div>
                         <div>
-                            <label class="control-label" style="font-size:10px;">Target points</label>
-                            <input type="number" class="control-input" id="colorTargetPoints" value="120" step="10" min="0">
+                            <label class="control-label" style="font-size:10px;">Target points (0 = keep all)</label>
+                            <input type="number" class="control-input" id="colorTargetPoints" value="0" step="10" min="0">
                         </div>
+                    </div>
+                    <div style="margin-top:8px;">
+                        <label class="control-label" style="font-size:10px;">Trace which edge of the line</label>
+                        <select class="control-input" id="colorTraceEdge">
+                            <option value="centre">Centre of the line (follows it as drawn)</option>
+                            <option value="outer">Outer edge of the line</option>
+                            <option value="inner">Inner edge of the line</option>
+                        </select>
                     </div>
                     <div style="margin-top:8px;">
                         <label class="control-label" style="font-size:10px;">Outline smoothing (px)</label>
                         <div class="slider-container">
-                            <input type="range" class="slider" id="colorSmooth" min="0" max="10" value="1.5" step="0.5">
-                            <span class="slider-value" id="colorSmoothValue">1.5</span>
+                            <input type="range" class="slider" id="colorSmooth" min="0" max="10" value="0.5" step="0.5">
+                            <span class="slider-value" id="colorSmoothValue">0.5</span>
                         </div>
                     </div>
                     <button class="btn btn-primary" onclick="extractColorOutline(false)" style="width:100%;font-size:11px;padding:10px;margin-top:8px;">
@@ -6528,6 +6536,59 @@
             if (badge) badge.style.display = colorFilterActive ? 'inline-block' : 'none';
         }
 
+        // A drawn outline has thickness, so contouring the mask directly follows
+        // the OUTSIDE of the stroke and sits half a line-width away from the line
+        // you actually drew. Estimating that width lets us put the trace on the
+        // stroke's centreline instead, which is the path as drawn.
+        function estimateStrokeWidth(maskMat) {
+            let dt = null, bin = null;
+            try {
+                bin = new cv.Mat();
+                cv.threshold(maskMat, bin, 127, 255, cv.THRESH_BINARY);
+                dt = new cv.Mat();
+                cv.distanceTransform(bin, dt, cv.DIST_L2, 3);
+                const mm = cv.minMaxLoc(dt);
+                // Distance transform peaks at half the width along the centreline.
+                const w = 2 * mm.maxVal;
+                const cap = Math.max(3, Math.min(maskMat.rows, maskMat.cols) * 0.05);
+                return Math.max(1, Math.min(w, cap));
+            } catch (err) {
+                return 1;
+            } finally {
+                if (dt) dt.delete();
+                if (bin) bin.delete();
+            }
+        }
+
+        // Produce the mat whose contour we should trace, honouring the chosen
+        // edge of the stroke. Caller owns the returned mat.
+        function prepareContourSource(maskMat, traceMode) {
+            const filled = maskMat.clone();
+            if (traceMode === 'outer') return filled;
+
+            // Fill whatever the outline encloses so the ribbon becomes a solid
+            // region; its boundary is then the stroke's outer edge, and shrinking
+            // that boundary inward by a known amount lands on the centreline.
+            let cts = new cv.MatVector(), hier = new cv.Mat();
+            try {
+                cv.findContours(filled, cts, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+                for (let i = 0; i < cts.size(); i++) {
+                    cv.drawContours(filled, cts, i, new cv.Scalar(255), -1);
+                }
+            } finally { cts.delete(); hier.delete(); }
+
+            const w = estimateStrokeWidth(maskMat);
+            const inset = traceMode === 'inner' ? w : w / 2;
+            const r = Math.max(1, Math.round(inset));
+            let kernel = null;
+            try {
+                kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(2 * r + 1, 2 * r + 1));
+                cv.erode(filled, filled, kernel);
+            } finally { if (kernel) kernel.delete(); }
+            filled.__strokeWidth = w;
+            return filled;
+        }
+
         // One-click path: contour the colour mask directly. More reliable than
         // Canny for a solid coloured outline, because the mask already IS the shape.
         function extractColorOutline(saveAll) {
@@ -6536,10 +6597,12 @@
 
             document.getElementById('processingOverlay').classList.add('active');
             setTimeout(() => {
-                let mat = null, cts = null, hier = null, approx = null;
+                let maskMat = null, mat = null, cts = null, hier = null, approx = null;
                 try {
-                    mat = buildColorMaskMat();
-                    if (!mat) { alert('Could not build the colour mask.'); return; }
+                    maskMat = buildColorMaskMat();
+                    if (!maskMat) { alert('Could not build the colour mask.'); return; }
+                    const traceEdge = document.getElementById('colorTraceEdge')?.value || 'centre';
+                    mat = prepareContourSource(maskMat, traceEdge);
 
                     cts = new cv.MatVector();
                     hier = new cv.Mat();
@@ -6552,7 +6615,7 @@
                     const minAreaPct = parseFloat(document.getElementById('colorMinArea')?.value || '0.2');
                     const imgArea = mat.rows * mat.cols;
                     const minArea = imgArea * minAreaPct / 100;
-                    const smooth = parseFloat(document.getElementById('colorSmooth')?.value || '1.5');
+                    const smooth = parseFloat(document.getElementById('colorSmooth')?.value || '0.5');
                     const targetN = Math.max(0, parseInt(document.getElementById('colorTargetPoints')?.value || '120', 10));
 
                     const found = [];
@@ -6564,8 +6627,10 @@
                         cv.approxPolyDP(c, ap, smooth, true);
                         let pts = contourToPoints(ap);
                         ap.delete();
-                        pts = removeNearDuplicatePoints(pts, 1.5);
+                        pts = removeNearDuplicatePoints(pts, 0.8);
                         if (pts.length < 3) continue;
+                        // targetN 0 keeps every contour point, so the trace follows
+                        // the drawn path instead of chording across its detail.
                         if (targetN >= 6) pts = arcLengthResample(pts, targetN, true);
                         found.push({ pts, area });
                     }
@@ -6605,15 +6670,18 @@
                     calcArea();
                     updateMode('Complete');
                     const pctArea = (found[0].area / imgArea * 100).toFixed(2);
+                    const edgeTxt = { outer: 'outer edge of the line', centre: 'centre of the line', inner: 'inner edge of the line' }[traceEdge] || traceEdge;
+                    const wTxt = mat.__strokeWidth ? ` · line width ≈ ${mat.__strokeWidth.toFixed(1)} px` : '';
                     updateStatus(
                         saveAll && found.length > 1
                             ? `Extracted ${found.length} colour regions (${found[0].pts.length} pts on the largest, ${pctArea}% of image); all saved as shapes`
-                            : `Extracted colour outline: ${finalPts.length} points · ${pctArea}% of image` +
+                            : `Extracted ${edgeTxt}: ${finalPts.length} points · ${pctArea}% of image${wTxt}` +
                               (found.length > 1 ? ` · ${found.length - 1} smaller region(s) ignored — use "Save all" to keep them` : '')
                     );
                 } catch (err) {
                     alert('Colour outline extraction failed: ' + err.message);
                 } finally {
+                    if (maskMat) maskMat.delete();
                     if (mat) mat.delete();
                     if (cts) cts.delete();
                     if (hier) hier.delete();
