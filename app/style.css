@@ -159,3 +159,32 @@ table.metrics td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .guide code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
 .guide table { border-collapse: collapse; margin: 10px 0; }
 .guide th, .guide td { border: 1px solid var(--edge); padding: 5px 10px; font-size: 13px; }
+
+
+/* Crosshair that tracks the cursor across the sweep rows and the pattern.
+   A positioned div, not a Plotly shape: redrawing a figure of ~170 polygons
+   at mousemove rates is far too slow to follow a cursor. */
+.plot-host { position: relative; }
+.xcursor {
+  position: absolute; width: 0; border-left: 1px dashed var(--ink-dim);
+  pointer-events: none; display: none; z-index: 5; opacity: 0.85;
+}
+#cursorReadout {
+  display: none; gap: 14px; flex-wrap: wrap; align-items: baseline;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 8px;
+  padding: 7px 12px; margin: 8px 0 4px; font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+#cursorReadout .ck { color: var(--ink-dim); font-size: 11px; margin-right: 5px;
+  text-transform: uppercase; letter-spacing: 0.4px; }
+#cursorReadout .cv { font-weight: 650; }
+
+.explain {
+  background: var(--panel); border: 1px solid var(--edge); border-left: 3px solid var(--accent);
+  border-radius: 8px; padding: 12px 14px; margin-top: 12px; font-size: 13px; line-height: 1.65;
+}
+.explain h4 { margin: 0 0 6px; font-size: 13px; }
+.explain p { margin: 0 0 8px; }
+.explain ul { margin: 6px 0 8px; padding-left: 20px; }
+.explain .lead { color: var(--ink); font-weight: 600; }
+.explain code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }

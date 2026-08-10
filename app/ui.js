@@ -22,6 +22,7 @@
     compare: [],         // runs held for comparison (this session + loaded files)
     bandEdges: null,     // rib cuts the last run used
     bandMetric: "contact_area",
+    thetaRange: null,    // shared x-range across the sweep rows and the pattern
     compareMetric: "kz",
   };
 
@@ -739,7 +740,17 @@
           line: { color: rows[i].extra.color, width: 1.2, shape: rows[i].extra.shape, dash: "dot" },
           name: rows[i].extra.name });
       }
-      layout["xaxis" + (i + 1)] = { gridcolor: th.grid, zeroline: false, range: [0, 360], showticklabels: i === rows.length - 1, title: i === rows.length - 1 ? { text: "rotation angle θ (deg)", font: { size: 11 } } : undefined, tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] };
+      layout["xaxis" + (i + 1)] = {
+        gridcolor: th.grid, zeroline: false,
+        // Every row shows the same revolution, so they share one x-axis:
+        // zooming any row zooms them all. The rolled-out pattern is its own
+        // figure and is kept in step by linkThetaFigures().
+        matches: i === 0 ? undefined : "x",
+        range: (state.thetaRange || [0, 360]).slice(),
+        showticklabels: i === rows.length - 1,
+        title: i === rows.length - 1 ? { text: "rotation angle θ (deg)", font: { size: 11 } } : undefined,
+        tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360],
+      };
       layout["yaxis" + (i + 1)] = { gridcolor: th.grid, zeroline: false,
         title: { text: rows[i].axis, font: { size: 10 }, standoff: 6 },
         automargin: true };
@@ -773,12 +784,13 @@
     }
     var layout = {
       paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
-      margin: { l: 64, r: 16, t: 24, b: 40 }, height: 200, shapes: shapes,
+      margin: { l: 78, r: 16, t: 24, b: 40 }, height: 220, shapes: shapes,
       title: { text: "Rolled-out tread pattern (same θ axis)", font: { size: 13 } },
-      xaxis: { range: [0, 360], gridcolor: th.grid, zeroline: false, title: { text: "rotation angle θ (deg)", font: { size: 11 } }, tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
+      xaxis: { range: (state.thetaRange || [0, 360]).slice(), gridcolor: th.grid, zeroline: false, title: { text: "rotation angle θ (deg)", font: { size: 11 } }, tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
       yaxis: { range: [-p.tread_width / 2, p.tread_width / 2], gridcolor: th.grid, zeroline: false, title: { text: "lateral y (mm)", font: { size: 10 } }, scaleanchor: undefined },
     };
-    Plotly.react($("patternStrip"), [{ x: [0], y: [0], type: "scatter", mode: "markers", marker: { opacity: 0 }, hoverinfo: "skip" }], layout, { responsive: true, displayModeBar: false });
+    Plotly.react($("patternStrip"), [{ x: [0], y: [0], type: "scatter", mode: "markers", marker: { opacity: 0 }, hoverinfo: "skip" }], layout, { responsive: true, displayModeBar: false })
+      .then(linkThetaFigures);
   }
 
   function renderLeanHeatmap() {
@@ -901,6 +913,118 @@
     $("diagTable").innerHTML = html;
   }
   function flag(kind, text) { return "<span class='flag " + kind + "'>" + text + "</span>"; }
+
+  // ---- linked θ figures: shared zoom + a crosshair through everything ---
+  //
+  // The sweep rows and the rolled-out pattern are separate Plotly figures but
+  // they show one revolution, so they are held on the same x-range and a single
+  // vertical line follows the cursor through every row and down onto the
+  // pattern. That is what turns "there is a dip near 140°" into "that dip is
+  // under this block".
+  //
+  // The line is a positioned div rather than a Plotly shape on purpose: at
+  // mousemove rates, relayouting a figure that carries ~170 block polygons is
+  // far too slow to track a cursor, and a div costs nothing.
+  var linkState = { hooked: false, syncing: false };
+
+  function plotGeom(gd) {
+    if (!gd || !gd._fullLayout || !gd._fullLayout._size) return null;
+    var sz = gd._fullLayout._size, ax = gd._fullLayout.xaxis;
+    if (!ax || !ax.range) return null;
+    return { left: sz.l, width: sz.w, top: sz.t,
+             height: Math.max(0, gd.clientHeight - sz.t - sz.b),
+             r0: ax.range[0], r1: ax.range[1] };
+  }
+  function xToPixel(gd, x) {
+    var g = plotGeom(gd);
+    if (!g || g.r1 === g.r0) return null;
+    return g.left + ((x - g.r0) / (g.r1 - g.r0)) * g.width;
+  }
+  function pixelToX(gd, px) {
+    var g = plotGeom(gd);
+    if (!g || !g.width) return null;
+    return g.r0 + ((px - g.left) / g.width) * (g.r1 - g.r0);
+  }
+
+  function cursorEl(gd) {
+    var host = gd.parentNode;
+    if (getComputedStyle(host).position === "static") host.style.position = "relative";
+    var line = host.querySelector(".xcursor");
+    if (!line) { line = document.createElement("div"); line.className = "xcursor"; host.appendChild(line); }
+    return line;
+  }
+
+  function moveCursor(theta) {
+    [$("thetaStack"), $("patternStrip")].forEach(function (gd) {
+      if (!gd || !gd._fullLayout) return;
+      var line = cursorEl(gd), g = plotGeom(gd);
+      var px = theta == null ? null : xToPixel(gd, theta);
+      if (px == null || !g || px < g.left - 1 || px > g.left + g.width + 1) { line.style.display = "none"; return; }
+      line.style.display = "block";
+      line.style.left = px + "px";
+      line.style.top = g.top + "px";
+      line.style.height = g.height + "px";
+    });
+    updateCursorReadout(theta);
+  }
+
+  // Every value at the hovered angle, so a peak or a dip can be read straight
+  // off instead of eyeballed against six separate y-axes.
+  function updateCursorReadout(theta) {
+    var box = $("cursorReadout");
+    if (!box) return;
+    var r = currentResult();
+    if (theta == null || !r || !r.theta_deg.length) { box.style.display = "none"; return; }
+    var n = r.theta_deg.length;
+    var i = Math.max(0, Math.min(n - 1, Math.round((theta / 360) * n)));
+    var fields = [
+      ["θ", r.theta_deg[i].toFixed(1) + "°"],
+      ["area", r.contact_area[i].toFixed(0) + " mm²"],
+      ["Kz", r.kz[i].toFixed(0)],
+      ["Kx", r.kx[i].toFixed(0)],
+      ["Ky", r.ky[i].toFixed(0)],
+      ["blocks", r.block_count[i].toFixed(2)],
+      ["centroid", r.centroid_y[i].toFixed(2) + " mm"],
+    ];
+    box.style.display = "flex";
+    box.innerHTML = fields.map(function (f) {
+      return "<span class='ck'>" + f[0] + "</span><span class='cv'>" + f[1] + "</span>";
+    }).join("");
+  }
+
+  function linkThetaFigures() {
+    var stack = $("thetaStack"), strip = $("patternStrip");
+    if (!stack || !strip) return;
+    moveCursor(null);
+    if (linkState.hooked) return;   // survives every redraw; wired once
+    linkState.hooked = true;
+
+    // Zoom on either figure moves both, including a double-click reset.
+    function syncFrom(src, dst) {
+      src.on("plotly_relayout", function (ev) {
+        if (linkState.syncing || !ev) return;
+        var lo = ev["xaxis.range[0]"], hi = ev["xaxis.range[1]"];
+        var reset = ev["xaxis.autorange"] === true;
+        if (lo == null && !reset) return;
+        state.thetaRange = reset ? [0, 360] : [lo, hi];
+        linkState.syncing = true;
+        Plotly.relayout(dst, { "xaxis.range": state.thetaRange.slice() })
+          .then(function () { linkState.syncing = false; moveCursor(null); })
+          .catch(function () { linkState.syncing = false; });
+      });
+    }
+    syncFrom(stack, strip);
+    syncFrom(strip, stack);
+
+    // Driven from the raw pointer rather than plotly_hover, so the line tracks
+    // continuously and does not need the cursor to be near a trace.
+    [stack, strip].forEach(function (gd) {
+      gd.addEventListener("mousemove", function (ev) {
+        moveCursor(pixelToX(gd, ev.clientX - gd.getBoundingClientRect().left));
+      });
+      gd.addEventListener("mouseleave", function () { moveCursor(null); });
+    });
+  }
 
   // ---- bands (ribs) ----------------------------------------------------
   var BAND_LABEL = { contact_area: "contact area (mm²)", kz: "Kz (N/mm)", kx: "Kx (N/mm)",

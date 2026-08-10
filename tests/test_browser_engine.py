@@ -458,3 +458,57 @@ def test_project_metadata_reaches_every_export():
     assert "function projectMeta(" in ui
     snap = ui[ui.index("function settingsSnapshot("):ui.index("function exportCSV(")]
     assert "project: base.project" in snap, "project details must be in the frozen snapshot"
+
+
+def test_theta_figures_share_one_zoom():
+    """The sweep rows and the rolled-out pattern show the same revolution, so
+    zooming one must zoom all of them -- otherwise a zoomed row cannot be read
+    against the blocks underneath it."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    # subplot axes linked inside the stack figure
+    assert 'matches: i === 0 ? undefined : "x"' in ui
+    # the strip is a separate figure, so it is synced explicitly both ways
+    assert "function linkThetaFigures(" in ui
+    assert "syncFrom(stack, strip);" in ui and "syncFrom(strip, stack);" in ui
+    assert 'plotly_relayout' in ui
+    # a double-click autorange must reset both, not just the one clicked
+    assert 'ev["xaxis.autorange"]' in ui
+    # both figures start from the same stored range
+    assert ui.count("state.thetaRange || [0, 360]") >= 2
+    # and their plot areas are aligned, or the same angle lands at a different
+    # screen x in each figure and the crosshair appears to jump
+    assert "margin: { l: 78, r: 16, t: 24, b: 40 }" in ui, "strip margin must match the stack's l=78"
+
+
+def test_crosshair_tracks_across_every_chart():
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    css = open(os.path.join(APP, "style.css"), encoding="utf-8").read()
+    assert "function moveCursor(" in ui and "function updateCursorReadout(" in ui
+    # each figure needs its OWN positioned host, or the two cursor divs collide
+    assert tpl.count('class="plot-host"') >= 2
+    assert ".plot-host { position: relative; }" in css
+    assert ".xcursor" in css
+    # the readout must be shown with a real display type: the CSS default is
+    # none, so clearing the inline style leaves it hidden
+    assert 'box.style.display = "flex";' in ui
+    assert 'id="cursorReadout"' in tpl
+    # driven from the pointer, not from plotly_hover, so it tracks continuously
+    assert 'addEventListener("mousemove"' in ui and 'addEventListener("mouseleave"' in ui
+
+
+def test_order_chart_explains_itself():
+    """The designer could not tell what the order chart showed."""
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    panel = tpl[tpl.index('id="panel-orders"'):tpl.index('id="panel-zones"')]
+    assert 'class="explain"' in panel
+    body = panel.lower()
+    # it must define the axes in plain words, not restate their labels
+    assert "how many times per wheel revolution" in body
+    assert "percentage of the average" in body
+    # and say what to look for
+    for cue in ("tonal", "spread", "pitch sequence"):
+        assert cue in body, f"the explanation never mentions {cue!r}"
+    # the marked bars must be explained
+    assert "pitch count" in body and "geometric repeat" in body
+    assert panel.count("<li>") >= 6

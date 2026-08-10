@@ -176,8 +176,10 @@
 
       <section id="panel-stack" class="panel on">
         <div id="cards" class="cards"></div>
-        <div id="thetaStack" class="plot"></div>
-        <div id="patternStrip" class="plot"></div>
+        <div id="cursorReadout"></div>
+        <div class="hint" style="margin-bottom:6px">Move the cursor over any chart below: a line follows it through every row and down onto the pattern, and the values at that angle appear above. Drag to zoom — all the charts and the pattern zoom together; double-click to reset.</div>
+        <div class="plot-host"><div id="thetaStack" class="plot"></div></div>
+        <div class="plot-host"><div id="patternStrip" class="plot"></div></div>
       </section>
 
       <section id="panel-lean" class="panel">
@@ -192,6 +194,24 @@
           <select id="orderMetric"><option value="kz">Kz</option><option value="kx">Kx</option><option value="ky">Ky</option><option value="contact_area">contact area</option><option value="block_count">block count</option></select>
         </div>
         <div id="orders" class="plot"></div>
+        <div class="explain">
+          <h4>What this chart is</h4>
+          <p><span class="lead">It answers one question: as the wheel turns once, how many times does the tyre stiffness rise and fall, and by how much?</span></p>
+          <p>Take any curve from the θ sweep — say Kz — and it wobbles up and down as blocks enter and leave the contact patch. This chart breaks that wobble into its repeating rhythms.</p>
+          <ul>
+            <li><b>Order</b> (the x-axis) is <b>how many times per wheel revolution</b> something repeats. Order 24 means it happens 24 times per turn. At 60&nbsp;km/h a typical tyre turns about 8 times a second, so order 24 lands near 200&nbsp;Hz — squarely in the range the ear is most sensitive to.</li>
+            <li><b>Amplitude</b> (the y-axis) is <b>how big that wobble is, as a percentage of the average</b>. A bar at 4% means the stiffness swings ±4% about its mean, that many times per revolution.</li>
+            <li>The <b style="color:var(--bad)">red bar</b> marks your pitch count, and the <b style="color:var(--accent-2)">orange bar</b> the geometric repeat of the drawing. Energy landing there is the pattern's own rhythm.</li>
+          </ul>
+          <h4>How to read it</h4>
+          <ul>
+            <li><b>One tall bar towering over the rest</b> — the tyre hits the same note over and over. That is what a tonal whine sounds like, and it is the classic reason to modulate a pitch sequence.</li>
+            <li><b>Energy spread over many orders</b> — the same total wobble smeared across frequencies, which the ear reads as broadband hiss rather than a tone. This is usually what you want.</li>
+            <li><b>Low orders (1–5) standing out</b> — something varies once or twice per revolution. That is not a noise problem; it points at non-uniformity, a shoulder imbalance, or a pattern that does not close cleanly at the seam.</li>
+            <li><b>Bars beyond about order 60</b> are finer than this grid resolves reliably; treat them as indicative.</li>
+          </ul>
+          <p style="margin-bottom:0"><b>Comparing designs is where this earns its keep.</b> The absolute heights depend on load, patch size and compound, so a single chart is hard to judge on its own. Two designs on the same settings, though, are directly comparable: the one with its energy spread wider is the quieter pitch sequence.</p>
+        </div>
       </section>
 
       <section id="panel-zones" class="panel">
