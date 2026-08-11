@@ -233,17 +233,50 @@ process.stdout.write(JSON.stringify(cases.map(c => R.offsetPoly(c.vertices, c.dr
         assert np.allclose(mine, np.asarray(r), rtol=1e-10, atol=1e-10), f"offsetPoly case {i}"
 
 
-def test_shore_tables_match_reference():
+def test_shore_tables_match_reference_on_the_tabulated_rows():
+    """Exact agreement with v6.4 wherever the table actually has a row.
+
+    Between rows we deliberately differ: v6.4 snaps to the nearest of the five
+    entries, so 59 A evaluated as 50 A and 61 A as 60 A -- a 72% step in E across
+    one Shore point.  We interpolate instead (see the companion test).  The rows
+    themselves must still reproduce the reference exactly, which is what pins the
+    interpolation to the right curve.
+    """
     script = f"""
 const R = require({json.dumps(REF_JS)});
-const s = [30,35,40,45,50,55,60,65,70];
+const s = [30,40,50,60,70];
 process.stdout.write(JSON.stringify(s.map(v => [R.shoreE(v), R.shoreK(v)])));
 """
     res = subprocess.run([NODE, "-e", script], capture_output=True, text=True, timeout=60)
     assert res.returncode == 0, res.stderr[:2000]
-    for shore, (e, k) in zip([30, 35, 40, 45, 50, 55, 60, 65, 70], json.loads(res.stdout)):
+    for shore, (e, k) in zip([30, 40, 50, 60, 70], json.loads(res.stdout)):
         assert shore_e(shore) == pytest.approx(e)
         assert shore_k(shore) == pytest.approx(k)
+
+
+def test_shore_interpolation_is_smooth_and_monotonic_between_rows():
+    """No step changes, and the geometric reading of E is what is used."""
+    import math
+
+    # A one-point change in hardness must never move E by more than a few
+    # percent; under the old nearest-row rule 60 -> 61 A moved it by 72%.
+    prev_e, prev_k = shore_e(30.0), shore_k(30.0)
+    for i in range(1, 401):
+        s = 30.0 + i * 0.1
+        e, k = shore_e(s), shore_k(s)
+        assert e >= prev_e - 1e-12 and k <= prev_k + 1e-12, f"not monotonic at {s}"
+        assert e - prev_e < 0.02 * prev_e, f"step change in E at Shore {s}"
+        prev_e, prev_k = e, k
+
+    # Midway between two rows, E is their geometric mean and k their arithmetic
+    # mean -- E rises geometrically with hardness, the shape coefficient linearly.
+    assert shore_e(65.0) == pytest.approx(math.sqrt(6.89 * 12.00))
+    assert shore_k(65.0) == pytest.approx((0.64 + 0.57) / 2)
+
+    # Outside the table the nearest row still applies; extrapolating five points
+    # is not evidence of anything.
+    assert shore_e(95.0) == pytest.approx(12.00)
+    assert shore_e(10.0) == pytest.approx(1.50)
 
 
 def test_block_stiffness_end_to_end_matches_reference():

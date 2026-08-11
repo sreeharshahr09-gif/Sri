@@ -255,8 +255,65 @@
     const keys = Object.keys(SHORE_E_TABLE).map(Number);
     return keys.reduce((best, k) => (Math.abs(k - s) < Math.abs(best - s) ? k : best), keys[0]);
   }
-  function shoreE(s) { const v = SHORE_E_TABLE[nearestShoreKey(+s)]; return v == null ? 6.89 : v; }
-  function shoreK(s) { const v = SHORE_K_TABLE[nearestShoreKey(+s)]; return v == null ? 0.64 : v; }
+
+  // The table has five rows. Snapping to the nearest of them meant 55 A and
+  // 59 A both evaluated as 50 A (E = 4.0) while 61 A jumped to 60 A
+  // (E = 6.89) -- a 72% step in stiffness across one Shore point, invisible to
+  // the user. E rises roughly geometrically with hardness, so interpolate the
+  // logarithm; that reproduces the tabulated rows exactly and moves smoothly in
+  // between. Outside 30-70 A the nearest row still applies (with a warning),
+  // because extrapolating a five-point fit is not evidence of anything.
+  const SHORE_KEYS = [30, 40, 50, 60, 70];
+  function interpShore(s, table, logScale) {
+    s = +s;
+    if (!Number.isFinite(s)) return table[60];
+    if (s <= SHORE_KEYS[0]) return table[SHORE_KEYS[0]];
+    if (s >= SHORE_KEYS[SHORE_KEYS.length - 1]) return table[SHORE_KEYS[SHORE_KEYS.length - 1]];
+    for (let i = 0; i + 1 < SHORE_KEYS.length; i++) {
+      const a = SHORE_KEYS[i], b = SHORE_KEYS[i + 1];
+      if (s < a || s > b) continue;
+      const f = (s - a) / (b - a);
+      const va = table[a], vb = table[b];
+      return logScale ? Math.exp(Math.log(va) + f * (Math.log(vb) - Math.log(va))) : va + f * (vb - va);
+    }
+    return table[nearestShoreKey(s)];
+  }
+  function shoreE(s) { const v = interpShore(s, SHORE_E_TABLE, true); return v == null ? 6.89 : v; }
+  function shoreK(s) { const v = interpShore(s, SHORE_K_TABLE, false); return v == null ? 0.64 : v; }
+
+  // Everything the stiffness model needs to know about the compound, resolved
+  // once so the page can show it. Nothing here is hidden: either you gave E and
+  // k directly, or they came off the Gent table at the hardness you typed.
+  function compoundProperties(params) {
+    params = params || {};
+    const direct = params.modulus_mode === "direct";
+    const E = direct
+      ? (Number.isFinite(+params.e_modulus) ? +params.e_modulus : shoreE(params.shore_a))
+      : (params.e_override != null ? +params.e_override : shoreE(params.shore_a));
+    const k = direct
+      ? (Number.isFinite(+params.gent_k) ? +params.gent_k : shoreK(params.shore_a))
+      : (params.k_override != null ? +params.k_override : shoreK(params.shore_a));
+    const nu = Number.isFinite(+params.poisson) ? +params.poisson : 0.49;
+    return {
+      E: E, k: k, G: calcG(E, nu), nu: nu,
+      source: direct ? "entered directly" : "Gent table at Shore A " + params.shore_a,
+      bulk_modulus: params.bulk_modulus || 1100,
+    };
+  }
+
+  function validateCompound(params) {
+    if (!params || params.modulus_mode !== "direct") return;
+    const E = +params.e_modulus;
+    if (!Number.isFinite(E) || E <= 0)
+      throw new Error("Young's modulus E must be a positive number in N/mm^2, got " + params.e_modulus);
+    if (E < 0.1 || E > 200)
+      throw new Error("Young's modulus E = " + E + " N/mm^2 is outside anything a tread compound reaches " +
+        "(roughly 1-20 N/mm^2). Check the units: this field is N/mm^2 (= MPa), not kPa or psi.");
+    const k = +params.gent_k;
+    if (!Number.isFinite(k) || k <= 0 || k > 5)
+      throw new Error("the Gent shape-factor coefficient k must be a positive number of order 1 " +
+        "(0.57 at 70 A to 0.93 at 30 A), got " + params.gent_k);
+  }
 
   const SHORE_MIN = 30, SHORE_MAX = 70;
   // Gent's table covers 30-70 A. Outside it the nearest row is used, so a hard
@@ -459,10 +516,7 @@
       return { kx: 0, ky: 0, kxy: 0, kz: 0, area: 0, netArea: 0, perimeter: 0, shapeFactor: 0, eEff: 0, slenderness: 0, nSubs: 0 };
     let E, k;
     if (block.shore_a != null) { E = shoreE(block.shore_a); k = shoreK(block.shore_a); }
-    else {
-      E = params.e_override != null ? params.e_override : shoreE(params.shore_a);
-      k = params.k_override != null ? params.k_override : shoreK(params.shore_a);
-    }
+    else { const cp = compoundProperties(params); E = cp.E; k = cp.k; }
     const sipes = effectiveSipes(block);
     const sh = effectiveK(verts, block.height, E, params.poisson, block.draft_angle || 0, params.mode, sipes, params.n_slices || 40, params.sipe_model);
     const kzr = computeKz(verts, block.height, E, k, sipes, params.bulk_modulus || 1100);
@@ -478,23 +532,182 @@
     };
   }
 
+  // ---------------------------------------------------------------------
+  // wear state and tie bars
+  // ---------------------------------------------------------------------
+  // Put the groove bottom at z = 0. A block's top starts at z = NSD and, after
+  // the tyre has worn w mm, sits at z = NSD - w; its beam length is therefore
+  // NSD - w. A tie bar is a raised strip of the groove bottom of height h < NSD,
+  // so its top starts at z = h -- (NSD - h) BELOW the road. It touches nothing
+  // until the tread has worn that far. Once it does, it is flush with the blocks
+  // and is simply more land at the same height, which is exactly why tie bars
+  // are used: they arrive part-worn and stiffen the block row against the
+  // heel-and-toe wear that is developing by then.
+  //
+  // So the whole model is: main blocks lose w off their height; a tie bar joins
+  // the block list, at the blocks' current height, once w >= NSD - h. Nothing
+  // else about the pipeline changes. At the default w = 0 the tie bars are drawn
+  // and listed but contribute nothing, which is the truth for a new tyre.
+  function tiebarEngagementWear(tb) {
+    const nsd = Number.isFinite(+tb.nsd) ? +tb.nsd : 0;
+    const h = Number.isFinite(+tb.height) ? +tb.height : 0;
+    return Math.max(0, nsd - h);
+  }
+
+  function tiebarEngaged(tb, wear) {
+    if (tb.enabled === false) return false;
+    if (tb.force_contact) return true;
+    return (wear || 0) >= tiebarEngagementWear(tb) - 1e-9;
+  }
+
+  // The block list the rest of the pipeline should see at this wear state.
+  function effectiveBlocks(pattern, wear, opts) {
+    wear = Number.isFinite(+wear) ? Math.max(0, +wear) : 0;
+    opts = opts || {};
+    const minH = 0.1;
+    const out = [];
+    for (const b of pattern.blocks || []) {
+      const h = (b.height || 0) - wear;
+      if (h < minH) continue;                      // worn past this block entirely
+      out.push(wear > 0 ? Object.assign({}, b, { height: h }) : b);
+    }
+    const engaged = [];
+    for (const tb of pattern.tiebars || []) {
+      if (!tiebarEngaged(tb, wear)) continue;
+      // Worn into: flush with the blocks. Forced into contact while still below
+      // the surface: a short proud block of its own height, which is the closest
+      // a surface-contact model can get to a what-if.
+      const wornIn = wear >= tiebarEngagementWear(tb) - 1e-9;
+      const h = wornIn ? Math.max(minH, (tb.nsd || 0) - wear) : Math.max(minH, tb.height || 0);
+      engaged.push({
+        id: tb.id, pitch_id: tb.pitch_id || "", polygon: tb.polygon, zone: tb.zone,
+        height: h, draft_angle: tb.draft_angle || 0,
+        n_lateral_sipes: tb.n_lateral_sipes || 0,
+        sipe_depth_fraction: tb.sipe_depth_fraction, sipe_width: tb.sipe_width,
+        shore_a: tb.shore_a, sipes: tb.sipes || [], is_tiebar: true,
+      });
+    }
+    return opts.separate ? { blocks: out, tiebars: engaged } : out.concat(engaged);
+  }
+
+  function validateWear(wear, pattern) {
+    if (wear == null) return null;
+    const w = +wear;
+    if (!Number.isFinite(w) || w < 0)
+      throw new Error("tread wear must be a non-negative number of mm, got " + wear);
+    const maxH = (pattern && pattern.blocks || []).reduce((m, b) => Math.max(m, b.height || 0), 0);
+    if (maxH > 0 && w >= maxH)
+      throw new Error("tread wear of " + w + " mm removes every block (the deepest is " +
+        maxH.toFixed(2) + " mm). Enter a wear less than the NSD.");
+    return null;
+  }
+
+  // Apply the wear state to a pattern, returning a pattern the sweep can use
+  // directly. Kept separate so the untouched original stays available to draw.
+  function patternAtWear(pattern, wear) {
+    if (!wear && !(pattern.tiebars || []).some((t) => tiebarEngaged(t, 0))) return pattern;
+    validateWear(wear, pattern);
+    return Object.assign({}, pattern, { blocks: effectiveBlocks(pattern, wear), wear_mm: wear || 0 });
+  }
+
   // =====================================================================
   // 3. DXF import (port of tread_eval/dxf.py)
   // =====================================================================
-  function readDxfEntities(text) {
-    const raw = text.split(/\r\n|\r|\n/);
+  // A DXF group is two physical lines: an integer code, then its value. The old
+  // reader assumed line 0 of the file was the first code and paired
+  // (0,1),(2,3),... straight off. One stray blank line or a UTF-8 BOM ahead of
+  // the first code shifts every pair by one, the codes become values, and a
+  // perfectly good drawing imports as "no usable entities". That is most of the
+  // "sometimes it works" -- it depends on how the file was written, not on what
+  // is in it. So find the alignment by looking at the data instead of assuming.
+  function dxfPairs(text) {
+    let raw = String(text).replace(/^﻿/, "").split(/\r\n|\r|\n/);
+    // Choose the offset (0 or 1) under which the "code" slots really do hold
+    // integers. A correctly aligned file scores ~1.0; a shifted one scores ~0.
+    function score(off) {
+      let ok = 0, seen = 0;
+      for (let i = off; i + 1 < raw.length && seen < 400; i += 2) {
+        const t = raw[i].trim();
+        if (t === "") continue;
+        seen++;
+        if (/^-?\d+$/.test(t)) ok++;
+      }
+      return seen ? ok / seen : 0;
+    }
+    let off = 0;
+    if (score(1) > score(0)) off = 1;
     const pairs = [];
-    for (let i = 0; i + 1 < raw.length; i += 2) pairs.push([raw[i].trim(), raw[i + 1].trim()]);
-    const entities = [];
-    let inEntities = false, current = null;
+    for (let i = off; i + 1 < raw.length; i += 2) {
+      const c = raw[i].trim();
+      if (c === "") continue;
+      pairs.push([c, raw[i + 1].trim()]);
+    }
+    return pairs;
+  }
+
+  // Read the ENTITIES section and, separately, every definition in BLOCKS so
+  // that INSERT references can be expanded. A tread plan drawn as one pitch and
+  // arrayed with INSERT used to import as nothing at all.
+  function readDxfEntities(text) {
+    const pairs = dxfPairs(text);
+    const entities = [], blocks = {};
+    let section = null, current = null, target = null;
+    let blockName = null, blockBase = [0, 0];
+    const seenTypes = {};
     for (let idx = 0; idx < pairs.length; idx++) {
       const code = pairs[idx][0], value = pairs[idx][1];
-      if (code === "0" && value === "SECTION" && idx + 1 < pairs.length && pairs[idx + 1][1] === "ENTITIES") { inEntities = true; continue; }
-      if (code === "0" && value === "ENDSEC" && inEntities) { inEntities = false; continue; }
-      if (!inEntities) continue;
-      if (code === "0") { current = { type: value }; entities.push(current); }
-      else if (current) { (current[code] = current[code] || []).push(value); }
+      if (code === "0" && value === "SECTION") {
+        section = idx + 1 < pairs.length ? pairs[idx + 1][1] : null;
+        target = section === "ENTITIES" ? entities : null;
+        current = null;
+        continue;
+      }
+      if (code === "0" && value === "ENDSEC") { section = null; target = null; current = null; continue; }
+      if (section !== "ENTITIES" && section !== "BLOCKS") continue;
+
+      if (code === "0") {
+        if (section === "BLOCKS") {
+          if (value === "BLOCK") { blockName = null; blockBase = [0, 0]; target = []; current = { type: "BLOCK" }; continue; }
+          if (value === "ENDBLK") {
+            if (blockName) blocks[blockName] = { entities: target || [], base: blockBase };
+            blockName = null; target = null; current = null; continue;
+          }
+        }
+        // POLYLINE carries its geometry in the VERTEX entities that follow it,
+        // terminated by SEQEND -- the POLYLINE record itself holds only a dummy
+        // 10/20/30 origin. Reading 10/20 off the POLYLINE gave a single point,
+        // which was then dropped with no message at all. Fold the vertices in.
+        if (value === "VERTEX" && current && current.type === "POLYLINE") {
+          current.__vertexOpen = true;
+          current.__vtx = current.__vtx || [];
+          current.__vtx.push({});
+          continue;
+        }
+        if (value === "SEQEND") { if (current) current.__vertexOpen = false; current = null; continue; }
+        seenTypes[value] = (seenTypes[value] || 0) + 1;
+        current = { type: value };
+        if (target) target.push(current);
+        continue;
+      }
+      if (!current) continue;
+      if (current.__vertexOpen && current.__vtx && current.__vtx.length) {
+        const v = current.__vtx[current.__vtx.length - 1];
+        (v[code] = v[code] || []).push(value);
+        continue;
+      }
+      (current[code] = current[code] || []).push(value);
+      // An LWPOLYLINE's bulge (42) only appears on the vertices that have one,
+      // so it cannot be paired with the 10/20 list positionally. Keep the groups
+      // in file order too, and read the vertices off that.
+      if (current.type === "LWPOLYLINE") (current.__seq = current.__seq || []).push([code, value]);
+      if (section === "BLOCKS" && current.type === "BLOCK") {
+        if (code === "2") blockName = value;
+        if (code === "10") blockBase[0] = +value;
+        if (code === "20") blockBase[1] = +value;
+      }
     }
+    entities.__blocks = blocks;
+    entities.__types = seenTypes;
     return entities;
   }
 
@@ -521,10 +734,91 @@
     return true;
   }
 
-  function entitiesToSegments(entities, sagitta, stats) {
+  // A polyline vertex carries a "bulge" (group 42): tan(quarter of the included
+  // arc angle) of the arc that replaces the straight run to the next vertex.
+  // Chording it away silently rounds every filleted block corner into a cut
+  // corner, which changes the plan area the whole tool is built on.
+  function bulgeArc(p0, p1, bulge, sagitta) {
+    if (!bulge || Math.abs(bulge) < 1e-12) return [];
+    const dx = p1[0] - p0[0], dy = p1[1] - p0[1];
+    const chord = Math.hypot(dx, dy);
+    if (chord < 1e-12) return [];
+    const theta = 4 * Math.atan(bulge);                 // included angle, signed
+    const r = Math.abs(chord / (2 * Math.sin(theta / 2)));
+    if (!Number.isFinite(r) || r <= 0) return [];
+    const mx = (p0[0] + p1[0]) / 2, my = (p0[1] + p1[1]) / 2;
+    const h = Math.sqrt(Math.max(0, r * r - (chord / 2) * (chord / 2)));
+    const sgn = (theta > 0 ? 1 : -1) * (Math.abs(theta) > Math.PI ? -1 : 1);
+    const cx = mx - (sgn * h * dy) / chord, cy = my + (sgn * h * dx) / chord;
+    let a0 = Math.atan2(p0[1] - cy, p0[0] - cx), a1 = Math.atan2(p1[1] - cy, p1[0] - cx);
+    let sweep = a1 - a0;
+    while (sweep <= -Math.PI * 2) sweep += Math.PI * 2;
+    while (sweep > Math.PI * 2) sweep -= Math.PI * 2;
+    if (theta > 0 && sweep < 0) sweep += Math.PI * 2;
+    if (theta < 0 && sweep > 0) sweep -= Math.PI * 2;
+    const step = r > sagitta ? 2 * Math.acos(Math.max(-1, Math.min(1, 1 - sagitta / r))) : Math.abs(sweep);
+    const n = Math.max(2, Math.ceil(Math.abs(sweep) / Math.max(step, 1e-6)));
+    const out = [];
+    for (let i = 1; i < n; i++) {
+      const a = a0 + (sweep * i) / n;
+      out.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+    return out;
+  }
+
+  // Flatten a SPLINE. Fit points are already on the curve, so joining them is
+  // exact enough at tread scale; otherwise fall back to the control polygon,
+  // which is a coarse but honest outline of where the curve runs.
+  function splinePoints(e) {
+    const fx = (e["11"] || []).map(Number), fy = (e["21"] || []).map(Number);
+    if (fx.length >= 2) {
+      const p = [];
+      for (let i = 0; i < Math.min(fx.length, fy.length); i++) p.push([fx[i], fy[i]]);
+      return p;
+    }
+    const cx = (e["10"] || []).map(Number), cy = (e["20"] || []).map(Number);
+    const p = [];
+    for (let i = 0; i < Math.min(cx.length, cy.length); i++) p.push([cx[i], cy[i]]);
+    if (p.length >= 2 && (parseInt((e["70"] || ["0"])[0], 10) & 1) === 1) p.push(p[0]);
+    return p;
+  }
+
+  function ellipsePoints(e, sagitta) {
+    const cx = +(e["10"] || [0])[0], cy = +(e["20"] || [0])[0];
+    const mx = +(e["11"] || [0])[0], my = +(e["21"] || [0])[0];
+    const ratio = +(e["40"] || [1])[0];
+    const t0 = +(e["41"] || [0])[0], t1 = +(e["42"] || [2 * Math.PI])[0];
+    const a = Math.hypot(mx, my);
+    if (!(a > 0)) return [];
+    const b = a * ratio, rot = Math.atan2(my, mx);
+    let sweep = t1 - t0;
+    if (sweep <= 0) sweep += 2 * Math.PI;
+    const rmax = Math.max(a, b);
+    const step = rmax > sagitta ? 2 * Math.acos(Math.max(-1, Math.min(1, 1 - sagitta / rmax))) : sweep;
+    const n = Math.max(3, Math.ceil(sweep / Math.max(step, 1e-6)));
+    const out = [];
+    for (let i = 0; i <= n; i++) {
+      const t = t0 + (sweep * i) / n;
+      const ex = a * Math.cos(t), ey = b * Math.sin(t);
+      out.push([cx + ex * Math.cos(rot) - ey * Math.sin(rot), cy + ex * Math.sin(rot) + ey * Math.cos(rot)]);
+    }
+    return out;
+  }
+
+  // Entity types that legitimately carry no tread geometry. Anything outside
+  // both this list and the handled list is reported, because a drawing whose
+  // outlines are SPLINEs used to lose them without a word.
+  const DXF_IGNORED = { TEXT: 1, MTEXT: 1, DIMENSION: 1, LEADER: 1, MLEADER: 1, POINT: 1,
+    ATTDEF: 1, ATTRIB: 1, HATCH: 1, VIEWPORT: 1, IMAGE: 1, WIPEOUT: 1, TOLERANCE: 1, BLOCK: 1 };
+
+  function entitiesToSegments(entities, sagitta, stats, blocks, depth) {
     const segments = [];
     stats = stats || {};
-    stats.skipped = 0;
+    if (stats.skipped == null) stats.skipped = 0;
+    stats.unsupported = stats.unsupported || {};
+    stats.inserts = stats.inserts || 0;
+    blocks = blocks || entities.__blocks || {};
+    depth = depth || 0;
     const push = (pts) => { if (finitePts(pts)) segments.push(pts); else stats.skipped++; };
     for (const e of entities) {
       try {
@@ -539,17 +833,74 @@
         } else if (e.type === "CIRCLE") {
           const pts = flattenArc(+e["10"][0], +e["20"][0], +e["40"][0], 0, 360, sagitta);
           if (pts.length >= 3) push(pts);
+        } else if (e.type === "ELLIPSE") {
+          const pts = ellipsePoints(e, sagitta);
+          if (pts.length >= 3) push(pts);
+        } else if (e.type === "SPLINE") {
+          const pts = splinePoints(e);
+          if (pts.length >= 2) push(pts);
         } else if (e.type === "LWPOLYLINE" || e.type === "POLYLINE") {
-          const xs = (e["10"] || []).map(Number), ys = (e["20"] || []).map(Number);
-          const pts = [];
-          for (let i = 0; i < Math.min(xs.length, ys.length); i++) pts.push([xs[i], ys[i]]);
-          if (pts.length >= 2) {
+          let xs, ys, bulges;
+          if (e.__vtx && e.__vtx.length) {
+            xs = e.__vtx.map((v) => +(v["10"] || [NaN])[0]);
+            ys = e.__vtx.map((v) => +(v["20"] || [NaN])[0]);
+            bulges = e.__vtx.map((v) => +(v["42"] || [0])[0]);
+          } else if (e.__seq) {
+            xs = []; ys = []; bulges = [];
+            for (const [code, value] of e.__seq) {
+              if (code === "10") { xs.push(+value); ys.push(NaN); bulges.push(0); }
+              else if (code === "20" && xs.length) ys[ys.length - 1] = +value;
+              else if (code === "42" && xs.length) bulges[bulges.length - 1] = +value;
+            }
+          } else {
+            xs = (e["10"] || []).map(Number);
+            ys = (e["20"] || []).map(Number);
+            bulges = xs.map(() => 0);
+          }
+          const verts = [];
+          for (let i = 0; i < Math.min(xs.length, ys.length); i++) verts.push([xs[i], ys[i]]);
+          if (verts.length >= 2) {
             const closed = (parseInt((e["70"] || ["0"])[0], 10) & 1) === 1;
-            if (closed && Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) > 1e-9) pts.push(pts[0]);
+            const pts = [];
+            const last = closed ? verts.length : verts.length - 1;
+            for (let i = 0; i < last; i++) {
+              const p0 = verts[i], p1 = verts[(i + 1) % verts.length];
+              pts.push(p0);
+              for (const q of bulgeArc(p0, p1, bulges[i] || 0, sagitta)) pts.push(q);
+            }
+            pts.push(closed ? verts[0] : verts[verts.length - 1]);
             push(pts);
           }
+        } else if (e.type === "INSERT") {
+          // A pattern drawn once and arrayed is still the pattern. Expand it,
+          // honouring the block base point, scale, rotation and MINSERT array.
+          const name = (e["2"] || [""])[0];
+          const def = blocks[name];
+          if (!def || depth > 6) { stats.unsupported["INSERT(" + name + ")"] = (stats.unsupported["INSERT(" + name + ")"] || 0) + 1; continue; }
+          const ix = +(e["10"] || [0])[0], iy = +(e["20"] || [0])[0];
+          const sx = +(e["41"] || [1])[0] || 1, sy = +(e["42"] || [1])[0] || 1;
+          const rot = ((+(e["50"] || [0])[0]) * Math.PI) / 180;
+          const nCols = Math.max(1, parseInt((e["70"] || ["1"])[0], 10) || 1);
+          const nRows = Math.max(1, parseInt((e["71"] || ["1"])[0], 10) || 1);
+          const dCol = +(e["44"] || [0])[0], dRow = +(e["45"] || [0])[0];
+          const inner = entitiesToSegments(def.entities, sagitta, stats, blocks, depth + 1);
+          const ca = Math.cos(rot), sa = Math.sin(rot);
+          for (let r = 0; r < nRows; r++) {
+            for (let c = 0; c < nCols; c++) {
+              const ox = ix + c * dCol, oy = iy + r * dRow;
+              for (const chain of inner) {
+                push(chain.map((p) => {
+                  const px = (p[0] - def.base[0]) * sx, py = (p[1] - def.base[1]) * sy;
+                  return [ox + px * ca - py * sa, oy + px * sa + py * ca];
+                }));
+              }
+            }
+          }
+          stats.inserts++;
+        } else if (!DXF_IGNORED[e.type]) {
+          stats.unsupported[e.type] = (stats.unsupported[e.type] || 0) + 1;
         }
-      } catch (err) { /* skip malformed entity */ }
+      } catch (err) { stats.skipped++; }
     }
     return segments;
   }
@@ -585,6 +936,379 @@
       else openChains.push(chain);
     }
     return { closed: closed, openChains: openChains };
+  }
+
+  // =====================================================================
+  // 3b. planar arrangement -- deterministic loops, and the regions between them
+  // =====================================================================
+  // buildLoops above walks a chain and, at a junction, takes whichever attached
+  // segment happens to be unused first. That is a coin toss decided by the order
+  // the entities sit in the DXF: shuffling two abutting rectangles returned two
+  // 200 mm^2 blocks or one merged 400 mm^2 blob depending on the shuffle. It is
+  // also blind to a tie bar, whose long sides ARE the neighbouring blocks' groove
+  // walls -- there is no separate closed outline to find.
+  //
+  // Faces of the planar arrangement have neither problem. Weld the endpoints,
+  // cut every segment at the points where other segments touch or cross it, then
+  // at each node always leave along the first edge clockwise from the one you
+  // arrived on. That traces the smallest region enclosing you and nothing else,
+  // so the answer depends only on the geometry. Blocks come out as faces; a tie
+  // bar comes out as its own face, bounded partly by edges it shares with the
+  // blocks on either side.
+
+  function SpatialHash(tol) {
+    this.tol = tol;
+    this.cell = Math.max(tol * 2, 1e-9);
+    this.map = new Map();
+    this.pts = [];
+  }
+  SpatialHash.prototype._key = function (i, j) { return i * 73856093 ^ j * 19349663; };
+  // Returns an existing node id within tol, or creates one.
+  SpatialHash.prototype.node = function (x, y) {
+    const i = Math.floor(x / this.cell), j = Math.floor(y / this.cell);
+    let best = -1, bd = this.tol;
+    for (let di = -1; di <= 1; di++) {
+      for (let dj = -1; dj <= 1; dj++) {
+        const b = this.map.get(this._key(i + di, j + dj));
+        if (!b) continue;
+        for (let k = 0; k < b.length; k++) {
+          const p = this.pts[b[k]];
+          const d = Math.hypot(p[0] - x, p[1] - y);
+          if (d <= bd) { bd = d; best = b[k]; }
+        }
+      }
+    }
+    if (best >= 0) return best;
+    const id = this.pts.length;
+    this.pts.push([x, y]);
+    const k = this._key(i, j);
+    let b = this.map.get(k);
+    if (!b) { b = []; this.map.set(k, b); }
+    b.push(id);
+    return id;
+  };
+
+  function segIntersect(a0, a1, b0, b1) {
+    const rx = a1[0] - a0[0], ry = a1[1] - a0[1];
+    const sx = b1[0] - b0[0], sy = b1[1] - b0[1];
+    const den = rx * sy - ry * sx;
+    if (Math.abs(den) < 1e-15) return null;            // parallel or collinear
+    const qpx = b0[0] - a0[0], qpy = b0[1] - a0[1];
+    const t = (qpx * sy - qpy * sx) / den;
+    const u = (qpx * ry - qpy * rx) / den;
+    if (t <= 1e-9 || t >= 1 - 1e-9 || u <= 1e-9 || u >= 1 - 1e-9) return null;
+    return [t, u];
+  }
+
+  // Distance from p to segment a-b, plus the parameter of the foot.
+  function pointOnSeg(p, a, b) {
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const L2 = dx * dx + dy * dy;
+    if (L2 < 1e-18) return null;
+    const t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2;
+    if (t <= 1e-9 || t >= 1 - 1e-9) return null;
+    const fx = a[0] + t * dx, fy = a[1] + t * dy;
+    return [t, Math.hypot(p[0] - fx, p[1] - fy)];
+  }
+
+  // Uniform bucket grid over the elementary segments, so the pairwise work below
+  // stays near-linear instead of quadratic on a few tens of thousands of edges.
+  function segmentBuckets(segs, pts) {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, total = 0;
+    for (const s of segs) {
+      const a = pts[s[0]], b = pts[s[1]];
+      x0 = Math.min(x0, a[0], b[0]); x1 = Math.max(x1, a[0], b[0]);
+      y0 = Math.min(y0, a[1], b[1]); y1 = Math.max(y1, a[1], b[1]);
+      total += Math.hypot(b[0] - a[0], b[1] - a[1]);
+    }
+    const mean = segs.length ? total / segs.length : 1;
+    const cell = Math.max(mean * 2, 1e-6);
+    const map = new Map();
+    const key = (i, j) => i * 73856093 ^ j * 19349663;
+    for (let k = 0; k < segs.length; k++) {
+      const a = pts[segs[k][0]], b = pts[segs[k][1]];
+      const i0 = Math.floor(Math.min(a[0], b[0]) / cell), i1 = Math.floor(Math.max(a[0], b[0]) / cell);
+      const j0 = Math.floor(Math.min(a[1], b[1]) / cell), j1 = Math.floor(Math.max(a[1], b[1]) / cell);
+      for (let i = i0; i <= i1; i++) {
+        for (let j = j0; j <= j1; j++) {
+          const kk = key(i, j);
+          let bkt = map.get(kk);
+          if (!bkt) { bkt = []; map.set(kk, bkt); }
+          bkt.push(k);
+        }
+      }
+    }
+    return { map: map, cell: cell, key: key, extent: [x0, x1, y0, y1] };
+  }
+
+  const ARRANGEMENT_LIMIT = 200000;
+
+  // chains -> {faces, openChains, nodes, stats}
+  function planarArrangement(chains, tol) {
+    tol = tol || 1e-2;
+    const hash = new SpatialHash(tol);
+    let segs = [];
+    for (const chain of chains) {
+      for (let i = 0; i + 1 < chain.length; i++) {
+        const a = hash.node(chain[i][0], chain[i][1]);
+        const b = hash.node(chain[i + 1][0], chain[i + 1][1]);
+        if (a !== b) segs.push([a, b]);
+      }
+    }
+    const stats = { n_input_segments: segs.length, n_split: 0, truncated: false };
+    if (!segs.length) return { faces: [], openChains: [], stats: stats, nodes: hash.pts };
+    if (segs.length > ARRANGEMENT_LIMIT) {
+      // Refusing beats grinding for minutes in a worker the user cannot see into.
+      throw new Error(
+        "this drawing flattens to " + segs.length + " segments, past the " + ARRANGEMENT_LIMIT +
+        " the arrangement can handle. Import a single tread pitch rather than the whole " +
+        "wheel, or raise the arc tolerance."
+      );
+    }
+
+    // ---- cut every segment where another one touches or crosses it ----------
+    const buckets = segmentBuckets(segs, hash.pts);
+    const cuts = segs.map(() => null);
+    const addCut = (k, t) => { if (!cuts[k]) cuts[k] = []; cuts[k].push(t); };
+    const near = (k) => {
+      const a = hash.pts[segs[k][0]], b = hash.pts[segs[k][1]];
+      const c = buckets.cell;
+      const i0 = Math.floor(Math.min(a[0], b[0]) / c), i1 = Math.floor(Math.max(a[0], b[0]) / c);
+      const j0 = Math.floor(Math.min(a[1], b[1]) / c), j1 = Math.floor(Math.max(a[1], b[1]) / c);
+      const out = new Set();
+      for (let i = i0 - 1; i <= i1 + 1; i++)
+        for (let j = j0 - 1; j <= j1 + 1; j++) {
+          const bk = buckets.map.get(buckets.key(i, j));
+          if (bk) for (const m of bk) if (m !== k) out.add(m);
+        }
+      return out;
+    };
+    for (let k = 0; k < segs.length; k++) {
+      const a = hash.pts[segs[k][0]], b = hash.pts[segs[k][1]];
+      for (const m of near(k)) {
+        if (m < k) continue;
+        const c = hash.pts[segs[m][0]], d = hash.pts[segs[m][1]];
+        const x = segIntersect(a, b, c, d);
+        if (x) { addCut(k, x[0]); addCut(m, x[1]); continue; }
+        // A tie bar drawn to land on the middle of a groove wall makes a T, not
+        // a crossing: the wall has to be cut at the endpoint that touches it.
+        for (const [pt, endNode] of [[c, segs[m][0]], [d, segs[m][1]]]) {
+          if (endNode === segs[k][0] || endNode === segs[k][1]) continue;
+          const r = pointOnSeg(pt, a, b);
+          if (r && r[1] <= tol) addCut(k, r[0]);
+        }
+      }
+    }
+
+    const split = [];
+    for (let k = 0; k < segs.length; k++) {
+      const a = hash.pts[segs[k][0]], b = hash.pts[segs[k][1]];
+      if (!cuts[k]) { split.push(segs[k]); continue; }
+      const ts = cuts[k].slice().sort((p, q) => p - q);
+      let prev = segs[k][0];
+      let lastT = 0;
+      for (const t of ts) {
+        if (t - lastT < 1e-9) continue;
+        const n = hash.node(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t);
+        if (n !== prev) { split.push([prev, n]); prev = n; lastT = t; stats.n_split++; }
+      }
+      if (prev !== segs[k][1]) split.push([prev, segs[k][1]]);
+    }
+    segs = split;
+
+    // ---- de-duplicate: coincident outlines are drawn twice all the time -----
+    const seen = new Set();
+    const edges = [];
+    for (const s of segs) {
+      if (s[0] === s[1]) continue;
+      const k = s[0] < s[1] ? s[0] + ":" + s[1] : s[1] + ":" + s[0];
+      if (seen.has(k)) continue;
+      seen.add(k);
+      edges.push(s);
+    }
+
+    // ---- prune the tree part: a dangling edge bounds no face ----------------
+    const deg = new Map();
+    const bump = (n, d) => deg.set(n, (deg.get(n) || 0) + d);
+    for (const e of edges) { bump(e[0], 1); bump(e[1], 1); }
+    const dead = new Array(edges.length).fill(false);
+    const incident = new Map();
+    for (let i = 0; i < edges.length; i++) {
+      for (const n of edges[i]) {
+        let l = incident.get(n);
+        if (!l) { l = []; incident.set(n, l); }
+        l.push(i);
+      }
+    }
+    let queue = [];
+    deg.forEach((d, n) => { if (d === 1) queue.push(n); });
+    while (queue.length) {
+      const n = queue.pop();
+      if ((deg.get(n) || 0) !== 1) continue;
+      const live = (incident.get(n) || []).filter((i) => !dead[i]);
+      if (!live.length) { deg.set(n, 0); continue; }
+      const i = live[0];
+      dead[i] = true;
+      const other = edges[i][0] === n ? edges[i][1] : edges[i][0];
+      deg.set(n, 0);
+      bump(other, -1);
+      if ((deg.get(other) || 0) === 1) queue.push(other);
+    }
+
+    // Rebuild the pruned edges into chains -- they are the open outlines, and
+    // the seam-wrapping blocks live among them.
+    const openChains = [];
+    {
+      const usedD = new Array(edges.length).fill(false);
+      const adjD = new Map();
+      for (let i = 0; i < edges.length; i++) {
+        if (!dead[i]) continue;
+        for (const n of edges[i]) {
+          let l = adjD.get(n);
+          if (!l) { l = []; adjD.set(n, l); }
+          l.push(i);
+        }
+      }
+      for (let i = 0; i < edges.length; i++) {
+        if (!dead[i] || usedD[i]) continue;
+        usedD[i] = true;
+        let chain = [edges[i][0], edges[i][1]];
+        for (const endIdx of [1, 0]) {
+          while (true) {
+            const tip = endIdx ? chain[chain.length - 1] : chain[0];
+            const nxt = (adjD.get(tip) || []).find((j) => !usedD[j]);
+            if (nxt == null) break;
+            usedD[nxt] = true;
+            const other = edges[nxt][0] === tip ? edges[nxt][1] : edges[nxt][0];
+            if (endIdx) chain.push(other); else chain.unshift(other);
+          }
+        }
+        openChains.push(chain.map((n) => hash.pts[n].slice()));
+      }
+    }
+
+    // ---- half-edge face traversal ------------------------------------------
+    const live = [];
+    for (let i = 0; i < edges.length; i++) if (!dead[i]) live.push(edges[i]);
+    const out = new Map();          // node -> [{to, half}] sorted by angle
+    const halfNext = new Int32Array(live.length * 2).fill(-1);
+    for (let i = 0; i < live.length; i++) {
+      for (const dir of [0, 1]) {
+        const from = live[i][dir], to = live[i][1 - dir];
+        const p = hash.pts[from], q = hash.pts[to];
+        let l = out.get(from);
+        if (!l) { l = []; out.set(from, l); }
+        l.push({ to: to, half: i * 2 + dir, ang: Math.atan2(q[1] - p[1], q[0] - p[0]) });
+      }
+    }
+    out.forEach((l) => l.sort((a, b) => a.ang - b.ang));
+    // For the half-edge u->v, the next one is the first edge clockwise from v->u.
+    for (let i = 0; i < live.length; i++) {
+      for (const dir of [0, 1]) {
+        const u = live[i][dir], v = live[i][1 - dir];
+        const l = out.get(v);
+        const p = hash.pts[v], w = hash.pts[u];
+        const back = Math.atan2(w[1] - p[1], w[0] - p[0]);
+        let idx = -1;
+        for (let k = 0; k < l.length; k++) if (Math.abs(l[k].ang - back) < 1e-12 && l[k].to === u) { idx = k; break; }
+        if (idx < 0) { // fall back to nearest angle
+          let bd = Infinity;
+          for (let k = 0; k < l.length; k++) { const d = Math.abs(l[k].ang - back); if (d < bd) { bd = d; idx = k; } }
+        }
+        const prev = l[(idx - 1 + l.length) % l.length];
+        halfNext[i * 2 + dir] = prev.half;
+      }
+    }
+
+    const visited = new Uint8Array(live.length * 2);
+    const faces = [];
+    for (let h0 = 0; h0 < live.length * 2; h0++) {
+      if (visited[h0]) continue;
+      const ring = [];
+      let h = h0, guard = 0;
+      while (!visited[h] && guard++ < live.length * 2 + 4) {
+        visited[h] = 1;
+        const dir = h & 1, i = h >> 1;
+        ring.push(live[i][dir]);
+        h = halfNext[h];
+      }
+      if (ring.length < 3) continue;
+      const poly = ring.map((n) => hash.pts[n].slice());
+      let s = 0;
+      for (let k = 0; k < poly.length; k++) {
+        const a = poly[k], b = poly[(k + 1) % poly.length];
+        s += a[0] * b[1] - b[0] * a[1];
+      }
+      // A CCW ring is an enclosed region; the CW ones are the outer boundaries
+      // of each connected component and enclose nothing.
+      if (s > 0) faces.push({ polygon: poly, area: s / 2, halfEdges: ring.slice() });
+    }
+    stats.n_edges = live.length;
+    stats.n_faces = faces.length;
+    stats.n_open_chains = openChains.length;
+    return { faces: faces, openChains: openChains, stats: stats, nodes: hash.pts, edges: live };
+  }
+
+  // Which faces touch which, along a shared edge. A block outline drawn on its
+  // own shares nothing; a tie bar necessarily shares its two long sides with the
+  // blocks it bridges, and that is what tells them apart.
+  function faceAdjacency(faces) {
+    const owner = new Map();
+    const shared = faces.map(() => new Set());
+    const sharedLen = faces.map(() => 0);
+    for (let f = 0; f < faces.length; f++) {
+      const r = faces[f].polygon;
+      for (let i = 0; i < r.length; i++) {
+        const a = r[i], b = r[(i + 1) % r.length];
+        const ka = a[0].toFixed(6) + "," + a[1].toFixed(6);
+        const kb = b[0].toFixed(6) + "," + b[1].toFixed(6);
+        const k = ka < kb ? ka + "|" + kb : kb + "|" + ka;
+        const prev = owner.get(k);
+        if (prev == null) { owner.set(k, f); continue; }
+        if (prev === f) continue;
+        shared[f].add(prev);
+        shared[prev].add(f);
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        sharedLen[f] += L;
+        sharedLen[prev] += L;
+      }
+    }
+    return { neighbours: shared, sharedLength: sharedLen };
+  }
+
+  function median(xs) {
+    if (!xs.length) return 0;
+    const s = xs.slice().sort((a, b) => a - b);
+    const m = s.length >> 1;
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  }
+
+  // Split the arrangement's faces into blocks and tie-bar candidates.
+  //   * a face that shares no edge with any other is a block, always -- that is
+  //     every face on a drawing of separate outlines, so nothing changes there;
+  //   * among faces that do share edges, one that is small relative to the
+  //     typical block AND bridges two or more of them is a tie bar;
+  //   * anything else that shares edges is reported as an unclassified region
+  //     and treated as a block, never silently dropped.
+  // The threshold is a first guess; every candidate is listed for the user to
+  // confirm, reject or re-height.
+  function classifyFaces(faces, areaFrac) {
+    areaFrac = areaFrac == null ? 0.5 : areaFrac;
+    const adj = faceAdjacency(faces);
+    const isolated = [];
+    for (let f = 0; f < faces.length; f++) if (!adj.neighbours[f].size) isolated.push(faces[f].area);
+    const ref = median(isolated.length ? isolated : faces.map((f) => f.area));
+    const cut = ref * areaFrac;
+    const blocks = [], tiebars = [], unclassified = [];
+    for (let f = 0; f < faces.length; f++) {
+      const nb = adj.neighbours[f];
+      const rec = Object.assign({}, faces[f], { neighbours: Array.from(nb) });
+      if (!nb.size) { blocks.push(rec); continue; }
+      if (faces[f].area < cut && nb.size >= 2) { tiebars.push(rec); continue; }
+      if (faces[f].area < cut) { unclassified.push(rec); blocks.push(rec); continue; }
+      blocks.push(rec);
+    }
+    return { blocks: blocks, tiebars: tiebars, unclassified: unclassified, referenceArea: ref, cutArea: cut };
   }
 
   function closeAcrossSeam(openChains, circumference, tol) {
@@ -802,14 +1526,42 @@
     if (kept.length !== segments.length) warnings.push("ignored " + (segments.length - kept.length) + " full-span construction line(s)");
     segments = kept;
 
-    const bl = buildLoops(segments);
-    const seam = closeAcrossSeam(bl.openChains, circ);
+    // Weld tolerance. CAD exports routinely leave corners a few microns apart
+    // after a trim; at the old 1e-3 mm a 5 um gap lost the whole block with only
+    // a "chain did not close" line to show for it. 0.01 mm is two orders below
+    // the finest tread feature (a 0.5 mm sipe) and two above the usual export
+    // round-off, so it closes the gaps without merging anything real.
+    const weldTol = opts.weld_tolerance == null ? 0.01 : opts.weld_tolerance;
+    if (!Number.isFinite(weldTol) || weldTol <= 0 || weldTol > 1.0)
+      throw new Error("weld tolerance must be a positive number of mm no greater than 1.0, got " + weldTol);
+
+    const arr = planarArrangement(segments, weldTol);
+    const seam = closeAcrossSeam(arr.openChains, circ);
     if (seam.leftover.length) warnings.push(seam.leftover.length + " chain(s) did not close and were discarded");
 
     const minBlockArea = opts.min_block_area == null ? 5.0 : opts.min_block_area;
-    let loops = bl.closed.concat(seam.loops);
+    const cls = classifyFaces(arr.faces, opts.tiebar_area_fraction);
+
+    // Seam-wrapped outlines never make it into the arrangement (they are open
+    // until the two halves are stitched), so they join the blocks directly.
+    let loops = cls.blocks.map((f) => f.polygon).concat(seam.loops);
     const small = loops.filter((c) => polygonArea(c) < minBlockArea);
     loops = loops.filter((c) => polygonArea(c) >= minBlockArea);
+
+    let tiebarFaces = cls.tiebars.filter((f) => f.area >= Math.min(minBlockArea, 1.0));
+    // A region enclosed by a block is an interior subdivision -- a sipe drawn
+    // right across, a stone ejector -- not a bar bridging two blocks.
+    if (tiebarFaces.length) {
+      const blockPolys = loops;
+      tiebarFaces = tiebarFaces.filter((f) => {
+        const c = polygonCentroid(f.polygon);
+        for (const bp of blockPolys) if (pointInPolygon(c, bp)) return false;
+        return true;
+      });
+    }
+    if (cls.unclassified.length)
+      warnings.push(cls.unclassified.length + " small region(s) share an edge with a block but touch only one of " +
+        "them, so they were counted as blocks rather than tie bars — check the Tie bars tab if any of them is a bar");
 
     // An import that yields no blocks is a failed import, not an empty tyre.
     // Left to run it produces all-zero charts with nothing to explain them.
@@ -817,7 +1569,7 @@
       const why = [];
       if (small.length) why.push(small.length + " closed loop(s) were smaller than the " + minBlockArea + " mm^2 minimum block area");
       if (seam.leftover.length) why.push(seam.leftover.length + " outline(s) did not close — the drawing may have gaps at block corners");
-      if (!bl.closed.length && !seam.loops.length) why.push("no closed outline could be stitched from the segments at all");
+      if (!arr.faces.length && !seam.loops.length) why.push("no closed outline could be stitched from the segments at all");
       throw new Error(
         "DXF imported 0 tread blocks. " + (why.length ? why.join("; ") + ". " : "") +
         "Check that the tread outlines are on the imported layer, that corners meet " +
@@ -873,16 +1625,57 @@
     const uniform = repeat ? Math.abs(circ / repeat - Math.round(circ / repeat)) < 1e-3 && Math.round(circ / repeat) >= 2 : false;
     if (uniform) warnings.push("every repeat is geometrically identical -- this drawing carries no pitch modulation; supply the production pitch sequence for a real order analysis");
 
+    // Tie bars. A bar's height is measured from the groove bottom like the
+    // block's NSD, but it is lower, so on an unworn tyre its top sits
+    // (NSD - height) below the road and it carries nothing. Default it to a
+    // fraction of the local block NSD and let the user set each one.
+    const tbFrac = opts.tiebar_height_fraction == null ? 0.55 : opts.tiebar_height_fraction;
+    const tiebars = [];
+    tiebarFaces.sort((a, b) => bbox(a.polygon)[0] - bbox(b.polygon)[0]);
+    for (let i = 0; i < tiebarFaces.length; i++) {
+      const poly = tiebarFaces[i].polygon.map((p) => [p[0], p[1] - half]);
+      const c = polygonCentroid(poly);
+      const zone = classifyZone(Math.abs(c[1]), width, opts.zone_center, opts.zone_intermediate);
+      const nsd = defaults.height_by_zone[zone] != null ? defaults.height_by_zone[zone] : defaults.height;
+      tiebars.push({
+        id: "T" + String(i).padStart(3, "0"), polygon: poly, zone: zone,
+        nsd: nsd, height: Math.min(nsd, tbFrac * nsd),
+        draft_angle: defaults.draft_by_zone[zone] != null ? defaults.draft_by_zone[zone] : defaults.draft_angle,
+        shore_a: defaults.shore_a, sipes: [], n_lateral_sipes: 0,
+        sipe_depth_fraction: defaults.sipe_depth_fraction, sipe_width: 0.5,
+        enabled: true, force_contact: false,
+        area: polygonArea(poly), centroid_x: c[0], centroid_y: c[1],
+        n_neighbours: (tiebarFaces[i].neighbours || []).length,
+      });
+    }
+    if (tiebars.length)
+      warnings.push(tiebars.length + " tie bar(s) detected between blocks. They sit below the tread " +
+        "surface, so they carry nothing until the tyre has worn past (NSD - tie-bar height) — set the " +
+        "heights and the wear state in the Tie bars tab.");
+
     const pattern = {
       tyre_circumference: circ, tread_width: width, pitches: pitches, blocks: blocks,
+      tiebars: tiebars,
       crown: crownDualRadius(width, opts.crown_r_center, opts.crown_r_shoulder, opts.crown_break),
       name: opts.name || "pattern", source: "dxf",
       meta: { geometric_repeat_mm: repeat, uniform_array: uniform },
     };
+    const unsupported = Object.keys(stats.unsupported || {}).map((k) => k + " x" + stats.unsupported[k]);
+    if (unsupported.length)
+      warnings.push("entity type(s) not read as tread geometry: " + unsupported.join(", ") +
+        ". If the outlines are drawn with these, the import is incomplete.");
+    if (stats.inserts)
+      warnings.push(stats.inserts + " INSERT reference(s) were expanded from the BLOCKS section");
     const report = {
-      n_entities: entities.length, n_segments: segments.length, n_closed: bl.closed.length,
+      n_entities: entities.length, n_segments: segments.length, n_closed: cls.blocks.length,
       n_wrapped: seam.loops.length, n_discarded_open: seam.leftover.length, n_discarded_small: small.length,
       circumference: circ, tread_width: width, land_ratio: land / (circ * width), n_blocks: blocks.length,
+      n_tiebars: tiebars.length, n_unclassified: cls.unclassified.length,
+      n_faces: arr.faces.length, n_arrangement_edges: arr.stats.n_edges || 0,
+      n_arrangement_splits: arr.stats.n_split || 0, weld_tolerance: weldTol,
+      tiebar_reference_area: cls.referenceArea, tiebar_cut_area: cls.cutArea,
+      entity_types: entities.__types || {}, unsupported_types: stats.unsupported || {},
+      n_inserts: stats.inserts || 0,
       warnings: warnings,
     };
     return { pattern: pattern, report: report };
@@ -1761,6 +2554,9 @@
     SHORE_E_TABLE, SHORE_K_TABLE, shoreE, shoreK, shoreRangeWarning, calcG, beamKMatrix, effectiveK, computeKz, blockStiffness, effectiveSipes,
     // dxf
     readDxfEntities, entitiesToSegments, buildLoops, closeAcrossSeam, loadPattern, estimatePitchCount, geometricRepeat,
+    dxfPairs, planarArrangement, classifyFaces, faceAdjacency, bulgeArc,
+    compoundProperties, validateCompound, interpShore,
+    tiebarEngagementWear, tiebarEngaged, effectiveBlocks, validateWear, patternAtWear,
     validateBlockDefaults, validateImportOptions,
     // zones + crown
     zoneBounds, classifyZone, ZONES, crownDualRadius, TYRE_CLASS, tyreClass, crownFromRadiusProfile, crownTangentAngle, crownLocalRadius, crownDrop, crownContactLateral,

@@ -146,7 +146,38 @@
     return {
       shore_a: num("shore"), poisson: num("poisson"), mode: $("mode").value,
       bulk_modulus: 1100, n_slices: 40, sipe_model: $("sipeModel").value,
+      modulus_mode: $("modulusMode").value,
+      e_modulus: num("eModulus"), gent_k: num("gentK"),
     };
+  }
+
+  // Show what the stiffness model is actually using. E was previously derived
+  // from Shore A behind the scenes and never displayed, so there was no way to
+  // tell what modulus the numbers rested on.
+  function syncCompoundFields() {
+    var direct = $("modulusMode").value === "direct";
+    $("rowShore").style.display = direct ? "none" : "";
+    $("rowE").style.display = direct ? "" : "none";
+    $("rowK").style.display = direct ? "" : "none";
+    // Moving into direct mode, seed the fields from the hardness currently set
+    // so the switch does not change the answer until you edit something.
+    if (direct && !$("eModulus").dataset.touched) {
+      var s = num("shore");
+      if (isFinite(s)) {
+        $("eModulus").value = E.shoreE(s).toFixed(3);
+        $("gentK").value = E.shoreK(s).toFixed(3);
+      }
+    }
+    var box = $("compoundReadout");
+    if (!box) return;
+    try {
+      var cp = E.compoundProperties(readStiffParams());
+      box.innerHTML =
+        "<b>E</b> " + cp.E.toFixed(3) + " N/mm² &nbsp;·&nbsp; <b>G</b> " + cp.G.toFixed(3) +
+        " N/mm² &nbsp;·&nbsp; <b>k</b> " + cp.k.toFixed(3) +
+        "<br><span style='opacity:.8'>" + escapeHtml(cp.source) +
+        ". G = E / 2(1+ν). Bending uses E, shear uses G, and Kz uses E(1+2kS²) with the bulk correction.</span>";
+    } catch (err) { box.textContent = ""; }
   }
   function readCpParams() {
     // The visible checkbox drives the real parameter. It used to be wired to a
@@ -158,6 +189,10 @@
   function readDefaults() {
     return { height: num("nsd"), draft_angle: num("draft"), n_lateral_sipes: parseInt($("sipes").value, 10), sipe_depth_fraction: num("sipeDepth"), shore_a: null };
   }
+  function readWear() { var v = num("wear"); return isFinite(v) && v > 0 ? v : 0; }
+  function readTiebarFrac() { var v = num("tiebarHeight"); return isFinite(v) && v > 0 ? Math.min(1, v) : 0.55; }
+  function readWeldTol() { var v = num("weldTol"); return isFinite(v) && v > 0 ? v : 0.01; }
+  function readTiebarAreaFrac() { var v = num("tiebarFrac"); return isFinite(v) && v > 0 ? v : 0.5; }
 
   // ---- shape parameter visibility --------------------------------------
   function syncShapeFields() {
@@ -178,6 +213,9 @@
     var ph = tyreClassPhysics();
     opts.crown_break = readCrownBreak();
     opts.zone_center = ph.zone_center; opts.zone_intermediate = ph.zone_intermediate;
+    opts.weld_tolerance = readWeldTol();
+    opts.tiebar_area_fraction = readTiebarAreaFrac();
+    opts.tiebar_height_fraction = readTiebarFrac();
     var out = E.loadPattern(text, defaults, opts);
     state.pattern = out.pattern;
     state.report = out.report;
@@ -186,6 +224,8 @@
     refreshExportButtons();
     showResultsChrome(false);
     renderBanner();
+    renderTiebars();
+    showImportChrome();
     drawEditor();
     $("emptyHint").style.display = "none";
     refreshValidation();
@@ -229,6 +269,19 @@
       b.n_lateral_sipes = d.n_lateral_sipes; b.sipe_depth_fraction = d.sipe_depth_fraction;
     }
 
+    // 1b. tie bars track the NSD too -- a bar's engagement point is NSD minus
+    // its own height, so changing the depth silently moves every bar unless the
+    // stored NSD moves with it. Heights the user has set by hand are kept; the
+    // rest follow the fraction.
+    var frac = readTiebarFrac();
+    for (var t = 0; t < (p.tiebars || []).length; t++) {
+      var tb = p.tiebars[t];
+      var nsd = d.height_by_zone && d.height_by_zone[tb.zone] != null ? d.height_by_zone[tb.zone] : d.height;
+      tb.nsd = nsd;
+      if (!tb.height_set_by_user) tb.height = Math.min(nsd, frac * nsd);
+      else tb.height = Math.min(nsd, tb.height);
+    }
+
     // 2. the crown profile, which sets the contact point at every lean
     var rc = $("crownCenter").value.trim(), rs = $("crownShoulder").value.trim();
     p.crown = E.crownDualRadius(
@@ -268,6 +321,7 @@
       r.n_blocks + " blocks (" + r.n_wrapped + " wrapped), " +
       p.tyre_circumference.toFixed(1) + " × " + p.tread_width.toFixed(1) + " mm, land ratio " + r.land_ratio.toFixed(3) +
       ", " + p.pitches.length + " pitches";
+    if (r.n_tiebars) html += ", " + r.n_tiebars + " tie bar" + (r.n_tiebars > 1 ? "s" : "");
     if (p.meta && p.meta.geometric_repeat_mm) html += ", geometric repeat " + p.meta.geometric_repeat_mm.toFixed(1) + " mm";
     if (warn) {
       html += "<ul>";
@@ -411,6 +465,10 @@
     ["wheelR", "Wheel radius", "mm", function (v) { return v > 0; }, "must be greater than 0"],
     ["cpLength", "Patch length", "mm", function (v) { return v > 0; }, "must be greater than 0"],
     ["cpWidth", "Patch width", "mm", function (v) { return v > 0; }, "must be greater than 0"],
+    ["wear", "Tread worn", "mm", function (v) { return v >= 0; }, "cannot be negative"],
+    ["tiebarHeight", "Tie-bar height", "frac of NSD", function (v) { return v > 0 && v <= 1; }, "must be between 0 and 1"],
+    ["weldTol", "Weld tolerance", "mm", function (v) { return v > 0 && v <= 1; }, "must be between 0 and 1"],
+    ["tiebarFrac", "Tie-bar area limit", "", function (v) { return v > 0 && v <= 1; }, "must be between 0 and 1"],
   ];
   var OPTIONAL_RULES = [
     ["crownCenter", "Crown radius (centre)", "mm", function (v) { return v > 0; }, "must be greater than 0"],
@@ -446,6 +504,11 @@
     if (!errs.length) {
       try { E.validateSpec(readSpec()); }
       catch (err) { errs.push(err.message); }
+      try { E.validateCompound(readStiffParams()); }
+      catch (err) { errs.push(err.message); }
+      var w = readWear(), nsd = num("nsd");
+      if (isFinite(nsd) && nsd > 0 && w >= nsd)
+        errs.push("Tread worn (" + w + " mm) must be less than the NSD (" + nsd + " mm) — that much wear removes every block");
     }
     return errs;
   }
@@ -576,6 +639,7 @@
         state.results = m.results; state.stiffness = m.stiffness; state.grid = m.grid;
         state.notes = m.notes || []; state.maxLean = m.maxLean;
         state.bandEdges = m.bandEdges || null;
+        state.compound = m.compound || null; state.wear = m.wear || null;
         state.running = false; $("overlay").classList.remove("on");
         $("runBtn").textContent = "▶ Run";
         $("timing").textContent = "computed in " + (m.timing.total / 1000).toFixed(1) + " s (raster " + m.timing.raster + " ms), grid " + m.grid.nx + "×" + m.grid.ny;
@@ -600,6 +664,7 @@
       stiffParams: readStiffParams(), cpParams: readCpParams(), spec: readSpec(),
       zoneFracs: { center: tyreClassPhysics().zone_center, intermediate: tyreClassPhysics().zone_intermediate },
       leans: currentLeans(), discreteSamples: 360, bandEdges: state.ranBands, curvatureCorrection: $("curv").checked, stride: stride,
+      wear: readWear(),
     });
   }
 
@@ -651,9 +716,42 @@
 
   // Tabs and the lean selector describe results. Before a run they lead to
   // blank panels, which reads as a broken page rather than an empty one.
+  // Three states, not two. Most tabs describe a sweep and are blank before one,
+  // but the tie-bar list describes the DRAWING -- making the designer run a
+  // throwaway sweep just to see what was detected, and to set the heights that
+  // the sweep then depends on, is backwards. So after an import the strip is
+  // shown with only the tabs that mean something yet.
+  var PRE_RUN_TABS = ["tiebars", "guide"];
+
   function showResultsChrome(on) {
     var el = $("resultsArea");
     if (el) el.style.display = on ? "" : "none";
+    if (on) setTabsAvailable(null);
+  }
+
+  function showImportChrome() {
+    var el = $("resultsArea");
+    if (el) el.style.display = "";
+    setTabsAvailable(PRE_RUN_TABS);
+    var sel = $("gammaSel");
+    if (sel && sel.parentNode) sel.parentNode.style.display = "none";
+    var want = tiebarList().length ? "tiebars" : "guide";
+    var cur = document.querySelector(".tabs button.on");
+    if (!cur || PRE_RUN_TABS.indexOf(cur.dataset.tab) < 0) {
+      var btn = document.querySelector('.tabs button[data-tab="' + want + '"]');
+      if (btn) btn.click();
+    }
+  }
+
+  // `allowed === null` means every tab.
+  function setTabsAvailable(allowed) {
+    var btns = document.querySelectorAll(".tabs button");
+    for (var i = 0; i < btns.length; i++) {
+      var ok = !allowed || allowed.indexOf(btns[i].dataset.tab) >= 0;
+      btns[i].style.display = ok ? "" : "none";
+    }
+    var sel = $("gammaSel");
+    if (!allowed && sel && sel.parentNode) sel.parentNode.style.display = "";
   }
 
   function renderAll() {
@@ -670,6 +768,7 @@
     renderZones();
     renderPatchPreview();
     renderBands();
+    renderTiebars();
     renderCompare();
     renderDiagnostics();
     drawEditor();
@@ -909,7 +1008,47 @@
     var domTxt = dom.map(function (d) { return "O" + d.order; }).join(", ");
     flags.push(flag("good", "dominant Kz orders: " + domTxt));
     if (state.pattern.meta && state.pattern.meta.uniform_array) flags.push(flag("warn", "uniform array — no pitch modulation in the drawing"));
+    if (state.wear && state.wear.n_tiebars_total)
+      flags.push(flag(state.wear.n_tiebars_engaged ? "good" : "warn",
+        state.wear.n_tiebars_engaged + " of " + state.wear.n_tiebars_total + " tie bars in contact at " +
+        state.wear.mm.toFixed(1) + " mm wear"));
+    if (state.wear && state.wear.mm > 0) flags.push(flag("good", "tread worn " + state.wear.mm.toFixed(1) + " mm"));
     $("flags").innerHTML = flags.join(" ");
+
+    // What the compound resolved to, and what the importer actually saw. Both
+    // used to be invisible: E was derived from Shore A behind the scenes, and a
+    // DXF entity the reader could not handle was dropped without a word.
+    if (state.compound) {
+      html += "<h3 style='font-size:14px;margin:18px 0 6px'>Compound as used</h3>" +
+        "<table class='metrics'>" +
+        "<tr><td>Young's modulus E</td><td class='num'>" + state.compound.E.toFixed(4) + " N/mm²</td></tr>" +
+        "<tr><td>Shear modulus G = E / 2(1+ν)</td><td class='num'>" + state.compound.G.toFixed(4) + " N/mm²</td></tr>" +
+        "<tr><td>Gent shape coefficient k</td><td class='num'>" + state.compound.k.toFixed(4) + "</td></tr>" +
+        "<tr><td>Poisson ν</td><td class='num'>" + state.compound.nu + "</td></tr>" +
+        "<tr><td>Bulk modulus (incompressibility cap)</td><td class='num'>" + state.compound.bulk_modulus + " N/mm²</td></tr>" +
+        "<tr><td>Source</td><td>" + escapeHtml(state.compound.source) + "</td></tr></table>";
+    }
+    var rep = state.report;
+    if (rep && rep.entity_types) {
+      var types = Object.keys(rep.entity_types).sort(function (a, b) { return rep.entity_types[b] - rep.entity_types[a]; });
+      html += "<h3 style='font-size:14px;margin:18px 0 6px'>DXF import</h3><table class='metrics'>" +
+        "<tr><td>entities read</td><td class='num'>" + rep.n_entities + "</td></tr>" +
+        "<tr><td>polyline chains after flattening</td><td class='num'>" + rep.n_segments + "</td></tr>" +
+        "<tr><td>INSERT references expanded</td><td class='num'>" + (rep.n_inserts || 0) + "</td></tr>" +
+        "<tr><td>weld tolerance</td><td class='num'>" + (rep.weld_tolerance || 0) + " mm</td></tr>" +
+        "<tr><td>arrangement edges / splits</td><td class='num'>" + (rep.n_arrangement_edges || 0) +
+          " / " + (rep.n_arrangement_splits || 0) + "</td></tr>" +
+        "<tr><td>enclosed regions found</td><td class='num'>" + (rep.n_faces || 0) + "</td></tr>" +
+        "<tr><td>&nbsp;&nbsp;→ blocks / seam-wrapped / tie bars</td><td class='num'>" + rep.n_blocks +
+          " / " + rep.n_wrapped + " / " + (rep.n_tiebars || 0) + "</td></tr>" +
+        "<tr><td>discarded: open chains / below min area</td><td class='num'>" + rep.n_discarded_open +
+          " / " + rep.n_discarded_small + "</td></tr>" +
+        "<tr><td>entity types</td><td>" + escapeHtml(types.map(function (t) { return t + "×" + rep.entity_types[t]; }).join(", ")) + "</td></tr>";
+      var uns = Object.keys(rep.unsupported_types || {});
+      html += "<tr><td>not read as geometry</td><td>" +
+        (uns.length ? "<b style='color:var(--warn)'>" + escapeHtml(uns.map(function (t) { return t + "×" + rep.unsupported_types[t]; }).join(", ")) + "</b>" : "none") +
+        "</td></tr></table>";
+    }
     $("diagTable").innerHTML = html;
   }
   function flag(kind, text) { return "<span class='flag " + kind + "'>" + text + "</span>"; }
@@ -1070,6 +1209,161 @@
     });
     $("bandsTable").innerHTML = rows + "</table>" +
       "<div class='hint' style='margin-top:6px'>Bands sum exactly to the whole-tread total — they are a partition of the same correlation, not a second calculation.</div>";
+  }
+
+  // ---- tie bars --------------------------------------------------------
+  // Everything the arrangement found between blocks is listed here, whether or
+  // not the auto rule liked it: a bar you can see but cannot reach is worse than
+  // no detection at all. Editing a row writes straight onto the pattern, so the
+  // next Run picks it up.
+  function tiebarList() { return (state.pattern && state.pattern.tiebars) || []; }
+
+  function renderTiebars() {
+    var tb = tiebarList();
+    var badge = $("tbCount");
+    if (badge) badge.textContent = tb.length ? "(" + tb.length + ")" : "";
+    var empty = $("tbEmpty"), body = $("tbBody");
+    if (!empty || !body) return;
+    empty.style.display = tb.length ? "none" : "";
+    body.style.display = tb.length ? "" : "none";
+    if (!tb.length) { Plotly.purge($("tbPlot")); $("tbTable").innerHTML = ""; return; }
+
+    var wear = readWear();
+    refreshTiebarSummary();
+    drawTiebarPlan();
+
+    var rows = "<table class='metrics'><tr><th>Bar</th><th>zone</th><th>θ (deg)</th><th>y (mm)</th>" +
+      "<th>area (mm²)</th><th>NSD (mm)</th><th>height (mm)</th><th>engages at wear</th>" +
+      "<th>state</th><th>use</th><th title='Analyse the bar as a short proud block even though it is still below the surface. A what-if, not a wear state.'>force</th></tr>";
+    var circ = state.pattern.tyre_circumference;
+    tb.forEach(function (t, i) {
+      var engaged = E.tiebarEngaged(t, wear);
+      var at = E.tiebarEngagementWear(t);
+      var theta = ((t.centroid_x % circ) + circ) % circ / circ * 360;
+      rows += "<tr class='" + (t.enabled === false ? "off" : engaged ? "engaged" : "") + "'>" +
+        "<td>" + escapeHtml(t.id) + "</td>" +
+        "<td>" + escapeHtml(t.zone) + "</td>" +
+        "<td class='num'>" + theta.toFixed(1) + "</td>" +
+        "<td class='num'>" + t.centroid_y.toFixed(1) + "</td>" +
+        "<td class='num'>" + t.area.toFixed(1) + "</td>" +
+        "<td class='num'>" + t.nsd.toFixed(2) + "</td>" +
+        "<td class='num'><input type='number' step='0.1' min='0.1' data-tb='" + i +
+          "' data-tbfield='height' value='" + (+t.height).toFixed(2) + "' /></td>" +
+        "<td class='num'>" + at.toFixed(2) + " mm</td>" +
+        "<td><span class='tb-state " + (engaged ? "on" : "off") + "'>" +
+          (engaged ? (t.force_contact && wear < at ? "forced" : "in contact") : "below surface") + "</span></td>" +
+        "<td><input type='checkbox' data-tb='" + i + "' data-tbfield='enabled'" +
+          (t.enabled === false ? "" : " checked") + " /></td>" +
+        "<td><input type='checkbox' data-tb='" + i + "' data-tbfield='force_contact'" +
+          (t.force_contact ? " checked" : "") + " /></td></tr>";
+    });
+    $("tbTable").innerHTML = rows + "</table>";
+
+    var inputs = $("tbTable").querySelectorAll("[data-tb]");
+    for (var k = 0; k < inputs.length; k++) on(inputs[k], "change", onTiebarEdit);
+  }
+
+  function refreshTiebarSummary() {
+    var tb = tiebarList(), wear = readWear(), nOn = 0, nEngaged = 0;
+    tb.forEach(function (t) {
+      if (t.enabled !== false) nOn++;
+      if (E.tiebarEngaged(t, wear)) nEngaged++;
+    });
+    var el = $("tbSummary");
+    if (el) el.innerHTML = tb.length + " found · " + nOn + " enabled · <b>" + nEngaged +
+      "</b> in contact at " + wear.toFixed(1) + " mm wear";
+  }
+
+  // Update the cells a row's own edit changes, in place. Rebuilding the whole
+  // table from a change handler tears out the element that fired the event,
+  // which the browser refuses partway through the blur it is already running.
+  function refreshTiebarRow(i) {
+    var t = tiebarList()[i];
+    var row = $("tbTable").querySelector("tr:nth-child(" + (i + 2) + ")");
+    if (!t || !row) return;
+    var wear = readWear(), engaged = E.tiebarEngaged(t, wear), at = E.tiebarEngagementWear(t);
+    row.className = t.enabled === false ? "off" : engaged ? "engaged" : "";
+    row.cells[7].textContent = at.toFixed(2) + " mm";
+    var chip = row.cells[8].firstChild;
+    chip.className = "tb-state " + (engaged ? "on" : "off");
+    chip.textContent = engaged ? (t.force_contact && wear < at ? "forced" : "in contact") : "below surface";
+  }
+
+  function onTiebarEdit(ev) {
+    var el = ev.target, i = parseInt(el.getAttribute("data-tb"), 10);
+    var field = el.getAttribute("data-tbfield");
+    var t = tiebarList()[i];
+    if (!t) return;
+    if (field === "height") {
+      var v = parseFloat(el.value);
+      if (!isFinite(v) || v <= 0) { el.value = (+t.height).toFixed(2); return; }
+      // A bar taller than the block it sits between is not a tie bar.
+      t.height = Math.min(v, t.nsd);
+      t.height_set_by_user = true;
+      if (t.height !== v) el.value = t.height.toFixed(2);
+    } else {
+      t[field] = !!el.checked;
+    }
+    refreshTiebarRow(i);
+    refreshTiebarSummary();
+    drawTiebarPlan();
+    markStale();
+  }
+
+  function applyTiebarHeights(frac) {
+    tiebarList().forEach(function (t) {
+      t.height = Math.min(t.nsd, frac * t.nsd);
+      t.height_set_by_user = true;
+    });
+    renderTiebars();
+  }
+
+  function setAllTiebars(enabled) {
+    tiebarList().forEach(function (t) { t.enabled = enabled; });
+    renderTiebars();
+  }
+
+  // The rolled-out plan with the bars picked out, so a candidate can be checked
+  // against the drawing rather than taken on trust.
+  function drawTiebarPlan() {
+    var p = state.pattern, th = plotTheme(), tb = tiebarList();
+    var wear = readWear();
+    var shapes = [];
+    function poly(pts, fill, line, width) {
+      var d = "M " + pts.map(function (q) { return q[0].toFixed(3) + "," + q[1].toFixed(3); }).join(" L ") + " Z";
+      shapes.push({ type: "path", path: d, fillcolor: fill, line: { color: line, width: width || 0.5 }, layer: "below" });
+    }
+    for (var i = 0; i < p.blocks.length; i++) poly(p.blocks[i].polygon, th.grid, th.inkDim, 0.4);
+    for (var j = 0; j < tb.length; j++) {
+      var t = tb[j];
+      var on_ = t.enabled !== false;
+      var eng = E.tiebarEngaged(t, wear);
+      poly(t.polygon, !on_ ? "rgba(128,128,128,0.25)" : eng ? th.good : th.accent2,
+           !on_ ? th.inkDim : eng ? th.good : th.accent2, 1.2);
+    }
+    var labels = {
+      x: tb.map(function (t) { return t.centroid_x; }),
+      y: tb.map(function (t) { return t.centroid_y; }),
+      text: tb.map(function (t) { return t.id; }),
+      customdata: tb.map(function (t) {
+        return [t.area.toFixed(1), (+t.height).toFixed(2), t.nsd.toFixed(2), E.tiebarEngagementWear(t).toFixed(2)];
+      }),
+      mode: "markers", type: "scatter", marker: { size: 5, color: th.ink || th.accent },
+      hovertemplate: "%{text}<br>area %{customdata[0]} mm²<br>height %{customdata[1]} of %{customdata[2]} mm" +
+                     "<br>engages at %{customdata[3]} mm wear<extra></extra>",
+      showlegend: false,
+    };
+    Plotly.react($("tbPlot"), [labels], {
+      paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+      margin: { l: 62, r: 16, t: 34, b: 46 }, height: 300, shapes: shapes,
+      title: { text: "tie bars on the rolled-out plan — green = in contact at " + wear.toFixed(1) +
+                     " mm wear, amber = still below the surface, grey = excluded", font: { size: 12 } },
+      xaxis: { title: { text: "circumferential position (mm)", font: { size: 11 } },
+               range: [0, p.tyre_circumference], gridcolor: th.grid },
+      yaxis: { title: { text: "lateral y (mm)", font: { size: 11 } },
+               range: [-p.tread_width / 2, p.tread_width / 2], gridcolor: th.grid,
+               scaleanchor: "x", scaleratio: 1 },
+    }, { responsive: true, displayModeBar: false });
   }
 
   // ---- design comparison ----------------------------------------------
@@ -1242,6 +1536,17 @@
       contact_patch: readSpec(),
       load: readCpParams(),
       curvature_correction: $("curv").checked,
+      wear_and_tiebars: {
+        wear_mm: readWear(),
+        default_height_fraction: readTiebarFrac(),
+        weld_tolerance_mm: readWeldTol(),
+        tiebar_area_fraction: readTiebarAreaFrac(),
+        tiebars: tiebarList().map(function (t) {
+          return { id: t.id, zone: t.zone, area_mm2: t.area, nsd_mm: t.nsd, height_mm: t.height,
+                   engages_at_wear_mm: E.tiebarEngagementWear(t), enabled: t.enabled !== false,
+                   force_contact: !!t.force_contact, centroid_x_mm: t.centroid_x, centroid_y_mm: t.centroid_y };
+        }),
+      },
       import_report: state.report,
     };
   }
@@ -1255,6 +1560,8 @@
       compound_and_boundary: base.compound_and_boundary,
       contact_patch: base.contact_patch,
       load: base.load,
+      wear_and_tiebars: base.wear_and_tiebars,
+      compound_resolved: state.compound || null,
       analysis: {
         lean_angles_deg: state.results.map(function (r) { return r.gamma_deg; }),
         grid: state.grid,
@@ -1277,8 +1584,9 @@
     lines.push("# pattern: " + s.pattern.name + " (" + s.pattern.n_blocks + " blocks, " +
       s.pattern.circumference_mm.toFixed(2) + " x " + s.pattern.tread_width_mm.toFixed(2) + " mm)");
     lines.push("# NSD " + s.block_defaults.height + " mm, draft " + s.block_defaults.draft_angle +
-      " deg, sipes " + s.block_defaults.n_lateral_sipes + ", Shore A " + s.compound_and_boundary.shore_a +
-      ", boundary " + s.compound_and_boundary.mode + ", sipe model " + s.compound_and_boundary.sipe_model);
+      " deg, sipes " + s.block_defaults.n_lateral_sipes + ", sipe model " + s.compound_and_boundary.sipe_model);
+    lines.push("# compound: " + compoundLine(s));
+    lines.push("# wear: " + tiebarLine(s));
     lines.push("# patch: " + E.describeSpec(s.contact_patch) +
       ", scale with lean " + (s.contact_patch.scale_with_lean ? "on" : "off") +
       ", Fz " + s.load.vertical_load + " N" + (s.load.load_rises_with_lean ? " (rises with lean)" : " (constant)"));
@@ -1328,7 +1636,9 @@
       s.pattern.tread_width_mm.toFixed(1) + " mm, " + s.pattern.n_blocks + " blocks, " +
       s.pattern.n_pitches + " pitches");
     out.push("Blocks  : NSD " + s.block_defaults.height + " mm, draft " + s.block_defaults.draft_angle +
-      " deg, " + s.block_defaults.n_lateral_sipes + " sipes, Shore A " + s.compound_and_boundary.shore_a);
+      " deg, " + s.block_defaults.n_lateral_sipes + " sipes");
+    out.push("Compound: " + compoundLine(s));
+    out.push("Wear    : " + tiebarLine(s));
     out.push("Patch   : " + E.describeSpec(s.contact_patch));
     out.push("");
     out.push("PER LEAN ANGLE");
@@ -1358,6 +1668,31 @@
   // offline), so the report shows exactly what is on screen rather than a
   // redrawn approximation. jsPDF is vendored, so no network is involved.
   var CONFIDENTIAL = "INTERNAL USE ONLY — Apollo Tyres. Not for external distribution.";
+
+  // One phrasing of the compound and the wear state, shared by every export so
+  // a CSV, a JSON and a PDF of the same run can never disagree about them.
+  function compoundLine(s) {
+    var c = s.compound_and_boundary || {}, r = s.compound_resolved;
+    var base = c.modulus_mode === "direct"
+      ? "E entered directly"
+      : "Shore A " + c.shore_a + " (Gent table)";
+    if (r) base += ": E " + r.E.toFixed(3) + " N/mm2, G " + r.G.toFixed(3) + " N/mm2, k " + r.k.toFixed(3);
+    return base + ", Poisson " + c.poisson + ", " + c.mode + " boundary";
+  }
+  function tiebarLine(s) {
+    var w = s.wear_and_tiebars || {};
+    var bars = w.tiebars || [];
+    var wear = +(w.wear_mm || 0);
+    if (!bars.length) return "tread worn " + wear.toFixed(2) + " mm; no tie bars in this drawing";
+    var engaged = bars.filter(function (t) {
+      return t.enabled && (t.force_contact || wear >= t.engages_at_wear_mm - 1e-9);
+    }).length;
+    var hs = bars.map(function (t) { return t.height_mm; });
+    var lo = Math.min.apply(null, hs), hi = Math.max.apply(null, hs);
+    return "tread worn " + wear.toFixed(2) + " mm; " + bars.length + " tie bar(s) of height " +
+      (lo === hi ? lo.toFixed(2) : lo.toFixed(2) + "-" + hi.toFixed(2)) + " mm, " +
+      engaged + " in contact";
+  }
 
   function exportPDF() {
     if (!state.results || !window.jspdf) return;
@@ -1397,9 +1732,9 @@
         " mm, " + s0.pattern.n_blocks + " blocks, " + s0.pattern.n_pitches + " pitches"],
       ["Block depth", "NSD " + s0.block_defaults.height + " mm, draft " + s0.block_defaults.draft_angle +
         " deg, " + s0.block_defaults.n_lateral_sipes + " sipes"],
-      ["Compound", "Shore A " + s0.compound_and_boundary.shore_a + ", Poisson " +
-        s0.compound_and_boundary.poisson + ", " + s0.compound_and_boundary.mode + " boundary"],
+      ["Compound", compoundLine(s0)],
       ["Sipe model", s0.compound_and_boundary.sipe_model],
+      ["Wear state", tiebarLine(s0)],
       ["Contact patch", E.describeSpec(s0.contact_patch)],
       ["Load", s0.load.vertical_load + " N" + (s0.load.load_rises_with_lean ? " (rises with lean)" : " (constant)")],
       ["Lean angles", s0.analysis.lean_angles_deg.join("°, ") + "°"],
@@ -1526,7 +1861,7 @@
           btn.classList.add("on");
           $("panel-" + btn.dataset.tab).classList.add("on");
           // Plotly needs a resize nudge when a hidden plot becomes visible
-          if (state.results) window.dispatchEvent(new Event("resize"));
+          if (state.results || btn.dataset.tab === "tiebars") window.dispatchEvent(new Event("resize"));
         });
       })(btns[i]);
     }
@@ -1548,8 +1883,18 @@
     on($("exportJson"), "click", exportJSON);
     on($("exportTxt"), "click", exportSummary);
     on($("exportPdf"), "click", exportPDF);
-    on($("applyPreset"), "click", applyTyrePreset);
+    on($("applyPreset"), "click", function () { applyTyrePreset(); updateLeanLoadReference(); });
     on($("tyreType"), "change", function () { markStale(); });
+    on($("modulusMode"), "change", function () { syncCompoundFields(); refreshValidation(); markStale(); });
+    ["eModulus", "gentK"].forEach(function (id) {
+      on($(id), "input", function () { this.dataset.touched = "1"; syncCompoundFields(); refreshValidation(); markStale(); });
+    });
+    on($("tbApplyAll"), "click", function () {
+      var f = parseFloat($("tbAllFrac").value);
+      if (isFinite(f) && f > 0 && f <= 1) { applyTiebarHeights(f); markStale(); }
+    });
+    on($("tbEnableAll"), "click", function () { setAllTiebars(true); markStale(); });
+    on($("tbDisableAll"), "click", function () { setAllTiebars(false); markStale(); });
     on($("bandMetric"), "change", function () { state.bandMetric = this.value; renderBands(); });
     on($("compareMetric"), "change", function () { state.compareMetric = this.value; renderCompare(); });
     on($("addCompare"), "click", addCurrentToComparison);
@@ -1574,22 +1919,77 @@
     on($("cpAutoY"), "change", function () { $("cpY").disabled = $("cpAutoY").checked; drawEditor(); markStale(); });
     on($("cpScaleLean"), "change", function () { drawEditor(); markStale(); });
     on($("cpAutoLoad"), "change", function () { drawEditor(); markStale(); });
-    ["nsd", "draft", "sipes", "sipeDepth", "shore", "poisson", "mode", "sipeModel", "quality", "curv", "wheelR", "crownCenter", "crownShoulder", "nPitches"].forEach(function (id) {
-      on($(id), "input", function () { refreshValidation(); drawEditor(); markStale(); });
-      on($(id), "change", function () { refreshValidation(); drawEditor(); markStale(); });
+    ["nsd", "draft", "sipes", "sipeDepth", "shore", "poisson", "mode", "sipeModel", "quality", "curv",
+     "wheelR", "crownCenter", "crownShoulder", "nPitches", "wear", "tiebarHeight", "weldTol", "tiebarFrac"].forEach(function (id) {
+      on($(id), "input", function () { refreshValidation(); syncCompoundFields(); drawEditor(); reconcileAndRedrawTiebars(); markStale(); });
+      on($(id), "change", function () { refreshValidation(); syncCompoundFields(); drawEditor(); reconcileAndRedrawTiebars(); markStale(); });
     });
+    on($("cpLoad"), "input", updateLeanLoadReference);
 
     on($("gammaSel"), "change", function () { state.gammaShown = state.results[parseInt(this.value, 10)].gamma_deg; renderAll(); });
     on($("heatMetric"), "change", function () { state.heatMetric = this.value; renderLeanHeatmap(); });
     on($("orderMetric"), "change", function () { state.orderMetric = this.value; renderOrders(); });
 
     syncShapeFields();
+    syncCompoundFields();
+    updateLeanLoadReference();
+    renderTiebars();
     // Paint once at startup: without this the canvas stayed blank until some
     // input happened to change, so the "load a DXF" hint inside it never showed.
     drawEditor();
     refreshValidation();
     $("cpY").disabled = $("cpAutoY").checked;
   }
+
+  // NSD, the tie-bar fraction and the wear state all move the bars, so the tab
+  // has to follow the inputs without waiting for a Run.
+  function reconcileAndRedrawTiebars() {
+    if (!state.pattern || !tiebarList().length) return;
+    var d = readDefaults(), frac = readTiebarFrac();
+    if (!isFinite(d.height) || d.height <= 0) return;
+    tiebarList().forEach(function (t) {
+      t.nsd = d.height;
+      t.height = t.height_set_by_user ? Math.min(t.height, d.height) : Math.min(d.height, frac * d.height);
+    });
+    renderTiebars();
+  }
+
+  // ---- lean-load reference (display only) -------------------------------
+  function updateLeanLoadReference() {
+    var baseEl = $("cpLoad"), body = $("leanLoadRows"), label = $("leanLoadBase");
+    if (!baseEl || !body || !label) return;
+    var fz = parseFloat(baseEl.value);
+    if (!isFinite(fz)) fz = 0;
+    label.textContent = Math.round(fz).toString();
+    var angles = [0, 20, 30, 40, 45], rows = [];
+    for (var i = 0; i < angles.length; i++) {
+      var g = angles[i], c = Math.cos((g * Math.PI) / 180);
+      var resultant = c ? fz / c : NaN;
+      rows.push("<tr><td>" + g + "°</td><td>" + c.toFixed(3) + "</td><td>" +
+                (isFinite(resultant) ? Math.round(resultant).toLocaleString() : "—") + "</td></tr>");
+    }
+    body.innerHTML = rows.join("");
+  }
+
+  // A read-only window on the last run, for the browser smoke test and for
+  // anyone debugging from the console. Returns numbers only -- nothing here can
+  // change what the page computed.
+  window.__ttState = function () {
+    if (!state.results) return null;
+    var r = currentResult();
+    var a = E.fluctuationStats(r.contact_area), z = E.fluctuationStats(r.kz);
+    return {
+      area: a.mean, cov: a.cov, kz: z.mean, kzCov: z.cov,
+      gamma: r.gamma_deg, nLeans: state.results.length,
+      blocks: state.pattern.blocks.length,
+      tiebars: tiebarList().length,
+      engaged: state.wear ? state.wear.n_tiebars_engaged : 0,
+      wear: state.wear ? state.wear.mm : 0,
+      E: state.compound ? state.compound.E : null,
+      G: state.compound ? state.compound.G : null,
+      k: state.compound ? state.compound.k : null,
+    };
+  };
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();

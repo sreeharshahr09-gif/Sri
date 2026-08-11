@@ -79,12 +79,44 @@ def shore_range_warning(shore: float) -> str | None:
     )
 
 
+SHORE_KEYS: tuple[int, ...] = tuple(sorted(SHORE_E_TABLE))
+
+
+def _interp_shore(shore: float, table: dict[int, float], log_scale: bool) -> float:
+    """Read ``table`` at ``shore``, interpolating between its five rows.
+
+    Snapping to the nearest row made 55 A and 59 A both evaluate as 50 A while
+    61 A jumped to 60 A -- a 72% step in E across one Shore point, with nothing
+    on screen to say so.  E rises roughly geometrically with hardness, so the
+    logarithm is what gets interpolated; that reproduces the tabulated rows
+    exactly and moves smoothly between them.  Outside 30-70 A the nearest row
+    still applies (see :func:`shore_range_warning`), because extrapolating a
+    five-point fit is not evidence of anything.
+    """
+    s = float(shore)
+    if not math.isfinite(s):
+        return table[60]
+    if s <= SHORE_KEYS[0]:
+        return table[SHORE_KEYS[0]]
+    if s >= SHORE_KEYS[-1]:
+        return table[SHORE_KEYS[-1]]
+    for a, b in zip(SHORE_KEYS, SHORE_KEYS[1:]):
+        if not a <= s <= b:
+            continue
+        f = (s - a) / (b - a)
+        va, vb = table[a], table[b]
+        if log_scale:
+            return math.exp(math.log(va) + f * (math.log(vb) - math.log(va)))
+        return va + f * (vb - va)
+    return table[nearest_shore_key(s)]
+
+
 def shore_e(shore: float) -> float:
-    return SHORE_E_TABLE.get(nearest_shore_key(shore), 6.89)
+    return _interp_shore(shore, SHORE_E_TABLE, log_scale=True)
 
 
 def shore_k(shore: float) -> float:
-    return SHORE_K_TABLE.get(nearest_shore_key(shore), 0.64)
+    return _interp_shore(shore, SHORE_K_TABLE, log_scale=False)
 
 
 def calc_g(e: float, nu: float) -> float:

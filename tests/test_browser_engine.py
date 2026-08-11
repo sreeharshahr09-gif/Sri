@@ -512,3 +512,389 @@ def test_order_chart_explains_itself():
     # the marked bars must be explained
     assert "pitch count" in body and "geometric repeat" in body
     assert panel.count("<li>") >= 6
+
+
+# ---------------------------------------------------------------------------
+# DXF import robustness
+# ---------------------------------------------------------------------------
+# The importer used to work on some drawings and not others for reasons that had
+# nothing to do with the tread: a stray blank line ahead of the first group code,
+# an outline drawn as an old-style POLYLINE, a corner left 5 um open by a trim,
+# or simply the order the entities happened to sit in the file.  Each case below
+# is one of those, reduced to the smallest drawing that shows it.
+
+TIEBAR_DXF = os.path.join(REPO, "data", "tbr_ribs_tiebars.dxf")
+
+
+def _dxf(body: list[str]) -> str:
+    return "\n".join(["0", "SECTION", "2", "ENTITIES"] + body + ["0", "ENDSEC", "0", "EOF"]) + "\n"
+
+
+def _line(x1: float, y1: float, x2: float, y2: float) -> list[str]:
+    return ["0", "LINE", "8", "0", "10", repr(float(x1)), "20", repr(float(y1)),
+            "11", repr(float(x2)), "21", repr(float(y2))]
+
+
+def _rect(x0: float, y0: float, w: float, h: float) -> list[str]:
+    return (_line(x0, y0, x0 + w, y0) + _line(x0 + w, y0, x0 + w, y0 + h)
+            + _line(x0 + w, y0 + h, x0, y0 + h) + _line(x0, y0 + h, x0, y0))
+
+
+def _js_import(node: str, text: str, opts: str = "{min_block_area:0.5}") -> dict:
+    """Run the browser engine's loadPattern on ``text`` and return a digest."""
+    with tempfile.TemporaryDirectory() as td:
+        p = os.path.join(td, "case.dxf")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const fs = require('fs');
+const r = E.loadPattern(fs.readFileSync({json.dumps(p)}, 'utf8'), {{height: 8}}, {opts});
+process.stdout.write(JSON.stringify({{
+  blocks: r.report.n_blocks,
+  tiebars: r.report.n_tiebars,
+  areas: r.pattern.blocks.map(b => E.polygonArea(b.polygon)).sort((a, b) => a - b),
+  tiebar_areas: r.pattern.tiebars.map(t => t.area),
+  warnings: r.report.warnings,
+  unsupported: r.report.unsupported_types,
+}}));
+"""
+        res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
+        assert res.returncode == 0, res.stderr[:2000]
+        return json.loads(res.stdout)
+
+
+def test_group_code_alignment_survives_a_leading_blank_line():
+    """A DXF group is two lines: an integer code, then its value.
+
+    Assuming line 0 of the file is the first code meant that one stray blank
+    line -- or a UTF-8 BOM -- shifted every pair by one, the codes became values,
+    and a perfectly good drawing imported as "no usable entities".
+    """
+    node = _node()
+    good = _dxf(_rect(0, 0, 20, 10) + _rect(30, 0, 20, 10))
+    for label, text in [
+        ("clean", good),
+        ("leading blank line", "\n" + good),
+        ("BOM", "﻿" + good),
+        ("CRLF", good.replace("\n", "\r\n")),
+    ]:
+        got = _js_import(node, text)
+        assert got["blocks"] == 2, f"{label}: {got}"
+        assert got["areas"] == pytest.approx([200.0, 200.0]), label
+
+
+def test_old_style_polyline_vertices_are_read():
+    """POLYLINE keeps its geometry in the VERTEX entities that follow it.
+
+    Reading 10/20 off the POLYLINE record itself yielded a single dummy point at
+    the origin, which was then dropped with no message -- the block simply was
+    not there.
+    """
+    node = _node()
+    pl = ["0", "POLYLINE", "8", "0", "66", "1", "70", "1", "10", "0.0", "20", "0.0"]
+    for x, y in [(0, 0), (20, 0), (20, 10), (0, 10)]:
+        pl += ["0", "VERTEX", "8", "0", "10", repr(float(x)), "20", repr(float(y))]
+    pl += ["0", "SEQEND", "8", "0"]
+    got = _js_import(node, _dxf(pl + _rect(30, 0, 20, 10)))
+    assert got["blocks"] == 2, got
+    assert got["areas"] == pytest.approx([200.0, 200.0])
+
+
+def test_lwpolyline_bulges_become_arcs():
+    """A bulge is an arc, and chording it away changes the plan area.
+
+    The 42 code only appears on vertices that actually bulge, so it cannot be
+    paired with the 10/20 list positionally -- the groups have to be read in file
+    order.  Here one 90 deg bulge adds a circular segment of exactly
+    r^2/2*(theta - sin theta) = 100*(pi/2 - 1) = 57.08 mm^2 to a 200 mm^2
+    rectangle; the flattened polygon is inscribed, so it lands just under that.
+    """
+    node = _node()
+    lw = ["0", "LWPOLYLINE", "8", "0", "90", "4", "70", "1",
+          "10", "0.0", "20", "0.0", "42", "0.4142135624",
+          "10", "20.0", "20", "0.0",
+          "10", "20.0", "20", "10.0",
+          "10", "0.0", "20", "10.0"]
+    got = _js_import(node, _dxf(lw + _rect(30, 0, 20, 10)))
+    assert got["blocks"] == 2, got
+    exact = 200.0 + 100.0 * (np.pi / 2 - 1)
+    assert got["areas"][1] == pytest.approx(exact, rel=2e-3)
+    assert got["areas"][1] < exact, "an inscribed flattening cannot exceed the true arc"
+
+
+def test_insert_references_are_expanded():
+    """A tread drawn once and arrayed with INSERT used to import as nothing."""
+    node = _node()
+    blocks = (["0", "SECTION", "2", "BLOCKS", "0", "BLOCK", "2", "BLK",
+               "10", "0.0", "20", "0.0", "70", "0"] + _rect(0, 0, 20, 10)
+              + ["0", "ENDBLK", "0", "ENDSEC"])
+    ents = ["0", "SECTION", "2", "ENTITIES",
+            "0", "INSERT", "2", "BLK", "10", "0.0", "20", "0.0",
+            "0", "INSERT", "2", "BLK", "10", "30.0", "20", "0.0",
+            "0", "ENDSEC", "0", "EOF"]
+    got = _js_import(node, "\n".join(blocks + ents) + "\n")
+    assert got["blocks"] == 2, got
+    assert got["areas"] == pytest.approx([200.0, 200.0])
+    assert any("INSERT" in w for w in got["warnings"])
+
+
+def test_a_five_micron_corner_gap_no_longer_loses_the_block():
+    """CAD exports routinely leave corners a few microns open after a trim.
+
+    At the old 1e-3 mm weld tolerance a 5 um gap dropped the whole outline with
+    only a "chain did not close" line to show for it.
+    """
+    node = _node()
+    body = (_line(0, 0, 20, 0) + _line(20, 0, 20, 10) + _line(20, 10, 0, 10)
+            + _line(0, 10.005, 0, 0) + _rect(30, 0, 20, 10))
+    got = _js_import(node, _dxf(body))
+    assert got["blocks"] == 2, got
+    # ...and a gap far larger than any rounding error is still refused, loudly.
+    body_wide = (_line(0, 0, 20, 0) + _line(20, 0, 20, 10) + _line(20, 10, 0, 10)
+                 + _line(0, 10.5, 0, 0) + _rect(30, 0, 20, 10))
+    wide = _js_import(node, _dxf(body_wide))
+    assert wide["blocks"] == 1
+    assert any("did not close" in w for w in wide["warnings"])
+
+
+def test_loop_finding_does_not_depend_on_entity_order():
+    """Two ribs abutting on a shared wall.
+
+    The old greedy walker took whichever attached segment happened to be unused
+    first, so at the shared wall it either traced the two 200 mm^2 blocks or ran
+    straight through into one merged 400 mm^2 blob -- decided purely by the order
+    the entities sat in the file.  Three of six shuffles gave the wrong answer.
+    """
+    node = _node()
+    import itertools
+    ents = [_line(0, 0, 20, 0), _line(20, 0, 20, 10), _line(20, 10, 0, 10), _line(0, 10, 0, 0),
+            _line(20, 0, 40, 0), _line(40, 0, 40, 10), _line(40, 10, 20, 10), _line(20, 10, 20, 0)]
+    seen = set()
+    for perm in itertools.islice(itertools.permutations(range(8)), 0, 5040, 700):
+        body = [tok for i in perm for tok in ents[i]]
+        got = _js_import(node, _dxf(body))
+        seen.add((got["blocks"], tuple(round(a, 6) for a in got["areas"])))
+    assert seen == {(2, (200.0, 200.0))}, f"entity order changed the result: {seen}"
+
+
+def test_unreadable_entity_types_are_reported_not_dropped():
+    """A drawing whose outlines are 3DSOLIDs is not an empty tyre."""
+    node = _node()
+    body = _rect(0, 0, 20, 10) + _rect(30, 0, 20, 10) + ["0", "3DSOLID", "8", "0", "1", "junk"]
+    got = _js_import(node, _dxf(body))
+    assert got["unsupported"].get("3DSOLID") == 1
+    assert any("3DSOLID" in w for w in got["warnings"])
+
+
+def test_the_real_drawing_is_unchanged_by_the_new_loop_finder():
+    """168 blocks, 3 seam-wrapped, land ratio 0.690057 -- exactly as before.
+
+    Every outline in the Tramplr plan is drawn as its own closed loop with no
+    shared edges, so the arrangement has nothing to disambiguate and must return
+    the same geometry the greedy walker did.
+    """
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const fs = require('fs');
+const r = E.loadPattern(fs.readFileSync({json.dumps(DXF)}, 'latin1'), {{height: 8.5, draft_angle: 3}}, {{}});
+process.stdout.write(JSON.stringify({{n: r.report.n_blocks, w: r.report.n_wrapped,
+  land: r.report.land_ratio, tb: r.report.n_tiebars}}));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=180)
+    assert res.returncode == 0, res.stderr[:2000]
+    got = json.loads(res.stdout)
+    assert got["n"] == 168 and got["w"] == 3
+    assert got["land"] == pytest.approx(0.690057, abs=1e-6)
+    assert got["tb"] == 0, "no outline in this drawing shares an edge, so there are no tie bars"
+
+
+# ---------------------------------------------------------------------------
+# tie bars
+# ---------------------------------------------------------------------------
+
+
+def test_tie_bars_are_found_between_blocks_without_outlines_of_their_own():
+    """A tie bar's long sides ARE the neighbouring blocks' groove walls.
+
+    There is no closed outline to find, which is why chain-walking could never
+    see one.  As a face of the planar arrangement it falls out directly: the rib
+    drawing has 4 ribs x 20 blocks and a bar bridging each of the 19 lateral
+    grooves in the two centre ribs.
+    """
+    node = _node()
+    with open(TIEBAR_DXF, encoding="utf-8") as fh:
+        got = _js_import(node, fh.read(), opts="{}")
+    assert got["blocks"] == 80, got
+    assert got["tiebars"] == 38, got
+    # each bar is the 6 mm groove width by the 14 mm bar width
+    assert got["tiebar_areas"] == pytest.approx([84.0] * 38, abs=1e-6)
+    assert any("tie bar" in w for w in got["warnings"])
+
+
+def test_a_tie_bar_carries_nothing_until_the_tread_has_worn_down_to_it():
+    """Groove bottom at z = 0; the block top is at NSD - w, the bar top at h.
+
+    So the bar reaches the road only once w >= NSD - h.  Below that it must be
+    absent from the contact model entirely -- a sub-surface bar cannot touch the
+    road, and quietly including it would overstate the area of every new tyre.
+    """
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const fs = require('fs');
+const {{pattern}} = E.loadPattern(fs.readFileSync({json.dumps(TIEBAR_DXF)}, 'utf8'), {{height: 16}}, {{}});
+const out = [10, 16, 20].map(nsd => {{
+  pattern.tiebars.forEach(t => {{ t.nsd = nsd; t.height = 0.55 * nsd; }});
+  pattern.blocks.forEach(b => {{ b.height = nsd; }});
+  const at = E.tiebarEngagementWear(pattern.tiebars[0]);
+  return [nsd, at,
+          E.effectiveBlocks(pattern, at - 0.01).length,
+          E.effectiveBlocks(pattern, at + 0.01).length];
+}});
+process.stdout.write(JSON.stringify(out));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
+    assert res.returncode == 0, res.stderr[:2000]
+    for nsd, at, below, above in json.loads(res.stdout):
+        assert at == pytest.approx(0.45 * nsd), f"engagement wear should be NSD - h at NSD {nsd}"
+        assert below == 80, f"a bar below the surface must not be in the block list (NSD {nsd})"
+        assert above == 118, f"all 38 bars must join once worn past (NSD {nsd})"
+
+
+def test_engaging_the_tie_bars_adds_land_and_damps_the_fluctuation():
+    """What a tie bar is actually for.
+
+    Bridging the lateral grooves ties consecutive blocks together, so the
+    circumferential variation in contact area and stiffness falls.  If the model
+    did not reproduce that, it would not be modelling a tie bar.
+    """
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const fs = require('fs');
+const {{pattern}} = E.loadPattern(fs.readFileSync({json.dumps(TIEBAR_DXF)}, 'utf8'), {{height: 16, draft_angle: 2}}, {{}});
+const sp = {{shore_a: 65, poisson: 0.49, mode: 'parallel', bulk_modulus: 1100, n_slices: 16, sipe_model: 'layered'}};
+const spec = {{shape: 'rectangle', length: 200, width: 200, rotation: 0, y_center: 0,
+               gamma_deg: 0, load_N: null, scale_with_lean: false}};
+const cpp = {{vertical_load: 25000, wheel_radius: 500, load_rises_with_lean: false}};
+function at(w) {{
+  const blocks = E.effectiveBlocks(pattern, w);
+  const pat = Object.assign({{}}, pattern, {{blocks: blocks}});
+  const grid = E.makeGrid(pat, 1024, 96);
+  const pack = E.rasterise(pat, grid, sp, false, null);
+  const r = E.sweepLean(pat, pack, 0, spec, cpp, new E.MapFFTCache(pack), 90, null);
+  const a = E.fluctuationStats(r.contact_area), x = E.fluctuationStats(r.kx);
+  return {{n: blocks.length, area: a.mean, cov: a.cov, kxCov: x.cov}};
+}}
+process.stdout.write(JSON.stringify([at(7.0), at(7.4)]));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=300)
+    assert res.returncode == 0, res.stderr[:2000]
+    before, after = json.loads(res.stdout)
+    assert before["n"] == 80 and after["n"] == 118, "the bars engage between 7.0 and 7.4 mm wear"
+    assert after["area"] > before["area"], "engaged tie bars are land and must add contact area"
+    assert after["cov"] < before["cov"], "tie bars must damp the contact-area fluctuation"
+    assert after["kxCov"] < before["kxCov"], "tie bars must damp the longitudinal stiffness ripple"
+
+
+def test_wear_shortens_every_block():
+    """Kx ~ 1/L^3 for a guided beam, so a worn tread is markedly stiffer."""
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const p = {{blocks: [{{id: 'B', polygon: [[0,0],[10,0],[10,10],[0,10]], zone: 'center',
+   height: 10, draft_angle: 0, n_lateral_sipes: 0, sipes: []}}], tiebars: []}};
+process.stdout.write(JSON.stringify([0, 2, 5].map(w => E.effectiveBlocks(p, w)[0].height)));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=60)
+    assert res.returncode == 0, res.stderr[:2000]
+    assert json.loads(res.stdout) == [10, 8, 5]
+
+
+def test_wear_that_removes_the_tread_is_refused():
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const p = {{blocks: [{{height: 8, polygon: [[0,0],[1,0],[1,1]]}}], tiebars: []}};
+try {{ E.validateWear(9, p); process.stdout.write('NO ERROR'); }}
+catch (e) {{ process.stdout.write(e.message); }}
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=60)
+    assert res.returncode == 0, res.stderr[:2000]
+    assert "removes every block" in res.stdout and "8.00 mm" in res.stdout
+
+
+def test_the_tie_bar_tab_lets_every_bar_be_set_individually():
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert 'data-tab="tiebars"' in tpl and 'id="panel-tiebars"' in tpl
+    # a per-bar height field, an include/exclude box and a force-contact override
+    for field in ("'height'", "'enabled'", "'force_contact'"):
+        assert "data-tbfield=" in ui and field in ui, field
+    # bulk helpers, so 38 bars do not have to be typed one at a time
+    for control in ("tbApplyAll", "tbEnableAll", "tbDisableAll"):
+        assert f'id="{control}"' in tpl and control in ui
+    # and the tab is reachable straight after an import, before any sweep --
+    # the heights it sets are an INPUT to the sweep, so requiring a throwaway
+    # run first would be backwards
+    assert "function showImportChrome(" in ui
+    assert "PRE_RUN_TABS" in ui and '"tiebars"' in ui
+
+
+# ---------------------------------------------------------------------------
+# compound modulus
+# ---------------------------------------------------------------------------
+
+
+def test_modulus_can_be_entered_directly_and_is_always_displayed():
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    for control in ("modulusMode", "eModulus", "gentK", "compoundReadout"):
+        assert f'id="{control}"' in tpl, control
+    # E, G and k must be shown, not just consumed
+    assert "compoundProperties" in ui
+    for sym in ("<b>E</b>", "<b>G</b>", "<b>k</b>"):
+        assert sym in ui, sym
+    # and every export must record which of the two paths produced them
+    assert "function compoundLine(" in ui
+    assert ui.count("compoundLine(s") >= 2
+
+
+def test_direct_modulus_rejects_a_units_mistake():
+    """6890 is 6.89 N/mm^2 written in kPa.  Silently accepting it would scale
+    every stiffness by a thousand."""
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const bad = [];
+for (const v of [6890, 0, -1, 'x']) {{
+  try {{ E.validateCompound({{modulus_mode: 'direct', e_modulus: v, gent_k: 0.64}}); bad.push(v); }}
+  catch (e) {{ if (v === 6890 && !/N\\/mm\\^2/.test(e.message)) bad.push('no units hint'); }}
+}}
+E.validateCompound({{modulus_mode: 'direct', e_modulus: 9.5, gent_k: 0.64}});
+process.stdout.write(JSON.stringify(bad));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=60)
+    assert res.returncode == 0, res.stderr[:2000]
+    assert json.loads(res.stdout) == [], "some invalid modulus was accepted"
+
+
+def test_js_and_python_agree_on_the_interpolated_shore_curve():
+    node = _node()
+    from tread_eval.stiffness import shore_e, shore_k
+
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const s = [];
+for (let v = 28; v <= 74; v += 0.5) s.push([E.shoreE(v), E.shoreK(v)]);
+process.stdout.write(JSON.stringify(s));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=60)
+    assert res.returncode == 0, res.stderr[:2000]
+    got = json.loads(res.stdout)
+    for i, (e, k) in enumerate(got):
+        s = 28 + i * 0.5
+        assert e == pytest.approx(shore_e(s), rel=1e-12), f"E disagrees at Shore {s}"
+        assert k == pytest.approx(shore_k(s), rel=1e-12), f"k disagrees at Shore {s}"

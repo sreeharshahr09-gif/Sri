@@ -56,6 +56,39 @@ the tyre upright.
 | **Kx / Ky / Kz** | Stiffness. Kx resists braking and acceleration forces, Ky resists cornering forces, Kz resists the tyre being squashed vertically. Units are N/mm: a Kx of 500 means it takes 500 newtons to shove the block 1 mm forwards. |
 | **CoV** | Coefficient of variation — the ripple size as a percentage of the average. 5% CoV means the value wobbles by about ±5%. **Lower is better.** |
 | **Zone** | The tread split into three lateral bands: **centre** (used upright, straight-line), **intermediate** (used in the transition into a corner), **shoulder** (used at full lean). |
+| **Tie bar** | A raised strip in the bottom of a groove, bridging two blocks. Its height is *less* than the NSD, so on a new tyre it sits below the road and touches nothing. It comes into contact part-worn and stiffens the block row against heel-and-toe wear. Common on TBR, sometimes on PCR. |
+| **Wear** | How much tread has been worn off, in mm. Every block's bending length is NSD − wear, so a worn tread is stiffer. Wear is also what brings tie bars into contact. |
+
+---
+
+## Compound: where the modulus comes from
+
+Every stiffness in this tool scales with Young's modulus **E**. There are two ways to set it, and the panel always shows what was used:
+
+- **From Shore A** — E and the Gent shape coefficient *k* are read off Gent's table (*Engineering with Rubber*, Table 8.1), which has five rows: 30, 40, 50, 60 and 70 A. Values between rows are interpolated (E geometrically, *k* linearly), so 59 A and 61 A no longer differ by 72%. Outside 30–70 A the nearest row is used and you are warned.
+- **Enter E directly** — type E in N/mm² and the coefficient *k*. Use this when you have measured the compound, or when it is harder or softer than the table covers.
+
+The shear modulus is always **G = E / 2(1+ν)**. Bending uses E, shear uses G, and the vertical stiffness uses **E_eff = E(1 + 2kS²)** with the bulk-modulus correction, where S is the block's shape factor.
+
+| Shore A | E (N/mm²) | k |
+|---|---|---|
+| 30 | 1.50 | 0.93 |
+| 40 | 2.50 | 0.85 |
+| 50 | 4.00 | 0.73 |
+| 60 | 6.89 | 0.64 |
+| 70 | 12.00 | 0.57 |
+
+---
+
+## Tie bars and the wear state
+
+Put the groove bottom at zero. A block's top starts at **NSD** and, after the tyre has worn *w* mm, sits at **NSD − w**. A tie bar is a raised strip of that groove bottom of height **h < NSD**, so its top starts **NSD − h below the road and touches nothing**.
+
+It engages once **w ≥ NSD − h**. From then on it is flush with the blocks and is simply more land at the same height — which is the point of a tie bar: it arrives part-worn and stiffens the block row against the heel-and-toe wear that is developing by then.
+
+So at the default **wear = 0** the bars are listed and drawn but contribute nothing, which is the truth for a new tyre. Raise **Tread worn** in *4 · Wear & tie bars* and watch the contact area step up and the θ-fluctuation drop as they come in — that step is the tie bar doing its job, and its position on the wear axis is a design decision you can now see.
+
+**How they are detected.** A tie bar usually has no outline of its own: its two long sides *are* the groove walls of the blocks either side. The importer builds the planar arrangement of every line in the drawing and takes its enclosed regions, so a bar falls out as its own region even though it shares most of its boundary with its neighbours. A region counts as a tie bar if it shares an edge with two or more blocks and its area is below the **tie-bar area limit** (default half the typical block). That is only the first guess — the **Tie bars** tab lists every candidate with its area, height, engagement wear and a checkbox, so you can reject one, promote another, or set heights bar by bar.
 
 ---
 

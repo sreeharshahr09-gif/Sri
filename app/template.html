@@ -9,7 +9,6 @@
 <body>
   <header>
     <h1>Tread Pattern Evaluation</h1>
-    <span class="sub">2W · PCR · TBR — θ × γ contact &amp; stiffness, entirely in your browser</span>
     <span class="spacer"></span>
     <span id="timing" class="sub"></span>
     <button id="themeToggle" class="theme-toggle">☀ Light</button>
@@ -17,7 +16,7 @@
 
   <div class="layout">
     <aside class="sidebar">
-      <div class="group">
+      <div class="group" id="grp-project">
         <div class="title">0 · Project</div>
         <div class="field" title="Programme or project this design belongs to. Appears on the PDF report and in every export."><label>Project</label><input id="projName" type="text" placeholder="e.g. TBR-2026-LH" /></div>
         <div class="field" title="Name of this specific tread pattern or design variant. Used to label it in comparisons and to name exported files."><label>Tread / design</label><input id="treadName" type="text" placeholder="e.g. Endurace RA v3" /></div>
@@ -33,24 +32,36 @@
         <button id="applyPreset" class="btn secondary" style="width:100%;margin-top:4px" title="Overwrite the crown, load, wheel radius and contact patch with values typical of the selected tyre type.">Apply tyre-type defaults</button>
       </div>
 
-      <div class="group">
+      <div class="group" id="grp-plan">
         <div class="title">1 · Tread plan</div>
         <div class="filerow">
           <label class="btn secondary" for="fileInput">Load DXF…</label>
           <input id="fileInput" type="file" accept=".dxf" style="display:none" />
           <button id="sampleBtn" class="btn secondary">Load sample</button>
         </div>
-        <div class="hint">A mould tread-plan DXF (LINE/ARC/POLYLINE). Depth, draft and sipes are supplied below — a 2D plan has none.</div>
+        <div class="hint">ASCII DXF: LINE, ARC, CIRCLE, ELLIPSE, LWPOLYLINE (with bulges), old-style POLYLINE, SPLINE, and INSERT references into BLOCKS. Depth, draft and sipes are supplied below — a 2D plan has none.</div>
+        <div class="field" title="How far apart two endpoints may be and still be treated as the same corner. CAD exports routinely leave corners a few microns apart after a trim, and an unwelded corner loses the whole block. 0.01 mm is two orders below the finest tread feature and two above the usual export round-off. Raise it if outlines are reported as not closing; lower it if separate features are being merged."><label>Weld tolerance (mm)</label><input id="weldTol" type="number" value="0.01" step="0.005" min="0.0001" max="1" /></div>
+        <div class="field" title="A region between blocks counts as a tie bar if its area is below this fraction of the typical block area. Only affects the initial guess — every candidate is listed in the Tie bars tab for you to confirm or reject."><label>Tie-bar area limit</label><input id="tiebarFrac" type="number" value="0.5" step="0.05" min="0.02" max="1" /></div>
       </div>
 
-      <div class="group">
+      <div class="group" id="grp-compound">
         <div class="title">2 · Block depth &amp; compound</div>
         <div class="field" title="Non-skid depth — the block height above the groove base. A 2D tread plan does not carry it, so you must supply it. It sets both the bending length of each block and the Gent shape factor, which makes it the single most influential number on this panel. Typical 2W: 6–10 mm."><label>NSD / block height (mm)</label><input id="nsd" type="number" value="8.5" step="0.5" /></div>
         <div class="field" title="Mould draft angle, per side. Positive draft makes the block base wider than its top, so it adds material below the surface and STIFFENS the block. Typical: 2–5°."><label>Draft angle (deg)</label><input id="draft" type="number" value="3.0" step="0.5" /></div>
         <div class="field" title="Number of lateral sipes cut across each block. A sipe softens the block in the direction it cuts. Set 0 if the pattern has none — a 2D plan does not show sipes, so this is your input."><label>Lateral sipes / block</label><input id="sipes" type="number" value="0" step="1" min="0" /></div>
         <div class="field" title="How deep the sipes cut, as a fraction of NSD. 0.6 means the sipe reaches 60% of the way down to the groove base; 1.0 cuts the block clean through into independent sub-blocks."><label>Sipe depth (frac of NSD)</label><input id="sipeDepth" type="number" value="0.6" step="0.05" min="0" max="1" /></div>
-        <div class="field" title="Tread compound hardness. Sets Young's modulus E and the Gent coefficient k from Gent's table, which covers 30–70 A. Outside that range the nearest entry is substituted and you are warned — absolute stiffness is then unreliable."><label>Shore A hardness</label><input id="shore" type="number" value="60" step="1" /></div>
+        <div class="field" title="Where Young's modulus comes from. 'From Shore A' reads E and the Gent shape coefficient k off Gent's table (Engineering with Rubber, Table 8.1), interpolating between its five rows. 'Enter E directly' uses the numbers you type — use this when you have measured the compound, or when it is harder or softer than the 30–70 A the table covers.">
+          <label>Modulus from</label>
+          <select id="modulusMode">
+            <option value="shore">Shore A (Gent table)</option>
+            <option value="direct">enter E directly</option>
+          </select>
+        </div>
+        <div class="field" id="rowShore" title="Tread compound hardness. Sets Young's modulus E and the Gent coefficient k from Gent's table, which covers 30–70 A and is interpolated in between. Outside that range the nearest entry is substituted and you are warned — absolute stiffness is then unreliable."><label>Shore A hardness</label><input id="shore" type="number" value="60" step="1" /></div>
+        <div class="field" id="rowE" style="display:none" title="Young's modulus of the tread compound in N/mm² (= MPa). Tread compounds run roughly 1.5 N/mm² at 30 A to 12 N/mm² at 70 A. Every stiffness scales directly with this number, so it is the one to get right if you have measured data."><label>Young's modulus E (N/mm²)</label><input id="eModulus" type="number" value="6.89" step="0.1" min="0.1" /></div>
+        <div class="field" id="rowK" style="display:none" title="Gent's shape-factor coefficient k, used only in the vertical stiffness: E_eff = E(1 + 2kS²) where S is the block's shape factor. It runs from 0.93 at 30 A to 0.57 at 70 A — softer compounds bulge more, so their shape factor counts for more."><label>Gent coefficient k</label><input id="gentK" type="number" value="0.64" step="0.01" min="0.01" /></div>
         <div class="field" title="Poisson's ratio of the compound. Rubber is nearly incompressible, so 0.49 is right for virtually every tread compound."><label>Poisson ν</label><input id="poisson" type="number" value="0.49" step="0.01" /></div>
+        <div id="compoundReadout" class="hint" style="margin:2px 0 6px;padding:7px 9px;background:var(--panel-2);border:1px solid var(--edge);border-radius:6px;line-height:1.6"></div>
         <div class="field" title="Boundary condition at the block's road-facing face. 'Parallel' holds the top face flat as it translates — the correct condition for a block that is gripping, and the stiffer of the two. 'Free' is an unconstrained cantilever tip."><label>Boundary mode</label>
           <select id="mode"><option value="parallel">parallel (gripping)</option><option value="free">free (cantilever)</option></select>
         </div>
@@ -63,7 +74,7 @@
         </div>
       </div>
 
-      <div class="group">
+      <div class="group" id="grp-patch">
         <div class="title">3 · Contact patch (shape)</div>
         <div class="field" title="Standard contact-patch outlines. Pick the one closest to your measured footprint, then set its dimensions below. Every shape feeds the same sweep, so a stated rectangle is treated exactly like a pressure-film scan."><label>Shape</label>
           <select id="shape">
@@ -94,8 +105,17 @@
         </div>
       </div>
 
-      <div class="group">
-        <div class="title">4 · Divisions (ribs)</div>
+      <div class="group" id="grp-wear">
+        <div class="title">4 · Wear &amp; tie bars</div>
+        <div class="field" title="How much tread has been worn off, in mm. Every block's bending length becomes NSD − wear, so the tread stiffens as it wears. It also decides which tie bars have reached the road: a bar of height h engages once wear reaches NSD − h. Leave at 0 for a new tyre.">
+          <label>Tread worn (mm)</label><input id="wear" type="number" value="0" step="0.5" min="0" /></div>
+        <div class="field" title="Height of a newly detected tie bar as a fraction of the local NSD, measured from the groove bottom like the block height. 0.55 means the bar tops out just over halfway up the groove, so it reaches the road once the tyre has worn 45% of its NSD. Set individual bars in the Tie bars tab.">
+          <label>Tie-bar height (frac NSD)</label><input id="tiebarHeight" type="number" value="0.55" step="0.05" min="0.05" max="1" /></div>
+        <div class="hint">A tie bar sits below the tread surface, so on a new tyre it carries nothing. Raise the wear to see when each one starts working. The <b>Tie bars</b> tab lists every bar found and lets you set heights one by one.</div>
+      </div>
+
+      <div class="group" id="grp-divisions">
+        <div class="title">5 · Divisions (ribs)</div>
         <div class="field" title="Split the rolled-out tread into lateral bands (ribs) by lines running along the circumference, and report contact area, Kx, Ky, Kz and block count separately for each. Set 0 to switch the feature off.">
           <label>Number of bands</label><input id="nBands" type="number" value="0" step="1" min="0" max="24" /></div>
         <div class="field" title="Leave blank for bands of equal width. Otherwise give the INTERNAL cut positions in mm from the tread centreline, comma separated — the two tread edges are added automatically. Example: -40,-15,15,40 gives five ribs.">
@@ -103,11 +123,22 @@
         <div class="hint">Bands are drawn on the rolled-out pattern and get their own tab. Every band's numbers sum exactly to the whole-tread total.</div>
       </div>
 
-      <div class="group">
-        <div class="title">5 · Load &amp; advanced</div>
+      <div class="group" id="grp-load">
+        <div class="title">6 · Load &amp; advanced</div>
         <div class="field" title="Static vertical load carried by this tyre when upright. Sets the patch pressure, and with the box below, how that load grows as the bike leans."><label>Vertical load Fz (N)</label><input id="cpLoad" type="number" value="1500" step="50" /></div>
         <div class="field" title="In a steady turn the resultant of gravity and cornering force acts along the bike's plane, so the tyre carries Fz/cos(lean) rather than Fz. Uncheck to hold the load constant across the lean sweep (useful for isolating geometry from load).">
           <label><input id="cpAutoLoad" type="checkbox" checked /> load rises with lean (Fz / cos γ)</label></div>
+        <div class="lean-load-ref" aria-label="Lean load reference table">
+          <div class="lean-load-title">
+            <b>Lean-load reference</b>
+            <span>based on current Fz = <strong id="leanLoadBase">1500</strong> N</span>
+          </div>
+          <table class="lean-load-table">
+            <thead><tr><th>Lean γ</th><th>cos γ</th><th>Fz / cos γ (N)</th></tr></thead>
+            <tbody id="leanLoadRows"></tbody>
+          </table>
+          <div class="lean-load-note">The value shown is the resultant force implied by the Fz / cos γ option. The vertical component remains Fz.</div>
+        </div>
         <div class="field" title="Free rolling radius at the crown centre. Sets the patch's effective longitudinal radius, and the kinematic turn radius a leaned wheel traces (R_eff / tan γ)."><label>Wheel radius (mm)</label><input id="wheelR" type="number" value="320" step="5" /></div>
         <div class="field" title="Crown radius at the tread centre. Leave blank for 125 mm. The crown decides where the contact point sits at every lean angle, so this drives the entire γ axis — it is not a cosmetic setting."><label>Crown R centre (mm)</label><input id="crownCenter" type="number" placeholder="125" step="5" /></div>
         <div class="field" title="Where the shoulder radius starts eating into the crown, as a fraction of the half width. This is class geometry, not a tuning knob: a truck crown stays flat almost to the edge (0.85), a car rolls off in the outer quarter (0.72), a motorcycle is curved from the centreline out (0.45). It sets the tread tangent at every lateral position, and so the contact point at each lean and the maximum lean the tyre can reach. Set by the tyre type; override if you know the real profile."><label>Crown break (frac)</label><input id="crownBreak" type="number" value="0.45" step="0.05" min="0.05" max="0.98" /></div>
@@ -130,8 +161,8 @@
         + Add this design to comparison <span id="cmpCount"></span>
       </button>
 
-      <div class="group" style="margin-top:14px">
-        <div class="title">6 · Export</div>
+      <div class="group" id="grp-export" style="margin-top:14px">
+        <div class="title">7 · Export</div>
         <div class="filerow">
           <button id="exportCsv" class="btn secondary" disabled title="Every theta and lean sample as CSV, with a commented header recording the settings that produced it.">CSV data</button>
           <button id="exportJson" class="btn secondary" disabled title="The complete run — settings, import report, physics notes, per-block stiffness summary and all results — as JSON.">JSON run</button>
@@ -169,6 +200,7 @@
         <button data-tab="zones">Zones</button>
         <button data-tab="patch">Contact patch</button>
         <button data-tab="bands">Bands</button>
+        <button data-tab="tiebars">Tie bars <span id="tbCount"></span></button>
         <button data-tab="compare">Compare</button>
         <button data-tab="diag">Diagnostics</button>
         <button data-tab="guide">How to read this</button>
@@ -230,6 +262,31 @@
         </div>
         <div id="bandsPlot" class="plot"></div>
         <div id="bandsTable"></div>
+      </section>
+
+      <section id="panel-tiebars" class="panel">
+        <div id="tbEmpty" class="banner">
+          <b>No tie bars found in this drawing.</b>
+          <div class="hint" style="margin-top:6px">A tie bar is picked up as a closed region between two blocks whose long sides are the neighbouring groove walls — it does not need an outline of its own. If your drawing has bars that are not listed, check that the lines closing them across the groove actually meet the walls (raise the <b>weld tolerance</b> in <b>1 · Tread plan</b>), or that the bar is not larger than the <b>tie-bar area limit</b>.</div>
+        </div>
+        <div id="tbBody" style="display:none">
+          <div class="explain" style="margin-top:0;margin-bottom:12px">
+            <h4>How a tie bar is treated</h4>
+            <p>Put the groove bottom at zero. A block's top starts at <code>NSD</code> and, after the tyre has worn <code>w</code>&nbsp;mm, sits at <code>NSD − w</code>. A tie bar is a raised strip of that groove bottom of height <code>h &lt; NSD</code>, so its top starts <code>NSD − h</code> <b>below the road and touches nothing</b>.</p>
+            <p>It engages once <code>w ≥ NSD − h</code>. From then on it is flush with the blocks and is simply more land at the same height — which is the point of a tie bar: it arrives part-worn and stiffens the block row against the heel-and-toe wear that is developing by then.</p>
+            <p style="margin-bottom:0">So at the default <b>wear = 0</b> the bars are listed and drawn but contribute nothing, which is the truth for a new tyre. Raise <b>Tread worn</b> in <b>4 · Wear &amp; tie bars</b> to see them come in. <em>Force contact</em> overrides that for what-if work: the bar is analysed as a short proud block of its own height, which is as close as a surface-contact model can get.</p>
+          </div>
+          <div class="filerow">
+            <label class="hint">Set all heights to <input id="tbAllFrac" type="number" value="0.55" step="0.05" min="0.05" max="1" style="width:80px" /> × NSD</label>
+            <button id="tbApplyAll" class="btn secondary">Apply to all</button>
+            <button id="tbEnableAll" class="btn secondary">Enable all</button>
+            <button id="tbDisableAll" class="btn secondary" title="Excluded bars are ignored completely — use this for regions that were picked up but are really open groove.">Disable all</button>
+            <span id="tbSummary" class="hint"></span>
+          </div>
+          <div id="tbPlot" class="plot"></div>
+          <div id="tbTable"></div>
+          <div class="hint" style="margin-top:8px">Changes here take effect on the next <b>Run</b>.</div>
+        </div>
       </section>
 
       <section id="panel-compare" class="panel">

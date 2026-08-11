@@ -10,7 +10,13 @@
     if (m.cmd !== "sweep") return;
     try {
       var t0 = Date.now();
-      var pattern = m.pattern;
+      var wholePattern = m.pattern;
+      // Wear shortens every block and decides which tie bars have reached the
+      // road. Do it once, here, so the rest of the pipeline sees one block list
+      // and never has to know a tie bar from a block.
+      E.validateWear(m.wear, wholePattern);
+      var split = E.effectiveBlocks(wholePattern, m.wear, { separate: true });
+      var pattern = Object.assign({}, wholePattern, { blocks: split.blocks.concat(split.tiebars) });
       // crown arrays survive structured clone as plain arrays; the engine reads
       // them by index so no rehydration is needed.
       var grid = E.makeGrid(pattern, m.gridNx, m.gridNy);
@@ -37,8 +43,26 @@
       if (!leans.length) throw new Error(
         "no requested lean angle is reachable on this crown (maximum " + maxLean.toFixed(1) + "°)");
 
-      var shoreNote = E.shoreRangeWarning(m.stiffParams.shore_a);
-      if (shoreNote) notes.push(shoreNote);
+      if (!m.stiffParams || m.stiffParams.modulus_mode !== "direct") {
+        var shoreNote = E.shoreRangeWarning(m.stiffParams.shore_a);
+        if (shoreNote) notes.push(shoreNote);
+      }
+      var cp = E.compoundProperties(m.stiffParams);
+      notes.push("compound: E = " + cp.E.toFixed(3) + " N/mm², G = " + cp.G.toFixed(3) +
+        " N/mm², Gent k = " + cp.k.toFixed(3) + " (" + cp.source + ").");
+
+      var nTie = (wholePattern.tiebars || []).length;
+      if (nTie) {
+        var engaged = split.tiebars.length;
+        notes.push(nTie + " tie bar(s) in this drawing; " + engaged + " in contact at " +
+          (m.wear || 0).toFixed(1) + " mm wear. A bar of height h reaches the road only once the " +
+          "tread has worn NSD - h, so at zero wear they carry nothing.");
+      }
+      if (m.wear > 0) {
+        var lost = (wholePattern.blocks || []).length - split.blocks.length;
+        notes.push("tread worn " + (+m.wear).toFixed(2) + " mm: every block's bending length is NSD - wear, " +
+          "so the tread is stiffer than new" + (lost ? " (" + lost + " block(s) worn away entirely)" : "") + ".");
+      }
 
       var results = [];
       for (var i = 0; i < leans.length; i++) {
@@ -66,6 +90,9 @@
         timing: { raster: tRaster, total: Date.now() - t0 },
         grid: { nx: grid.nx, ny: grid.ny, dx: grid.dx, dy: grid.dy },
         bandEdges: m.bandEdges || null,
+        compound: cp,
+        wear: { mm: m.wear || 0, n_blocks: split.blocks.length,
+                n_tiebars_total: nTie, n_tiebars_engaged: split.tiebars.length },
       });
     } catch (err) {
       self.postMessage({ type: "error", message: String(err && err.message ? err.message : err) });
