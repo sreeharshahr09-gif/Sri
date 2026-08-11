@@ -826,21 +826,47 @@ catch (e) {{ process.stdout.write(e.message); }}
     assert "removes every block" in res.stdout and "8.00 mm" in res.stdout
 
 
-def test_the_tie_bar_tab_lets_every_bar_be_set_individually():
+def test_the_tie_bar_editor_lets_every_bar_be_set_individually():
     ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
     tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
-    assert 'data-tab="tiebars"' in tpl and 'id="panel-tiebars"' in tpl
     # a per-bar height field, an include/exclude box and a force-contact override
     for field in ("'height'", "'enabled'", "'force_contact'"):
         assert "data-tbfield=" in ui and field in ui, field
     # bulk helpers, so 38 bars do not have to be typed one at a time
     for control in ("tbApplyAll", "tbEnableAll", "tbDisableAll"):
         assert f'id="{control}"' in tpl and control in ui
-    # and the tab is reachable straight after an import, before any sweep --
-    # the heights it sets are an INPUT to the sweep, so requiring a throwaway
-    # run first would be backwards
-    assert "function showImportChrome(" in ui
-    assert "PRE_RUN_TABS" in ui and '"tiebars"' in ui
+
+
+def test_the_tie_bar_editor_is_an_input_not_a_result():
+    """Which regions are bars, how tall each is, and how worn the tread is all
+    feed the sweep.  Putting the editor among the result tabs meant running a
+    throwaway sweep to see what was detected, then setting the values that
+    sweep depended on, then running again."""
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert 'data-tab="tiebars"' not in tpl, "tie bars must not be a results tab"
+    assert 'id="panel-tiebars"' not in tpl
+    setup = tpl[tpl.index('<aside class="sidebar">'):tpl.index("</aside>")]
+    for control in ("wear", "tiebarHeight", "tbTable", "tbPlot", "tbApplyAll"):
+        assert f'id="{control}"' in setup, f"{control} belongs in the setup panel"
+    # and it must come before Run, which is what it gates
+    assert setup.index('id="grp-wear"') < setup.index('id="runBtn"')
+
+
+def test_tie_bars_are_drawn_on_the_rolled_out_pattern():
+    """The sweep counted engaged bars as land, but nothing drew them, so a step
+    in the curves had no visible cause on the pattern below."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    strip = ui[ui.index("function renderPatternStrip()"):ui.index("function renderLeanHeatmap()")]
+    assert "tiebars" in strip, "the pattern strip must draw tie bars"
+    editor = ui[ui.index("function drawEditor()"):]
+    editor = editor[:editor.index("function ") + editor[editor.index("function ") + 1:].index("\n  function ")]
+    assert "tiebars" in editor, "the patch preview must draw tie bars"
+    # ...and the strip must show the state the RUN used, not the live inputs,
+    # or an edit after a run would repaint bars as land the curves never had
+    assert "function ranEngaged(" in ui
+    assert "engaged_ids" in ui
+    worker = open(os.path.join(APP, "worker.js"), encoding="utf-8").read()
+    assert "engaged_ids" in worker
 
 
 # ---------------------------------------------------------------------------
@@ -898,3 +924,66 @@ process.stdout.write(JSON.stringify(s));
         s = 28 + i * 0.5
         assert e == pytest.approx(shore_e(s), rel=1e-12), f"E disagrees at Shore {s}"
         assert k == pytest.approx(shore_k(s), rel=1e-12), f"k disagrees at Shore {s}"
+
+
+def test_every_chart_sees_the_tie_bars():
+    """The user's question: is the tie-bar effect in *all* the graphs?
+
+    Everything downstream of the raster shares one block list, so if the zone
+    split, the rib bands and the per-block stiffness summary all move when the
+    bars engage, then so does every chart drawn from them.  This asserts that
+    rather than assuming it.
+    """
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const fs = require('fs');
+const {{pattern}} = E.loadPattern(fs.readFileSync({json.dumps(TIEBAR_DXF)}, 'utf8'), {{height: 16, draft_angle: 2}}, {{}});
+const sp = {{shore_a: 65, poisson: 0.49, mode: 'parallel', bulk_modulus: 1100, n_slices: 16, sipe_model: 'layered'}};
+const spec = {{shape: 'rectangle', length: 200, width: 190, rotation: 0, y_center: 0,
+               gamma_deg: 0, load_N: null, scale_with_lean: false}};
+const cpp = {{vertical_load: 25000, wheel_radius: 500, load_rises_with_lean: false}};
+const edges = [-102, -34, 34, 102];
+function at(w) {{
+  const pat = Object.assign({{}}, pattern, {{blocks: E.effectiveBlocks(pattern, w)}});
+  const grid = E.makeGrid(pat, 1024, 96);
+  const pack = E.rasterise(pat, grid, sp, false, null);
+  const r = E.sweepLean(pat, pack, 0, spec, cpp, new E.MapFFTCache(pack), 90, edges);
+  const mean = a => E.fluctuationStats(a).mean;
+  return {{
+    area: mean(r.contact_area), kz: mean(r.kz), kx: mean(r.kx), ky: mean(r.ky),
+    blocks: mean(r.block_count), land: mean(r.land_ratio),
+    zones: Object.keys(r.zone_area).sort().map(z => mean(r.zone_area[z])),
+    bands: r.bands.map(b => mean(b.contact_area)),
+    bandKz: r.bands.map(b => mean(b.kz)),
+    orders: E.orderSpectrum(r.kz, 40).amplitude.reduce((s, v) => s + v, 0),
+    stiffN: pack.stiffness.length,
+  }};
+}}
+process.stdout.write(JSON.stringify([at(7.0), at(7.4)]));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=300)
+    assert res.returncode == 0, res.stderr[:2000]
+    before, after = json.loads(res.stdout)
+
+    # the per-block stiffness table (Diagnostics) gains the engaged bars
+    assert after["stiffN"] == before["stiffN"] + 38
+
+    # the theta-sweep rows: area, all three stiffnesses, block count, land ratio
+    for key in ("area", "kz", "kx", "ky", "blocks", "land"):
+        assert after[key] > before[key], f"{key} did not respond to the tie bars"
+
+    # the Zones chart -- the bars are in the centre ribs, so the centre zone
+    # must grow and the shoulder must not
+    zb, za = before["zones"], after["zones"]
+    assert any(a > b for a, b in zip(za, zb)), "no zone changed"
+    assert all(a >= b - 1e-9 for a, b in zip(za, zb)), "a zone lost area when bars engaged"
+
+    # the Bands chart -- and the bands must still sum to the whole
+    assert sum(after["bands"]) > sum(before["bands"])
+    assert sum(after["bands"]) == pytest.approx(after["area"], rel=1e-9)
+    assert sum(after["bandKz"]) == pytest.approx(after["kz"], rel=1e-9)
+    assert any(a > b for a, b in zip(after["bandKz"], before["bandKz"]))
+
+    # the Order-content chart is a transform of the same Kz signal
+    assert after["orders"] != pytest.approx(before["orders"], rel=1e-6)

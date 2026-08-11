@@ -111,15 +111,14 @@ const fs = require("fs");
   // Driven on a purpose-built rib pattern, because the bundled 2W sample has no
   // tie bars -- and the fact that it reports none is itself part of the check.
   {
-    if (!/^\s*$/.test(await page.textContent("#tbCount")))
-      errors.push("the 2W sample has no tie bars but the tab shows a count");
+    if (await page.isVisible("#tbBody"))
+      errors.push("the 2W sample has no tie bars but the editor is showing rows");
 
     const tbDxf = path.join(__dirname, "..", "data", "tbr_ribs_tiebars.dxf");
     await page.setInputFiles("#fileInput", tbDxf);
     await page.waitForTimeout(600);
     await page.fill("#nsd", "16");
     await page.waitForTimeout(200);
-    await page.click('.tabs button[data-tab="tiebars"]').catch(() => {});
     const banner2 = (await page.textContent("#banner")).replace(/\s+/g, " ");
     console.log("tie-bar drawing:", banner2.slice(0, 130));
     if (!/tie bars/.test(banner2)) errors.push("tie bars not reported in the import banner");
@@ -142,7 +141,6 @@ const fs = require("fs");
     const engaged = async () => (await page.textContent("#tbSummary")).replace(/\s+/g, " ");
     const atZero = await engaged();
     if (!/\b0\b in contact/.test(atZero)) errors.push("tie bars reported in contact at zero wear: " + atZero);
-    await page.click('.tabs button[data-tab="tiebars"]');
     await page.fill("#tbAllFrac", "0.55");
     await page.click("#tbApplyAll");
     await page.fill("#wear", "9");

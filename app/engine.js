@@ -1561,7 +1561,7 @@
     }
     if (cls.unclassified.length)
       warnings.push(cls.unclassified.length + " small region(s) share an edge with a block but touch only one of " +
-        "them, so they were counted as blocks rather than tie bars — check the Tie bars tab if any of them is a bar");
+        "them, so they were counted as blocks rather than tie bars — check 6 · Wear & tie bars if any of them is a bar");
 
     // An import that yields no blocks is a failed import, not an empty tyre.
     // Left to run it produces all-zero charts with nothing to explain them.
@@ -1651,7 +1651,7 @@
     if (tiebars.length)
       warnings.push(tiebars.length + " tie bar(s) detected between blocks. They sit below the tread " +
         "surface, so they carry nothing until the tyre has worn past (NSD - tie-bar height) — set the " +
-        "heights and the wear state in the Tie bars tab.");
+        "heights and the wear state in 6 · Wear & tie bars.");
 
     const pattern = {
       tyre_circumference: circ, tread_width: width, pitches: pitches, blocks: blocks,

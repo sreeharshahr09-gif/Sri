@@ -225,7 +225,6 @@
     showResultsChrome(false);
     renderBanner();
     renderTiebars();
-    showImportChrome();
     drawEditor();
     $("emptyHint").style.display = "none";
     refreshValidation();
@@ -420,6 +419,39 @@
             if (v2 === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
           }
           ctx.closePath(); ctx.fill();
+        }
+      }
+    }
+
+    // Tie bars in the same window, so the patch can be placed knowing where
+    // they are: filled once they have worn into contact, outlined while they
+    // are still below the surface.
+    var edWear = readWear();
+    for (var tbi = 0; tbi < (p.tiebars || []).length; tbi++) {
+      var tbar = p.tiebars[tbi];
+      if (tbar.enabled === false) continue;
+      var tbOn = E.tiebarEngaged(tbar, edWear);
+      var tpieces = E.splitAtSeam(tbar.polygon, C);
+      for (var tpc = 0; tpc < tpieces.length; tpc++) {
+        for (var tshift = -C; tshift <= C; tshift += C) {
+          var tpoly = tpieces[tpc];
+          var txmin = Infinity, txmax = -Infinity;
+          for (var tv = 0; tv < tpoly.length; tv++) {
+            var txx = tpoly[tv][0] + tshift - xref;
+            if (txx < txmin) txmin = txx; if (txx > txmax) txmax = txx;
+          }
+          if (txmax < -editor.winX / 2 || txmin > editor.winX / 2) continue;
+          ctx.beginPath();
+          for (var tv2 = 0; tv2 < tpoly.length; tv2++) {
+            var TX = mapX(tpoly[tv2][0] + tshift - xref), TY = mapY(tpoly[tv2][1]);
+            if (tv2 === 0) ctx.moveTo(TX, TY); else ctx.lineTo(TX, TY);
+          }
+          ctx.closePath();
+          ctx.globalAlpha = tbOn ? 0.7 : 0.85;
+          if (tbOn) { ctx.fillStyle = TIEBAR_COLOR; ctx.fill(); }
+          else ctx.setLineDash([3, 3]);
+          ctx.lineWidth = 1; ctx.strokeStyle = TIEBAR_COLOR; ctx.stroke();
+          ctx.setLineDash([]); ctx.globalAlpha = 0.32;
         }
       }
     }
@@ -716,42 +748,12 @@
 
   // Tabs and the lean selector describe results. Before a run they lead to
   // blank panels, which reads as a broken page rather than an empty one.
-  // Three states, not two. Most tabs describe a sweep and are blank before one,
-  // but the tie-bar list describes the DRAWING -- making the designer run a
-  // throwaway sweep just to see what was detected, and to set the heights that
-  // the sweep then depends on, is backwards. So after an import the strip is
-  // shown with only the tabs that mean something yet.
-  var PRE_RUN_TABS = ["tiebars", "guide"];
-
+  // The tabs all describe a sweep; shown before one they lead to blank panels.
+  // The tie-bar editor is deliberately NOT among them -- it is an input, and it
+  // lives in the setup grid above.
   function showResultsChrome(on) {
     var el = $("resultsArea");
     if (el) el.style.display = on ? "" : "none";
-    if (on) setTabsAvailable(null);
-  }
-
-  function showImportChrome() {
-    var el = $("resultsArea");
-    if (el) el.style.display = "";
-    setTabsAvailable(PRE_RUN_TABS);
-    var sel = $("gammaSel");
-    if (sel && sel.parentNode) sel.parentNode.style.display = "none";
-    var want = tiebarList().length ? "tiebars" : "guide";
-    var cur = document.querySelector(".tabs button.on");
-    if (!cur || PRE_RUN_TABS.indexOf(cur.dataset.tab) < 0) {
-      var btn = document.querySelector('.tabs button[data-tab="' + want + '"]');
-      if (btn) btn.click();
-    }
-  }
-
-  // `allowed === null` means every tab.
-  function setTabsAvailable(allowed) {
-    var btns = document.querySelectorAll(".tabs button");
-    for (var i = 0; i < btns.length; i++) {
-      var ok = !allowed || allowed.indexOf(btns[i].dataset.tab) >= 0;
-      btns[i].style.display = ok ? "" : "none";
-    }
-    var sel = $("gammaSel");
-    if (!allowed && sel && sel.parentNode) sel.parentNode.style.display = "";
   }
 
   function renderAll() {
@@ -857,6 +859,28 @@
     Plotly.react($("thetaStack"), data, layout, { responsive: true, displayModeBar: false });
   }
 
+  // Whether a bar was in contact FOR THE RUN ON SCREEN. Editing a height after
+  // a run must not repaint the strip as though the sweep had used the new value
+  // -- the curves above it did not. Falls back to the live state before any run,
+  // where the strip is only a preview.
+  function ranEngaged(tb) {
+    if (state.wear && state.wear.engaged_ids) return state.wear.engaged_ids.indexOf(tb.id) >= 0;
+    return E.tiebarEngaged(tb, readWear());
+  }
+
+  // Deliberately outside the zone palette (blue / green / amber): a tie bar
+  // sitting inside a green intermediate rib has to stay visible.
+  var TIEBAR_COLOR = "#9b6bff";
+
+  function patternStripTitle(wear) {
+    var tb = (state.pattern.tiebars || []).filter(function (t) { return t.enabled !== false; });
+    if (!tb.length) return "Rolled-out tread pattern (same θ axis)";
+    var on = tb.filter(ranEngaged).length;
+    return "Rolled-out tread pattern (same θ axis) — violet = tie bars, " + on + " of " + tb.length +
+      " in contact at " + (+wear).toFixed(1) + " mm wear" +
+      (on < tb.length ? " (dotted outline = still below the surface)" : "");
+  }
+
   function renderPatternStrip() {
     var p = state.pattern, th = plotTheme(), C = p.tyre_circumference;
     var shapes = [], zoneColor = { center: th.accent, intermediate: th.good, shoulder: th.accent2 };
@@ -873,6 +897,30 @@
         shapes.push({ type: "path", path: path, xref: "x", yref: "y", fillcolor: hexA(zoneColor[blk.zone] || th.accent, 0.55), line: { width: 0 } });
       }
     }
+    // Tie bars, on the same strip as the blocks. The sweep already counts the
+    // engaged ones as land -- the worker merges them into the block list before
+    // rasterising -- but with nothing drawn there was no way to see it, and a
+    // step in the curves at some wear had no visible cause on the pattern.
+    // Engaged bars are filled like land; bars still below the surface are drawn
+    // as outlines so you can see where they sit and what is about to arrive.
+    var tbWear = state.wear ? state.wear.mm : readWear();
+    for (var ti = 0; ti < (p.tiebars || []).length; ti++) {
+      var tb = p.tiebars[ti];
+      if (tb.enabled === false) continue;
+      var engaged = ranEngaged(tb);
+      var tpieces = E.splitAtSeam(tb.polygon, C);
+      for (var tp = 0; tp < tpieces.length; tp++) {
+        var tpoly = tpieces[tp], tpath = "";
+        for (var tv = 0; tv < tpoly.length; tv++) {
+          var TTH = (tpoly[tv][0] / C) * 360;
+          tpath += (tv === 0 ? "M" : "L") + TTH.toFixed(3) + "," + tpoly[tv][1].toFixed(3) + " ";
+        }
+        tpath += "Z";
+        shapes.push({ type: "path", path: tpath, xref: "x", yref: "y",
+          fillcolor: engaged ? hexA(TIEBAR_COLOR, 0.85) : "rgba(0,0,0,0)",
+          line: { width: 1.1, color: TIEBAR_COLOR, dash: engaged ? undefined : "dot" } });
+      }
+    }
     // The designer's rib cuts, drawn where they actually fall on the tread.
     if (state.bandEdges) {
       for (var bi = 0; bi < state.bandEdges.length; bi++) {
@@ -884,7 +932,7 @@
     var layout = {
       paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
       margin: { l: 78, r: 16, t: 24, b: 40 }, height: 220, shapes: shapes,
-      title: { text: "Rolled-out tread pattern (same θ axis)", font: { size: 13 } },
+      title: { text: patternStripTitle(tbWear), font: { size: 13 } },
       xaxis: { range: (state.thetaRange || [0, 360]).slice(), gridcolor: th.grid, zeroline: false, title: { text: "rotation angle θ (deg)", font: { size: 11 } }, tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
       yaxis: { range: [-p.tread_width / 2, p.tread_width / 2], gridcolor: th.grid, zeroline: false, title: { text: "lateral y (mm)", font: { size: 10 } }, scaleanchor: undefined },
     };
@@ -1220,8 +1268,6 @@
 
   function renderTiebars() {
     var tb = tiebarList();
-    var badge = $("tbCount");
-    if (badge) badge.textContent = tb.length ? "(" + tb.length + ")" : "";
     var empty = $("tbEmpty"), body = $("tbBody");
     if (!empty || !body) return;
     empty.style.display = tb.length ? "none" : "";
@@ -1274,19 +1320,37 @@
       "</b> in contact at " + wear.toFixed(1) + " mm wear";
   }
 
-  // Update the cells a row's own edit changes, in place. Rebuilding the whole
-  // table from a change handler tears out the element that fired the event,
-  // which the browser refuses partway through the blur it is already running.
+  // Update a row's derived cells in place.
+  //
+  // Never rebuild the table for a value change. Two reasons, both real:
+  // rebuilding from a change handler tears out the element that fired the
+  // event, which the browser refuses partway through the blur it is already
+  // running; and typing a new NSD then clicking straight onto a tie-bar height
+  // field fires NSD's change at blur, so the table was rebuilt under the cursor
+  // and the click landed on a node that no longer existed. A full rebuild
+  // belongs only where the SET of bars changes -- an import.
   function refreshTiebarRow(i) {
     var t = tiebarList()[i];
-    var row = $("tbTable").querySelector("tr:nth-child(" + (i + 2) + ")");
-    if (!t || !row) return;
+    var table = $("tbTable");
+    var row = table && table.querySelector("tr:nth-child(" + (i + 2) + ")");
+    if (!t || !row || row.cells.length < 9) return;
     var wear = readWear(), engaged = E.tiebarEngaged(t, wear), at = E.tiebarEngagementWear(t);
     row.className = t.enabled === false ? "off" : engaged ? "engaged" : "";
+    row.cells[5].textContent = (+t.nsd).toFixed(2);
+    var hIn = row.cells[6].firstChild;
+    // Leave the box alone while it has focus, or a redraw would fight the typing.
+    if (hIn && hIn !== document.activeElement) hIn.value = (+t.height).toFixed(2);
     row.cells[7].textContent = at.toFixed(2) + " mm";
     var chip = row.cells[8].firstChild;
     chip.className = "tb-state " + (engaged ? "on" : "off");
     chip.textContent = engaged ? (t.force_contact && wear < at ? "forced" : "in contact") : "below surface";
+  }
+
+  function refreshTiebarRows() {
+    var n = tiebarList().length;
+    for (var i = 0; i < n; i++) refreshTiebarRow(i);
+    refreshTiebarSummary();
+    drawTiebarPlan();
   }
 
   function onTiebarEdit(ev) {
@@ -1307,6 +1371,7 @@
     refreshTiebarRow(i);
     refreshTiebarSummary();
     drawTiebarPlan();
+    drawEditor();          // the patch preview shows the bars too
     markStale();
   }
 
@@ -1315,12 +1380,16 @@
       t.height = Math.min(t.nsd, frac * t.nsd);
       t.height_set_by_user = true;
     });
-    renderTiebars();
+    refreshTiebarRows();
+    drawEditor();
   }
 
   function setAllTiebars(enabled) {
     tiebarList().forEach(function (t) { t.enabled = enabled; });
-    renderTiebars();
+    var boxes = $("tbTable").querySelectorAll("input[data-tbfield='enabled']");
+    for (var i = 0; i < boxes.length; i++) boxes[i].checked = enabled;
+    refreshTiebarRows();
+    drawEditor();
   }
 
   // The rolled-out plan with the bars picked out, so a candidate can be checked
@@ -1338,8 +1407,8 @@
       var t = tb[j];
       var on_ = t.enabled !== false;
       var eng = E.tiebarEngaged(t, wear);
-      poly(t.polygon, !on_ ? "rgba(128,128,128,0.25)" : eng ? th.good : th.accent2,
-           !on_ ? th.inkDim : eng ? th.good : th.accent2, 1.2);
+      poly(t.polygon, !on_ ? "rgba(128,128,128,0.25)" : eng ? TIEBAR_COLOR : "rgba(0,0,0,0)",
+           !on_ ? th.inkDim : TIEBAR_COLOR, 1.2);
     }
     var labels = {
       x: tb.map(function (t) { return t.centroid_x; }),
@@ -1355,9 +1424,9 @@
     };
     Plotly.react($("tbPlot"), [labels], {
       paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
-      margin: { l: 62, r: 16, t: 34, b: 46 }, height: 300, shapes: shapes,
-      title: { text: "tie bars on the rolled-out plan — green = in contact at " + wear.toFixed(1) +
-                     " mm wear, amber = still below the surface, grey = excluded", font: { size: 12 } },
+      margin: { l: 56, r: 12, t: 30, b: 42 }, height: 240, shapes: shapes,
+      title: { text: "tie bars on the rolled-out plan — filled = in contact at " + wear.toFixed(1) +
+                     " mm wear, outline only = still below the surface, grey = excluded", font: { size: 11 } },
       xaxis: { title: { text: "circumferential position (mm)", font: { size: 11 } },
                range: [0, p.tyre_circumference], gridcolor: th.grid },
       yaxis: { title: { text: "lateral y (mm)", font: { size: 11 } },
@@ -1941,8 +2010,8 @@
     $("cpY").disabled = $("cpAutoY").checked;
   }
 
-  // NSD, the tie-bar fraction and the wear state all move the bars, so the tab
-  // has to follow the inputs without waiting for a Run.
+  // NSD, the tie-bar fraction and the wear state all move the bars, so the
+  // editor has to follow the inputs live. In place -- see refreshTiebarRow.
   function reconcileAndRedrawTiebars() {
     if (!state.pattern || !tiebarList().length) return;
     var d = readDefaults(), frac = readTiebarFrac();
@@ -1951,7 +2020,7 @@
       t.nsd = d.height;
       t.height = t.height_set_by_user ? Math.min(t.height, d.height) : Math.min(d.height, frac * d.height);
     });
-    renderTiebars();
+    refreshTiebarRows();
   }
 
   // ---- lean-load reference (display only) -------------------------------

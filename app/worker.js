@@ -91,8 +91,12 @@
         grid: { nx: grid.nx, ny: grid.ny, dx: grid.dx, dy: grid.dy },
         bandEdges: m.bandEdges || null,
         compound: cp,
+        // Which bars this run actually had in contact. The page draws the
+        // pattern strip from this, not from the live inputs, so the strip can
+        // never show a bar as land that the curves above it did not include.
         wear: { mm: m.wear || 0, n_blocks: split.blocks.length,
-                n_tiebars_total: nTie, n_tiebars_engaged: split.tiebars.length },
+                n_tiebars_total: nTie, n_tiebars_engaged: split.tiebars.length,
+                engaged_ids: split.tiebars.map(function (t) { return t.id; }) },
       });
     } catch (err) {
       self.postMessage({ type: "error", message: String(err && err.message ? err.message : err) });
