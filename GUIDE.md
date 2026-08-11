@@ -114,6 +114,42 @@ of the strip, because that is what the tyre does at the seam.
 
 ---
 
+## Tie-bar coupling: the tread as a network
+
+Everywhere else this tool treats a block as an **independent spring**. Its stiffness comes from its own outline and nothing else, and the patch total is the sum of the springs it covers. That assumption is what makes the θ sweep a single FFT — and it is exactly wrong for a tie bar, whose whole purpose is to make neighbouring blocks *not* independent.
+
+The **Tie-bar coupling** tab solves the real thing. Blocks and tie bars are nodes, each with two degrees of freedom and its own stiffness to the belt. Every bar is bonded to the blocks it touches by a link carrying the rubber between them:
+
+- **axial** along the span, `E·A/d`
+- **shear** across it, `G·A/d`
+
+where `A` is the bonded wall area (shared wall length × bar height) and `d` the distance from that wall to the bar's centre — about half the groove width. The assembly is solved, and every case falls out with no special handling: a bar with a free wall on one side, two bars of different heights on the same block, a whole rib tied end to end.
+
+### Reading it
+
+**Uncoupled** is the tread as independent springs. **Coupled** is the same tread solved as a network. Both are measured the same way, so the **gain** between them is the tie bars' contribution and nothing else. Use the gain; the absolute values use a force-controlled definition and will not match the θ-sweep tab exactly.
+
+**Kxy** is the cross term: push the tread circumferentially and it also moves laterally. Bars square to the tread give none. A **diagonal** bar does, and that is a real steering effect you would otherwise never see.
+
+The gain is **largest when few blocks are loaded** and smallest when the patch covers a whole tied rib. That is not an artefact — blocks moving together put no load into the bars at all.
+
+### Two mechanisms, at opposite ends of the tyre's life
+
+The coupling works **from new**, and its relative value *falls* as the tread wears: a block stiffens as roughly 1/L³ as it shortens, while the bar only shrinks once the tread reaches it. On a 16 mm NSD with an 8.8 mm bar the model gives ×1.32 at zero wear falling to ×1.05 at 12 mm.
+
+The contact-area contribution is the opposite — nothing until worn into, then land like any block. **Tie bars earn their keep across the whole life because the two mechanisms hand over, not because they add up.**
+
+### What it assumes
+
+- A bar is a linear spring bonded over (wall length × bar height). No bulging, no contact non-linearity.
+- One point per block, two translational degrees of freedom. The bar sits below the block top, so it really applies a couple as well as a force; that moment is **not** modelled, which makes the bars read slightly *soft*.
+- Coupling is whatever the DXF adjacency says. Two blocks that merely abut are not linked — the span would be zero.
+- Rigid belt, uniform patch pressure, small displacement, linear elastic — as everywhere else in the tool.
+
+There is **no calibration factor**. The bar's stiffness comes from its geometry and the compound, like everything else.
+
+---
+
 ## The five minutes that matter
 
 If you're short on time, look at these four things in this order:

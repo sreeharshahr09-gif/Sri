@@ -227,6 +227,7 @@
         <button data-tab="zones">Zones</button>
         <button data-tab="patch">Contact patch</button>
         <button data-tab="bands">Bands</button>
+        <button data-tab="coupling">Tie-bar coupling</button>
         <button data-tab="compare">Compare</button>
         <button data-tab="diag">Diagnostics</button>
         <button data-tab="guide">How to read this</button>
@@ -293,6 +294,40 @@
         </div>
         <div id="bandsPlot" class="plot"></div>
         <div id="bandsTable"></div>
+      </section>
+
+      <section id="panel-coupling" class="panel">
+        <div id="cplEmpty" class="banner">
+          <b>No tie bars, so nothing to couple.</b>
+          <div class="hint" style="margin-top:6px">This tab solves the tread as a connected network instead of a set of independent springs. It only has something to say when the drawing contains tie bars bonded to two or more blocks.</div>
+        </div>
+        <div id="cplBody" style="display:none">
+          <div id="cplCards" class="cards"></div>
+          <div id="cplPlot" class="plot"></div>
+          <div id="cplTable"></div>
+          <div class="explain">
+            <h4>What this is</h4>
+            <p><span class="lead">Everywhere else in this tool a block is an independent spring.</span> Its stiffness comes from its own outline and nothing else, and the patch total is the sum of the springs it covers. That is what makes the θ sweep an FFT — and it is exactly wrong for a tie bar, whose whole purpose is to make neighbouring blocks <em>not</em> independent.</p>
+            <p>So this tab solves the real thing. Blocks and tie bars are nodes, each with two degrees of freedom and its own stiffness to the belt. Every bar is bonded to the blocks it touches by a link carrying the rubber between them. The assembly is solved, and the answer covers every case with no special handling: a bar with a free wall on one side, two bars of different heights on the same block, a whole rib tied end to end.</p>
+            <h4>Reading it</h4>
+            <ul>
+              <li><b>Uncoupled</b> is the tread as independent springs — what the other tabs show. <b>Coupled</b> is the same tread solved as a network. Both are measured the same way, so the <b>gain</b> between them is the tie bars' contribution and nothing else.</li>
+              <li><b>Kxy</b> is the cross term: push the tread circumferentially and it also moves laterally. Bars square to the tread give none. A <b>diagonal</b> bar does, and that is a real steering effect you would otherwise not see.</li>
+              <li>The gain is <b>largest when few blocks are loaded</b> and smallest when the patch covers a whole tied rib. That is not an artefact — blocks moving together put no load into the bars at all.</li>
+            </ul>
+            <h4>Two mechanisms, at opposite ends of the tyre's life</h4>
+            <p style="margin-bottom:0">The coupling here works <b>from new</b> and its relative value <em>falls</em> as the tread wears: a block stiffens as roughly 1/L³ as it shortens, while the bar only shrinks once the tread reaches it. The contact-area contribution is the opposite — nothing until worn into, then land like any block. Tie bars are useful across the whole life because the two mechanisms hand over, not because they add up.</p>
+          </div>
+          <div class="banner warn" style="margin-top:12px">
+            <b>What this model assumes.</b>
+            <ul style="margin:6px 0 0;padding-left:18px">
+              <li>A bar is a linear spring bonded over (shared wall length × bar height), spanning from that wall to the bar's centre — axial along the span, shear across it.</li>
+              <li>One point per block, two translational degrees of freedom. The bar sits below the block top, so it really applies a couple as well as a force; that moment is not modelled, which makes the bars read slightly <em>soft</em>.</li>
+              <li>Rigid belt, uniform patch pressure, small displacement, linear elastic — the same assumptions as everywhere else in the tool.</li>
+              <li>Absolute values here use a force-controlled definition and will not match the θ-sweep tab exactly. <b>Use the gain</b>, and compare designs on the same settings.</li>
+            </ul>
+          </div>
+        </div>
       </section>
 
       <section id="panel-compare" class="panel">

@@ -1040,3 +1040,87 @@ def test_the_patch_band_survives_the_gestures_it_intercepts():
     # preventDefault on pointerdown would suppress the synthesised dblclick
     grab = ui[ui.index("function onPatchGrab("):ui.index("function onPatchDrag(")]
     assert "ev.preventDefault()" not in grab
+
+
+# ---------------------------------------------------------------------------
+# tie-bar coupling network ("Tier 2")
+# ---------------------------------------------------------------------------
+
+
+def test_coupling_audit_passes():
+    """The full audit of the coupled network.
+
+    Everywhere else in the engine a block is an independent spring, which is what
+    makes the theta sweep an FFT.  The coupled solve deliberately breaks that
+    assumption, so it carries its own audit: linear algebra against closed forms,
+    the assembled system against equilibrium, a three-node case against a hand
+    solution, and every physical statement the feature rests on.
+    """
+    node = _node()
+    proc = subprocess.run([node, os.path.join(APP, "couplingaudit.js")],
+                          capture_output=True, text=True, cwd=REPO, timeout=600)
+    assert proc.returncode == 0, proc.stdout[-6000:] + proc.stderr[-2000:]
+    assert "checks passed" in proc.stdout
+
+
+def test_coupling_is_reported_but_never_folded_into_the_main_curves():
+    """The coupled solve uses a force-controlled definition; the theta sweep uses
+    a parallel sum.  They are different measurements, so the coupled result is
+    shown beside the sweep rather than silently replacing it, and the gain
+    between coupled and uncoupled -- both measured the same way -- is the number
+    to read."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert 'data-tab="coupling"' in tpl and 'id="panel-coupling"' in tpl
+    assert "function renderCoupling(" in ui
+    # the main sweep rows must not be scaled by any coupling factor
+    stack = ui[ui.index("function renderThetaStack("):ui.index("function renderPatternStrip(")]
+    for token in ("coupling", "gain_kx", "gain_ky"):
+        assert token not in stack, f"the theta sweep must not be adjusted by {token}"
+    # both curves, all three stiffnesses, and the assumptions stated on the page
+    for label in ("Kx uncoupled", "Kx coupled", "Kxy uncoupled", "Kxy coupled"):
+        assert label in ui, label
+    assert "What this model assumes" in tpl
+    # and it reaches every export
+    assert "function couplingLine(" in ui and ui.count("couplingLine(s") >= 3
+    assert "tiebar_coupling" in ui
+
+
+def test_coupling_never_changes_the_contact_area():
+    """The whole point: a sub-surface bar stiffens without touching the road."""
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const fs = require('fs');
+const {{pattern}} = E.loadPattern(fs.readFileSync({json.dumps(TIEBAR_DXF)}, 'utf8'), {{height: 16, draft_angle: 2}}, {{}});
+const sp = {{shore_a: 65, poisson: 0.49, mode: 'parallel', bulk_modulus: 1100, n_slices: 16, sipe_model: 'layered'}};
+const spec = {{shape: 'rectangle', length: 200, width: 190, rotation: 0, y_center: 0,
+               gamma_deg: 0, load_N: null, scale_with_lean: false}};
+const cpp = {{vertical_load: 25000, wheel_radius: 500, load_rises_with_lean: false}};
+const pat = Object.assign({{}}, pattern, {{blocks: E.effectiveBlocks(pattern, 0)}});
+const grid = E.makeGrid(pat, 1024, 96);
+const pack = E.rasterise(pat, grid, sp, false, null);
+const patch = E.shapePatch(spec, pattern.crown, pattern.tread_width, cpp);
+const sweep = E.sweepLean(pat, pack, 0, spec, cpp, new E.MapFFTCache(pack), 90, null);
+const cs = E.couplingSweep(pattern, pack, patch, 0, sp, 360);
+let worstArea = 0;
+for (let s = 0; s < cs.theta_deg.length; s++) {{
+  const j = Math.round(cs.theta_deg[s] / 360 * grid.nx) % grid.nx;
+  worstArea = Math.max(worstArea, Math.abs(cs.contact_area[s] - sweep.contact_area[j]) / sweep.contact_area[j]);
+}}
+process.stdout.write(JSON.stringify({{
+  worstArea: worstArea, gainKx: cs.gain_kx, gainKy: cs.gain_ky,
+  submerged: cs.n_submerged, engaged: cs.n_engaged, links: cs.n_links,
+}}));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=300)
+    assert res.returncode == 0, res.stderr[:2000]
+    got = json.loads(res.stdout)
+    # at zero wear every bar is below the surface...
+    assert got["submerged"] == 38 and got["engaged"] == 0
+    assert got["links"] == 76
+    # ...so the contact area is bit-identical to the uncoupled sweep...
+    assert got["worstArea"] < 1e-12, f"coupling moved the contact area by {got['worstArea']:.2e}"
+    # ...while the stiffness is genuinely raised.
+    assert got["gainKx"] > 1.02, got["gainKx"]
+    assert got["gainKy"] > 1.01, got["gainKy"]

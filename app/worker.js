@@ -64,11 +64,45 @@
           "so the tread is stiffer than new" + (lost ? " (" + lost + " block(s) worn away entirely)" : "") + ".");
       }
 
+      // The coupled network depends on geometry, compound and wear -- not on
+      // the lean angle -- so it is built and factorised once for the whole
+      // sweep and only the load changes per angle.
+      var couplingNet = null;
+      if (m.coupling !== false) {
+        try { couplingNet = E.prepareCouplingNetwork(wholePattern, m.wear, m.stiffParams); }
+        catch (err) {
+          notes.push("tie-bar coupling was not computed: " + (err && err.message ? err.message : err));
+        }
+      }
+
       var results = [];
+      var coupling = [];
       for (var i = 0; i < leans.length; i++) {
         var r = E.sweepLean(pattern, pack, leans[i], m.spec, m.cpParams, cache, m.discreteSamples, m.bandEdges);
         results.push(packResult(r, m.stride || 1));
+        // The coupled solve, on the same patch this lean actually used. It is a
+        // separate discrete pass because a network whose stiffness depends on
+        // which blocks are loaded is not a convolution, so the FFT above cannot
+        // produce it.
+        if (couplingNet) {
+          try {
+            coupling.push(E.couplingSweep(wholePattern, pack, r.patch, m.wear, m.stiffParams,
+                                          m.couplingSamples || 720, couplingNet));
+          } catch (err) {
+            coupling.push(null);
+            notes.push("tie-bar coupling failed at lean " + leans[i] + " deg: " +
+                       (err && err.message ? err.message : err));
+          }
+        }
         self.postMessage({ type: "progress", done: i + 1, total: leans.length });
+      }
+      if (coupling.some(function (c) { return c; })) {
+        var g = coupling.filter(function (c) { return c; });
+        notes.push("tie-bar coupling solved as a network of " + g[0].n_nodes + " elements and " +
+          g[0].n_links + " bonded links in " + g[0].n_components + " independent group(s). " +
+          "Mean stiffening at " + leans[0] + " deg: Kx x" + g[0].gain_kx.toFixed(3) +
+          ", Ky x" + g[0].gain_ky.toFixed(3) + ". This is the sub-surface effect the contact " +
+          "model cannot see -- it adds no contact area.");
       }
       // per-block stiffness summary for the diagnostics tab
       var stiffSummary = summariseStiffness(pattern, pack);
@@ -91,6 +125,7 @@
         grid: { nx: grid.nx, ny: grid.ny, dx: grid.dx, dy: grid.dy },
         bandEdges: m.bandEdges || null,
         compound: cp,
+        coupling: coupling,
         // Which bars this run actually had in contact. The page draws the
         // pattern strip from this, not from the live inputs, so the strip can
         // never show a bar as land that the curves above it did not include.

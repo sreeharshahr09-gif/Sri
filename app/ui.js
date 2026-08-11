@@ -672,6 +672,7 @@
         state.notes = m.notes || []; state.maxLean = m.maxLean;
         state.bandEdges = m.bandEdges || null;
         state.compound = m.compound || null; state.wear = m.wear || null;
+        state.coupling = m.coupling || null;
         state.running = false; $("overlay").classList.remove("on");
         $("runBtn").textContent = "▶ Run";
         $("timing").textContent = "computed in " + (m.timing.total / 1000).toFixed(1) + " s (raster " + m.timing.raster + " ms), grid " + m.grid.nx + "×" + m.grid.ny;
@@ -696,7 +697,7 @@
       stiffParams: readStiffParams(), cpParams: readCpParams(), spec: readSpec(),
       zoneFracs: { center: tyreClassPhysics().zone_center, intermediate: tyreClassPhysics().zone_intermediate },
       leans: currentLeans(), discreteSamples: 360, bandEdges: state.ranBands, curvatureCorrection: $("curv").checked, stride: stride,
-      wear: readWear(),
+      wear: readWear(), coupling: true, couplingSamples: 720,
     });
   }
 
@@ -771,6 +772,7 @@
     renderPatchPreview();
     renderBands();
     renderTiebars();
+    renderCoupling();
     renderCompare();
     renderDiagnostics();
     drawEditor();
@@ -1649,6 +1651,88 @@
     }, { responsive: true, displayModeBar: false });
   }
 
+  // ---- tie-bar coupling (the network solve) ----------------------------
+  function card(k, v, u) {
+    return "<div class='card'><div class='k'>" + escapeHtml(k) + "</div><div class='v'>" +
+      escapeHtml(v) + "</div><div class='u'>" + escapeHtml(u) + "</div></div>";
+  }
+
+  function currentCoupling() {
+    if (!state.coupling || !state.results) return null;
+    for (var i = 0; i < state.results.length; i++)
+      if (state.results[i].gamma_deg === state.gammaShown) return state.coupling[i] || null;
+    return state.coupling[0] || null;
+  }
+
+  function renderCoupling() {
+    var c = currentCoupling();
+    var empty = $("cplEmpty"), body = $("cplBody");
+    if (!empty || !body) return;
+    empty.style.display = c ? "none" : "";
+    body.style.display = c ? "" : "none";
+    if (!c) { Plotly.purge($("cplPlot")); $("cplCards").innerHTML = ""; $("cplTable").innerHTML = ""; return; }
+
+    var th = plotTheme();
+    var mean = function (a) { var s = 0; for (var i = 0; i < a.length; i++) s += a[i]; return a.length ? s / a.length : 0; };
+    var kxc = mean(c.kx_coupled), kxu = mean(c.kx_uncoupled);
+    var kyc = mean(c.ky_coupled), kyu = mean(c.ky_uncoupled);
+    var kxyc = mean(c.kxy_coupled), kxyu = mean(c.kxy_uncoupled);
+
+    $("cplCards").innerHTML = [
+      card("Kx gain", (c.gain_kx).toFixed(3) + "×", "circumferential"),
+      card("Ky gain", (c.gain_ky).toFixed(3) + "×", "lateral"),
+      card("Mean Kxy", kxyc.toFixed(1), "N/mm — cross term"),
+      card("Bars in the network", String(c.n_engaged + c.n_submerged), c.n_submerged + " below the surface"),
+      card("Bonded links", String(c.n_links), c.n_components + " independent group(s)"),
+      card("Tread worn", (c.wear_mm || 0).toFixed(1), "mm"),
+    ].join("");
+
+    // Kxy is an order of magnitude smaller than Kx/Ky, so it gets its own axis.
+    // On a shared one it is a flat line on the zero gridline and tells you
+    // nothing -- which is the opposite of the point.
+    var series = [
+      { y: c.kx_uncoupled, name: "Kx uncoupled", color: th.accent, dash: "dot", axis: "y" },
+      { y: c.kx_coupled, name: "Kx coupled", color: th.accent, dash: undefined, axis: "y" },
+      { y: c.ky_uncoupled, name: "Ky uncoupled", color: th.bad, dash: "dot", axis: "y" },
+      { y: c.ky_coupled, name: "Ky coupled", color: th.bad, dash: undefined, axis: "y" },
+      { y: c.kxy_uncoupled, name: "Kxy uncoupled (right)", color: th.accent2, dash: "dot", axis: "y2" },
+      { y: c.kxy_coupled, name: "Kxy coupled (right)", color: th.accent2, dash: undefined, axis: "y2" },
+    ];
+    var data = series.map(function (s) {
+      return { x: c.theta_deg, y: s.y, type: "scatter", mode: "lines", name: s.name, yaxis: s.axis,
+               line: { color: s.color, width: s.dash ? 1.2 : 2, dash: s.dash } };
+    });
+    var kxyAll = c.kxy_coupled.concat(c.kxy_uncoupled);
+    var kxyMax = Math.max(1, Math.max.apply(null, kxyAll.map(Math.abs))) * 1.25;
+    Plotly.react($("cplPlot"), data, {
+      paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+      margin: { l: 76, r: 76, t: 40, b: 88 }, height: 460,
+      legend: { orientation: "h", y: -0.18, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
+      title: { text: "Network stiffness vs θ — dotted = independent springs, solid = bonded network  (γ = " +
+                     (currentResult() ? currentResult().gamma_deg : 0) + "°)", font: { size: 13 } },
+      xaxis: { title: { text: "rotation angle θ (deg)", font: { size: 11 } }, range: [0, 360], gridcolor: th.grid },
+      yaxis: { title: { text: "Kx, Ky (N/mm)", font: { size: 11 } }, gridcolor: th.grid },
+      yaxis2: { title: { text: "Kxy (N/mm)", font: { size: 11 }, standoff: 6 },
+                overlaying: "y", side: "right", range: [-kxyMax, kxyMax],
+                zeroline: true, zerolinecolor: th.grid, showgrid: false,
+                tickfont: { color: th.accent2 }, titlefont: { color: th.accent2 } },
+    }, { responsive: true, displayModeBar: false });
+
+    var row = function (label, u, cc) {
+      var g = u !== 0 ? cc / u : 1;
+      return "<tr><td>" + label + "</td><td class='num'>" + u.toFixed(1) + "</td><td class='num'>" +
+        cc.toFixed(1) + "</td><td class='num'>" + (cc - u).toFixed(1) + "</td><td class='num'>" +
+        (u !== 0 ? (100 * (g - 1)).toFixed(2) + "%" : "—") + "</td></tr>";
+    };
+    $("cplTable").innerHTML =
+      "<table class='metrics' style='max-width:640px'><tr><th>Mean over θ</th><th>independent</th>" +
+      "<th>bonded network</th><th>difference</th><th>gain</th></tr>" +
+      row("Kx (circumferential)", kxu, kxc) + row("Ky (lateral)", kyu, kyc) +
+      row("Kxy (cross)", kxyu, kxyc) + "</table>" +
+      "<div class='hint' style='margin-top:6px'>Both columns are the same measurement on the same tread; only the " +
+      "bonded links differ. Contact area is identical in both — a sub-surface bar touches nothing.</div>";
+  }
+
   // ---- design comparison ----------------------------------------------
   // Entries are whole runs: {label, settings, results}. A run added from this
   // session and a run loaded from an exported JSON file are the same shape, so
@@ -1845,6 +1929,7 @@
       load: base.load,
       wear_and_tiebars: base.wear_and_tiebars,
       compound_resolved: state.compound || null,
+      tiebar_coupling: couplingSummary(),
       analysis: {
         lean_angles_deg: state.results.map(function (r) { return r.gamma_deg; }),
         grid: state.grid,
@@ -1870,6 +1955,7 @@
       " deg, sipes " + s.block_defaults.n_lateral_sipes + ", sipe model " + s.compound_and_boundary.sipe_model);
     lines.push("# compound: " + compoundLine(s));
     lines.push("# wear: " + tiebarLine(s));
+    lines.push("# tie-bar coupling: " + couplingLine(s));
     lines.push("# patch: " + E.describeSpec(s.contact_patch) +
       ", scale with lean " + (s.contact_patch.scale_with_lean ? "on" : "off") +
       ", Fz " + s.load.vertical_load + " N" + (s.load.load_rises_with_lean ? " (rises with lean)" : " (constant)"));
@@ -1922,6 +2008,7 @@
       " deg, " + s.block_defaults.n_lateral_sipes + " sipes");
     out.push("Compound: " + compoundLine(s));
     out.push("Wear    : " + tiebarLine(s));
+    out.push("Coupling: " + couplingLine(s));
     out.push("Patch   : " + E.describeSpec(s.contact_patch));
     out.push("");
     out.push("PER LEAN ANGLE");
@@ -1977,6 +2064,37 @@
       engaged + " in contact";
   }
 
+  // What the network solve found, in one shape every export can use.
+  function couplingSummary() {
+    if (!state.coupling) return null;
+    var out = [];
+    for (var i = 0; i < state.coupling.length; i++) {
+      var c = state.coupling[i];
+      if (!c) continue;
+      var mean = function (a) { var t = 0; for (var k = 0; k < a.length; k++) t += a[k]; return a.length ? t / a.length : 0; };
+      out.push({
+        gamma_deg: state.results[i].gamma_deg,
+        n_nodes: c.n_nodes, n_links: c.n_links, n_components: c.n_components,
+        n_bars_submerged: c.n_submerged, n_bars_engaged: c.n_engaged,
+        gain_kx: c.gain_kx, gain_ky: c.gain_ky,
+        mean_kx_uncoupled: mean(c.kx_uncoupled), mean_kx_coupled: mean(c.kx_coupled),
+        mean_ky_uncoupled: mean(c.ky_uncoupled), mean_ky_coupled: mean(c.ky_coupled),
+        mean_kxy_uncoupled: mean(c.kxy_uncoupled), mean_kxy_coupled: mean(c.kxy_coupled),
+      });
+    }
+    return out.length ? out : null;
+  }
+
+  function couplingLine(s) {
+    var c = s.tiebar_coupling;
+    if (!c || !c.length) return "no tie-bar coupling (no bars bonded to two or more blocks)";
+    var a = c[0];
+    return a.n_links + " bonded link(s) over " + a.n_nodes + " elements in " + a.n_components +
+      " group(s); at gamma " + a.gamma_deg + " deg the network stiffens Kx by " +
+      ((a.gain_kx - 1) * 100).toFixed(2) + "% and Ky by " + ((a.gain_ky - 1) * 100).toFixed(2) +
+      "%, mean Kxy " + a.mean_kxy_coupled.toFixed(2) + " N/mm. Contact area is unchanged.";
+  }
+
   function exportPDF() {
     if (!state.results || !window.jspdf) return;
     var btn = $("exportPdf"), old = btn.textContent;
@@ -2018,6 +2136,7 @@
       ["Compound", compoundLine(s0)],
       ["Sipe model", s0.compound_and_boundary.sipe_model],
       ["Wear state", tiebarLine(s0)],
+      ["Tie-bar coupling", couplingLine(s0)],
       ["Contact patch", E.describeSpec(s0.contact_patch)],
       ["Load", s0.load.vertical_load + " N" + (s0.load.load_rises_with_lean ? " (rises with lean)" : " (constant)")],
       ["Lean angles", s0.analysis.lean_angles_deg.join("°, ") + "°"],

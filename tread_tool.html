@@ -541,6 +541,7 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
         <button data-tab="zones">Zones</button>
         <button data-tab="patch">Contact patch</button>
         <button data-tab="bands">Bands</button>
+        <button data-tab="coupling">Tie-bar coupling</button>
         <button data-tab="compare">Compare</button>
         <button data-tab="diag">Diagnostics</button>
         <button data-tab="guide">How to read this</button>
@@ -609,6 +610,40 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
         <div id="bandsTable"></div>
       </section>
 
+      <section id="panel-coupling" class="panel">
+        <div id="cplEmpty" class="banner">
+          <b>No tie bars, so nothing to couple.</b>
+          <div class="hint" style="margin-top:6px">This tab solves the tread as a connected network instead of a set of independent springs. It only has something to say when the drawing contains tie bars bonded to two or more blocks.</div>
+        </div>
+        <div id="cplBody" style="display:none">
+          <div id="cplCards" class="cards"></div>
+          <div id="cplPlot" class="plot"></div>
+          <div id="cplTable"></div>
+          <div class="explain">
+            <h4>What this is</h4>
+            <p><span class="lead">Everywhere else in this tool a block is an independent spring.</span> Its stiffness comes from its own outline and nothing else, and the patch total is the sum of the springs it covers. That is what makes the θ sweep an FFT — and it is exactly wrong for a tie bar, whose whole purpose is to make neighbouring blocks <em>not</em> independent.</p>
+            <p>So this tab solves the real thing. Blocks and tie bars are nodes, each with two degrees of freedom and its own stiffness to the belt. Every bar is bonded to the blocks it touches by a link carrying the rubber between them. The assembly is solved, and the answer covers every case with no special handling: a bar with a free wall on one side, two bars of different heights on the same block, a whole rib tied end to end.</p>
+            <h4>Reading it</h4>
+            <ul>
+              <li><b>Uncoupled</b> is the tread as independent springs — what the other tabs show. <b>Coupled</b> is the same tread solved as a network. Both are measured the same way, so the <b>gain</b> between them is the tie bars' contribution and nothing else.</li>
+              <li><b>Kxy</b> is the cross term: push the tread circumferentially and it also moves laterally. Bars square to the tread give none. A <b>diagonal</b> bar does, and that is a real steering effect you would otherwise not see.</li>
+              <li>The gain is <b>largest when few blocks are loaded</b> and smallest when the patch covers a whole tied rib. That is not an artefact — blocks moving together put no load into the bars at all.</li>
+            </ul>
+            <h4>Two mechanisms, at opposite ends of the tyre's life</h4>
+            <p style="margin-bottom:0">The coupling here works <b>from new</b> and its relative value <em>falls</em> as the tread wears: a block stiffens as roughly 1/L³ as it shortens, while the bar only shrinks once the tread reaches it. The contact-area contribution is the opposite — nothing until worn into, then land like any block. Tie bars are useful across the whole life because the two mechanisms hand over, not because they add up.</p>
+          </div>
+          <div class="banner warn" style="margin-top:12px">
+            <b>What this model assumes.</b>
+            <ul style="margin:6px 0 0;padding-left:18px">
+              <li>A bar is a linear spring bonded over (shared wall length × bar height), spanning from that wall to the bar's centre — axial along the span, shear across it.</li>
+              <li>One point per block, two translational degrees of freedom. The bar sits below the block top, so it really applies a couple as well as a force; that moment is not modelled, which makes the bars read slightly <em>soft</em>.</li>
+              <li>Rigid belt, uniform patch pressure, small displacement, linear elastic — the same assumptions as everywhere else in the tool.</li>
+              <li>Absolute values here use a force-controlled definition and will not match the θ-sweep tab exactly. <b>Use the gain</b>, and compare designs on the same settings.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
       <section id="panel-compare" class="panel">
         <div class="filerow" style="margin-bottom:10px">
           <button id="addCompare" class="btn secondary" title="Keep the current results in the comparison list.">+ Add current run</button>
@@ -664,6 +699,22 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
 <p><strong>Drag the band</strong> to slide the patch around the tyre, or type an exact angle in the box. It moves along <strong>θ only</strong>: where the patch sits laterally is decided by the crown profile and the lean angle (or by the y-centre field in <em>3 · Contact patch</em>), so being able to shove it sideways on this chart would contradict the physics that put it there.</p>
 <p>Drag anywhere <em>outside</em> the band to zoom — every chart and the pattern zoom together. Double-click resets, including a double-click on the band itself.</p>
 <p>A patch parked across θ = 0 is drawn in both halves, at the left and right ends of the strip, because that is what the tyre does at the seam.</p>
+<hr>
+<h2>Tie-bar coupling: the tread as a network</h2>
+<p>Everywhere else this tool treats a block as an <strong>independent spring</strong>. Its stiffness comes from its own outline and nothing else, and the patch total is the sum of the springs it covers. That assumption is what makes the θ sweep a single FFT — and it is exactly wrong for a tie bar, whose whole purpose is to make neighbouring blocks <em>not</em> independent.</p>
+<p>The <strong>Tie-bar coupling</strong> tab solves the real thing. Blocks and tie bars are nodes, each with two degrees of freedom and its own stiffness to the belt. Every bar is bonded to the blocks it touches by a link carrying the rubber between them:</p>
+<ul><li><strong>axial</strong> along the span, <code>E·A/d</code></li><li><strong>shear</strong> across it, <code>G·A/d</code></li></ul>
+<p>where <code>A</code> is the bonded wall area (shared wall length × bar height) and <code>d</code> the distance from that wall to the bar's centre — about half the groove width. The assembly is solved, and every case falls out with no special handling: a bar with a free wall on one side, two bars of different heights on the same block, a whole rib tied end to end.</p>
+<h3>Reading it</h3>
+<p><strong>Uncoupled</strong> is the tread as independent springs. <strong>Coupled</strong> is the same tread solved as a network. Both are measured the same way, so the <strong>gain</strong> between them is the tie bars' contribution and nothing else. Use the gain; the absolute values use a force-controlled definition and will not match the θ-sweep tab exactly.</p>
+<p><strong>Kxy</strong> is the cross term: push the tread circumferentially and it also moves laterally. Bars square to the tread give none. A <strong>diagonal</strong> bar does, and that is a real steering effect you would otherwise never see.</p>
+<p>The gain is <strong>largest when few blocks are loaded</strong> and smallest when the patch covers a whole tied rib. That is not an artefact — blocks moving together put no load into the bars at all.</p>
+<h3>Two mechanisms, at opposite ends of the tyre's life</h3>
+<p>The coupling works <strong>from new</strong>, and its relative value <em>falls</em> as the tread wears: a block stiffens as roughly 1/L³ as it shortens, while the bar only shrinks once the tread reaches it. On a 16 mm NSD with an 8.8 mm bar the model gives ×1.32 at zero wear falling to ×1.05 at 12 mm.</p>
+<p>The contact-area contribution is the opposite — nothing until worn into, then land like any block. <strong>Tie bars earn their keep across the whole life because the two mechanisms hand over, not because they add up.</strong></p>
+<h3>What it assumes</h3>
+<ul><li>A bar is a linear spring bonded over (wall length × bar height). No bulging, no contact non-linearity.</li><li>One point per block, two translational degrees of freedom. The bar sits below the block top, so it really applies a couple as well as a force; that moment is <strong>not</strong> modelled, which makes the bars read slightly <em>soft</em>.</li><li>Coupling is whatever the DXF adjacency says. Two blocks that merely abut are not linked — the span would be zero.</li><li>Rigid belt, uniform patch pressure, small displacement, linear elastic — as everywhere else in the tool.</li></ul>
+<p>There is <strong>no calibration factor</strong>. The bar's stiffness comes from its geometry and the compound, like everything else.</p>
 <hr>
 <h2>The five minutes that matter</h2>
 <p>If you're short on time, look at these four things in this order:</p>
@@ -69713,6 +69764,502 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   }
 
   // =====================================================================
+  // 5b. tie-bar coupling network  ("Tier 2")
+  // =====================================================================
+  // Everywhere else in this engine a block is an independent spring: its
+  // stiffness depends on its own polygon and nothing else, and the patch
+  // aggregate is the sum of the springs it covers. That is what makes the theta
+  // sweep an FFT. It is also exactly wrong for a tie bar, whose entire purpose
+  // is to make neighbouring blocks NOT independent.
+  //
+  // So: build the real network. Blocks and tie bars are nodes, each with two
+  // degrees of freedom (circumferential x, lateral y) and its own 2x2 stiffness
+  // to the belt. Every bar is linked to the blocks it touches by a spring
+  // representing the rubber between them. Solve the assembly and the answer
+  // falls out with no special cases: a bar with a free wall on one side, two
+  // bars of different heights on the same block, a whole rib tied end to end,
+  // and -- critically -- blocks that move TOGETHER, where the bars carry no
+  // load and correctly do nothing.
+  //
+  // A sub-surface bar carries no contact load (it is below the road) but is
+  // still in the network, so it stiffens without adding contact area. That is
+  // the effect the surface-contact model cannot represent at all.
+
+  function polygonEdgeKeys(poly) {
+    const out = [];
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      const ka = a[0].toFixed(6) + "," + a[1].toFixed(6);
+      const kb = b[0].toFixed(6) + "," + b[1].toFixed(6);
+      out.push({
+        key: ka < kb ? ka + "|" + kb : kb + "|" + ka,
+        len: Math.hypot(b[0] - a[0], b[1] - a[1]),
+        mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2],
+      });
+    }
+    return out;
+  }
+
+  // Which blocks each tie bar is bonded to, and over what wall.
+  //
+  // Only bar-to-something links are made. Two blocks that merely abut are not
+  // linked: the span between them is zero, which would make the link infinitely
+  // stiff, and a tread plan with no groove between two blocks is a drawing
+  // question rather than a tie bar.
+  function linkTiebars(blocks, tiebars) {
+    if (!tiebars || !tiebars.length) return;
+    const owner = new Map();
+    const put = (kind, idx, poly) => {
+      for (const e of polygonEdgeKeys(poly)) {
+        let l = owner.get(e.key);
+        if (!l) { l = []; owner.set(e.key, l); }
+        l.push({ kind: kind, idx: idx, len: e.len, mid: e.mid });
+      }
+    };
+    for (let i = 0; i < blocks.length; i++) put("block", i, blocks[i].polygon);
+    for (let i = 0; i < tiebars.length; i++) put("tiebar", i, tiebars[i].polygon);
+
+    for (const tb of tiebars) tb.links = [];
+    const acc = new Map();                        // "tbIdx|kind|idx" -> record
+    owner.forEach((list) => {
+      if (list.length < 2) return;
+      for (let a = 0; a < list.length; a++) {
+        for (let b = a + 1; b < list.length; b++) {
+          const A = list[a], B = list[b];
+          if (A.kind !== "tiebar" && B.kind !== "tiebar") continue;
+          if (A.kind === B.kind && A.idx === B.idx) continue;        // self pair
+          const t = A.kind === "tiebar" ? A : B;
+          const o = A.kind === "tiebar" ? B : A;
+          if (o.kind === "tiebar" && o.idx === t.idx) continue;
+          const key = t.idx + "|" + o.kind + "|" + o.idx;
+          let rec = acc.get(key);
+          if (!rec) { rec = { tb: t.idx, kind: o.kind, idx: o.idx, len: 0, mx: 0, my: 0 }; acc.set(key, rec); }
+          // Several edges can be shared where an outline is split at a node;
+          // accumulate the length and take the length-weighted wall midpoint.
+          rec.len += A.len;
+          rec.mx += A.mid[0] * A.len;
+          rec.my += A.mid[1] * A.len;
+        }
+      }
+    });
+    acc.forEach((rec) => {
+      if (rec.len <= 1e-9) return;
+      const tb = tiebars[rec.tb];
+      const wall = [rec.mx / rec.len, rec.my / rec.len];
+      const dx = tb.centroid_x - wall[0], dy = tb.centroid_y - wall[1];
+      const d = Math.hypot(dx, dy);
+      if (!(d > 1e-9)) return;                    // degenerate: wall through the centroid
+      tb.links.push({
+        kind: rec.kind, index: rec.idx,
+        wall_length: rec.len, span: d, dir: [dx / d, dy / d],
+      });
+    });
+    for (const tb of tiebars) tb.n_neighbours = tb.links.length;
+  }
+
+  // 2x2 stiffness of one bonded link, as a truss along the span plus shear
+  // across it:  C = k_ax * n n^T + k_tr * (I - n n^T).
+  //
+  //   k_ax = E * A / d   relative motion along the span stretches the bar
+  //   k_tr = G * A / d   relative motion across it shears the bar
+  //
+  // A is the bonded wall area (shared wall length x bar height) and d the
+  // distance from that wall to the bar's centre -- about half the groove width.
+  // A diagonal bar therefore couples x into y, which is where the network's
+  // contribution to Kxy comes from.
+  function couplingLinkMatrix(dir, kAx, kTr) {
+    const nx = dir[0], ny = dir[1];
+    return {
+      xx: kAx * nx * nx + kTr * ny * ny,
+      xy: (kAx - kTr) * nx * ny,
+      yy: kAx * ny * ny + kTr * nx * nx,
+    };
+  }
+
+  // Bar height above the groove bottom at this wear state: its own height until
+  // the tread wears down to it, and thereafter the same as the blocks, because
+  // from then on it wears with them.
+  function tiebarCurrentHeight(tb, wear) {
+    const nsd = +tb.nsd || 0, h = +tb.height || 0;
+    return Math.min(h, Math.max(0, nsd - (wear || 0)));
+  }
+
+  // Floor on any element height, block or bar. Below this the beam formulae
+  // stop meaning anything (a 0.01 mm tall block is stiffer than steel), so the
+  // height is clamped. The tie-bar height input is bounded well above it.
+  const COUPLING_MIN_HEIGHT = 0.1;
+
+  function buildCouplingNetwork(pattern, wear, params) {
+    wear = Math.max(0, +wear || 0);
+    const cp = compoundProperties(params);
+    const minH = COUPLING_MIN_HEIGHT;
+    const nodes = [];
+    const idOf = {};
+
+    // Main blocks, in the same order effectiveBlocks() emits them, so a raster
+    // label maps straight onto a node.
+    for (const b of pattern.blocks || []) {
+      const h = (b.height || 0) - wear;
+      if (h < minH) continue;
+      const blk = wear > 0 ? Object.assign({}, b, { height: h }) : b;
+      idOf[b.id] = nodes.length;
+      nodes.push({ id: b.id, kind: "block", ref: b, K: blockStiffness(blk, params), height: h });
+    }
+    const nMain = nodes.length;
+
+    // Then the engaged bars (also matching effectiveBlocks), then the rest.
+    const bars = (pattern.tiebars || []).filter((t) => t.enabled !== false);
+    const engaged = bars.filter((t) => tiebarEngaged(t, wear));
+    const submerged = bars.filter((t) => !tiebarEngaged(t, wear));
+    for (const list of [engaged, submerged]) {
+      for (const tb of list) {
+        const h = Math.max(minH, tiebarCurrentHeight(tb, wear));
+        const el = { polygon: tb.polygon, height: h, draft_angle: tb.draft_angle || 0,
+                     n_lateral_sipes: 0, sipes: [], shore_a: tb.shore_a };
+        idOf[tb.id] = nodes.length;
+        nodes.push({ id: tb.id, kind: "tiebar", ref: tb, K: blockStiffness(el, params), height: h,
+                     engaged: tiebarEngaged(tb, wear) });
+      }
+    }
+    if (nodes.length < 2) return null;
+
+    const links = [];
+    for (const tb of bars) {
+      const ti = idOf[tb.id];
+      if (ti == null) continue;
+      const hb = Math.max(minH, tiebarCurrentHeight(tb, wear));
+      for (const lk of tb.links || []) {
+        const other = lk.kind === "block" ? (pattern.blocks[lk.index] || {}).id
+                                          : ((pattern.tiebars[lk.index] || {}).id);
+        const oi = idOf[other];
+        if (oi == null || oi === ti) continue;    // worn away, or excluded by the user
+        const A = lk.wall_length * hb;
+        if (!(A > 0) || !(lk.span > 0)) continue;
+        links.push({ i: ti, j: oi,
+                     C: couplingLinkMatrix(lk.dir, (cp.E * A) / lk.span, (cp.G * A) / lk.span) });
+      }
+    }
+
+    // Connected components: ribs do not talk to each other, so each is its own
+    // small dense system. Without this a 700-block drawing would need a
+    // 1400x1400 inverse instead of six 240x240 ones.
+    const N = nodes.length;
+    const comp = new Int32Array(N).fill(-1);
+    const adj = new Array(N);
+    for (let i = 0; i < N; i++) adj[i] = [];
+    for (const L of links) { adj[L.i].push(L.j); adj[L.j].push(L.i); }
+    let nComp = 0;
+    for (let s = 0; s < N; s++) {
+      if (comp[s] >= 0) continue;
+      const stack = [s];
+      comp[s] = nComp;
+      while (stack.length) {
+        const v = stack.pop();
+        for (const w of adj[v]) if (comp[w] < 0) { comp[w] = nComp; stack.push(w); }
+      }
+      nComp++;
+    }
+    const members = new Array(nComp);
+    for (let c = 0; c < nComp; c++) members[c] = [];
+    const localOf = new Int32Array(N);
+    for (let i = 0; i < N; i++) { localOf[i] = members[comp[i]].length; members[comp[i]].push(i); }
+
+    return { nodes: nodes, links: links, nMain: nMain, comp: comp, localOf: localOf,
+             members: members, nComp: nComp, compound: cp, wear: wear };
+  }
+
+  // In-place Cholesky of a symmetric positive-definite dense matrix, then the
+  // explicit inverse. n is small (a rib), and the inverse is what the per-angle
+  // quadratic forms below need.
+  function choleskyInverse(A, n) {
+    const L = new Float64Array(n * n);
+    for (let j = 0; j < n; j++) {
+      for (let i = j; i < n; i++) {
+        let s = A[i * n + j];
+        for (let k = 0; k < j; k++) s -= L[i * n + k] * L[j * n + k];
+        if (i === j) {
+          if (!(s > 1e-300)) return null;         // not positive definite
+          L[j * n + j] = Math.sqrt(s);
+        } else {
+          L[i * n + j] = s / L[j * n + j];
+        }
+      }
+    }
+    // invert L (lower triangular), then A^-1 = L^-T L^-1
+    const Li = new Float64Array(n * n);
+    for (let i = 0; i < n; i++) {
+      Li[i * n + i] = 1 / L[i * n + i];
+      for (let j = 0; j < i; j++) {
+        let s = 0;
+        for (let k = j; k < i; k++) s += L[i * n + k] * Li[k * n + j];
+        Li[i * n + j] = -s / L[i * n + i];
+      }
+    }
+    const inv = new Float64Array(n * n);
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j <= i; j++) {
+        let s = 0;
+        for (let k = i > j ? i : j; k < n; k++) s += Li[k * n + i] * Li[k * n + j];
+        inv[i * n + j] = s; inv[j * n + i] = s;
+      }
+    }
+    return inv;
+  }
+
+  const COUPLING_DOF_LIMIT = 1600;
+
+  // Assemble and invert each component once. K does not depend on theta -- only
+  // the load does -- so this is done a single time per wear state and every
+  // angle is then three small quadratic forms.
+  function factorCouplingNetwork(net) {
+    const inv = new Array(net.nComp);
+    for (let c = 0; c < net.nComp; c++) {
+      const mem = net.members[c], m = mem.length, n = 2 * m;
+      if (n > COUPLING_DOF_LIMIT)
+        throw new Error(
+          "the tie-bar network has a connected group of " + m + " elements (" + n +
+          " degrees of freedom), past the " + COUPLING_DOF_LIMIT + " this solver handles. " +
+          "Import a single pitch rather than the whole wheel."
+        );
+      const A = new Float64Array(n * n);
+      for (let a = 0; a < m; a++) {
+        const K = net.nodes[mem[a]].K;
+        A[(2 * a) * n + (2 * a)] += K.kx;
+        A[(2 * a) * n + (2 * a + 1)] += K.kxy;
+        A[(2 * a + 1) * n + (2 * a)] += K.kxy;
+        A[(2 * a + 1) * n + (2 * a + 1)] += K.ky;
+      }
+      for (const L of net.links) {
+        if (net.comp[L.i] !== c) continue;
+        const a = net.localOf[L.i], b = net.localOf[L.j], C = L.C;
+        const add = (r, s, v) => { A[r * n + s] += v; };
+        // K_ii += C, K_jj += C, K_ij -= C, K_ji -= C
+        for (const [p, q, sgn] of [[a, a, 1], [b, b, 1], [a, b, -1], [b, a, -1]]) {
+          add(2 * p, 2 * q, sgn * C.xx);
+          add(2 * p, 2 * q + 1, sgn * C.xy);
+          add(2 * p + 1, 2 * q, sgn * C.xy);
+          add(2 * p + 1, 2 * q + 1, sgn * C.yy);
+        }
+      }
+      const Ai = choleskyInverse(A, n);
+      if (!Ai)
+        throw new Error("the tie-bar network is not positive definite; a block or bar has zero stiffness");
+      inv[c] = Ai;
+    }
+    net.inv = inv;
+    return net;
+  }
+
+  function invert2x2(c) {
+    const det = c.xx * c.yy - c.xy * c.xy;
+    if (!(Math.abs(det) > 1e-300)) return { xx: 0, xy: 0, yy: 0 };
+    return { xx: c.yy / det, xy: -c.xy / det, yy: c.xx / det };
+  }
+
+  // Effective 2x2 stiffness of whatever the patch is holding, at one angle.
+  //
+  // A total force F is applied to the loaded nodes in proportion to how much of
+  // each is inside the patch, and the response is the load-weighted mean
+  // displacement.  With q the normalised weights, the compliance is
+  //   C[b][a] = sum_ij q_i q_j (K^-1)[(i,b),(j,a)]
+  // which is symmetric by reciprocity, and the effective stiffness is its
+  // inverse.  Removing every link makes K block diagonal and the same formula
+  // collapses to sum_i q_i^2 K_i^-1 -- which is the reference the coupled result
+  // is compared against, so the two are the same measurement either way.
+  function effectiveStiffnessAt(net, idx, w) {
+    let W = 0;
+    for (let k = 0; k < w.length; k++) W += w[k];
+    if (!(W > 0)) return null;
+    const q = new Float64Array(w.length);
+    for (let k = 0; k < w.length; k++) q[k] = w[k] / W;
+
+    // coupled: group the loaded nodes by component and use that component's
+    // inverse; nodes in different components cannot interact.
+    const byComp = new Map();
+    for (let k = 0; k < idx.length; k++) {
+      const c = net.comp[idx[k]];
+      let l = byComp.get(c);
+      if (!l) { l = []; byComp.set(c, l); }
+      l.push(k);
+    }
+    let cxx = 0, cxy = 0, cyy = 0;
+    byComp.forEach((ks, c) => {
+      const Ai = net.inv[c], n = 2 * net.members[c].length;
+      for (let a = 0; a < ks.length; a++) {
+        const ia = net.localOf[idx[ks[a]]], qa = q[ks[a]];
+        for (let b = 0; b < ks.length; b++) {
+          const ib = net.localOf[idx[ks[b]]], qq = qa * q[ks[b]];
+          cxx += qq * Ai[(2 * ia) * n + (2 * ib)];
+          cxy += qq * Ai[(2 * ia) * n + (2 * ib + 1)];
+          cyy += qq * Ai[(2 * ia + 1) * n + (2 * ib + 1)];
+        }
+      }
+    });
+
+    // uncoupled reference: the same formula with the links removed.
+    let uxx = 0, uxy = 0, uyy = 0;
+    for (let k = 0; k < idx.length; k++) {
+      const Ki = net.nodes[idx[k]].K;
+      const Ci = invert2x2({ xx: Ki.kx, xy: Ki.kxy, yy: Ki.ky });
+      const qq = q[k] * q[k];
+      uxx += qq * Ci.xx; uxy += qq * Ci.xy; uyy += qq * Ci.yy;
+    }
+
+    return {
+      coupled: invert2x2({ xx: cxx, xy: cxy, yy: cyy }),
+      uncoupled: invert2x2({ xx: uxx, xy: uxy, yy: uyy }),
+      load: W,
+    };
+  }
+
+  // Run-length encode a row-major map into per-row runs of equal value.
+  // The per-angle work below is then an interval intersection over a handful of
+  // runs instead of a walk over every pixel the patch covers: on a 2048 x 350
+  // grid that is ~1600 operations an angle rather than 112,000, and the answer
+  // is identical because the runs tile the same pixels.
+  function rowRunsOfLabels(labels, nx, ny) {
+    const rows = new Array(ny);
+    for (let r = 0; r < ny; r++) {
+      const base = r * nx, s = [], e = [], l = [];
+      let c = 0;
+      while (c < nx) {
+        const v = labels[base + c];
+        if (v < 0) { c++; continue; }
+        let k = c + 1;
+        while (k < nx && labels[base + k] === v) k++;
+        s.push(c); e.push(k); l.push(v);
+        c = k;
+      }
+      rows[r] = { s: Int32Array.from(s), e: Int32Array.from(e), l: Int32Array.from(l) };
+    }
+    return rows;
+  }
+
+  function rowRunsOfMask(binary, nx, ny) {
+    const rows = new Array(ny);
+    for (let r = 0; r < ny; r++) {
+      const base = r * nx, s = [], e = [];
+      let c = 0;
+      while (c < nx) {
+        if (!(binary[base + c] > 0)) { c++; continue; }
+        let k = c + 1;
+        while (k < nx && binary[base + k] > 0) k++;
+        s.push(c); e.push(k);
+        c = k;
+      }
+      rows[r] = s.length ? { s: Int32Array.from(s), e: Int32Array.from(e) } : null;
+    }
+    return rows;
+  }
+
+  // First run whose end is strictly past `p`.
+  function firstRunAfter(run, p) {
+    let lo = 0, hi = run.e.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (run.e[m] > p) hi = m; else lo = m + 1; }
+    return lo;
+  }
+
+  // Build and factorise once. The network depends on geometry, compound and
+  // wear -- never on the lean angle or the patch -- so a lean sweep reuses one
+  // factorisation and only the load changes.
+  function prepareCouplingNetwork(pattern, wear, params) {
+    const bars = (pattern.tiebars || []).filter((t) => t.enabled !== false);
+    if (!bars.length) return null;
+    const net = buildCouplingNetwork(pattern, wear, params);
+    if (!net || !net.links.length) return null;
+    return factorCouplingNetwork(net);
+  }
+
+  // The whole theta sweep of the coupled network.
+  function couplingSweep(pattern, pack, patch, wear, params, nTheta, prepared) {
+    const net = prepared || prepareCouplingNetwork(pattern, wear, params);
+    if (!net) return null;
+
+    const grid = pack.grid, nx = grid.nx, ny = grid.ny;
+    const masks = patchMasks(patch, grid);
+    const labRuns = rowRunsOfLabels(pack.labels, nx, ny);
+    const patRuns = rowRunsOfMask(masks.binary, nx, ny);
+    const rowsUsed = [];
+    for (let r = 0; r < ny; r++) if (patRuns[r]) rowsUsed.push(r);
+    if (!rowsUsed.length) return null;
+    const rowArea = pack.rowArea || (function () {
+      const a = new Float64Array(ny); a.fill(grid.dx * grid.dy); return a;
+    })();
+
+    nTheta = nTheta || 720;
+    // Sample on a divisor of the raster so a sample lands exactly on a column,
+    // making the per-node areas below add up to the FFT contact area exactly.
+    const step = Math.max(1, Math.round(nx / nTheta));
+    const nS = Math.floor(nx / step);
+    const nNodes = net.nodes.length;
+    const acc = new Float64Array(nNodes);
+
+    const theta = new Float64Array(nS);
+    const kxC = new Float64Array(nS), kyC = new Float64Array(nS), kxyC = new Float64Array(nS);
+    const kxU = new Float64Array(nS), kyU = new Float64Array(nS), kxyU = new Float64Array(nS);
+    const areaOf = new Float64Array(nS), nLoaded = new Float64Array(nS);
+
+    for (let s = 0; s < nS; s++) {
+      const j = s * step;
+      acc.fill(0);
+      for (let ri = 0; ri < rowsUsed.length; ri++) {
+        // fround because the FFT path reads these areas out of a Float32Array;
+        // matching its rounding keeps the two routes bit-comparable, which is
+        // what makes the "areas agree with the FFT" audit check meaningful.
+        const r = rowsUsed[ri], pRun = patRuns[r], lRun = labRuns[r], ra = Math.fround(rowArea[r]);
+        if (!lRun.s.length) continue;
+        for (let k = 0; k < pRun.s.length; k++) {
+          // The patch run, shifted to where the pattern sits at this angle, then
+          // wrapped into [0, nx) as at most two pieces.
+          const a = pRun.s[k] + j, b = pRun.e[k] + j;
+          const pieces = [];
+          const a0 = a % nx, b0 = a0 + (b - a);
+          if (b0 <= nx) pieces.push([a0, b0]);
+          else { pieces.push([a0, nx]); pieces.push([0, b0 - nx]); }
+          for (const [p, q] of pieces) {
+            let m = firstRunAfter(lRun, p);
+            for (; m < lRun.s.length && lRun.s[m] < q; m++) {
+              const lo = lRun.s[m] > p ? lRun.s[m] : p;
+              const hi = lRun.e[m] < q ? lRun.e[m] : q;
+              if (hi > lo) acc[lRun.l[m]] += (hi - lo) * ra;
+            }
+          }
+        }
+      }
+      const idx = [], w = [];
+      let tot = 0;
+      for (let k = 0; k < nNodes; k++) if (acc[k] > 0) { idx.push(k); w.push(acc[k]); tot += acc[k]; }
+      theta[s] = (j * 360) / nx;
+      areaOf[s] = tot;
+      nLoaded[s] = idx.length;
+      const r = idx.length ? effectiveStiffnessAt(net, idx, w) : null;
+      if (!r) continue;
+      kxC[s] = r.coupled.xx; kyC[s] = r.coupled.yy; kxyC[s] = r.coupled.xy;
+      kxU[s] = r.uncoupled.xx; kyU[s] = r.uncoupled.yy; kxyU[s] = r.uncoupled.xy;
+    }
+
+    const gain = (a, b) => {
+      let s = 0, n = 0;
+      for (let i = 0; i < a.length; i++) if (b[i] > 0) { s += a[i] / b[i]; n++; }
+      return n ? s / n : 1;
+    };
+    return {
+      theta_deg: Array.prototype.slice.call(theta),
+      kx_coupled: Array.prototype.slice.call(kxC), ky_coupled: Array.prototype.slice.call(kyC),
+      kxy_coupled: Array.prototype.slice.call(kxyC),
+      kx_uncoupled: Array.prototype.slice.call(kxU), ky_uncoupled: Array.prototype.slice.call(kyU),
+      kxy_uncoupled: Array.prototype.slice.call(kxyU),
+      contact_area: Array.prototype.slice.call(areaOf),
+      n_loaded: Array.prototype.slice.call(nLoaded),
+      gain_kx: gain(kxC, kxU), gain_ky: gain(kyC, kyU),
+      n_nodes: net.nodes.length, n_links: net.links.length, n_components: net.nComp,
+      n_engaged: net.nodes.filter(function (n) { return n.kind === "tiebar" && n.engaged; }).length,
+      n_submerged: net.nodes.filter(function (n) { return n.kind === "tiebar" && !n.engaged; }).length,
+      wear_mm: net.wear, compound: net.compound,
+    };
+  }
+
+  // =====================================================================
   // 3. DXF import (port of tread_eval/dxf.py)
   // =====================================================================
   // A DXF group is two physical lines: an integer code, then its value. The old
@@ -70750,6 +71297,15 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         n_neighbours: (tiebarFaces[i].neighbours || []).length,
       });
     }
+    // Which blocks each bar is bonded to. Geometry only, so it survives every
+    // later change of NSD, height or wear.
+    linkTiebars(blocks, tiebars);
+    const unlinked = tiebars.filter((t) => !t.links || t.links.length < 2).length;
+    if (unlinked)
+      warnings.push(unlinked + " tie bar(s) touch fewer than two blocks along a shared edge, so they " +
+        "cannot couple anything; they will still add contact area once worn into, but contribute no " +
+        "coupling stiffness. This usually means the bar's outline does not meet the groove walls exactly.");
+
     if (tiebars.length)
       warnings.push(tiebars.length + " tie bar(s) detected between blocks. They sit below the tread " +
         "surface, so they carry nothing until the tyre has worn past (NSD - tie-bar height) — set the " +
@@ -71095,7 +71651,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     return {
       grid: grid, land: land, area: area, kx: kx, ky: ky, kz: kz, blockFrac: blockFrac,
       zoneArea: zoneArea, yMoment: yMoment, labels: labels, blockPixelCount: blockPixelCount,
-      stiffness: stiff, curvatureCorrection: !!curvatureCorrection,
+      rowArea: rowArea, stiffness: stiff, curvatureCorrection: !!curvatureCorrection,
     };
   }
 
@@ -71659,6 +72215,10 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     dxfPairs, planarArrangement, classifyFaces, faceAdjacency, bulgeArc,
     compoundProperties, validateCompound, interpShore,
     tiebarEngagementWear, tiebarEngaged, effectiveBlocks, validateWear, patternAtWear,
+    linkTiebars, polygonEdgeKeys, couplingLinkMatrix, tiebarCurrentHeight,
+    buildCouplingNetwork, factorCouplingNetwork, choleskyInverse, invert2x2,
+    effectiveStiffnessAt, couplingSweep, prepareCouplingNetwork,
+    rowRunsOfLabels, rowRunsOfMask, firstRunAfter,
     validateBlockDefaults, validateImportOptions,
     // zones + crown
     zoneBounds, classifyZone, ZONES, crownDualRadius, TYRE_CLASS, tyreClass, crownFromRadiusProfile, crownTangentAngle, crownLocalRadius, crownDrop, crownContactLateral,
@@ -71742,11 +72302,45 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
           "so the tread is stiffer than new" + (lost ? " (" + lost + " block(s) worn away entirely)" : "") + ".");
       }
 
+      // The coupled network depends on geometry, compound and wear -- not on
+      // the lean angle -- so it is built and factorised once for the whole
+      // sweep and only the load changes per angle.
+      var couplingNet = null;
+      if (m.coupling !== false) {
+        try { couplingNet = E.prepareCouplingNetwork(wholePattern, m.wear, m.stiffParams); }
+        catch (err) {
+          notes.push("tie-bar coupling was not computed: " + (err && err.message ? err.message : err));
+        }
+      }
+
       var results = [];
+      var coupling = [];
       for (var i = 0; i < leans.length; i++) {
         var r = E.sweepLean(pattern, pack, leans[i], m.spec, m.cpParams, cache, m.discreteSamples, m.bandEdges);
         results.push(packResult(r, m.stride || 1));
+        // The coupled solve, on the same patch this lean actually used. It is a
+        // separate discrete pass because a network whose stiffness depends on
+        // which blocks are loaded is not a convolution, so the FFT above cannot
+        // produce it.
+        if (couplingNet) {
+          try {
+            coupling.push(E.couplingSweep(wholePattern, pack, r.patch, m.wear, m.stiffParams,
+                                          m.couplingSamples || 720, couplingNet));
+          } catch (err) {
+            coupling.push(null);
+            notes.push("tie-bar coupling failed at lean " + leans[i] + " deg: " +
+                       (err && err.message ? err.message : err));
+          }
+        }
         self.postMessage({ type: "progress", done: i + 1, total: leans.length });
+      }
+      if (coupling.some(function (c) { return c; })) {
+        var g = coupling.filter(function (c) { return c; });
+        notes.push("tie-bar coupling solved as a network of " + g[0].n_nodes + " elements and " +
+          g[0].n_links + " bonded links in " + g[0].n_components + " independent group(s). " +
+          "Mean stiffening at " + leans[0] + " deg: Kx x" + g[0].gain_kx.toFixed(3) +
+          ", Ky x" + g[0].gain_ky.toFixed(3) + ". This is the sub-surface effect the contact " +
+          "model cannot see -- it adds no contact area.");
       }
       // per-block stiffness summary for the diagnostics tab
       var stiffSummary = summariseStiffness(pattern, pack);
@@ -71769,6 +72363,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         grid: { nx: grid.nx, ny: grid.ny, dx: grid.dx, dy: grid.dy },
         bandEdges: m.bandEdges || null,
         compound: cp,
+        coupling: coupling,
         // Which bars this run actually had in contact. The page draws the
         // pattern strip from this, not from the live inputs, so the strip can
         // never show a bar as land that the curves above it did not include.
@@ -72516,6 +73111,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         state.notes = m.notes || []; state.maxLean = m.maxLean;
         state.bandEdges = m.bandEdges || null;
         state.compound = m.compound || null; state.wear = m.wear || null;
+        state.coupling = m.coupling || null;
         state.running = false; $("overlay").classList.remove("on");
         $("runBtn").textContent = "▶ Run";
         $("timing").textContent = "computed in " + (m.timing.total / 1000).toFixed(1) + " s (raster " + m.timing.raster + " ms), grid " + m.grid.nx + "×" + m.grid.ny;
@@ -72540,7 +73136,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       stiffParams: readStiffParams(), cpParams: readCpParams(), spec: readSpec(),
       zoneFracs: { center: tyreClassPhysics().zone_center, intermediate: tyreClassPhysics().zone_intermediate },
       leans: currentLeans(), discreteSamples: 360, bandEdges: state.ranBands, curvatureCorrection: $("curv").checked, stride: stride,
-      wear: readWear(),
+      wear: readWear(), coupling: true, couplingSamples: 720,
     });
   }
 
@@ -72615,6 +73211,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     renderPatchPreview();
     renderBands();
     renderTiebars();
+    renderCoupling();
     renderCompare();
     renderDiagnostics();
     drawEditor();
@@ -73493,6 +74090,88 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     }, { responsive: true, displayModeBar: false });
   }
 
+  // ---- tie-bar coupling (the network solve) ----------------------------
+  function card(k, v, u) {
+    return "<div class='card'><div class='k'>" + escapeHtml(k) + "</div><div class='v'>" +
+      escapeHtml(v) + "</div><div class='u'>" + escapeHtml(u) + "</div></div>";
+  }
+
+  function currentCoupling() {
+    if (!state.coupling || !state.results) return null;
+    for (var i = 0; i < state.results.length; i++)
+      if (state.results[i].gamma_deg === state.gammaShown) return state.coupling[i] || null;
+    return state.coupling[0] || null;
+  }
+
+  function renderCoupling() {
+    var c = currentCoupling();
+    var empty = $("cplEmpty"), body = $("cplBody");
+    if (!empty || !body) return;
+    empty.style.display = c ? "none" : "";
+    body.style.display = c ? "" : "none";
+    if (!c) { Plotly.purge($("cplPlot")); $("cplCards").innerHTML = ""; $("cplTable").innerHTML = ""; return; }
+
+    var th = plotTheme();
+    var mean = function (a) { var s = 0; for (var i = 0; i < a.length; i++) s += a[i]; return a.length ? s / a.length : 0; };
+    var kxc = mean(c.kx_coupled), kxu = mean(c.kx_uncoupled);
+    var kyc = mean(c.ky_coupled), kyu = mean(c.ky_uncoupled);
+    var kxyc = mean(c.kxy_coupled), kxyu = mean(c.kxy_uncoupled);
+
+    $("cplCards").innerHTML = [
+      card("Kx gain", (c.gain_kx).toFixed(3) + "×", "circumferential"),
+      card("Ky gain", (c.gain_ky).toFixed(3) + "×", "lateral"),
+      card("Mean Kxy", kxyc.toFixed(1), "N/mm — cross term"),
+      card("Bars in the network", String(c.n_engaged + c.n_submerged), c.n_submerged + " below the surface"),
+      card("Bonded links", String(c.n_links), c.n_components + " independent group(s)"),
+      card("Tread worn", (c.wear_mm || 0).toFixed(1), "mm"),
+    ].join("");
+
+    // Kxy is an order of magnitude smaller than Kx/Ky, so it gets its own axis.
+    // On a shared one it is a flat line on the zero gridline and tells you
+    // nothing -- which is the opposite of the point.
+    var series = [
+      { y: c.kx_uncoupled, name: "Kx uncoupled", color: th.accent, dash: "dot", axis: "y" },
+      { y: c.kx_coupled, name: "Kx coupled", color: th.accent, dash: undefined, axis: "y" },
+      { y: c.ky_uncoupled, name: "Ky uncoupled", color: th.bad, dash: "dot", axis: "y" },
+      { y: c.ky_coupled, name: "Ky coupled", color: th.bad, dash: undefined, axis: "y" },
+      { y: c.kxy_uncoupled, name: "Kxy uncoupled (right)", color: th.accent2, dash: "dot", axis: "y2" },
+      { y: c.kxy_coupled, name: "Kxy coupled (right)", color: th.accent2, dash: undefined, axis: "y2" },
+    ];
+    var data = series.map(function (s) {
+      return { x: c.theta_deg, y: s.y, type: "scatter", mode: "lines", name: s.name, yaxis: s.axis,
+               line: { color: s.color, width: s.dash ? 1.2 : 2, dash: s.dash } };
+    });
+    var kxyAll = c.kxy_coupled.concat(c.kxy_uncoupled);
+    var kxyMax = Math.max(1, Math.max.apply(null, kxyAll.map(Math.abs))) * 1.25;
+    Plotly.react($("cplPlot"), data, {
+      paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+      margin: { l: 76, r: 76, t: 40, b: 88 }, height: 460,
+      legend: { orientation: "h", y: -0.18, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
+      title: { text: "Network stiffness vs θ — dotted = independent springs, solid = bonded network  (γ = " +
+                     (currentResult() ? currentResult().gamma_deg : 0) + "°)", font: { size: 13 } },
+      xaxis: { title: { text: "rotation angle θ (deg)", font: { size: 11 } }, range: [0, 360], gridcolor: th.grid },
+      yaxis: { title: { text: "Kx, Ky (N/mm)", font: { size: 11 } }, gridcolor: th.grid },
+      yaxis2: { title: { text: "Kxy (N/mm)", font: { size: 11 }, standoff: 6 },
+                overlaying: "y", side: "right", range: [-kxyMax, kxyMax],
+                zeroline: true, zerolinecolor: th.grid, showgrid: false,
+                tickfont: { color: th.accent2 }, titlefont: { color: th.accent2 } },
+    }, { responsive: true, displayModeBar: false });
+
+    var row = function (label, u, cc) {
+      var g = u !== 0 ? cc / u : 1;
+      return "<tr><td>" + label + "</td><td class='num'>" + u.toFixed(1) + "</td><td class='num'>" +
+        cc.toFixed(1) + "</td><td class='num'>" + (cc - u).toFixed(1) + "</td><td class='num'>" +
+        (u !== 0 ? (100 * (g - 1)).toFixed(2) + "%" : "—") + "</td></tr>";
+    };
+    $("cplTable").innerHTML =
+      "<table class='metrics' style='max-width:640px'><tr><th>Mean over θ</th><th>independent</th>" +
+      "<th>bonded network</th><th>difference</th><th>gain</th></tr>" +
+      row("Kx (circumferential)", kxu, kxc) + row("Ky (lateral)", kyu, kyc) +
+      row("Kxy (cross)", kxyu, kxyc) + "</table>" +
+      "<div class='hint' style='margin-top:6px'>Both columns are the same measurement on the same tread; only the " +
+      "bonded links differ. Contact area is identical in both — a sub-surface bar touches nothing.</div>";
+  }
+
   // ---- design comparison ----------------------------------------------
   // Entries are whole runs: {label, settings, results}. A run added from this
   // session and a run loaded from an exported JSON file are the same shape, so
@@ -73689,6 +74368,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       load: base.load,
       wear_and_tiebars: base.wear_and_tiebars,
       compound_resolved: state.compound || null,
+      tiebar_coupling: couplingSummary(),
       analysis: {
         lean_angles_deg: state.results.map(function (r) { return r.gamma_deg; }),
         grid: state.grid,
@@ -73714,6 +74394,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       " deg, sipes " + s.block_defaults.n_lateral_sipes + ", sipe model " + s.compound_and_boundary.sipe_model);
     lines.push("# compound: " + compoundLine(s));
     lines.push("# wear: " + tiebarLine(s));
+    lines.push("# tie-bar coupling: " + couplingLine(s));
     lines.push("# patch: " + E.describeSpec(s.contact_patch) +
       ", scale with lean " + (s.contact_patch.scale_with_lean ? "on" : "off") +
       ", Fz " + s.load.vertical_load + " N" + (s.load.load_rises_with_lean ? " (rises with lean)" : " (constant)"));
@@ -73766,6 +74447,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       " deg, " + s.block_defaults.n_lateral_sipes + " sipes");
     out.push("Compound: " + compoundLine(s));
     out.push("Wear    : " + tiebarLine(s));
+    out.push("Coupling: " + couplingLine(s));
     out.push("Patch   : " + E.describeSpec(s.contact_patch));
     out.push("");
     out.push("PER LEAN ANGLE");
@@ -73821,6 +74503,37 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       engaged + " in contact";
   }
 
+  // What the network solve found, in one shape every export can use.
+  function couplingSummary() {
+    if (!state.coupling) return null;
+    var out = [];
+    for (var i = 0; i < state.coupling.length; i++) {
+      var c = state.coupling[i];
+      if (!c) continue;
+      var mean = function (a) { var t = 0; for (var k = 0; k < a.length; k++) t += a[k]; return a.length ? t / a.length : 0; };
+      out.push({
+        gamma_deg: state.results[i].gamma_deg,
+        n_nodes: c.n_nodes, n_links: c.n_links, n_components: c.n_components,
+        n_bars_submerged: c.n_submerged, n_bars_engaged: c.n_engaged,
+        gain_kx: c.gain_kx, gain_ky: c.gain_ky,
+        mean_kx_uncoupled: mean(c.kx_uncoupled), mean_kx_coupled: mean(c.kx_coupled),
+        mean_ky_uncoupled: mean(c.ky_uncoupled), mean_ky_coupled: mean(c.ky_coupled),
+        mean_kxy_uncoupled: mean(c.kxy_uncoupled), mean_kxy_coupled: mean(c.kxy_coupled),
+      });
+    }
+    return out.length ? out : null;
+  }
+
+  function couplingLine(s) {
+    var c = s.tiebar_coupling;
+    if (!c || !c.length) return "no tie-bar coupling (no bars bonded to two or more blocks)";
+    var a = c[0];
+    return a.n_links + " bonded link(s) over " + a.n_nodes + " elements in " + a.n_components +
+      " group(s); at gamma " + a.gamma_deg + " deg the network stiffens Kx by " +
+      ((a.gain_kx - 1) * 100).toFixed(2) + "% and Ky by " + ((a.gain_ky - 1) * 100).toFixed(2) +
+      "%, mean Kxy " + a.mean_kxy_coupled.toFixed(2) + " N/mm. Contact area is unchanged.";
+  }
+
   function exportPDF() {
     if (!state.results || !window.jspdf) return;
     var btn = $("exportPdf"), old = btn.textContent;
@@ -73862,6 +74575,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       ["Compound", compoundLine(s0)],
       ["Sipe model", s0.compound_and_boundary.sipe_model],
       ["Wear state", tiebarLine(s0)],
+      ["Tie-bar coupling", couplingLine(s0)],
       ["Contact patch", E.describeSpec(s0.contact_patch)],
       ["Load", s0.load.vertical_load + " N" + (s0.load.load_rises_with_lean ? " (rises with lean)" : " (constant)")],
       ["Lean angles", s0.analysis.lean_angles_deg.join("°, ") + "°"],
