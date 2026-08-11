@@ -1118,9 +1118,12 @@
     if (!gd || !gd._fullLayout || !gd._fullLayout._size) return null;
     var sz = gd._fullLayout._size, ax = gd._fullLayout.xaxis;
     if (!ax || !ax.range) return null;
+    var ya = gd._fullLayout.yaxis;
     return { left: sz.l, width: sz.w, top: sz.t,
              height: Math.max(0, gd.clientHeight - sz.t - sz.b),
-             r0: ax.range[0], r1: ax.range[1] };
+             r0: ax.range[0], r1: ax.range[1],
+             y0: ya && ya.range ? ya.range[0] : null,
+             y1: ya && ya.range ? ya.range[1] : null };
   }
   function xToPixel(gd, x) {
     var g = plotGeom(gd);
@@ -1179,10 +1182,208 @@
     }).join("");
   }
 
+  // ---- the contact-patch band ------------------------------------------
+  //
+  // The patch outline drawn on the rolled-out pattern where it actually sits,
+  // and a translucent band of the same circumferential extent carried up
+  // through every sweep row -- so "the dip at 140 deg" and "these blocks are
+  // what is under the patch there" are one picture instead of two.
+  //
+  // Drag it along theta. Lateral position is NOT draggable here: it is set by
+  // the crown and the lean angle (or by the y-centre field), and letting it be
+  // shoved sideways on this chart would silently contradict the physics that
+  // put it there. Use 3 - Contact patch for that.
+  //
+  // Built as an SVG overlay over the plot area rather than Plotly shapes: the
+  // strip carries a few hundred block polygons and relayouting it at drag rates
+  // cannot keep up with a cursor. Dragging only moves this overlay.
+  var SVGNS = "http://www.w3.org/2000/svg";
+  var patchDrag = { active: false, grabTheta: 0, startTheta: 0 };
+
+  function patchOverlay(gd) {
+    var host = gd.parentNode;
+    if (getComputedStyle(host).position === "static") host.style.position = "relative";
+    var svg = host.querySelector("svg.cpov");
+    if (!svg) {
+      svg = document.createElementNS(SVGNS, "svg");
+      svg.setAttribute("class", "cpov");
+      // The band itself takes the pointer; everything else must fall through to
+      // Plotly so drag-to-zoom still works on the rest of the chart.
+      svg.style.pointerEvents = "none";
+      // Bound to the overlay, not to the band rects: the rects are rebuilt on
+      // every redraw, so a listener on one of them would not survive between
+      // the two halves of a double-click.
+      svg.addEventListener("pointerdown", function (ev) {
+        if (ev.target.classList && ev.target.classList.contains("cpband")) onPatchGrab(ev);
+      });
+      svg.addEventListener("dblclick", function (ev) {
+        if (ev.target.classList && ev.target.classList.contains("cpband")) resetThetaZoom(ev);
+      });
+      host.appendChild(svg);
+    }
+    svg.__gd = gd;
+    return svg;
+  }
+
+  function patchThetaSpanDeg() {
+    var r = currentResult();
+    if (!r || !r.patch || !r.patch.outline || !r.patch.outline.length) return null;
+    var C = state.pattern.tyre_circumference;
+    var lo = Infinity, hi = -Infinity;
+    for (var i = 0; i < r.patch.outline.length; i++) {
+      var x = r.patch.outline[i][0];
+      if (x < lo) lo = x;
+      if (x > hi) hi = x;
+    }
+    return [(lo / C) * 360, (hi / C) * 360];
+  }
+
+  function clampPatchTheta(t) {
+    t = ((t % 360) + 360) % 360;
+    return t;
+  }
+
+  // Draw the band (both figures) and the outline (pattern strip only).
+  function drawPatchBand() {
+    var span = patchThetaSpanDeg();
+    var figs = [$("thetaStack"), $("patternStrip")];
+    if (!span) {
+      figs.forEach(function (gd) { if (gd && gd._fullLayout) patchOverlay(gd).innerHTML = ""; });
+      return;
+    }
+    if (state.patchTheta == null) state.patchTheta = 180;
+    var centre = clampPatchTheta(state.patchTheta);
+    var r = currentResult(), C = state.pattern.tyre_circumference;
+
+    figs.forEach(function (gd) {
+      if (!gd || !gd._fullLayout) return;
+      var svg = patchOverlay(gd), g = plotGeom(gd);
+      svg.innerHTML = "";
+      if (!g || !g.width) return;
+      svg.setAttribute("width", g.width);
+      svg.setAttribute("height", g.height);
+      svg.style.left = g.left + "px";
+      svg.style.top = g.top + "px";
+      var isStrip = gd === $("patternStrip");
+
+      // The patch can straddle the seam, so draw it at theta and at theta +- 360
+      // and let the overlay's own bounds clip. That is also what the tyre does.
+      for (var k = -1; k <= 1; k++) {
+        var c = centre + k * 360;
+        var xa = xToPixel(gd, c + span[0]), xb = xToPixel(gd, c + span[1]);
+        if (xa == null || xb == null) continue;
+        var left = Math.min(xa, xb) - g.left, w = Math.abs(xb - xa);
+        if (left + w < -2 || left > g.width + 2) continue;
+
+        var rect = document.createElementNS(SVGNS, "rect");
+        rect.setAttribute("class", "cpband");
+        rect.setAttribute("x", left);
+        rect.setAttribute("y", 0);
+        rect.setAttribute("width", w);
+        rect.setAttribute("height", g.height);
+        rect.style.pointerEvents = "all";
+        rect.style.cursor = patchDrag.active ? "grabbing" : "ew-resize";
+        svg.appendChild(rect);
+
+        if (isStrip && g.y0 != null && r.patch.outline.length > 2) {
+          var path = document.createElementNS(SVGNS, "path");
+          var d = "";
+          for (var i = 0; i < r.patch.outline.length; i++) {
+            var p = r.patch.outline[i];
+            var px = xToPixel(gd, c + (p[0] / C) * 360) - g.left;
+            var py = g.height * (1 - (p[1] - g.y0) / (g.y1 - g.y0));
+            d += (i === 0 ? "M" : "L") + px.toFixed(2) + "," + py.toFixed(2) + " ";
+          }
+          path.setAttribute("class", "cpoutline");
+          path.setAttribute("d", d + "Z");
+          svg.appendChild(path);
+        }
+      }
+    });
+    updatePatchLabel(centre);
+  }
+
+  function updatePatchLabel(centre) {
+    var row = $("patchThetaRow"), el = $("patchThetaLabel"), box = $("patchTheta");
+    if (!row || !el) return;
+    var r = currentResult();
+    if (!r) { row.style.display = "none"; return; }
+    row.style.display = "block";
+    if (box && box !== document.activeElement) box.value = centre.toFixed(1);
+    var n = r.theta_deg.length;
+    var i = Math.max(0, Math.min(n - 1, Math.round((centre / 360) * n) % n));
+    el.innerHTML = " — contact <b>" + r.contact_area[i].toFixed(0) + "</b> mm², Kz <b>" +
+      r.kz[i].toFixed(0) + "</b>, Kx <b>" + r.kx[i].toFixed(0) + "</b>, Ky <b>" +
+      r.ky[i].toFixed(0) + "</b>, " + r.block_count[i].toFixed(2) + " blocks in the patch" +
+      " · <span class='hint'>drag the shaded band, or type an angle</span>";
+  }
+
+  // Used by the number box and by the browser smoke test.
+  function setPatchTheta(t) {
+    if (!isFinite(t)) return;
+    state.patchTheta = clampPatchTheta(t);
+    drawPatchBand();
+  }
+
+  function resetThetaZoom(ev) {
+    if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+    state.thetaRange = [0, 360];
+    linkState.syncing = true;
+    Promise.all([$("thetaStack"), $("patternStrip")].map(function (gd) {
+      return gd && gd._fullLayout ? Plotly.relayout(gd, { "xaxis.range": [0, 360] }) : null;
+    })).then(function () { linkState.syncing = false; drawPatchBand(); })
+      .catch(function () { linkState.syncing = false; });
+  }
+
+  function onPatchGrab(ev) {
+    var gd = ev.target.ownerSVGElement && ev.target.ownerSVGElement.__gd;
+    if (!gd) return;
+    var t = pixelToX(gd, ev.clientX - gd.getBoundingClientRect().left);
+    if (t == null) return;
+    // Deliberately NOT preventDefault: that suppresses the synthesised click
+    // and dblclick, and dblclick on the band is how the zoom is reset.
+    // stopPropagation is enough to keep Plotly from starting a rubber band.
+    // Text selection is handled by the user-select below.
+    ev.stopPropagation();
+    patchDrag.active = true;
+    patchDrag.moved = false;
+    patchDrag.gd = gd;
+    patchDrag.grabTheta = t;
+    patchDrag.startTheta = clampPatchTheta(state.patchTheta == null ? 180 : state.patchTheta);
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", onPatchDrag);
+    window.addEventListener("pointerup", onPatchDrop);
+  }
+
+  function onPatchDrag(ev) {
+    if (!patchDrag.active) return;
+    var gd = patchDrag.gd;
+    var t = pixelToX(gd, ev.clientX - gd.getBoundingClientRect().left);
+    if (t == null) return;
+    // x only: the pointer's y is read and discarded on purpose.
+    if (Math.abs(t - patchDrag.grabTheta) < 1e-9 && !patchDrag.moved) return;
+    patchDrag.moved = true;
+    state.patchTheta = clampPatchTheta(patchDrag.startTheta + (t - patchDrag.grabTheta));
+    drawPatchBand();
+    moveCursor(state.patchTheta);
+  }
+
+  function onPatchDrop() {
+    var moved = patchDrag.moved;
+    patchDrag.active = false;
+    document.body.style.userSelect = "";
+    window.removeEventListener("pointermove", onPatchDrag);
+    window.removeEventListener("pointerup", onPatchDrop);
+    // A plain click must leave the overlay alone: redrawing it here would swap
+    // the band out between the two halves of a double-click.
+    if (moved) drawPatchBand();
+  }
+
   function linkThetaFigures() {
     var stack = $("thetaStack"), strip = $("patternStrip");
     if (!stack || !strip) return;
     moveCursor(null);
+    drawPatchBand();
     if (linkState.hooked) return;   // survives every redraw; wired once
     linkState.hooked = true;
 
@@ -1190,13 +1391,18 @@
     function syncFrom(src, dst) {
       src.on("plotly_relayout", function (ev) {
         if (linkState.syncing || !ev) return;
+        // An interactive zoom emits the indexed keys; a programmatic relayout
+        // emits the whole array. Accept either.
         var lo = ev["xaxis.range[0]"], hi = ev["xaxis.range[1]"];
+        if (lo == null && Array.isArray(ev["xaxis.range"])) {
+          lo = ev["xaxis.range"][0]; hi = ev["xaxis.range"][1];
+        }
         var reset = ev["xaxis.autorange"] === true;
         if (lo == null && !reset) return;
         state.thetaRange = reset ? [0, 360] : [lo, hi];
         linkState.syncing = true;
         Plotly.relayout(dst, { "xaxis.range": state.thetaRange.slice() })
-          .then(function () { linkState.syncing = false; moveCursor(null); })
+          .then(function () { linkState.syncing = false; moveCursor(null); drawPatchBand(); })
           .catch(function () { linkState.syncing = false; });
       });
     }
@@ -1207,10 +1413,18 @@
     // continuously and does not need the cursor to be near a trace.
     [stack, strip].forEach(function (gd) {
       gd.addEventListener("mousemove", function (ev) {
+        if (patchDrag.active) return;
         moveCursor(pixelToX(gd, ev.clientX - gd.getBoundingClientRect().left));
       });
-      gd.addEventListener("mouseleave", function () { moveCursor(null); });
+      gd.addEventListener("mouseleave", function () {
+        if (!patchDrag.active) moveCursor(null);
+      });
+      // The band's pixel geometry is tied to the plot area, so it has to be
+      // recomputed whenever Plotly re-lays it out -- a window resize, the
+      // responsive reflow when a tab becomes visible, an autoscale.
+      gd.on("plotly_afterplot", drawPatchBand);
     });
+    window.addEventListener("resize", function () { setTimeout(drawPatchBand, 60); });
   }
 
   // ---- bands (ribs) ----------------------------------------------------
@@ -1996,6 +2210,7 @@
     on($("cpLoad"), "input", updateLeanLoadReference);
 
     on($("gammaSel"), "change", function () { state.gammaShown = state.results[parseInt(this.value, 10)].gamma_deg; renderAll(); });
+    on($("patchTheta"), "input", function () { setPatchTheta(parseFloat(this.value)); });
     on($("heatMetric"), "change", function () { state.heatMetric = this.value; renderLeanHeatmap(); });
     on($("orderMetric"), "change", function () { state.orderMetric = this.value; renderOrders(); });
 
@@ -2057,8 +2272,10 @@
       E: state.compound ? state.compound.E : null,
       G: state.compound ? state.compound.G : null,
       k: state.compound ? state.compound.k : null,
+      patchTheta: state.patchTheta == null ? null : clampPatchTheta(state.patchTheta),
     };
   };
+  window.__ttSetPatchTheta = setPatchTheta;
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();

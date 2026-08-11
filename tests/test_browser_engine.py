@@ -987,3 +987,56 @@ process.stdout.write(JSON.stringify([at(7.0), at(7.4)]));
 
     # the Order-content chart is a transform of the same Kz signal
     assert after["orders"] != pytest.approx(before["orders"], rel=1e-6)
+
+
+def test_the_contact_patch_band_is_drawn_and_is_x_only():
+    """The patch outline on the rolled-out pattern, and a band of the same
+    circumferential extent through every sweep row above it.
+
+    Dragging is along theta only.  Lateral position is set by the crown and the
+    lean angle (or the y-centre field), so letting it be shoved sideways on this
+    chart would silently contradict the physics that put it there.
+    """
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    css = open(os.path.join(APP, "style.css"), encoding="utf-8").read()
+
+    assert "function drawPatchBand(" in ui
+    assert "cpband" in ui and "cpoutline" in ui
+    assert ".cpband" in css and ".cpoutline" in css
+    # translucent, or it would hide the curves it is supposed to sit over
+    band = css[css.index("svg.cpov .cpband"):css.index("svg.cpov .cpband:hover")]
+    assert "fill-opacity" in band and float(band.split("fill-opacity:")[1].split(";")[0]) < 0.3
+
+    # the drag reads clientX and never clientY
+    drag = ui[ui.index("function onPatchDrag("):ui.index("function onPatchDrop(")]
+    assert "clientX" in drag
+    assert "clientY" not in drag, "the patch drag must ignore the pointer's y"
+
+    # an exact angle can be typed as well as dragged
+    assert 'id="patchTheta"' in tpl and "setPatchTheta" in ui
+
+    # the band spans the whole stack, not one row: the overlay is sized from the
+    # figure's plot area, which covers every subplot
+    draw = ui[ui.index("function drawPatchBand("):ui.index("function updatePatchLabel(")]
+    assert "g.height" in draw and "thetaStack" in draw and "patternStrip" in draw
+    # and it is redrawn whenever Plotly re-lays the figure out
+    assert "plotly_afterplot" in ui
+
+
+def test_the_patch_band_survives_the_gestures_it_intercepts():
+    """The band takes the pointer, so it owns two things Plotly would have done.
+
+    A double-click that lands on it must still reset the zoom, and a plain click
+    must not redraw the overlay -- swapping the band out between the two halves
+    of a double-click is exactly what stopped the reset from working.
+    """
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    assert "function resetThetaZoom(" in ui
+    assert 'svg.addEventListener("dblclick"' in ui, "bind to the overlay, not the rebuilt rects"
+    assert 'svg.addEventListener("pointerdown"' in ui
+    drop = ui[ui.index("function onPatchDrop("):ui.index("function linkThetaFigures(")]
+    assert "if (moved) drawPatchBand();" in drop, "a plain click must not redraw the band"
+    # preventDefault on pointerdown would suppress the synthesised dblclick
+    grab = ui[ui.index("function onPatchGrab("):ui.index("function onPatchDrag(")]
+    assert "ev.preventDefault()" not in grab

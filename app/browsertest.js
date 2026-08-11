@@ -107,6 +107,98 @@ const fs = require("fs");
     console.log(`crown reconciliation: ${before.split(",").length} leans -> ${tightened.split(",").length} -> ${restored.split(",").length}`);
   }
 
+  // ---- the draggable contact-patch band -----------------------------------
+  {
+    await page.click('.tabs button[data-tab="stack"]');
+    await page.evaluate(() => document.getElementById("thetaStack").scrollIntoView({ block: "start" }));
+    await page.waitForTimeout(500);
+    const theta = () => page.evaluate(() => window.__ttState().patchTheta);
+    const xrange = () => page.evaluate(() =>
+      document.getElementById("thetaStack")._fullLayout.xaxis.range.map((v) => +v.toFixed(1)));
+    const bandBox = () => page.$eval("#thetaStack", (e) => {
+      const n = e.parentNode.querySelector("svg.cpov .cpband");
+      if (!n) return null;
+      const r = n.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + 80, w: r.width };
+    });
+    const outlineY = () => page.$eval("#patternStrip", (e) => {
+      const n = e.parentNode.querySelector("svg.cpov .cpoutline");
+      if (!n) return null;
+      const ys = n.getAttribute("d").split(/[ML]/).filter(Boolean).map((s) => parseFloat(s.split(",")[1]));
+      return [Math.min(...ys).toFixed(2), Math.max(...ys).toFixed(2)].join("..");
+    });
+
+    // The band must exist on BOTH figures, and the outline only on the pattern.
+    const bands = await page.$$eval("svg.cpov .cpband", (n) => n.length);
+    const outlines = await page.$$eval("svg.cpov .cpoutline", (n) => n.length);
+    if (bands !== 2) errors.push(`expected one band on each of the two figures, got ${bands}`);
+    if (outlines !== 1) errors.push(`expected the patch outline on the pattern strip, got ${outlines}`);
+
+    // Drag it, moving the pointer diagonally on purpose: theta must follow the
+    // x component and the lateral position must not move at all.
+    const yBefore = await outlineY();
+    const t0 = await theta();
+    let bb = await bandBox();
+    await page.mouse.move(bb.x, bb.y);
+    await page.mouse.down();
+    await page.mouse.move(bb.x + 250, bb.y + 180, { steps: 12 });
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    const t1 = await theta();
+    if (!(t1 > t0 + 10)) errors.push(`dragging the band right did not advance theta: ${t0} -> ${t1}`);
+    if ((await outlineY()) !== yBefore)
+      errors.push(`the patch moved laterally during an x drag: ${yBefore} -> ${await outlineY()}`);
+    if ((await page.inputValue("#patchTheta")) !== t1.toFixed(1))
+      errors.push("the theta box did not follow the drag");
+    console.log(`patch band drag: theta ${t0.toFixed(1)} -> ${t1.toFixed(1)}, lateral ${yBefore} unchanged`);
+
+    // Typing an angle moves it too, and straddling the seam draws two pieces
+    // on each figure rather than one that runs off the end.
+    await page.fill("#patchTheta", "1");
+    await page.waitForTimeout(300);
+    const seamBands = await page.$$eval("svg.cpov .cpband", (n) => n.length);
+    const seamOutlines = await page.$$eval("svg.cpov .cpoutline", (n) => n.length);
+    if (seamBands !== 4 || seamOutlines !== 2)
+      errors.push(`a patch across the seam should draw both halves: ${seamBands} bands, ${seamOutlines} outlines`);
+    console.log(`patch across the seam: ${seamBands} band pieces, ${seamOutlines} outline pieces`);
+
+    // Zoom: the band is pixel geometry, so it has to be recomputed, and both
+    // figures must agree.
+    await page.fill("#patchTheta", "180");
+    await page.evaluate(() => document.getElementById("thetaStack").scrollIntoView({ block: "start" }));
+    await page.waitForTimeout(400);
+    const wFull = (await bandBox()).w;
+    // Drag out a zoom around the band, in coordinates taken from the figure
+    // rather than assumed -- earlier steps scroll the page.
+    const plot = await page.$eval("#thetaStack", (e) => {
+      const r = e.getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    // Well inside the first row's data area. Between rows sits Plotly's
+    // axis-pan strip, and a drag there pans instead of zooming.
+    const zy = plot.y + 80;
+    await page.mouse.move(plot.x + plot.w * 0.4, zy);
+    await page.mouse.down();
+    await page.mouse.move(plot.x + plot.w * 0.65, zy, { steps: 12 });
+    await page.mouse.up();
+    await page.waitForTimeout(900);
+    const wZoom = (await bandBox()).w;
+    const wStrip = await page.$eval("#patternStrip", (e) =>
+      e.parentNode.querySelector("svg.cpov .cpband").getBoundingClientRect().width);
+    if (!(wZoom > wFull * 2)) errors.push(`the band did not widen with the zoom: ${wFull} -> ${wZoom}`);
+    if (Math.abs(wZoom - wStrip) > 2) errors.push(`band widths disagree between figures: ${wZoom} vs ${wStrip}`);
+    console.log(`patch band with zoom: ${wFull.toFixed(0)} px -> ${wZoom.toFixed(0)} px on both figures`);
+
+    // Double-click ON the band still resets the zoom -- the band takes the
+    // pointer, so Plotly never sees that gesture and it has to be handled here.
+    bb = await bandBox();
+    await page.mouse.dblclick(bb.x, bb.y);
+    await page.waitForTimeout(900);
+    const r = await xrange();
+    if (r[0] !== 0 || r[1] !== 360) errors.push(`double-click on the band did not reset the zoom: ${r}`);
+    console.log("double-click on the band resets the zoom:", r);
+  }
+
   // ---- tie bars: detection, per-bar editing, and the wear gate ------------
   // Driven on a purpose-built rib pattern, because the bundled 2W sample has no
   // tie bars -- and the fact that it reports none is itself part of the check.

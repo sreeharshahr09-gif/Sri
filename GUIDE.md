@@ -92,6 +92,28 @@ So at the default **wear = 0** the bars are listed and drawn but contribute noth
 
 ---
 
+## The contact-patch band
+
+On the **θ sweep + pattern** tab the contact patch is drawn where it actually
+sits on the rolled-out tread, and a translucent band of the same
+circumferential extent runs up through every sweep row above it. That turns
+"there is a dip near 140°" and "these are the blocks under the patch there"
+into one picture instead of two.
+
+**Drag the band** to slide the patch around the tyre, or type an exact angle in
+the box. It moves along **θ only**: where the patch sits laterally is decided by
+the crown profile and the lean angle (or by the y-centre field in
+*3 · Contact patch*), so being able to shove it sideways on this chart would
+contradict the physics that put it there.
+
+Drag anywhere *outside* the band to zoom — every chart and the pattern zoom
+together. Double-click resets, including a double-click on the band itself.
+
+A patch parked across θ = 0 is drawn in both halves, at the left and right ends
+of the strip, because that is what the tyre does at the seam.
+
+---
+
 ## The five minutes that matter
 
 If you're short on time, look at these four things in this order:

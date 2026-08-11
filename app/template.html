@@ -235,7 +235,12 @@
       <section id="panel-stack" class="panel on">
         <div id="cards" class="cards"></div>
         <div id="cursorReadout"></div>
-        <div class="hint" style="margin-bottom:6px">Move the cursor over any chart below: a line follows it through every row and down onto the pattern, and the values at that angle appear above. Drag to zoom — all the charts and the pattern zoom together; double-click to reset.</div>
+        <div id="patchThetaRow" class="banner" style="margin-bottom:8px;display:none">
+          <label title="Where the contact patch sits around the tyre. Drag the shaded band on any chart below, or type an exact angle here. Lateral position is not set here — the crown and lean angle decide it (or the y-centre field in 3 · Contact patch).">Patch at θ
+            <input id="patchTheta" type="number" value="180" step="1" min="0" max="360" style="width:90px" /> °</label>
+          <span id="patchThetaLabel"></span>
+        </div>
+        <div class="hint" style="margin-bottom:6px">Move the cursor over any chart below: a line follows it through every row and down onto the pattern, and the values at that angle appear above. <b>Drag the shaded band</b> to slide the contact patch around the tyre — it moves along θ only, since the crown and lean angle fix where it sits laterally. Drag anywhere else to zoom; all the charts and the pattern zoom together, and double-click resets.</div>
         <div class="plot-host"><div id="thetaStack" class="plot"></div></div>
         <div class="plot-host"><div id="patternStrip" class="plot"></div></div>
       </section>
