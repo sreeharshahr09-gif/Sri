@@ -256,7 +256,11 @@ def test_pattern_derived_inputs_are_reconciled_before_every_run():
     assert run_body.index("reconcilePattern();") < run_body.index("postMessage")
     # and it must rebuild all three derived things
     body = ui[ui.index("function reconcilePattern("):ui.index("// ---- banner")]
-    assert "crownDualRadius" in body, "crown is not rebuilt"
+    assert "buildCrown" in body, "crown is not rebuilt"
+    # every crown input has to reach it, including the multi-arc spec -- a crown
+    # rebuilt from only some of them is the same bug in a smaller form
+    for field in ("crown_arcs", "crown_r_center", "crown_r_shoulder", "crown_break"):
+        assert field in body, f"{field} does not reach the rebuilt crown"
     assert "estimatePitchCount" in body or "nPitches" in body, "pitch division is not rebuilt"
     assert "b.height" in body, "block depths are not reapplied"
 
@@ -1173,3 +1177,226 @@ process.stdout.write(JSON.stringify({{worst: worst, lo: lo, hi: hi}}));
     # a real tread ripples but never leaves 0..1
     assert 0.0 < got["lo"] < got["hi"] < 1.0
     assert got["hi"] - got["lo"] > 0.005, "a real pattern must show some ripple in land"
+
+
+# ---------------------------------------------------------------------------
+# tread arc profile (crown) and camber
+# ---------------------------------------------------------------------------
+
+
+def test_single_arc_crown_matches_the_closed_form():
+    """A constant-radius crown has phi(y) = y/R exactly, so the tangent angle at
+    the tread edge -- which is the maximum lean the tyre can reach -- is
+    half_width / R.  Everything about camber in this tool is derived from that
+    integral, so it is the right thing to pin."""
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const out = [];
+for (const [w, r] of [[220, 800], [159, 300], [180, 1200], [140, 90]]) {{
+  const c = E.crownMultiArc(w, [{{r: r}}]);
+  out.push([w, r, E.maxSupportedLean(c), E.crownDrop(c, w / 2), E.crownLocalRadius(c, w / 4)]);
+}}
+process.stdout.write(JSON.stringify(out));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
+    assert res.returncode == 0, res.stderr[:2000]
+    import math
+
+    for w, r, max_lean, drop, r_quarter in json.loads(res.stdout):
+        # phi_edge = (half width) / R, in degrees
+        assert max_lean == pytest.approx(math.degrees((w / 2) / r), rel=1e-6), (w, r)
+        # a circular arc drops R(1 - cos(phi)) at the edge
+        assert drop == pytest.approx(r * (1 - math.cos((w / 2) / r)), rel=1e-4), (w, r)
+        # and the radius is that radius everywhere
+        assert r_quarter == pytest.approx(r, rel=1e-12)
+
+
+def test_multi_arc_is_piecewise_constant_curvature_with_tangent_continuity():
+    """What a tread arc specification actually is.
+
+    Radius is piecewise constant and jumps at each breakpoint -- that IS the
+    spec.  The tangent angle must NOT jump, because phi is the integral of 1/r
+    and an integral of a bounded function is continuous however abruptly the
+    function steps.  That is what makes the arcs meet tangentially.
+    """
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const w = 220, half = 110;
+const c = E.crownMultiArc(w, [{{r: 800, to: 45}}, {{r: 300, to: 88}}, {{r: 90}}]);
+const probe = (y) => [E.crownLocalRadius(c, y), E.crownTangentAngle(c, y) * 180 / Math.PI];
+process.stdout.write(JSON.stringify({{
+  before45: probe(44.0), after45: probe(46.0),
+  before88: probe(87.0), after88: probe(89.0),
+  centre: probe(0), edge: probe(half),
+  maxLean: E.maxSupportedLean(c),
+  arcs: c.arcs,
+}}));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
+    assert res.returncode == 0, res.stderr[:2000]
+    g = json.loads(res.stdout)
+
+    # radius steps at the breakpoints
+    assert g["before45"][0] == pytest.approx(800, rel=1e-9)
+    assert g["after45"][0] == pytest.approx(300, rel=1e-9)
+    assert g["before88"][0] == pytest.approx(300, rel=1e-9)
+    assert g["after88"][0] == pytest.approx(90, rel=1e-9)
+
+    # ...but the tangent angle does not.  Across a 2 mm window straddling a
+    # breakpoint the angle may change by at most what the tighter arc can turn
+    # in that distance, with a little slack for the sampling grid.
+    import math
+
+    for lo, hi, tighter in ((g["before45"], g["after45"], 300.0), (g["before88"], g["after88"], 90.0)):
+        step = abs(hi[1] - lo[1])
+        assert step < math.degrees(2.0 / tighter) * 1.3, f"tangent angle jumped by {step:.3f} deg"
+
+    assert g["centre"][1] == pytest.approx(0.0, abs=1e-12), "phi is zero at the centreline by definition"
+    assert g["maxLean"] == pytest.approx(g["edge"][1], rel=1e-9)
+    assert [a["radius"] for a in g["arcs"]] == [800, 300, 90]
+    assert g["arcs"][-1]["to_mm"] == pytest.approx(110.0)
+
+
+def test_the_arc_spec_parser_and_its_error_messages():
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const w = 200;                       // half width 100 mm
+const ok = {{}}, bad = {{}};
+for (const t of ['300', '125@0.45, 55', '800@45mm, 300@88mm, 90', '800@45%, 300@80%, 90', ' 300 @ 0.6 ; 90 ']) {{
+  try {{ ok[t] = E.parseCrownArcs(t, w).map(a => [a.r, Number.isFinite(a.to) ? +a.to.toFixed(3) : null]); }}
+  catch (e) {{ ok[t] = 'THREW: ' + e.message; }}
+}}
+for (const t of ['', 'abc', '800@45mm', '125@0.45, 55@0.9', '800', '-100', '5', '800@120mm, 90', '800@60mm, 300@30mm, 90',
+                 '100@0.2, 100@0.4, 100@0.5, 100@0.6, 100@0.7, 100@0.8, 100@0.9, 100@0.95, 100']) {{
+  try {{ const r = E.parseCrownArcs(t, w); bad[t] = r === null ? 'null' : 'ACCEPTED'; }}
+  catch (e) {{ bad[t] = e.message; }}
+}}
+process.stdout.write(JSON.stringify({{ok: ok, bad: bad}}));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
+    assert res.returncode == 0, res.stderr[:2000]
+    g = json.loads(res.stdout)
+
+    assert g["ok"]["300"] == [[300, None]]
+    # a breakpoint <= 1 is a fraction of the half width, > 1 is millimetres
+    assert g["ok"]["125@0.45, 55"] == [[125, 45.0], [55, None]]
+    assert g["ok"]["800@45mm, 300@88mm, 90"] == [[800, 45.0], [300, 88.0], [90, None]]
+    assert g["ok"]["800@45%, 300@80%, 90"] == [[800, 45.0], [300, 80.0], [90, None]]
+    # whitespace and semicolons are tolerated
+    assert g["ok"][" 300 @ 0.6 ; 90 "] == [[300, 60.0], [90, None]]
+
+    assert g["bad"][""] == "null", "an empty spec means 'use the two-radius fields'"
+    assert g["bad"]["800"] == "ACCEPTED", "a lone radius is a valid single-arc crown"
+    for spec, needle in [
+        ("abc", "could not read"),
+        ("800@45mm", "must not carry a breakpoint"),
+        ("125@0.45, 55@0.9", "must not carry a breakpoint"),
+        ("-100", "positive"),
+        ("5", "implausibly tight"),
+        ("800@120mm, 90", "beyond the tread edge"),
+        ("800@60mm, 300@30mm, 90", "must increase"),
+    ]:
+        assert needle in g["bad"][spec], f"{spec!r} -> {g['bad'][spec]!r}"
+    assert "at most" in g["bad"]["100@0.2, 100@0.4, 100@0.5, 100@0.6, 100@0.7, 100@0.8, 100@0.9, 100@0.95, 100"]
+
+
+def test_camber_walks_the_contact_point_along_the_profile():
+    """The whole camber model in one check.
+
+    The contact point at lean gamma is where the tread tangent has turned to
+    gamma.  It must therefore move outboard monotonically with lean, the local
+    lateral radius there must follow the profile, and past the steepest tangent
+    the profile reaches there must be no contact point at all.
+    """
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const c = E.crownMultiArc(220, [{{r: 800, to: 45}}, {{r: 300, to: 88}}, {{r: 90}}]);
+const rows = [];
+for (let g = 0; g <= 25; g += 1) {{
+  const y = E.crownContactLateral(c, g);
+  rows.push([g, y, E.crownLocalRadius(c, y), E.crownDrop(c, y)]);
+}}
+process.stdout.write(JSON.stringify({{rows: rows, maxLean: E.maxSupportedLean(c)}}));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
+    assert res.returncode == 0, res.stderr[:2000]
+    g = json.loads(res.stdout)
+    rows, max_lean = g["rows"], g["maxLean"]
+
+    assert rows[0][1] == pytest.approx(0.0, abs=1e-9), "upright, the tyre touches on the centreline"
+    reachable = [r for r in rows if r[0] <= max_lean]
+    for a, b in zip(reachable, reachable[1:]):
+        assert b[1] > a[1], f"contact point did not move outboard from {a[0]} to {b[0]} deg"
+        assert b[3] >= a[3] - 1e-9, "the contact point must sit progressively lower"
+    # the local radius collapses as the contact point reaches the shoulder arc
+    assert reachable[0][2] == pytest.approx(800, rel=1e-6)
+    assert reachable[-1][2] < 400, "the shoulder arc should be in contact near max lean"
+    # past the steepest tangent the point saturates at the tread edge
+    beyond = [r for r in rows if r[0] > max_lean + 1]
+    if beyond:
+        assert all(r[1] == pytest.approx(110.0, abs=0.2) for r in beyond)
+
+
+def test_a_tighter_shoulder_arc_raises_the_reachable_lean():
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const out = [90, 150, 300, 800].map(rs =>
+  [rs, E.maxSupportedLean(E.crownMultiArc(220, [{{r: 800, to: 60}}, {{r: rs}}]))]);
+process.stdout.write(JSON.stringify(out));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
+    assert res.returncode == 0, res.stderr[:2000]
+    out = json.loads(res.stdout)
+    leans = [v for _, v in out]
+    assert leans == sorted(leans, reverse=True), out
+    assert leans[0] > 2 * leans[-1], "a 90 mm shoulder must reach far more lean than an 800 mm one"
+
+
+def test_buildCrown_dispatches_and_leaves_the_default_untouched():
+    """Adding the arc path must not move a single existing number."""
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const w = 159;
+const viaBuild = E.buildCrown(w, {{crown_r_center: 125, crown_r_shoulder: 55, crown_break: 0.45}});
+const direct = E.crownDualRadius(w, 125, 55, 0.45);
+let worst = 0;
+for (let i = 0; i < direct.y.length; i++) {{
+  worst = Math.max(worst, Math.abs(viaBuild.phi[i] - direct.phi[i]), Math.abs(viaBuild.z[i] - direct.z[i]));
+}}
+const arcs = E.buildCrown(w, {{crown_arcs: [{{r: 300}}], crown_r_center: 125}});
+process.stdout.write(JSON.stringify({{
+  worst: worst, defaultHasArcs: viaBuild.arcs === undefined,
+  arcPathUsed: !!arcs.arcs && arcs.arcs[0].radius === 300,
+  emptyArcsFallsBack: E.buildCrown(w, {{crown_arcs: [], crown_r_center: 125}}).arcs === undefined,
+}}));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
+    assert res.returncode == 0, res.stderr[:2000]
+    g = json.loads(res.stdout)
+    assert g["worst"] == 0.0, "the default crown path changed"
+    assert g["defaultHasArcs"], "the blended crown must not claim to be an arc profile"
+    assert g["arcPathUsed"], "an explicit arc spec must override the two-radius fields"
+    assert g["emptyArcsFallsBack"]
+
+
+def test_the_crown_is_visible_and_recorded():
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert 'id="crownArcs"' in tpl and 'id="crownArcInfo"' in tpl and 'id="crownPlot"' in tpl
+    assert "function renderCrownProfile(" in ui
+    # the chart must show the profile, the radius and where contact lands
+    prof = ui[ui.index("function renderCrownProfile("):ui.index("function renderPatchPreview(")]
+    for token in ("crown.z", "crown.r", "crownContactLateral", "maxSupportedLean"):
+        assert token in prof, token
+    # a half-typed spec must never throw out of the paint path
+    rec = ui[ui.index("function reconcilePattern("):ui.index("// ---- banner")]
+    assert "try { arcs = readCrownArcs(" in rec, "reconcilePattern runs on every keystroke"
+    # and the resolved crown reaches every export
+    assert "function crownSummary(" in ui and "function crownLine(" in ui
+    assert ui.count("crownLine(s") >= 3

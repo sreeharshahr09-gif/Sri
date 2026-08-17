@@ -2161,7 +2161,7 @@
     const pattern = {
       tyre_circumference: circ, tread_width: width, pitches: pitches, blocks: blocks,
       tiebars: tiebars,
-      crown: crownDualRadius(width, opts.crown_r_center, opts.crown_r_shoulder, opts.crown_break),
+      crown: buildCrown(width, opts),
       name: opts.name || "pattern", source: "dxf",
       meta: { geometric_repeat_mm: repeat, uniform_array: uniform },
     };
@@ -2265,6 +2265,111 @@
     }
     return crownFromRadiusProfile(y, r, false);
   }
+  // A real tread arc specification: a run of circular arcs, each with its own
+  // radius, meeting at stated breakpoints.
+  //
+  // crownFromRadiusProfile already takes an arbitrary r(y) and integrates it, so
+  // the engine has never cared how many arcs produced the profile -- only
+  // crownDualRadius, which blends exactly two of them, was the limit. This
+  // builds r(y) piecewise-constant instead, which is what a drawing actually
+  // specifies. Tangent continuity comes free: phi is the integral of 1/r, so it
+  // is continuous however abruptly r changes. Curvature IS discontinuous at each
+  // breakpoint, which is correct -- that is what a multi-arc profile is.
+  //
+  // Breakpoints are developed arc length from the centreline, the same y the
+  // rest of the tool uses, not the projected (flat) width.
+  const MAX_CROWN_ARCS = 8;
+
+  function validateCrownArcs(arcs, treadWidth) {
+    if (!arcs || !arcs.length) throw new Error("a tread arc profile needs at least one radius");
+    if (arcs.length > MAX_CROWN_ARCS)
+      throw new Error("at most " + MAX_CROWN_ARCS + " tread arcs are supported, got " + arcs.length);
+    const half = treadWidth / 2;
+    let prev = 0;
+    for (let i = 0; i < arcs.length; i++) {
+      const a = arcs[i];
+      if (!Number.isFinite(a.r) || a.r <= 0)
+        throw new Error("tread arc radius " + (i + 1) + " must be a positive number of mm, got " + a.r);
+      if (a.r < 10)
+        throw new Error("tread arc radius " + (i + 1) + " of " + a.r + " mm is implausibly tight for a tyre crown");
+      if (i === arcs.length - 1) {
+        // The last arc always runs to the tread edge, so a breakpoint on it
+        // describes nothing. Silently dropping it would hide a half-written
+        // spec -- "800@45mm" almost always means an arc is missing.
+        if (Number.isFinite(a.to))
+          throw new Error("the last tread arc runs to the tread edge, so it must not carry a breakpoint. " +
+            "Write \"" + a.r + "\" on its own, or add the arc that follows it.");
+        continue;
+      }
+      if (!Number.isFinite(a.to) || a.to <= prev)
+        throw new Error("tread arc breakpoint " + (i + 1) + " must increase along the half width; got " +
+          a.to + " after " + prev);
+      if (a.to >= half)
+        throw new Error("tread arc breakpoint " + (i + 1) + " (" + a.to.toFixed(2) +
+          " mm) is at or beyond the tread edge (" + half.toFixed(2) + " mm); drop it or widen the tread");
+      prev = a.to;
+    }
+    return true;
+  }
+
+  // "300"            one arc, constant radius
+  // "125@0.45, 55"   125 mm out to 45% of the half width, then 55 mm to the edge
+  // "125@36, 80@62, 55"   breakpoints in mm from the centreline
+  // A value <= 1 is read as a fraction of the half width, > 1 as millimetres --
+  // a fraction above 1 and a breakpoint under 1 mm are both meaningless.
+  function parseCrownArcs(text, treadWidth) {
+    const half = treadWidth / 2;
+    const parts = String(text || "").split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+    if (!parts.length) return null;
+    const arcs = [];
+    for (let i = 0; i < parts.length; i++) {
+      const m = /^([-+0-9.eE]+)\s*(?:@\s*([-+0-9.eE]+)\s*(mm|%)?)?$/.exec(parts[i]);
+      if (!m)
+        throw new Error("could not read tread arc '" + parts[i] +
+          "'. Use radius@breakpoint, e.g. \"125@0.45, 55\" or \"125@36mm, 55\".");
+      const r = parseFloat(m[1]);
+      let to = m[2] == null ? NaN : parseFloat(m[2]);
+      if (m[2] != null) {
+        if (m[3] === "%") to = (to / 100) * half;
+        else if (m[3] === "mm") to = to;
+        else to = to <= 1 ? to * half : to;
+      }
+      if (i < parts.length - 1 && !Number.isFinite(to))
+        throw new Error("tread arc '" + parts[i] + "' needs a breakpoint (only the last arc may omit one)");
+      arcs.push({ r: r, to: to });
+    }
+    validateCrownArcs(arcs, treadWidth);
+    return arcs;
+  }
+
+  function crownMultiArc(treadWidth, arcs, n) {
+    validateCrownArcs(arcs, treadWidth);
+    n = n || 801;
+    const half = treadWidth / 2;
+    const y = new Float64Array(n), r = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      y[i] = -half + (2 * half * i) / (n - 1);
+      const a = Math.abs(y[i]);
+      let k = arcs.length - 1;
+      for (let j = 0; j < arcs.length - 1; j++) if (a < arcs[j].to) { k = j; break; }
+      r[i] = arcs[k].r;
+    }
+    const crown = crownFromRadiusProfile(y, r, false);
+    crown.arcs = arcs.map(function (a, i) {
+      return { radius: a.r, to_mm: i === arcs.length - 1 ? half : a.to };
+    });
+    return crown;
+  }
+
+  // One place that decides which crown a set of options asks for, so the page,
+  // the CLI and the tests cannot drift apart.
+  function buildCrown(treadWidth, opts) {
+    opts = opts || {};
+    if (opts.crown_arcs && opts.crown_arcs.length)
+      return crownMultiArc(treadWidth, opts.crown_arcs);
+    return crownDualRadius(treadWidth, opts.crown_r_center, opts.crown_r_shoulder, opts.crown_break);
+  }
+
   function crownTangentAngle(crown, y) { return interp(y, crown.y, crown.phi); }
   function crownLocalRadius(crown, y) { return interp(y, crown.y, crown.r); }
   function crownDrop(crown, y) { return interp(y, crown.y, crown.z); }
@@ -3060,6 +3165,7 @@
     // dxf
     readDxfEntities, entitiesToSegments, buildLoops, closeAcrossSeam, loadPattern, estimatePitchCount, geometricRepeat,
     dxfPairs, planarArrangement, classifyFaces, faceAdjacency, bulgeArc,
+    crownMultiArc, parseCrownArcs, validateCrownArcs, buildCrown, MAX_CROWN_ARCS,
     compoundProperties, validateCompound, interpShore,
     tiebarEngagementWear, tiebarEngaged, effectiveBlocks, validateWear, patternAtWear,
     linkTiebars, polygonEdgeKeys, couplingLinkMatrix, tiebarCurrentHeight,

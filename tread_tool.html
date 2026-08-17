@@ -449,6 +449,8 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
         <div class="field" title="Crown radius at the tread centre. Leave blank for 125 mm. The crown decides where the contact point sits at every lean angle, so this drives the entire γ axis — it is not a cosmetic setting."><label>Crown R centre (mm)</label><input id="crownCenter" type="number" placeholder="125" step="5" /></div>
         <div class="field" title="Where the shoulder radius starts eating into the crown, as a fraction of the half width. This is class geometry, not a tuning knob: a truck crown stays flat almost to the edge (0.85), a car rolls off in the outer quarter (0.72), a motorcycle is curved from the centreline out (0.45). It sets the tread tangent at every lateral position, and so the contact point at each lean and the maximum lean the tyre can reach. Set by the tyre type; override if you know the real profile."><label>Crown break (frac)</label><input id="crownBreak" type="number" value="0.45" step="0.05" min="0.05" max="0.98" /></div>
         <div class="field" title="Crown radius at the shoulder. Leave blank for 55 mm. A tighter shoulder radius narrows the patch more sharply as you lean, and lowers the maximum lean the tyre can geometrically reach."><label>Crown R shoulder (mm)</label><input id="crownShoulder" type="number" placeholder="55" step="5" /></div>
+        <div class="field wide" title="The real tread arc specification, as a run of circular arcs. Leave blank to use the two-radius fields above. Format: radius@breakpoint, comma separated, last arc runs to the edge. Breakpoints are developed arc length from the centreline — a value of 1 or less is read as a fraction of the half width, above 1 as millimetres, and you can write mm or %25 explicitly. Examples: '300' for a single arc; '125@0.45, 55'; '800@45mm, 300@88mm, 90'. This OVERRIDES the two fields above, and unlike them it builds true arcs meeting tangentially at the breakpoints rather than a smooth blend."><label>Tread arc radii</label><input id="crownArcs" type="text" placeholder="e.g. 800@45mm, 300@88mm, 90" /></div>
+        <div id="crownArcInfo" class="hint" style="margin:2px 0 6px;padding:6px 9px;background:var(--panel-2);border:1px solid var(--edge);border-radius:6px;line-height:1.55"></div>
         <div class="field" title="Override the pitch count inferred from block spacing. Leave blank to re-infer it from the drawing. This sets which order is marked in red on the Order content chart."><label>Pitch count (override)</label><input id="nPitches" type="number" placeholder="auto" step="1" /></div>
         <div class="field" title="For patterns digitised in PROJECTION (an ink impression, a photograph), which compress the shoulder. Leave OFF for a mould DXF — that drawing is already developed (arc-length) and applying the correction again double-counts."><label><input id="curv" type="checkbox" /> curvature correction</label></div>
         <div class="field" title="Circumferential grid cells. Fluctuation percentages (CoV) are stable at every setting; absolute stiffness values are not. Measured against a converged 8192 grid: draft is about 3% high, standard about 0.6%, fine about 0.01%.">
@@ -597,6 +599,17 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
       </section>
 
       <section id="panel-patch" class="panel">
+        <div id="crownPlot" class="plot"></div>
+        <div class="explain" style="margin-top:0;margin-bottom:14px">
+          <h4>The tread arc profile, and what camber does with it</h4>
+          <p><span class="lead">The crown is stored as a local radius at every lateral position, and everything about lean follows from integrating it.</span> The tangent angle is <code>φ(y) = ∫ dy/r(y)</code>, the drop below the centreline is <code>z(y) = ∫ sin φ dy</code>.</p>
+          <ul>
+            <li><b>Where the tyre touches at lean γ</b> is the point where <code>φ(y) = γ</code> — the tread tangent has rotated to horizontal there. Lean the tyre and the contact point walks outboard along the profile.</li>
+            <li><b>The patch shape</b> comes from the local radii at that point: <code>R_lat = r(y_c)</code> across the tread and <code>R_eff = wheel radius − z(y_c)</code> along it. A crown that tightens toward the shoulder narrows the patch as you lean.</li>
+            <li><b>Maximum reachable lean</b> is the steepest tangent the profile reaches, <code>max|φ|</code>. Past it there is no contact point at all, and those lean angles are dropped from the sweep rather than extrapolated.</li>
+          </ul>
+          <p style="margin-bottom:0">Type a real arc specification in <b>5 · Load &amp; advanced</b> — <code>800@45mm, 300@88mm, 90</code> — for true arcs meeting tangentially at the breakpoints. Leaving it blank uses the two-radius blend instead, which is smoother than a real profile through the shoulder transition.</p>
+        </div>
         <div id="patchPrev" class="plot"></div>
         <table class="metrics" style="max-width:520px;margin-top:12px"><tbody id="patchStats"></tbody></table>
       </section>
@@ -693,6 +706,24 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
 <p>It engages once <strong>w ≥ NSD − h</strong>. From then on it is flush with the blocks and is simply more land at the same height — which is the point of a tie bar: it arrives part-worn and stiffens the block row against the heel-and-toe wear that is developing by then.</p>
 <p>So at the default <strong>wear = 0</strong> the bars are listed and drawn but contribute nothing, which is the truth for a new tyre. Raise <strong>Tread worn</strong> in <em>6 · Wear &amp; tie bars</em> and watch the contact area step up and the θ-fluctuation drop as they come in — that step is the tie bar doing its job, and its position on the wear axis is a design decision you can now see.</p>
 <p><strong>How they are detected.</strong> A tie bar usually has no outline of its own: its two long sides <em>are</em> the groove walls of the blocks either side. The importer builds the planar arrangement of every line in the drawing and takes its enclosed regions, so a bar falls out as its own region even though it shares most of its boundary with its neighbours. A region counts as a tie bar if it shares an edge with two or more blocks and its area is below the <strong>tie-bar area limit</strong> (default half the typical block). That is only the first guess — <strong>6 · Wear &amp; tie bars</strong> in the setup panel lists every candidate with its area, height, engagement wear and a checkbox, so you can reject one, promote another, or set heights bar by bar. It sits with the other inputs, before <strong>Run</strong>, because that is what it is: the heights you set here decide what the sweep computes.</p>
+<hr>
+<h2>Camber and the tread arc profile</h2>
+<p>The crown is stored as a <strong>local radius at every lateral position</strong>, <code>r(y)</code>, where <code>y</code> is developed arc length from the centreline. Everything about lean comes from integrating it:</p>
+<ul><li><strong>tangent angle</strong> <code>φ(y) = ∫ dy / r(y)</code></li><li><strong>drop below the centreline</strong> <code>z(y) = ∫ sin φ dy</code></li><li><strong>projected (flat) width</strong> <code>y_proj(y) = ∫ cos φ dy</code></li></ul>
+<h3>What camber does</h3>
+<p>At lean angle <strong>γ</strong> the tyre touches where the tread tangent has rotated to horizontal — the point where <strong>φ(y) = γ</strong>. Everything else follows from that one inversion:</p>
+<div class="tablewrap"><table><thead><tr><th>Quantity</th><th>How it is obtained</th></tr></thead><tbody><tr><td>contact point <code>y_c</code></td><td>solve <code>φ(y_c) = γ</code></td></tr><tr><td>lateral radius at contact</td><td><code>R_lat = r(y_c)</code></td></tr><tr><td>effective rolling radius</td><td><code>R_eff = wheel radius − z(y_c)</code></td></tr><tr><td>patch semi-axes</td><td>Winkler: <code>δ = √(Fz / (k·π·√(R_eff·R_lat)))</code>, <code>a = √(2 R_eff δ)</code>, <code>b = √(2 R_lat δ)</code></td></tr><tr><td>load at lean</td><td><code>Fz / cos γ</code> when <em>load rises with lean</em> is ticked</td></tr><tr><td><strong>maximum reachable lean</strong></td><td><code>max │φ│</code> — the steepest tangent the profile reaches</td></tr></tbody></table></div>
+<p>Past that maximum there is <strong>no contact point at all</strong>: the tyre would be riding its tread edge. Those lean angles are dropped from the sweep with a note, not extrapolated.</p>
+<p>On the bundled 2W sample (159 mm tread, 125/55 mm crown) the contact point walks from the centreline to 61 mm out at 30° of lean, the lateral radius collapses 125 → 82 mm, and the patch comes out <strong>7% longer and 11% narrower</strong> than upright. That narrowing is the whole reason the tool sweeps lean.</p>
+<h3>Single and multi-arc profiles</h3>
+<p>Type the real specification in <strong>5 · Load &amp; advanced → Tread arc radii</strong>:</p>
+<div class="tablewrap"><table><thead><tr><th>Spec</th><th>Meaning</th></tr></thead><tbody><tr><td><code>300</code></td><td>one arc, constant radius to the edge</td></tr><tr><td><code>125@0.45, 55</code></td><td>125 mm out to 45% of the half width, then 55 mm to the edge</td></tr><tr><td><code>800@45mm, 300@88mm, 90</code></td><td>three arcs with breakpoints in mm from the centreline</td></tr><tr><td><code>800@45%, 300@80%, 90</code></td><td>the same, as percentages of the half width</td></tr></tbody></table></div>
+<p>A breakpoint of 1 or less is read as a fraction of the half width, above 1 as millimetres; <code>mm</code> and <code>%</code> can be written explicitly. Breakpoints are <strong>developed arc length</strong>, the same <code>y</code> as everywhere else in the tool — not projected width. Up to 8 arcs.</p>
+<p>The arcs meet <strong>tangentially</strong>: <code>φ</code> is an integral, so it stays continuous however abruptly the radius steps. Curvature <em>is</em> discontinuous at each breakpoint, which is exactly what a multi-arc profile is.</p>
+<p>Leaving the field blank uses the two-radius fields instead, which blend smoothly from centre to shoulder rather than switching at a point. That is <strong>smoother than a real profile</strong> through the shoulder transition — fine as a default, but type the real arcs when you have them.</p>
+<p>The <strong>Contact patch</strong> tab draws the resolved profile with the breakpoints marked and the contact point shown at every lean angle in the run, so a typed specification never has to be taken on trust.</p>
+<h3>What is not modelled</h3>
+<ul><li><strong>Camber thrust</strong> and lateral force generation. This is a contact and stiffness model, not a force model.</li><li><strong>Carcass deformation under camber</strong> — the belt is treated as rigid.</li><li><strong>Asymmetric crowns.</strong> The profile is mirrored about the centreline.</li><li>The <strong>projection correction</strong> (<em>curvature correction</em> checkbox) weights each raster row by <code>1/cos φ</code>. It is for patterns digitised in projection — an ink impression or a photograph. A mould DXF is already developed, so leave it off or the correction is applied twice.</li></ul>
 <hr>
 <h2>Land percentage vs θ</h2>
 <p>The second row of the θ sweep is <strong>land in the patch</strong>: how much of the contact patch is rubber rather than groove at that instant, as a percentage.</p>
@@ -71319,7 +71350,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     const pattern = {
       tyre_circumference: circ, tread_width: width, pitches: pitches, blocks: blocks,
       tiebars: tiebars,
-      crown: crownDualRadius(width, opts.crown_r_center, opts.crown_r_shoulder, opts.crown_break),
+      crown: buildCrown(width, opts),
       name: opts.name || "pattern", source: "dxf",
       meta: { geometric_repeat_mm: repeat, uniform_array: uniform },
     };
@@ -71423,6 +71454,111 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     }
     return crownFromRadiusProfile(y, r, false);
   }
+  // A real tread arc specification: a run of circular arcs, each with its own
+  // radius, meeting at stated breakpoints.
+  //
+  // crownFromRadiusProfile already takes an arbitrary r(y) and integrates it, so
+  // the engine has never cared how many arcs produced the profile -- only
+  // crownDualRadius, which blends exactly two of them, was the limit. This
+  // builds r(y) piecewise-constant instead, which is what a drawing actually
+  // specifies. Tangent continuity comes free: phi is the integral of 1/r, so it
+  // is continuous however abruptly r changes. Curvature IS discontinuous at each
+  // breakpoint, which is correct -- that is what a multi-arc profile is.
+  //
+  // Breakpoints are developed arc length from the centreline, the same y the
+  // rest of the tool uses, not the projected (flat) width.
+  const MAX_CROWN_ARCS = 8;
+
+  function validateCrownArcs(arcs, treadWidth) {
+    if (!arcs || !arcs.length) throw new Error("a tread arc profile needs at least one radius");
+    if (arcs.length > MAX_CROWN_ARCS)
+      throw new Error("at most " + MAX_CROWN_ARCS + " tread arcs are supported, got " + arcs.length);
+    const half = treadWidth / 2;
+    let prev = 0;
+    for (let i = 0; i < arcs.length; i++) {
+      const a = arcs[i];
+      if (!Number.isFinite(a.r) || a.r <= 0)
+        throw new Error("tread arc radius " + (i + 1) + " must be a positive number of mm, got " + a.r);
+      if (a.r < 10)
+        throw new Error("tread arc radius " + (i + 1) + " of " + a.r + " mm is implausibly tight for a tyre crown");
+      if (i === arcs.length - 1) {
+        // The last arc always runs to the tread edge, so a breakpoint on it
+        // describes nothing. Silently dropping it would hide a half-written
+        // spec -- "800@45mm" almost always means an arc is missing.
+        if (Number.isFinite(a.to))
+          throw new Error("the last tread arc runs to the tread edge, so it must not carry a breakpoint. " +
+            "Write \"" + a.r + "\" on its own, or add the arc that follows it.");
+        continue;
+      }
+      if (!Number.isFinite(a.to) || a.to <= prev)
+        throw new Error("tread arc breakpoint " + (i + 1) + " must increase along the half width; got " +
+          a.to + " after " + prev);
+      if (a.to >= half)
+        throw new Error("tread arc breakpoint " + (i + 1) + " (" + a.to.toFixed(2) +
+          " mm) is at or beyond the tread edge (" + half.toFixed(2) + " mm); drop it or widen the tread");
+      prev = a.to;
+    }
+    return true;
+  }
+
+  // "300"            one arc, constant radius
+  // "125@0.45, 55"   125 mm out to 45% of the half width, then 55 mm to the edge
+  // "125@36, 80@62, 55"   breakpoints in mm from the centreline
+  // A value <= 1 is read as a fraction of the half width, > 1 as millimetres --
+  // a fraction above 1 and a breakpoint under 1 mm are both meaningless.
+  function parseCrownArcs(text, treadWidth) {
+    const half = treadWidth / 2;
+    const parts = String(text || "").split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+    if (!parts.length) return null;
+    const arcs = [];
+    for (let i = 0; i < parts.length; i++) {
+      const m = /^([-+0-9.eE]+)\s*(?:@\s*([-+0-9.eE]+)\s*(mm|%)?)?$/.exec(parts[i]);
+      if (!m)
+        throw new Error("could not read tread arc '" + parts[i] +
+          "'. Use radius@breakpoint, e.g. \"125@0.45, 55\" or \"125@36mm, 55\".");
+      const r = parseFloat(m[1]);
+      let to = m[2] == null ? NaN : parseFloat(m[2]);
+      if (m[2] != null) {
+        if (m[3] === "%") to = (to / 100) * half;
+        else if (m[3] === "mm") to = to;
+        else to = to <= 1 ? to * half : to;
+      }
+      if (i < parts.length - 1 && !Number.isFinite(to))
+        throw new Error("tread arc '" + parts[i] + "' needs a breakpoint (only the last arc may omit one)");
+      arcs.push({ r: r, to: to });
+    }
+    validateCrownArcs(arcs, treadWidth);
+    return arcs;
+  }
+
+  function crownMultiArc(treadWidth, arcs, n) {
+    validateCrownArcs(arcs, treadWidth);
+    n = n || 801;
+    const half = treadWidth / 2;
+    const y = new Float64Array(n), r = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      y[i] = -half + (2 * half * i) / (n - 1);
+      const a = Math.abs(y[i]);
+      let k = arcs.length - 1;
+      for (let j = 0; j < arcs.length - 1; j++) if (a < arcs[j].to) { k = j; break; }
+      r[i] = arcs[k].r;
+    }
+    const crown = crownFromRadiusProfile(y, r, false);
+    crown.arcs = arcs.map(function (a, i) {
+      return { radius: a.r, to_mm: i === arcs.length - 1 ? half : a.to };
+    });
+    return crown;
+  }
+
+  // One place that decides which crown a set of options asks for, so the page,
+  // the CLI and the tests cannot drift apart.
+  function buildCrown(treadWidth, opts) {
+    opts = opts || {};
+    if (opts.crown_arcs && opts.crown_arcs.length)
+      return crownMultiArc(treadWidth, opts.crown_arcs);
+    return crownDualRadius(treadWidth, opts.crown_r_center, opts.crown_r_shoulder, opts.crown_break);
+  }
+
   function crownTangentAngle(crown, y) { return interp(y, crown.y, crown.phi); }
   function crownLocalRadius(crown, y) { return interp(y, crown.y, crown.r); }
   function crownDrop(crown, y) { return interp(y, crown.y, crown.z); }
@@ -72218,6 +72354,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     // dxf
     readDxfEntities, entitiesToSegments, buildLoops, closeAcrossSeam, loadPattern, estimatePitchCount, geometricRepeat,
     dxfPairs, planarArrangement, classifyFaces, faceAdjacency, bulgeArc,
+    crownMultiArc, parseCrownArcs, validateCrownArcs, buildCrown, MAX_CROWN_ARCS,
     compoundProperties, validateCompound, interpShore,
     tiebarEngagementWear, tiebarEngaged, effectiveBlocks, validateWear, patternAtWear,
     linkTiebars, polygonEdgeKeys, couplingLinkMatrix, tiebarCurrentHeight,
@@ -72633,6 +72770,72 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   function readDefaults() {
     return { height: num("nsd"), draft_angle: num("draft"), n_lateral_sipes: parseInt($("sipes").value, 10), sipe_depth_fraction: num("sipeDepth"), shore_a: null };
   }
+  // The tread arc spec, when the designer has typed one. Returns null to fall
+  // back to the two-radius fields. Throws on a malformed spec so the caller can
+  // put the message in front of the user rather than silently ignoring it.
+  function readCrownArcs(treadWidth) {
+    var el = $("crownArcs");
+    if (!el || !el.value.trim()) return null;
+    var w = treadWidth || (state.pattern ? state.pattern.tread_width : 0);
+    if (!(w > 0)) return null;
+    return E.parseCrownArcs(el.value, w);
+  }
+
+  // Show what the typed arcs actually resolve to, and what they imply. The
+  // maximum reachable lean is the number most likely to surprise: it is fixed by
+  // the profile, not by anything the user can set elsewhere.
+  function syncCrownArcInfo() {
+    var box = $("crownArcInfo");
+    if (!box) return;
+    var w = state.pattern ? state.pattern.tread_width : 0;
+    if (!(w > 0)) { box.innerHTML = "<i>Load a tread plan to resolve the arc profile.</i>"; return; }
+    try {
+      var arcs = readCrownArcs(w);
+      var crown = E.buildCrown(w, {
+        crown_arcs: arcs,
+        crown_r_center: $("crownCenter").value.trim() === "" ? undefined : num("crownCenter"),
+        crown_r_shoulder: $("crownShoulder").value.trim() === "" ? undefined : num("crownShoulder"),
+        crown_break: readCrownBreak(),
+      });
+      var half = w / 2;
+      var desc = arcs
+        ? arcs.map(function (a, i) {
+            return "<b>R" + (i + 1) + "</b> " + a.r + " mm to " +
+              (i === arcs.length - 1 ? "the edge" : a.to.toFixed(1) + " mm");
+          }).join(" · ")
+        : "<i>two-radius blend</i> (type an arc spec above for true arcs)";
+      box.innerHTML = desc +
+        "<br>half width " + half.toFixed(1) + " mm · edge drop " + E.crownDrop(crown, half).toFixed(2) +
+        " mm · <b>max reachable lean " + E.maxSupportedLean(crown).toFixed(1) + "°</b>";
+      setSpecError("");
+    } catch (err) {
+      box.innerHTML = "<b style='color:var(--bad)'>" + escapeHtml(err.message) + "</b>";
+    }
+  }
+
+  function crownSummary() {
+    if (!state.pattern || !state.pattern.crown) return null;
+    var c = state.pattern.crown, half = state.pattern.tread_width / 2;
+    return {
+      source: c.arcs ? "tread arc specification" : "two-radius blend",
+      arcs: c.arcs || null,
+      r_center_mm: E.crownLocalRadius(c, 0),
+      r_edge_mm: E.crownLocalRadius(c, half),
+      edge_drop_mm: E.crownDrop(c, half),
+      max_reachable_lean_deg: E.maxSupportedLean(c),
+    };
+  }
+
+  function crownLine(s) {
+    var c = s.crown;
+    if (!c) return "no crown resolved";
+    var head = c.arcs
+      ? c.arcs.map(function (a, i) { return "R" + (i + 1) + " " + a.radius + " mm to " + a.to_mm.toFixed(1) + " mm"; }).join(", ")
+      : "two-radius blend, " + c.r_center_mm.toFixed(0) + " mm centre to " + c.r_edge_mm.toFixed(0) + " mm edge";
+    return head + "; edge drop " + c.edge_drop_mm.toFixed(2) + " mm; max reachable lean " +
+      c.max_reachable_lean_deg.toFixed(1) + " deg";
+  }
+
   function readWear() { var v = num("wear"); return isFinite(v) && v > 0 ? v : 0; }
   function readTiebarFrac() { var v = num("tiebarHeight"); return isFinite(v) && v > 0 ? Math.min(1, v) : 0.55; }
   function readWeldTol() { var v = num("weldTol"); return isFinite(v) && v > 0 ? v : 0.01; }
@@ -72655,6 +72858,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     if (csh) opts.crown_r_shoulder = parseFloat(csh);
     var np = $("nPitches").value; if (np) opts.n_pitches = parseInt(np, 10);
     var ph = tyreClassPhysics();
+    // No crown_arcs here on purpose: the breakpoints can be fractions of the
+    // tread width, which is not known until this DXF has been read. The crown
+    // is rebuilt from every input by reconcilePattern() before each run.
     opts.crown_break = readCrownBreak();
     opts.zone_center = ph.zone_center; opts.zone_intermediate = ph.zone_intermediate;
     opts.weld_tolerance = readWeldTol();
@@ -72669,6 +72875,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     showResultsChrome(false);
     renderBanner();
     renderTiebars();
+    syncCrownArcInfo();
     drawEditor();
     $("emptyHint").style.display = "none";
     refreshValidation();
@@ -72727,12 +72934,17 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
     // 2. the crown profile, which sets the contact point at every lean
     var rc = $("crownCenter").value.trim(), rs = $("crownShoulder").value.trim();
-    p.crown = E.crownDualRadius(
-      p.tread_width,
-      rc === "" ? undefined : parseFloat(rc),
-      rs === "" ? undefined : parseFloat(rs),
-      readCrownBreak()
-    );
+    // A half-typed arc spec throws, and this runs on every keystroke via
+    // drawEditor. Fall back to the two-radius fields until it parses; the
+    // message is already in front of the user and the run is already blocked.
+    var arcs = null;
+    try { arcs = readCrownArcs(p.tread_width); } catch (err) { arcs = null; }
+    p.crown = E.buildCrown(p.tread_width, {
+      crown_arcs: arcs,
+      crown_r_center: rc === "" ? undefined : parseFloat(rc),
+      crown_r_shoulder: rs === "" ? undefined : parseFloat(rs),
+      crown_break: readCrownBreak(),
+    });
 
     // 3. the pitch division, which the order chart marks against
     var npRaw = $("nPitches").value.trim();
@@ -72982,6 +73194,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       catch (err) { errs.push(err.message); }
       try { E.validateCompound(readStiffParams()); }
       catch (err) { errs.push(err.message); }
+      try { readCrownArcs(state.pattern ? state.pattern.tread_width : 0); }
+      catch (err) { errs.push(err.message); }
       var w = readWear(), nsd = num("nsd");
       if (isFinite(nsd) && nsd > 0 && w >= nsd)
         errs.push("Tread worn (" + w + " mm) must be less than the NSD (" + nsd + " mm) — that much wear removes every block");
@@ -73213,6 +73427,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     renderLeanHeatmap();
     renderOrders();
     renderZones();
+    renderCrownProfile();
     renderPatchPreview();
     renderBands();
     renderTiebars();
@@ -73457,6 +73672,70 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       yaxis: { title: { text: "contact area (mm²)", font: { size: 11 } }, gridcolor: th.grid },
     };
     Plotly.react($("zones"), data, layout, { responsive: true, displayModeBar: false });
+  }
+
+  // The crown profile, drawn from the same arrays the sweep integrates: the
+  // section shape, the local radius, and where the tyre touches at every lean
+  // in the run. A tread arc spec is otherwise a line of text the user has to
+  // take on trust.
+  function renderCrownProfile() {
+    var host = $("crownPlot");
+    if (!host || !state.pattern) return;
+    var th = plotTheme(), crown = state.pattern.crown;
+    var y = Array.prototype.slice.call(crown.y);
+    var z = Array.prototype.slice.call(crown.z);
+    var r = Array.prototype.slice.call(crown.r);
+
+    // Contact points at the lean angles this run actually covered.
+    var cy = [], cz = [], ct = [];
+    for (var i = 0; i < (state.results || []).length; i++) {
+      var g = state.results[i].gamma_deg;
+      var yc = E.crownContactLateral(crown, g);
+      cy.push(yc); cz.push(E.crownDrop(crown, yc)); ct.push("γ = " + g + "°");
+    }
+
+    var data = [
+      { x: y, y: z, type: "scatter", mode: "lines", name: "crown section",
+        line: { color: th.accent, width: 2.5 }, yaxis: "y" },
+      { x: y, y: r, type: "scatter", mode: "lines", name: "local radius (right)",
+        line: { color: th.accent2, width: 1.4, dash: "dot" }, yaxis: "y2" },
+    ];
+    if (cy.length) {
+      data.push({ x: cy, y: cz, text: ct, type: "scatter", mode: "markers+text",
+                  name: "contact point at each lean", textposition: "bottom center",
+                  textfont: { size: 9, color: th.inkDim },
+                  marker: { size: 9, color: th.good, symbol: "circle-open", line: { width: 2 } },
+                  yaxis: "y" });
+    }
+    // Breakpoints, when the profile came from an explicit arc spec.
+    var shapes = [];
+    if (crown.arcs && crown.arcs.length > 1) {
+      for (var k = 0; k < crown.arcs.length - 1; k++) {
+        for (var sgn = -1; sgn <= 1; sgn += 2) {
+          shapes.push({ type: "line", x0: sgn * crown.arcs[k].to_mm, x1: sgn * crown.arcs[k].to_mm,
+                        yref: "paper", y0: 0, y1: 1,
+                        line: { color: th.inkDim, width: 1, dash: "dash" } });
+        }
+      }
+    }
+    var title = crown.arcs
+      ? "Tread arc profile — " + crown.arcs.map(function (a, i) { return "R" + (i + 1) + " " + a.radius + " mm"; }).join(" / ") +
+        ", breaks dashed"
+      : "Tread crown profile — two-radius blend";
+    Plotly.react(host, data, {
+      paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+      margin: { l: 70, r: 70, t: 40, b: 76 }, height: 340, shapes: shapes,
+      legend: { orientation: "h", y: -0.22, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
+      title: { text: title + "  ·  max reachable lean " + E.maxSupportedLean(crown).toFixed(1) + "°",
+               font: { size: 13 } },
+      xaxis: { title: { text: "lateral y — developed arc length from the centreline (mm)", font: { size: 11 } },
+               gridcolor: th.grid, zeroline: true, zerolinecolor: th.grid },
+      yaxis: { title: { text: "drop below centreline (mm)", font: { size: 11 } },
+               gridcolor: th.grid, autorange: "reversed" },
+      yaxis2: { title: { text: "local radius (mm)", font: { size: 11 } }, overlaying: "y", side: "right",
+                showgrid: false, rangemode: "tozero",
+                tickfont: { color: th.accent2 }, titlefont: { color: th.accent2 } },
+    }, { responsive: true, displayModeBar: false });
   }
 
   function renderPatchPreview() {
@@ -74366,6 +74645,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       contact_patch: readSpec(),
       load: readCpParams(),
       curvature_correction: $("curv").checked,
+      crown: crownSummary(),
       wear_and_tiebars: {
         wear_mm: readWear(),
         default_height_fraction: readTiebarFrac(),
@@ -74419,6 +74699,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     lines.push("# compound: " + compoundLine(s));
     lines.push("# wear: " + tiebarLine(s));
     lines.push("# tie-bar coupling: " + couplingLine(s));
+    lines.push("# crown: " + crownLine(s));
     lines.push("# patch: " + E.describeSpec(s.contact_patch) +
       ", scale with lean " + (s.contact_patch.scale_with_lean ? "on" : "off") +
       ", Fz " + s.load.vertical_load + " N" + (s.load.load_rises_with_lean ? " (rises with lean)" : " (constant)"));
@@ -74472,6 +74753,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     out.push("Compound: " + compoundLine(s));
     out.push("Wear    : " + tiebarLine(s));
     out.push("Coupling: " + couplingLine(s));
+    out.push("Crown   : " + crownLine(s));
     out.push("Patch   : " + E.describeSpec(s.contact_patch));
     out.push("");
     out.push("PER LEAN ANGLE");
@@ -74600,6 +74882,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       ["Sipe model", s0.compound_and_boundary.sipe_model],
       ["Wear state", tiebarLine(s0)],
       ["Tie-bar coupling", couplingLine(s0)],
+      ["Tread arc / crown", crownLine(s0)],
       ["Contact patch", E.describeSpec(s0.contact_patch)],
       ["Load", s0.load.vertical_load + " N" + (s0.load.load_rises_with_lean ? " (rises with lean)" : " (constant)")],
       ["Lean angles", s0.analysis.lean_angles_deg.join("°, ") + "°"],
@@ -74785,9 +75068,10 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     on($("cpScaleLean"), "change", function () { drawEditor(); markStale(); });
     on($("cpAutoLoad"), "change", function () { drawEditor(); markStale(); });
     ["nsd", "draft", "sipes", "sipeDepth", "shore", "poisson", "mode", "sipeModel", "quality", "curv",
-     "wheelR", "crownCenter", "crownShoulder", "nPitches", "wear", "tiebarHeight", "weldTol", "tiebarFrac"].forEach(function (id) {
-      on($(id), "input", function () { refreshValidation(); syncCompoundFields(); drawEditor(); reconcileAndRedrawTiebars(); markStale(); });
-      on($(id), "change", function () { refreshValidation(); syncCompoundFields(); drawEditor(); reconcileAndRedrawTiebars(); markStale(); });
+     "wheelR", "crownCenter", "crownShoulder", "crownArcs", "nPitches", "wear",
+     "tiebarHeight", "weldTol", "tiebarFrac"].forEach(function (id) {
+      on($(id), "input", function () { refreshValidation(); syncCompoundFields(); syncCrownArcInfo(); drawEditor(); reconcileAndRedrawTiebars(); markStale(); });
+      on($(id), "change", function () { refreshValidation(); syncCompoundFields(); syncCrownArcInfo(); drawEditor(); reconcileAndRedrawTiebars(); markStale(); });
     });
     on($("cpLoad"), "input", updateLeanLoadReference);
 
@@ -74798,6 +75082,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
     syncShapeFields();
     syncCompoundFields();
+    syncCrownArcInfo();
     updateLeanLoadReference();
     renderTiebars();
     // Paint once at startup: without this the canvas stayed blank until some

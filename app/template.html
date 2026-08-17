@@ -135,6 +135,8 @@
         <div class="field" title="Crown radius at the tread centre. Leave blank for 125 mm. The crown decides where the contact point sits at every lean angle, so this drives the entire γ axis — it is not a cosmetic setting."><label>Crown R centre (mm)</label><input id="crownCenter" type="number" placeholder="125" step="5" /></div>
         <div class="field" title="Where the shoulder radius starts eating into the crown, as a fraction of the half width. This is class geometry, not a tuning knob: a truck crown stays flat almost to the edge (0.85), a car rolls off in the outer quarter (0.72), a motorcycle is curved from the centreline out (0.45). It sets the tread tangent at every lateral position, and so the contact point at each lean and the maximum lean the tyre can reach. Set by the tyre type; override if you know the real profile."><label>Crown break (frac)</label><input id="crownBreak" type="number" value="0.45" step="0.05" min="0.05" max="0.98" /></div>
         <div class="field" title="Crown radius at the shoulder. Leave blank for 55 mm. A tighter shoulder radius narrows the patch more sharply as you lean, and lowers the maximum lean the tyre can geometrically reach."><label>Crown R shoulder (mm)</label><input id="crownShoulder" type="number" placeholder="55" step="5" /></div>
+        <div class="field wide" title="The real tread arc specification, as a run of circular arcs. Leave blank to use the two-radius fields above. Format: radius@breakpoint, comma separated, last arc runs to the edge. Breakpoints are developed arc length from the centreline — a value of 1 or less is read as a fraction of the half width, above 1 as millimetres, and you can write mm or %25 explicitly. Examples: '300' for a single arc; '125@0.45, 55'; '800@45mm, 300@88mm, 90'. This OVERRIDES the two fields above, and unlike them it builds true arcs meeting tangentially at the breakpoints rather than a smooth blend."><label>Tread arc radii</label><input id="crownArcs" type="text" placeholder="e.g. 800@45mm, 300@88mm, 90" /></div>
+        <div id="crownArcInfo" class="hint" style="margin:2px 0 6px;padding:6px 9px;background:var(--panel-2);border:1px solid var(--edge);border-radius:6px;line-height:1.55"></div>
         <div class="field" title="Override the pitch count inferred from block spacing. Leave blank to re-infer it from the drawing. This sets which order is marked in red on the Order content chart."><label>Pitch count (override)</label><input id="nPitches" type="number" placeholder="auto" step="1" /></div>
         <div class="field" title="For patterns digitised in PROJECTION (an ink impression, a photograph), which compress the shoulder. Leave OFF for a mould DXF — that drawing is already developed (arc-length) and applying the correction again double-counts."><label><input id="curv" type="checkbox" /> curvature correction</label></div>
         <div class="field" title="Circumferential grid cells. Fluctuation percentages (CoV) are stable at every setting; absolute stiffness values are not. Measured against a converged 8192 grid: draft is about 3% high, standard about 0.6%, fine about 0.01%.">
@@ -283,6 +285,17 @@
       </section>
 
       <section id="panel-patch" class="panel">
+        <div id="crownPlot" class="plot"></div>
+        <div class="explain" style="margin-top:0;margin-bottom:14px">
+          <h4>The tread arc profile, and what camber does with it</h4>
+          <p><span class="lead">The crown is stored as a local radius at every lateral position, and everything about lean follows from integrating it.</span> The tangent angle is <code>φ(y) = ∫ dy/r(y)</code>, the drop below the centreline is <code>z(y) = ∫ sin φ dy</code>.</p>
+          <ul>
+            <li><b>Where the tyre touches at lean γ</b> is the point where <code>φ(y) = γ</code> — the tread tangent has rotated to horizontal there. Lean the tyre and the contact point walks outboard along the profile.</li>
+            <li><b>The patch shape</b> comes from the local radii at that point: <code>R_lat = r(y_c)</code> across the tread and <code>R_eff = wheel radius − z(y_c)</code> along it. A crown that tightens toward the shoulder narrows the patch as you lean.</li>
+            <li><b>Maximum reachable lean</b> is the steepest tangent the profile reaches, <code>max|φ|</code>. Past it there is no contact point at all, and those lean angles are dropped from the sweep rather than extrapolated.</li>
+          </ul>
+          <p style="margin-bottom:0">Type a real arc specification in <b>5 · Load &amp; advanced</b> — <code>800@45mm, 300@88mm, 90</code> — for true arcs meeting tangentially at the breakpoints. Leaving it blank uses the two-radius blend instead, which is smoother than a real profile through the shoulder transition.</p>
+        </div>
         <div id="patchPrev" class="plot"></div>
         <table class="metrics" style="max-width:520px;margin-top:12px"><tbody id="patchStats"></tbody></table>
       </section>

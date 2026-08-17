@@ -189,6 +189,72 @@
   function readDefaults() {
     return { height: num("nsd"), draft_angle: num("draft"), n_lateral_sipes: parseInt($("sipes").value, 10), sipe_depth_fraction: num("sipeDepth"), shore_a: null };
   }
+  // The tread arc spec, when the designer has typed one. Returns null to fall
+  // back to the two-radius fields. Throws on a malformed spec so the caller can
+  // put the message in front of the user rather than silently ignoring it.
+  function readCrownArcs(treadWidth) {
+    var el = $("crownArcs");
+    if (!el || !el.value.trim()) return null;
+    var w = treadWidth || (state.pattern ? state.pattern.tread_width : 0);
+    if (!(w > 0)) return null;
+    return E.parseCrownArcs(el.value, w);
+  }
+
+  // Show what the typed arcs actually resolve to, and what they imply. The
+  // maximum reachable lean is the number most likely to surprise: it is fixed by
+  // the profile, not by anything the user can set elsewhere.
+  function syncCrownArcInfo() {
+    var box = $("crownArcInfo");
+    if (!box) return;
+    var w = state.pattern ? state.pattern.tread_width : 0;
+    if (!(w > 0)) { box.innerHTML = "<i>Load a tread plan to resolve the arc profile.</i>"; return; }
+    try {
+      var arcs = readCrownArcs(w);
+      var crown = E.buildCrown(w, {
+        crown_arcs: arcs,
+        crown_r_center: $("crownCenter").value.trim() === "" ? undefined : num("crownCenter"),
+        crown_r_shoulder: $("crownShoulder").value.trim() === "" ? undefined : num("crownShoulder"),
+        crown_break: readCrownBreak(),
+      });
+      var half = w / 2;
+      var desc = arcs
+        ? arcs.map(function (a, i) {
+            return "<b>R" + (i + 1) + "</b> " + a.r + " mm to " +
+              (i === arcs.length - 1 ? "the edge" : a.to.toFixed(1) + " mm");
+          }).join(" · ")
+        : "<i>two-radius blend</i> (type an arc spec above for true arcs)";
+      box.innerHTML = desc +
+        "<br>half width " + half.toFixed(1) + " mm · edge drop " + E.crownDrop(crown, half).toFixed(2) +
+        " mm · <b>max reachable lean " + E.maxSupportedLean(crown).toFixed(1) + "°</b>";
+      setSpecError("");
+    } catch (err) {
+      box.innerHTML = "<b style='color:var(--bad)'>" + escapeHtml(err.message) + "</b>";
+    }
+  }
+
+  function crownSummary() {
+    if (!state.pattern || !state.pattern.crown) return null;
+    var c = state.pattern.crown, half = state.pattern.tread_width / 2;
+    return {
+      source: c.arcs ? "tread arc specification" : "two-radius blend",
+      arcs: c.arcs || null,
+      r_center_mm: E.crownLocalRadius(c, 0),
+      r_edge_mm: E.crownLocalRadius(c, half),
+      edge_drop_mm: E.crownDrop(c, half),
+      max_reachable_lean_deg: E.maxSupportedLean(c),
+    };
+  }
+
+  function crownLine(s) {
+    var c = s.crown;
+    if (!c) return "no crown resolved";
+    var head = c.arcs
+      ? c.arcs.map(function (a, i) { return "R" + (i + 1) + " " + a.radius + " mm to " + a.to_mm.toFixed(1) + " mm"; }).join(", ")
+      : "two-radius blend, " + c.r_center_mm.toFixed(0) + " mm centre to " + c.r_edge_mm.toFixed(0) + " mm edge";
+    return head + "; edge drop " + c.edge_drop_mm.toFixed(2) + " mm; max reachable lean " +
+      c.max_reachable_lean_deg.toFixed(1) + " deg";
+  }
+
   function readWear() { var v = num("wear"); return isFinite(v) && v > 0 ? v : 0; }
   function readTiebarFrac() { var v = num("tiebarHeight"); return isFinite(v) && v > 0 ? Math.min(1, v) : 0.55; }
   function readWeldTol() { var v = num("weldTol"); return isFinite(v) && v > 0 ? v : 0.01; }
@@ -211,6 +277,9 @@
     if (csh) opts.crown_r_shoulder = parseFloat(csh);
     var np = $("nPitches").value; if (np) opts.n_pitches = parseInt(np, 10);
     var ph = tyreClassPhysics();
+    // No crown_arcs here on purpose: the breakpoints can be fractions of the
+    // tread width, which is not known until this DXF has been read. The crown
+    // is rebuilt from every input by reconcilePattern() before each run.
     opts.crown_break = readCrownBreak();
     opts.zone_center = ph.zone_center; opts.zone_intermediate = ph.zone_intermediate;
     opts.weld_tolerance = readWeldTol();
@@ -225,6 +294,7 @@
     showResultsChrome(false);
     renderBanner();
     renderTiebars();
+    syncCrownArcInfo();
     drawEditor();
     $("emptyHint").style.display = "none";
     refreshValidation();
@@ -283,12 +353,17 @@
 
     // 2. the crown profile, which sets the contact point at every lean
     var rc = $("crownCenter").value.trim(), rs = $("crownShoulder").value.trim();
-    p.crown = E.crownDualRadius(
-      p.tread_width,
-      rc === "" ? undefined : parseFloat(rc),
-      rs === "" ? undefined : parseFloat(rs),
-      readCrownBreak()
-    );
+    // A half-typed arc spec throws, and this runs on every keystroke via
+    // drawEditor. Fall back to the two-radius fields until it parses; the
+    // message is already in front of the user and the run is already blocked.
+    var arcs = null;
+    try { arcs = readCrownArcs(p.tread_width); } catch (err) { arcs = null; }
+    p.crown = E.buildCrown(p.tread_width, {
+      crown_arcs: arcs,
+      crown_r_center: rc === "" ? undefined : parseFloat(rc),
+      crown_r_shoulder: rs === "" ? undefined : parseFloat(rs),
+      crown_break: readCrownBreak(),
+    });
 
     // 3. the pitch division, which the order chart marks against
     var npRaw = $("nPitches").value.trim();
@@ -538,6 +613,8 @@
       catch (err) { errs.push(err.message); }
       try { E.validateCompound(readStiffParams()); }
       catch (err) { errs.push(err.message); }
+      try { readCrownArcs(state.pattern ? state.pattern.tread_width : 0); }
+      catch (err) { errs.push(err.message); }
       var w = readWear(), nsd = num("nsd");
       if (isFinite(nsd) && nsd > 0 && w >= nsd)
         errs.push("Tread worn (" + w + " mm) must be less than the NSD (" + nsd + " mm) — that much wear removes every block");
@@ -769,6 +846,7 @@
     renderLeanHeatmap();
     renderOrders();
     renderZones();
+    renderCrownProfile();
     renderPatchPreview();
     renderBands();
     renderTiebars();
@@ -1013,6 +1091,70 @@
       yaxis: { title: { text: "contact area (mm²)", font: { size: 11 } }, gridcolor: th.grid },
     };
     Plotly.react($("zones"), data, layout, { responsive: true, displayModeBar: false });
+  }
+
+  // The crown profile, drawn from the same arrays the sweep integrates: the
+  // section shape, the local radius, and where the tyre touches at every lean
+  // in the run. A tread arc spec is otherwise a line of text the user has to
+  // take on trust.
+  function renderCrownProfile() {
+    var host = $("crownPlot");
+    if (!host || !state.pattern) return;
+    var th = plotTheme(), crown = state.pattern.crown;
+    var y = Array.prototype.slice.call(crown.y);
+    var z = Array.prototype.slice.call(crown.z);
+    var r = Array.prototype.slice.call(crown.r);
+
+    // Contact points at the lean angles this run actually covered.
+    var cy = [], cz = [], ct = [];
+    for (var i = 0; i < (state.results || []).length; i++) {
+      var g = state.results[i].gamma_deg;
+      var yc = E.crownContactLateral(crown, g);
+      cy.push(yc); cz.push(E.crownDrop(crown, yc)); ct.push("γ = " + g + "°");
+    }
+
+    var data = [
+      { x: y, y: z, type: "scatter", mode: "lines", name: "crown section",
+        line: { color: th.accent, width: 2.5 }, yaxis: "y" },
+      { x: y, y: r, type: "scatter", mode: "lines", name: "local radius (right)",
+        line: { color: th.accent2, width: 1.4, dash: "dot" }, yaxis: "y2" },
+    ];
+    if (cy.length) {
+      data.push({ x: cy, y: cz, text: ct, type: "scatter", mode: "markers+text",
+                  name: "contact point at each lean", textposition: "bottom center",
+                  textfont: { size: 9, color: th.inkDim },
+                  marker: { size: 9, color: th.good, symbol: "circle-open", line: { width: 2 } },
+                  yaxis: "y" });
+    }
+    // Breakpoints, when the profile came from an explicit arc spec.
+    var shapes = [];
+    if (crown.arcs && crown.arcs.length > 1) {
+      for (var k = 0; k < crown.arcs.length - 1; k++) {
+        for (var sgn = -1; sgn <= 1; sgn += 2) {
+          shapes.push({ type: "line", x0: sgn * crown.arcs[k].to_mm, x1: sgn * crown.arcs[k].to_mm,
+                        yref: "paper", y0: 0, y1: 1,
+                        line: { color: th.inkDim, width: 1, dash: "dash" } });
+        }
+      }
+    }
+    var title = crown.arcs
+      ? "Tread arc profile — " + crown.arcs.map(function (a, i) { return "R" + (i + 1) + " " + a.radius + " mm"; }).join(" / ") +
+        ", breaks dashed"
+      : "Tread crown profile — two-radius blend";
+    Plotly.react(host, data, {
+      paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+      margin: { l: 70, r: 70, t: 40, b: 76 }, height: 340, shapes: shapes,
+      legend: { orientation: "h", y: -0.22, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
+      title: { text: title + "  ·  max reachable lean " + E.maxSupportedLean(crown).toFixed(1) + "°",
+               font: { size: 13 } },
+      xaxis: { title: { text: "lateral y — developed arc length from the centreline (mm)", font: { size: 11 } },
+               gridcolor: th.grid, zeroline: true, zerolinecolor: th.grid },
+      yaxis: { title: { text: "drop below centreline (mm)", font: { size: 11 } },
+               gridcolor: th.grid, autorange: "reversed" },
+      yaxis2: { title: { text: "local radius (mm)", font: { size: 11 } }, overlaying: "y", side: "right",
+                showgrid: false, rangemode: "tozero",
+                tickfont: { color: th.accent2 }, titlefont: { color: th.accent2 } },
+    }, { responsive: true, displayModeBar: false });
   }
 
   function renderPatchPreview() {
@@ -1922,6 +2064,7 @@
       contact_patch: readSpec(),
       load: readCpParams(),
       curvature_correction: $("curv").checked,
+      crown: crownSummary(),
       wear_and_tiebars: {
         wear_mm: readWear(),
         default_height_fraction: readTiebarFrac(),
@@ -1975,6 +2118,7 @@
     lines.push("# compound: " + compoundLine(s));
     lines.push("# wear: " + tiebarLine(s));
     lines.push("# tie-bar coupling: " + couplingLine(s));
+    lines.push("# crown: " + crownLine(s));
     lines.push("# patch: " + E.describeSpec(s.contact_patch) +
       ", scale with lean " + (s.contact_patch.scale_with_lean ? "on" : "off") +
       ", Fz " + s.load.vertical_load + " N" + (s.load.load_rises_with_lean ? " (rises with lean)" : " (constant)"));
@@ -2028,6 +2172,7 @@
     out.push("Compound: " + compoundLine(s));
     out.push("Wear    : " + tiebarLine(s));
     out.push("Coupling: " + couplingLine(s));
+    out.push("Crown   : " + crownLine(s));
     out.push("Patch   : " + E.describeSpec(s.contact_patch));
     out.push("");
     out.push("PER LEAN ANGLE");
@@ -2156,6 +2301,7 @@
       ["Sipe model", s0.compound_and_boundary.sipe_model],
       ["Wear state", tiebarLine(s0)],
       ["Tie-bar coupling", couplingLine(s0)],
+      ["Tread arc / crown", crownLine(s0)],
       ["Contact patch", E.describeSpec(s0.contact_patch)],
       ["Load", s0.load.vertical_load + " N" + (s0.load.load_rises_with_lean ? " (rises with lean)" : " (constant)")],
       ["Lean angles", s0.analysis.lean_angles_deg.join("°, ") + "°"],
@@ -2341,9 +2487,10 @@
     on($("cpScaleLean"), "change", function () { drawEditor(); markStale(); });
     on($("cpAutoLoad"), "change", function () { drawEditor(); markStale(); });
     ["nsd", "draft", "sipes", "sipeDepth", "shore", "poisson", "mode", "sipeModel", "quality", "curv",
-     "wheelR", "crownCenter", "crownShoulder", "nPitches", "wear", "tiebarHeight", "weldTol", "tiebarFrac"].forEach(function (id) {
-      on($(id), "input", function () { refreshValidation(); syncCompoundFields(); drawEditor(); reconcileAndRedrawTiebars(); markStale(); });
-      on($(id), "change", function () { refreshValidation(); syncCompoundFields(); drawEditor(); reconcileAndRedrawTiebars(); markStale(); });
+     "wheelR", "crownCenter", "crownShoulder", "crownArcs", "nPitches", "wear",
+     "tiebarHeight", "weldTol", "tiebarFrac"].forEach(function (id) {
+      on($(id), "input", function () { refreshValidation(); syncCompoundFields(); syncCrownArcInfo(); drawEditor(); reconcileAndRedrawTiebars(); markStale(); });
+      on($(id), "change", function () { refreshValidation(); syncCompoundFields(); syncCrownArcInfo(); drawEditor(); reconcileAndRedrawTiebars(); markStale(); });
     });
     on($("cpLoad"), "input", updateLeanLoadReference);
 
@@ -2354,6 +2501,7 @@
 
     syncShapeFields();
     syncCompoundFields();
+    syncCrownArcInfo();
     updateLeanLoadReference();
     renderTiebars();
     // Paint once at startup: without this the canvas stayed blank until some

@@ -92,6 +92,82 @@ So at the default **wear = 0** the bars are listed and drawn but contribute noth
 
 ---
 
+## Camber and the tread arc profile
+
+The crown is stored as a **local radius at every lateral position**, `r(y)`,
+where `y` is developed arc length from the centreline. Everything about lean
+comes from integrating it:
+
+- **tangent angle** `φ(y) = ∫ dy / r(y)`
+- **drop below the centreline** `z(y) = ∫ sin φ dy`
+- **projected (flat) width** `y_proj(y) = ∫ cos φ dy`
+
+### What camber does
+
+At lean angle **γ** the tyre touches where the tread tangent has rotated to
+horizontal — the point where **φ(y) = γ**. Everything else follows from that
+one inversion:
+
+| Quantity | How it is obtained |
+|---|---|
+| contact point `y_c` | solve `φ(y_c) = γ` |
+| lateral radius at contact | `R_lat = r(y_c)` |
+| effective rolling radius | `R_eff = wheel radius − z(y_c)` |
+| patch semi-axes | Winkler: `δ = √(Fz / (k·π·√(R_eff·R_lat)))`, `a = √(2 R_eff δ)`, `b = √(2 R_lat δ)` |
+| load at lean | `Fz / cos γ` when *load rises with lean* is ticked |
+| **maximum reachable lean** | `max │φ│` — the steepest tangent the profile reaches |
+
+Past that maximum there is **no contact point at all**: the tyre would be
+riding its tread edge. Those lean angles are dropped from the sweep with a
+note, not extrapolated.
+
+On the bundled 2W sample (159 mm tread, 125/55 mm crown) the contact point
+walks from the centreline to 61 mm out at 30° of lean, the lateral radius
+collapses 125 → 82 mm, and the patch comes out **7% longer and 11% narrower**
+than upright. That narrowing is the whole reason the tool sweeps lean.
+
+### Single and multi-arc profiles
+
+Type the real specification in **5 · Load & advanced → Tread arc radii**:
+
+| Spec | Meaning |
+|---|---|
+| `300` | one arc, constant radius to the edge |
+| `125@0.45, 55` | 125 mm out to 45% of the half width, then 55 mm to the edge |
+| `800@45mm, 300@88mm, 90` | three arcs with breakpoints in mm from the centreline |
+| `800@45%, 300@80%, 90` | the same, as percentages of the half width |
+
+A breakpoint of 1 or less is read as a fraction of the half width, above 1 as
+millimetres; `mm` and `%` can be written explicitly. Breakpoints are
+**developed arc length**, the same `y` as everywhere else in the tool — not
+projected width. Up to 8 arcs.
+
+The arcs meet **tangentially**: `φ` is an integral, so it stays continuous
+however abruptly the radius steps. Curvature *is* discontinuous at each
+breakpoint, which is exactly what a multi-arc profile is.
+
+Leaving the field blank uses the two-radius fields instead, which blend
+smoothly from centre to shoulder rather than switching at a point. That is
+**smoother than a real profile** through the shoulder transition — fine as a
+default, but type the real arcs when you have them.
+
+The **Contact patch** tab draws the resolved profile with the breakpoints
+marked and the contact point shown at every lean angle in the run, so a typed
+specification never has to be taken on trust.
+
+### What is not modelled
+
+- **Camber thrust** and lateral force generation. This is a contact and
+  stiffness model, not a force model.
+- **Carcass deformation under camber** — the belt is treated as rigid.
+- **Asymmetric crowns.** The profile is mirrored about the centreline.
+- The **projection correction** (*curvature correction* checkbox) weights each
+  raster row by `1/cos φ`. It is for patterns digitised in projection — an ink
+  impression or a photograph. A mould DXF is already developed, so leave it
+  off or the correction is applied twice.
+
+---
+
 ## Land percentage vs θ
 
 The second row of the θ sweep is **land in the patch**: how much of the contact
