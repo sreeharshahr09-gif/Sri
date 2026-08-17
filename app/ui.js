@@ -814,8 +814,23 @@
   function renderThetaStack() {
     var r = currentResult(), th = plotTheme();
     var x = r.theta_deg;
+    // Land percentage: how much of the contact patch is rubber rather than
+    // groove at this instant. It is the contact area normalised by the patch,
+    // so it separates "the patch got smaller" from "the pattern under it got
+    // emptier" -- the row above can move for either reason, this one only for
+    // the second. The dotted line is the mean, so the swing is read directly.
+    var landPct = [], landMean = 0;
+    for (var li = 0; li < r.land_ratio.length; li++) {
+      landPct.push(r.land_ratio[li] * 100);
+      landMean += r.land_ratio[li] * 100;
+    }
+    landMean = landPct.length ? landMean / landPct.length : 0;
+
     var rows = [
       { y: r.contact_area, name: "Contact area", axis: "Contact area (mm²)", color: th.accent },
+      { y: landPct, name: "Land in patch", axis: "Land (%)", color: "#9b6bff",
+        extra: { x: [x[0], x[x.length - 1]], y: [landMean, landMean],
+                 name: "mean " + landMean.toFixed(1) + "%", color: th.inkDim } },
       { y: r.kz, name: "Kz (vertical)", axis: "Kz (N/mm)", color: th.good },
       { y: r.kx, name: "Kx (longitudinal)", axis: "Kx (N/mm)", color: th.accent2 },
       { y: r.ky, name: "Ky (lateral)", axis: "Ky (N/mm)", color: th.bad },
@@ -831,7 +846,9 @@
       showlegend: true,
       legend: { orientation: "h", y: -0.10, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
       margin: { l: 78, r: 16, t: 34, b: 104 },
-      height: 720, grid: { rows: rows.length, columns: 1, pattern: "independent", roworder: "top to bottom" },
+      // ~120 px a row, so adding one does not squeeze the rest.
+      height: 120 * rows.length + 60,
+      grid: { rows: rows.length, columns: 1, pattern: "independent", roworder: "top to bottom" },
       title: { text: "In-patch aggregates vs rotation angle θ  (γ = " + r.gamma_deg + "°)", font: { size: 13 } },
     };
     for (var i = 0; i < rows.length; i++) {
@@ -1172,6 +1189,7 @@
     var fields = [
       ["θ", r.theta_deg[i].toFixed(1) + "°"],
       ["area", r.contact_area[i].toFixed(0) + " mm²"],
+      ["land", (r.land_ratio[i] * 100).toFixed(1) + "%"],
       ["Kz", r.kz[i].toFixed(0)],
       ["Kx", r.kx[i].toFixed(0)],
       ["Ky", r.ky[i].toFixed(0)],
@@ -1314,7 +1332,8 @@
     if (box && box !== document.activeElement) box.value = centre.toFixed(1);
     var n = r.theta_deg.length;
     var i = Math.max(0, Math.min(n - 1, Math.round((centre / 360) * n) % n));
-    el.innerHTML = " — contact <b>" + r.contact_area[i].toFixed(0) + "</b> mm², Kz <b>" +
+    el.innerHTML = " — contact <b>" + r.contact_area[i].toFixed(0) + "</b> mm² (<b>" +
+      (r.land_ratio[i] * 100).toFixed(1) + "%</b> land), Kz <b>" +
       r.kz[i].toFixed(0) + "</b>, Kx <b>" + r.kx[i].toFixed(0) + "</b>, Ky <b>" +
       r.ky[i].toFixed(0) + "</b>, " + r.block_count[i].toFixed(2) + " blocks in the patch" +
       " · <span class='hint'>drag the shaded band, or type an angle</span>";

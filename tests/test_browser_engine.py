@@ -1124,3 +1124,52 @@ process.stdout.write(JSON.stringify({{
     # ...while the stiffness is genuinely raised.
     assert got["gainKx"] > 1.02, got["gainKx"]
     assert got["gainKy"] > 1.01, got["gainKy"]
+
+
+def test_land_percentage_has_its_own_row_in_the_theta_stack():
+    """How much of the patch is rubber, as the patch travels round the tyre.
+
+    Contact area alone cannot answer that: it moves when the patch changes size
+    as well as when the pattern under it changes.  Normalising by the patch area
+    separates the two.
+    """
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    stack = ui[ui.index("function renderThetaStack("):ui.index("function patternStripTitle(")]
+    assert "Land in patch" in stack and 'axis: "Land (%)"' in stack
+    assert "land_ratio[li] * 100" in stack, "must be shown as a percentage"
+    assert "landMean" in stack, "the mean belongs on the row, so the swing can be read off it"
+    # the row height must scale with the row count, or adding one squeezes the rest
+    assert "120 * rows.length" in stack
+    # and the value is reported at the cursor and under the patch band
+    assert '["land", (r.land_ratio[i] * 100).toFixed(1) + "%"]' in ui
+    assert "% land)" in ui
+
+
+def test_land_ratio_is_contact_area_over_patch_area():
+    """The definition, checked against the two quantities it is built from."""
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const fs = require('fs');
+const {{pattern}} = E.loadPattern(fs.readFileSync({json.dumps(DXF)}, 'latin1'), {{height: 8.5, draft_angle: 3}}, {{}});
+const sp = {{shore_a: 60, poisson: 0.49, mode: 'parallel', bulk_modulus: 1100, n_slices: 16, sipe_model: 'layered'}};
+const spec = {{shape: 'rounded', length: 90, width: 50, corner_radius: 12, rotation: 0,
+               y_center: 0, gamma_deg: 0, load_N: null, scale_with_lean: false}};
+const cpp = {{vertical_load: 1500, wheel_radius: 320, load_rises_with_lean: false}};
+const grid = E.makeGrid(pattern, 1024, 74);
+const pack = E.rasterise(pattern, grid, sp, false, null);
+const r = E.sweepLean(pattern, pack, 0, spec, cpp, new E.MapFFTCache(pack), 90, null);
+let worst = 0, lo = 1, hi = 0;
+for (let i = 0; i < r.land_ratio.length; i++) {{
+  worst = Math.max(worst, Math.abs(r.land_ratio[i] - r.contact_area[i] / r.patch_area));
+  lo = Math.min(lo, r.land_ratio[i]); hi = Math.max(hi, r.land_ratio[i]);
+}}
+process.stdout.write(JSON.stringify({{worst: worst, lo: lo, hi: hi}}));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=180)
+    assert res.returncode == 0, res.stderr[:2000]
+    got = json.loads(res.stdout)
+    assert got["worst"] < 1e-15, f"land ratio is not contact area / patch area ({got['worst']:.2e})"
+    # a real tread ripples but never leaves 0..1
+    assert 0.0 < got["lo"] < got["hi"] < 1.0
+    assert got["hi"] - got["lo"] > 0.005, "a real pattern must show some ripple in land"

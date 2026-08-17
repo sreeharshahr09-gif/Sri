@@ -92,6 +92,24 @@ So at the default **wear = 0** the bars are listed and drawn but contribute noth
 
 ---
 
+## Land percentage vs θ
+
+The second row of the θ sweep is **land in the patch**: how much of the contact
+patch is rubber rather than groove at that instant, as a percentage.
+
+It is the contact-area row normalised by the patch area, and the reason both
+are shown is that they move for different reasons. Contact area falls when the
+patch itself shrinks — leaning a motorcycle does exactly that — *and* when the
+pattern under it opens up. Land percentage only moves for the second. If area
+drops while land holds, the patch got smaller; if both drop, the pattern under
+the patch got emptier.
+
+The dotted line is the mean, so the swing about it can be read straight off.
+That swing is the same ripple the Order-content tab decomposes, expressed in
+the units a designer thinks in.
+
+---
+
 ## The contact-patch band
 
 On the **θ sweep + pattern** tab the contact patch is drawn where it actually
