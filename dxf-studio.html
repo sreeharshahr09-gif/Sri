@@ -215,6 +215,10 @@
       <button class="secondary" id="rotCW" title="Rotate current selection clockwise around its center (Shift+R)">↻</button>
       <button class="secondary tgl" id="toolBridge" title="Click two open endpoints (red ✚) to close the gap with a straight line (B)">✏ Bridge</button>
       <span style="width:8px"></span>
+      <button class="secondary tgl" id="toolLine" title="Draw a straight line: click start, click end (L). Points snap to nearby vertices.">╱ Line</button>
+      <button class="secondary tgl" id="toolPoly" title="Draw a polyline: click each vertex, Enter/double-click to finish, C to close, Esc to cancel (P)">⭗ Polyline</button>
+      <button class="secondary tgl" id="toolTrim" title="Trim: click the part of a line to cut away at its intersections with other geometry (X)">✂ Trim</button>
+      <span style="width:8px"></span>
       <button class="secondary" id="undoBtn" title="Undo (Ctrl+Z)">↶ Undo</button>
       <button class="secondary" id="redoBtn" title="Redo (Ctrl+Y or Ctrl+Shift+Z)">↷ Redo</button>
       <button class="secondary" id="delBtn" title="Delete key">🗑 Delete sel.</button>
@@ -224,7 +228,7 @@
       <span id="viewInfo">No file loaded.</span>
     </div>
     <div class="toolbar" style="border-top:none;padding-top:0">
-      <span class="mini">Drag = box-select · <span class="kbd">Shift</span> add · <span class="kbd">Alt</span> remove · Right-drag/<span class="kbd">Space</span> = pan · Scroll = zoom · <span class="kbd">Del</span> delete · <span class="kbd">Ctrl+Z</span> undo · <span class="kbd">Ctrl+Y</span> redo · <span class="kbd">R</span>/<span class="kbd">Shift+R</span> rotate · <span class="kbd">B</span> bridge · <span class="kbd">T</span> theme · <span class="kbd">F</span> fit · <span class="kbd">Esc</span> clear · red ✚ = open endpoint</span>
+      <span class="mini">Drag = box-select · <span class="kbd">Shift</span> add · <span class="kbd">Alt</span> remove · Right-drag/<span class="kbd">Space</span> = pan · Scroll = zoom · <span class="kbd">Del</span> delete · <span class="kbd">Ctrl+Z</span>/<span class="kbd">Ctrl+Y</span> undo/redo · <span class="kbd">R</span> rotate · <span class="kbd">B</span> bridge · <span class="kbd">L</span> line · <span class="kbd">P</span> polyline · <span class="kbd">X</span> trim · <span class="kbd">T</span> theme · <span class="kbd">F</span> fit · <span class="kbd">Esc</span> cancel · ▫ = snap</span>
     </div>
     <canvas id="cv"></canvas>
     <div class="toast" id="toast"></div>
@@ -1097,7 +1101,9 @@ function refreshAfterEdit(){
     d.bbox=bboxOf(d.entityIdx);
   }
   bridgeHover=null; // OPEN_ENDS is rebuilt below; stale refs would mislead
+  trimHover=-1;
   analyzeAll();
+  if(tool==='line'||tool==='poly'||tool==='trim') buildSnapIndex();
   renderDrawings(); renderClasses(); renderLayers();
   draw();
 }
@@ -1716,6 +1722,48 @@ function draw(){
     ctx.fillRect(x,y,w,h); ctx.strokeRect(x,y,w,h);
     ctx.restore();
   }
+  drawSketch();
+}
+
+/* live preview for the Line/Polyline tools + the snap marker */
+function drawSketch(){
+  const acc='#2b8aef';
+  // committed sketch vertices (polyline in progress, or line first point)
+  if((tool==='line'||tool==='poly') && drawPts.length){
+    ctx.save();
+    ctx.strokeStyle=acc; ctx.fillStyle=acc; ctx.lineWidth=1.6;
+    ctx.beginPath();
+    drawPts.forEach((p,k)=>{const [sx,sy]=W2S(p[0],p[1]); k?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy);});
+    // rubber segment to current cursor
+    const cur = snapPt || (hoverScreen? S2W(hoverScreen[0],hoverScreen[1]) : null);
+    if(cur){ const [cx,cy]=W2S(cur[0],cur[1]); ctx.lineTo(cx,cy); }
+    ctx.stroke();
+    // vertex dots
+    for(const p of drawPts){ const [sx,sy]=W2S(p[0],p[1]); ctx.beginPath();ctx.arc(sx,sy,3,0,Math.PI*2);ctx.fill(); }
+    // length label of the rubber segment
+    if(cur){
+      const a=drawPts[drawPts.length-1];
+      const len=Math.hypot(cur[0]-a[0],cur[1]-a[1]);
+      const [mx,my]=W2S((a[0]+cur[0])/2,(a[1]+cur[1])/2);
+      ctx.fillStyle=acc; ctx.font='11px sans-serif'; ctx.fillText(len.toFixed(3), mx+6, my-6);
+    }
+    ctx.restore();
+  }
+  // snap marker
+  if(snapPt && (tool==='line'||tool==='poly')){
+    const [sx,sy]=W2S(snapPt[0],snapPt[1]);
+    ctx.save();
+    ctx.strokeStyle='#2ea043'; ctx.lineWidth=1.6;
+    ctx.strokeRect(sx-5,sy-5,10,10);
+    ctx.restore();
+  }
+  // trim hover highlight
+  if(tool==='trim' && trimHover>=0 && ENTITIES[trimHover] && ENTITIES[trimHover].geom){
+    ctx.save();
+    ctx.strokeStyle='#f0a020'; ctx.lineWidth=2.5; ctx.globalAlpha=.85;
+    for(const pr of ENTITIES[trimHover].geom.draw) drawPrim(pr,'#f0a020');
+    ctx.restore();
+  }
 }
 
 /* =========================== INTERACTION ================================ */
@@ -1735,7 +1783,11 @@ let spaceDown=false;
 window.addEventListener('keydown',e=>{
   if(e.code==='Space' && !e.target.matches('input,textarea')){spaceDown=true;}
   if(e.target.matches('input,textarea')) return;
+  // finish an in-progress polyline sketch
+  if((tool==='poly') && (e.key==='Enter')){ finishPolyline(false); e.preventDefault(); return; }
+  if((tool==='poly') && e.key.toLowerCase()==='c' && drawPts.length>=2){ finishPolyline(true); e.preventDefault(); return; }
   if(e.key==='Delete' || e.key==='Backspace'){
+    if((tool==='line'||tool==='poly') && drawPts.length){ drawPts.pop(); draw(); e.preventDefault(); return; }  // undo last sketch vertex
     if(uiMode==='entities' && SEL_ENT.size) deleteEntities([...SEL_ENT]);
     e.preventDefault();
   }
@@ -1745,6 +1797,7 @@ window.addEventListener('keydown',e=>{
   if(ctrl && e.key.toLowerCase()==='y'){ redo(); e.preventDefault(); return; }
   if(ctrl) return;   // leave other Ctrl/Cmd shortcuts to the browser
   if(e.key==='Escape'){
+    if(drawPts.length){ drawPts=[]; snapPt=null; toast('Sketch cancelled.'); draw(); return; }
     SEL_ENT.clear();
     if(bridgeFirst){ bridgeFirst=null; toast('Bridge cancelled.'); }
     draw();
@@ -1752,6 +1805,9 @@ window.addEventListener('keydown',e=>{
   if(e.key.toLowerCase()==='m'){ setTool(tool==='move'?'select':'move'); }
   if(e.key.toLowerCase()==='r'){ rotateCurrentSelection(e.shiftKey?-1:1); e.preventDefault(); }
   if(e.key.toLowerCase()==='b'){ setTool(tool==='bridge'?'select':'bridge'); if(tool==='bridge') toast('Bridge tool: click two open endpoints (red ✚) to connect them.'); }
+  if(e.key.toLowerCase()==='l'){ setTool('line'); toast('Line tool: click start then end. Esc cancels.'); }
+  if(e.key.toLowerCase()==='p'){ setTool('poly'); toast('Polyline: click vertices · Enter finish · C close · Esc cancel.'); }
+  if(e.key.toLowerCase()==='x'){ setTool('trim'); toast('Trim: click the part of a LINE to cut away.'); }
   if(e.key.toLowerCase()==='t'){ toggleTheme(); }
   if(e.key.toLowerCase()==='f'){ fitView(); draw(); }
 });
@@ -1765,7 +1821,11 @@ let lastX=0,lastY=0;
 let moveStart=null;       // world coords
 let bridgeFirst=null;     // first picked open endpoint {x,y,layer,d}
 let bridgeHover=null;     // open endpoint currently under cursor
-let hoverScreen=null;     // [px,py] cursor pos while bridge tool active
+let hoverScreen=null;     // [px,py] cursor pos while bridge/draw tool active
+let drawPts=[];           // committed world vertices of the in-progress sketch
+let snapPt=null;          // current snap target [x,y] in world coords, or null
+let snapIndex=[];         // candidate world points for snapping
+let trimHover=-1;         // entity index highlighted for trimming
 
 function findOpenEndNear(px,py,maxDist=12){
   let best=null, bd=maxDist;
@@ -1794,6 +1854,211 @@ function handleBridgeClick(px,py){
   bridgeFirst=null; bridgeHover=null;
   bridgeGap(a,end);
   renderDrawings();
+}
+
+/* ==================== DRAWING TOOLS (line / polyline) ==================== */
+/* Snap candidates: endpoints/vertices of visible entities. Rebuilt when a
+   draw/trim tool is activated and after edits.                             */
+function buildSnapIndex(){
+  snapIndex=[];
+  for(let i=0;i<ENTITIES.length;i++){
+    if(!entVisible(i)) continue;
+    const e=ENTITIES[i];
+    const ee=entityEnds(e);
+    if(ee && ee.ends){ snapIndex.push(ee.ends[0], ee.ends[1]); }
+    if(e.geom && e.geom.draw){
+      for(const pr of e.geom.draw){
+        if(pr.type==='poly'){ for(const p of pr.pts) snapIndex.push(p); }
+        else if(pr.type==='circle'||pr.type==='arc'||pr.type==='point'){ snapIndex.push([pr.x,pr.y]); }
+      }
+    }
+  }
+}
+function snapNearestOrNull(px,py,maxDist=10){
+  let best=null, bd=maxDist;
+  for(const p of snapIndex){
+    const [sx,sy]=W2S(p[0],p[1]);
+    const d0=Math.hypot(sx-px,sy-py);
+    if(d0<bd){ bd=d0; best=p; }
+  }
+  return best ? [best[0],best[1]] : null;
+}
+function snapWorld(px,py){ return snapNearestOrNull(px,py) || S2W(px,py); }
+
+/* which drawing new geometry joins: the single selected one, else the first
+   selected, else a persistent "Drawn geometry" group. */
+function targetDrawingForNew(){
+  const sel=DRAWINGS.filter(d=>d.selected);
+  if(sel.length===1) return sel[0];
+  if(sel.length>1) return sel[0];
+  let d=DRAWINGS.find(x=>x._drawn);
+  if(!d){
+    d={id:Date.now(), name:'Drawn geometry', color:PALETTE[DRAWINGS.length%PALETTE.length],
+       entityIdx:[], selected:true, visible:true, bbox:null, topo:null, _drawn:true};
+    DRAWINGS.push(d);
+    $('#dwCount').textContent=DRAWINGS.length;
+  }
+  return d;
+}
+function makeLineEntity(x1,y1,x2,y2,layer){
+  const L=layer||'0';
+  const rec=[[0,'LINE'],[5,nextHandle()],[100,'AcDbEntity'],[8,L],[100,'AcDbLine'],
+    [10,fmt(x1)],[20,fmt(y1)],[30,'0.0'],[11,fmt(x2)],[21,fmt(y2)],[31,'0.0']];
+  return {raw:[rec], type:'LINE', layer:L, ltype:'', geom:null, block:null, del:false, cls:'geometry'};
+}
+function makeLwpolyEntity(pts, closed, layer){
+  const L=layer||'0';
+  const rec=[[0,'LWPOLYLINE'],[5,nextHandle()],[100,'AcDbEntity'],[8,L],[100,'AcDbPolyline'],
+    [90,String(pts.length)],[70,closed?'1':'0']];
+  for(const p of pts){ rec.push([10,fmt(p[0])],[20,fmt(p[1])]); }
+  return {raw:[rec], type:'LWPOLYLINE', layer:L, ltype:'', geom:null, block:null, del:false, cls:'geometry'};
+}
+function addEntityToDrawing(ent, d){
+  const idx=ENTITIES.length;
+  ENTITIES.push(ent);
+  recomputeGeom(idx);
+  d.entityIdx.push(idx);
+  if(!LAYERS.has(ent.layer)) LAYERS.set(ent.layer,{visible:true});
+  return idx;
+}
+function commitLine(a,b){
+  if(Math.hypot(a[0]-b[0],a[1]-b[1])<1e-9){ toast('Zero-length line ignored.'); return; }
+  const d=targetDrawingForNew();
+  const idx=addEntityToDrawing(makeLineEntity(a[0],a[1],b[0],b[1],'0'), d);
+  pushUndo({type:'join', added:[idx], removed:[]});
+  refreshAfterEdit(); renderDrawings(); buildSnapIndex();
+  toast('Line added to "'+d.name+'" (length '+Math.hypot(b[0]-a[0],b[1]-a[1]).toFixed(3)+'). Ctrl+Z to undo.');
+}
+function commitPolyline(pts, closed){
+  if(pts.length<2){ drawPts=[]; return; }
+  const d=targetDrawingForNew();
+  const idx=addEntityToDrawing(makeLwpolyEntity(pts, closed, '0'), d);
+  pushUndo({type:'join', added:[idx], removed:[]});
+  drawPts=[];
+  refreshAfterEdit(); renderDrawings(); buildSnapIndex();
+  toast((closed?'Closed':'Open')+' polyline added to "'+d.name+'" ('+pts.length+' vertices). Ctrl+Z to undo.');
+}
+function finishPolyline(close){
+  if(drawPts.length<2){ drawPts=[]; snapPt=null; draw(); toast('Need at least 2 points.'); return; }
+  commitPolyline(drawPts.slice(), !!close);
+  snapPt=null;
+}
+
+/* ============================ TRIM ====================================== */
+/* Trim a LINE: remove the picked sub-segment bounded by the line's nearest
+   intersections with other visible geometry. Cutting edges are taken from
+   every other visible entity's draw primitives (segments, circles, arcs).  */
+function segSegT(ax,ay,bx,by, cx,cy,dx,dy){
+  const rpx=bx-ax, rpy=by-ay, spx=dx-cx, spy=dy-cy;
+  const denom=rpx*spy-rpy*spx;
+  if(Math.abs(denom)<1e-12) return null;         // parallel
+  const t=((cx-ax)*spy-(cy-ay)*spx)/denom;
+  const u=((cx-ax)*rpy-(cy-ay)*rpx)/denom;
+  if(u<-1e-9||u>1+1e-9) return null;             // outside cutting segment
+  if(t<1e-9||t>1-1e-9) return null;              // at//beyond target ends (ignore endpoints)
+  return t;
+}
+function segCircleT(ax,ay,bx,by, cx,cy,r, a1,a2){
+  // params t on segment AB where it meets circle centre (cx,cy) r; optional arc range a1..a2 (deg)
+  const dx=bx-ax, dy=by-ay;
+  const fx=ax-cx, fy=ay-cy;
+  const A=dx*dx+dy*dy, B=2*(fx*dx+fy*dy), C=fx*fx+fy*fy-r*r;
+  const disc=B*B-4*A*C;
+  if(disc<0) return [];
+  const sd=Math.sqrt(disc);
+  const out=[];
+  for(const t of [(-B-sd)/(2*A), (-B+sd)/(2*A)]){
+    if(t<1e-9||t>1-1e-9) continue;
+    if(a1!==undefined){
+      const px=ax+t*dx, py=ay+t*dy;
+      let ang=Math.atan2(py-cy,px-cx)*180/Math.PI; if(ang<0) ang+=360;
+      let s=((a1%360)+360)%360, e=((a2%360)+360)%360;
+      const inArc = s<=e ? (ang>=s-1e-6&&ang<=e+1e-6) : (ang>=s-1e-6||ang<=e+1e-6);
+      if(!inArc) continue;
+    }
+    out.push(t);
+  }
+  return out;
+}
+function lineCutParams(target){
+  const ent=target.raw[0];
+  const ax=gnum(ent,10), ay=gnum(ent,20), bx=gnum(ent,11), by=gnum(ent,21);
+  const ts=[];
+  for(let i=0;i<ENTITIES.length;i++){
+    const e=ENTITIES[i];
+    if(e===target || !entVisible(i) || !e.geom || !e.geom.draw) continue;
+    for(const pr of e.geom.draw){
+      if(pr.type==='poly'){
+        for(let k=0;k<pr.pts.length-1;k++){
+          const t=segSegT(ax,ay,bx,by, pr.pts[k][0],pr.pts[k][1], pr.pts[k+1][0],pr.pts[k+1][1]);
+          if(t!==null) ts.push(t);
+        }
+        if(pr.closed && pr.pts.length>2){
+          const a=pr.pts[pr.pts.length-1], b=pr.pts[0];
+          const t=segSegT(ax,ay,bx,by, a[0],a[1], b[0],b[1]); if(t!==null) ts.push(t);
+        }
+      } else if(pr.type==='circle'){
+        for(const t of segCircleT(ax,ay,bx,by, pr.x,pr.y,pr.r)) ts.push(t);
+      } else if(pr.type==='arc'){
+        for(const t of segCircleT(ax,ay,bx,by, pr.x,pr.y,pr.r, pr.a1,pr.a2)) ts.push(t);
+      }
+    }
+  }
+  return {ax,ay,bx,by,ts};
+}
+function findLineNear(px,py, maxDist=8){
+  // nearest LINE entity to the screen point, with the projected param t
+  let best=-1, bd=maxDist, bt=0;
+  for(let i=0;i<ENTITIES.length;i++){
+    const e=ENTITIES[i];
+    if(!entVisible(i) || e.type!=='LINE' || !e.geom) continue;
+    const ent=e.raw[0];
+    const [ax,ay]=W2S(gnum(ent,10),gnum(ent,20));
+    const [bx,by]=W2S(gnum(ent,11),gnum(ent,21));
+    const vx=bx-ax, vy=by-ay, L2=vx*vx+vy*vy;
+    let t = L2>0 ? ((px-ax)*vx+(py-ay)*vy)/L2 : 0;
+    t=Math.max(0,Math.min(1,t));
+    const cx=ax+t*vx, cy=ay+t*vy;
+    const d0=Math.hypot(px-cx,py-cy);
+    if(d0<bd){ bd=d0; best=i; bt=t; }
+  }
+  return {idx:best, t:bt};
+}
+function trimAt(px,py){
+  const hit=findLineNear(px,py);
+  if(hit.idx<0){ toast('Trim: click on a LINE. (Trim currently works on straight lines — join arcs/polylines afterwards.)'); return; }
+  const target=ENTITIES[hit.idx];
+  const {ax,ay,bx,by,ts}=lineCutParams(target);
+  if(!ts.length){ toast('No intersections found on this line — nothing to trim against.'); return; }
+  // boundaries: 0, intersections, 1 (sorted, deduped)
+  const bounds=[0,...ts,1].sort((a,b)=>a-b).filter((v,k,arr)=>k===0||Math.abs(v-arr[k-1])>1e-7);
+  // pick interval containing the click param
+  let tc=hit.t;
+  let seg=-1;
+  for(let k=0;k<bounds.length-1;k++){ if(tc>=bounds[k]-1e-9 && tc<=bounds[k+1]+1e-9){ seg=k; break; } }
+  if(seg<0){ toast('Could not resolve the picked segment.'); return; }
+  const t0=bounds[seg], t1=bounds[seg+1];
+  const P=(t)=>[ax+(bx-ax)*t, ay+(by-ay)*t];
+  const layer=target.layer;
+  const d=DRAWINGS.find(x=>x.entityIdx.includes(hit.idx));
+  const added=[];
+  // keep the pieces on either side of the removed interval
+  const pieces=[];
+  if(t0>1e-6) pieces.push([0,t0]);
+  if(t1<1-1e-6) pieces.push([t1,1]);
+  for(const [s,e] of pieces){
+    const A=P(s), B=P(e);
+    if(Math.hypot(B[0]-A[0],B[1]-A[1])<1e-9) continue;
+    const ne=makeLineEntity(A[0],A[1],B[0],B[1],layer);
+    const idx=ENTITIES.length; ENTITIES.push(ne); recomputeGeom(idx);
+    if(d) d.entityIdx.push(idx);
+    added.push(idx);
+  }
+  target.del=true;
+  pushUndo({type:'join', added, removed:[hit.idx]});
+  refreshAfterEdit(); renderDrawings(); buildSnapIndex();
+  const removedLen=Math.hypot((P(t1)[0]-P(t0)[0]),(P(t1)[1]-P(t0)[1]));
+  toast('Trimmed '+removedLen.toFixed(3)+' units'+(pieces.length===2?' (line split in two).':pieces.length?'.':' — whole line removed.'));
 }
 
 function canvasPt(e){const r=cv.getBoundingClientRect();return [e.clientX-r.left, e.clientY-r.top];}
@@ -1828,6 +2093,20 @@ cv.addEventListener('mousedown',e=>{
   } else if(e.button===0){
     if(tool==='bridge'){
       handleBridgeClick(px,py);
+    } else if(tool==='line'){
+      const p=snapPt||snapWorld(px,py);
+      if(!drawPts.length){ drawPts=[p]; toast('Click the end point (Esc cancels).'); }
+      else { const a=drawPts[0]; drawPts=[]; commitLine(a,p); }
+      draw();
+    } else if(tool==='poly'){
+      const p=snapPt||snapWorld(px,py);
+      if(drawPts.length>=2){
+        const f=drawPts[0], [fx,fy]=W2S(f[0],f[1]);
+        if(Math.hypot(fx-px,fy-py)<10){ finishPolyline(true); return; }  // click first vertex = close
+      }
+      drawPts.push(p); draw();
+    } else if(tool==='trim'){
+      trimAt(px,py);
     } else if(tool==='move'){
       const set=currentMoveSet();
       if(!set.size){ toast(uiMode==='entities'?'Select entities first (switch to Select tool).':'Select drawing(s) first.'); return; }
@@ -1840,6 +2119,16 @@ cv.addEventListener('mousedown',e=>{
       box={x0:px,y0:py,x1:px,y1:py};
       boxMods={add:e.shiftKey||e.ctrlKey||e.metaKey, sub:e.altKey};
     }
+  }
+});
+cv.addEventListener('dblclick',e=>{
+  if(tool==='poly'){
+    if(drawPts.length>=2){
+      const a=drawPts[drawPts.length-1], b=drawPts[drawPts.length-2];
+      if(Math.hypot(a[0]-b[0],a[1]-b[1])<1e-9) drawPts.pop();  // drop the dblclick's duplicate
+    }
+    finishPolyline(false);
+    e.preventDefault();
   }
 });
 window.addEventListener('mousemove',e=>{
@@ -1855,6 +2144,14 @@ window.addEventListener('mousemove',e=>{
   } else if(tool==='bridge' && DRAWINGS.length){
     hoverScreen=canvasPt(e);
     bridgeHover=findOpenEndNear(hoverScreen[0],hoverScreen[1]);
+    draw();
+  } else if((tool==='line'||tool==='poly') && DRAWINGS.length){
+    hoverScreen=canvasPt(e);
+    snapPt=snapNearestOrNull(hoverScreen[0],hoverScreen[1]);
+    draw();
+  } else if(tool==='trim' && DRAWINGS.length){
+    const [px,py]=canvasPt(e);
+    trimHover=findLineNear(px,py).idx;
     draw();
   }
 });
@@ -2228,7 +2525,7 @@ function serializeProject(){
     })),
     drawings:DRAWINGS.map(d=>({
       id:d.id, name:d.name, color:d.color,
-      entityIdx:d.entityIdx.slice(), selected:!!d.selected, visible:!!d.visible,
+      entityIdx:d.entityIdx.slice(), selected:!!d.selected, visible:!!d.visible, drawn:!!d._drawn,
     })),
     selEnt:[...SEL_ENT],
   };
@@ -2277,7 +2574,7 @@ function loadProject(obj){
   DRAWINGS=(obj.drawings||[]).map(d=>({
     id:d.id, name:d.name, color:d.color,
     entityIdx:(d.entityIdx||[]).filter(i=>ENTITIES[i]),
-    selected:!!d.selected, visible:d.visible!==false, bbox:null, topo:null,
+    selected:!!d.selected, visible:d.visible!==false, bbox:null, topo:null, _drawn:!!d.drawn,
   }));
   for(const d of DRAWINGS) d.bbox=bboxOf(d.entityIdx);
 
@@ -2495,7 +2792,14 @@ function setTool(t){
   $('#toolSel').classList.toggle('on',t==='select');
   $('#toolMove').classList.toggle('on',t==='move');
   $('#toolBridge').classList.toggle('on',t==='bridge');
-  if(t!=='bridge'){ bridgeFirst=null; bridgeHover=null; hoverScreen=null; }
+  $('#toolLine').classList.toggle('on',t==='line');
+  $('#toolPoly').classList.toggle('on',t==='poly');
+  $('#toolTrim').classList.toggle('on',t==='trim');
+  if(t!=='bridge'){ bridgeFirst=null; bridgeHover=null; }
+  if(t!=='line' && t!=='poly'){ drawPts=[]; }         // discard in-progress sketch
+  if(t==='line'||t==='poly'||t==='trim') buildSnapIndex();
+  if(t!=='line'&&t!=='poly'&&t!=='bridge'&&t!=='trim') hoverScreen=null;
+  snapPt=null;
   cv.style.cursor = t==='move'?'move':'crosshair';
   draw();
 }
@@ -2503,6 +2807,9 @@ $('#modeDw').addEventListener('click',()=>setUiMode('drawings'));
 $('#modeEnt').addEventListener('click',()=>setUiMode('entities'));
 $('#toolSel').addEventListener('click',()=>setTool('select'));
 $('#toolMove').addEventListener('click',()=>setTool('move'));
+$('#toolLine').addEventListener('click',()=>{ setTool('line'); toast('Line tool: click start then end. Points snap to nearby vertices (▫). Esc cancels.'); });
+$('#toolPoly').addEventListener('click',()=>{ setTool('poly'); toast('Polyline tool: click each vertex · Enter/double-click = finish · C = close · Esc = cancel.'); });
+$('#toolTrim').addEventListener('click',()=>{ setTool('trim'); toast('Trim tool: click the part of a LINE you want to cut away (removed between its intersections with other geometry).'); });
 $('#rotCCW').addEventListener('click',()=>rotateCurrentSelection(1));
 $('#rotCW').addEventListener('click',()=>rotateCurrentSelection(-1));
 $('#rotAngle').addEventListener('keydown',e=>{

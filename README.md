@@ -65,6 +65,21 @@ modern browser and drop a DXF in.
   (`Ctrl+Z` / `Ctrl+Y`, multi-level) — every edit is reversible in both
   directions.
 
+### Draw & trim
+- **Line** tool (`L`) — click start, click end. A live preview shows the
+  segment and its length; points **snap** to nearby existing vertices/
+  endpoints (green ▫ marker).
+- **Polyline** tool (`P`) — click each vertex; `Enter` or double-click
+  finishes an open polyline, `C` (or clicking the first vertex) closes it,
+  `Backspace` drops the last vertex, `Esc` cancels. Same snapping.
+- New geometry joins the single selected drawing (or a dedicated *Drawn
+  geometry* group), so it flows straight into the topology check and export.
+- **Trim** tool (`X`) — click the part of a **straight line** you want to
+  cut away; it's removed between that line's nearest intersections with the
+  surrounding geometry (splitting the line in two if the piece is in the
+  middle). Undoable like everything else. Trim targets straight lines — run
+  it before **Join & close** while segments are still separate.
+
 ### Workspace
 - **Dark / light theme** toggle (`T`) — follows the OS preference on first
   run and remembers your choice; the canvas, panels and markers all adapt.
