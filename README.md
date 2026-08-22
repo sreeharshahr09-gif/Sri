@@ -50,8 +50,21 @@ modern browser and drop a DXF in.
 ### Edit
 - Two selection modes: whole **drawings** or individual **entities**
   (click / box-select, Shift add, Alt remove).
-- Delete (`Del`), move/translate (drag with the Move tool, `M`), undo
-  (`Ctrl+Z`, multi-level).
+- Delete (`Del`), move/translate (drag with the Move tool, `M`), rotate
+  (`R` / `Shift+R` about the selection centre), and full **undo / redo**
+  (`Ctrl+Z` / `Ctrl+Y`, multi-level) — every edit is reversible in both
+  directions.
+
+### Workspace
+- **Dark / light theme** toggle (`T`) — follows the OS preference on first
+  run and remembers your choice; the canvas, panels and markers all adapt.
+- Live **cursor coordinate readout** and an **origin (0,0) marker** on the
+  canvas — quick to confirm where geometry sits (the far-from-origin case
+  that trips up some downstream tools).
+- **Section readout** in the closed-profile card: net enclosed **area**
+  (outer loops minus holes) and total **perimeter** of the selected
+  drawings' closed profiles — the numbers a stiffness/section tool works
+  from.
 
 ### Export
 - Export selected drawings into one DXF, or each into its own file.

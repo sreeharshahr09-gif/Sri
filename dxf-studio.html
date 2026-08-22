@@ -9,6 +9,17 @@
     --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --line:#2a323d;
     --txt:#e6edf3; --muted:#8b949e; --accent:#4c9aff; --accent2:#2ea043;
     --danger:#f85149; --warn:#d29922; --chip:#21262d; --sel:#ffd33d;
+    --canvas:#0a0d12; --focus:#0a0d12; --scroll:#2a323d;
+    --badge-ok-bg:#12341c; --badge-ok-fg:#5ee08a; --badge-bad-bg:#3d1512; --badge-bad-fg:#ff9d95;
+    --toast-bg:#000c;
+  }
+  :root[data-theme="light"]{
+    --bg:#f5f7fa; --panel:#ffffff; --panel2:#eef1f5; --line:#d0d7de;
+    --txt:#1b2027; --muted:#5a6572; --accent:#2b6cff; --accent2:#1f8f3b;
+    --danger:#d1242f; --warn:#9a6700; --chip:#e7ebf0; --sel:#b8860b;
+    --canvas:#fbfcfe; --focus:#ffffff; --scroll:#c2ccd6;
+    --badge-ok-bg:#d6f5e0; --badge-ok-fg:#137a37; --badge-bad-bg:#ffe3e0; --badge-bad-fg:#b31910;
+    --toast-bg:#111c;
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--txt)}
@@ -19,7 +30,7 @@
   .sidebar{border-right:1px solid var(--line);overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:12px}
   .main{position:relative;overflow:hidden;display:flex;flex-direction:column}
   .toolbar{display:flex;gap:8px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap;font-size:12px;color:var(--muted)}
-  canvas{flex:1;display:block;background:#0a0d12;cursor:crosshair}
+  canvas{flex:1;display:block;background:var(--canvas);cursor:crosshair}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
   .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:0 0 10px}
   label.file{display:flex;flex-direction:column;gap:6px}
@@ -38,16 +49,16 @@
   .dw .top{display:flex;align-items:center;gap:7px}
   .dw .sw{width:13px;height:13px;border-radius:3px;flex:0 0 auto}
   .dw .name{font-size:13px;font-weight:600;flex:1;min-width:40px;background:transparent;border:none;color:var(--txt);padding:2px 4px;border-radius:4px}
-  .dw .name:focus{background:#0a0d12;outline:1px solid var(--accent)}
+  .dw .name:focus{background:var(--focus);outline:1px solid var(--accent)}
   .dw .meta{font-size:11px;color:var(--muted)}
   .dw.selected{outline:2px solid var(--accent)}
   .dw.hidden-dw{opacity:.4}
   .mini{font-size:11px;color:var(--muted)}
   .hint{font-size:11px;color:var(--muted);line-height:1.5}
   .badge{font-size:10px;padding:1px 6px;border-radius:10px;background:var(--chip);color:var(--muted);white-space:nowrap}
-  .badge.ok{background:#12341c;color:#5ee08a}
-  .badge.bad{background:#3d1512;color:#ff9d95}
-  .toast{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:#000c;border:1px solid var(--line);padding:8px 14px;border-radius:8px;font-size:12px;opacity:0;transition:.25s;pointer-events:none;max-width:70%;text-align:center;z-index:5}
+  .badge.ok{background:var(--badge-ok-bg);color:var(--badge-ok-fg)}
+  .badge.bad{background:var(--badge-bad-bg);color:var(--badge-bad-fg)}
+  .toast{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:var(--toast-bg);border:1px solid var(--line);padding:8px 14px;border-radius:8px;font-size:12px;opacity:0;transition:.25s;pointer-events:none;max-width:70%;text-align:center;z-index:5;color:var(--txt)}
   .toast.show{opacity:1}
   a.dl{display:none}
   .split{display:flex;gap:6px}
@@ -65,13 +76,15 @@
   .chk{display:flex;gap:7px;align-items:flex-start;font-size:12px;line-height:1.4;margin-top:6px;cursor:pointer}
   .chk input{margin-top:2px}
   ::-webkit-scrollbar{width:9px;height:9px}
-  ::-webkit-scrollbar-thumb{background:#2a323d;border-radius:6px}
+  ::-webkit-scrollbar-thumb{background:var(--scroll);border-radius:6px}
 </style>
 </head>
 <body>
 <header>
   <h1>DXF Studio</h1>
   <span class="sub">Group · classify · edit · verify closed profiles · export clean DXF for downstream tools (e.g. stiffness analysis). Runs 100% in your browser — no upload.</span>
+  <span style="flex:1"></span>
+  <button class="secondary" id="themeToggle" title="Toggle dark / light theme (T)" style="padding:6px 10px">🌙 Dark</button>
 </header>
 
 <div class="app">
@@ -133,6 +146,8 @@
         <span>Closed loops</span><b id="stLoops">–</b>
         <span>Open chains</span><b id="stOpen">–</b>
         <span>Open endpoints (red ✚ on canvas)</span><b id="stEnds">–</b>
+        <span title="Net enclosed area of the closed profiles in the selected drawings (outer loops minus loops that sit inside them, e.g. holes)">Selected net area</span><b id="stArea">–</b>
+        <span title="Total length of all closed-loop boundaries in the selected drawings">Selected perimeter</span><b id="stPerim">–</b>
       </div>
       <div class="row" style="margin-top:10px">
         <button id="joinBtn">Join &amp; close chains</button>
@@ -187,16 +202,23 @@
       <span style="width:8px"></span>
       <button class="secondary tgl on" id="toolSel" title="Box/click select">Select</button>
       <button class="secondary tgl" id="toolMove" title="Drag to move current selection (M)">Move</button>
+      <span class="mini" style="margin-left:4px">Rotate</span>
+      <input id="rotAngle" type="number" step="any" value="90" title="Rotation angle in degrees" style="width:70px" />
+      <span class="mini">°</span>
+      <button class="secondary" id="rotCCW" title="Rotate current selection counter-clockwise around its center (R)">↺</button>
+      <button class="secondary" id="rotCW" title="Rotate current selection clockwise around its center (Shift+R)">↻</button>
       <button class="secondary tgl" id="toolBridge" title="Click two open endpoints (red ✚) to close the gap with a straight line (B)">✏ Bridge</button>
       <span style="width:8px"></span>
-      <button class="secondary" id="undoBtn" title="Ctrl+Z">↶ Undo</button>
+      <button class="secondary" id="undoBtn" title="Undo (Ctrl+Z)">↶ Undo</button>
+      <button class="secondary" id="redoBtn" title="Redo (Ctrl+Y or Ctrl+Shift+Z)">↷ Redo</button>
       <button class="secondary" id="delBtn" title="Delete key">🗑 Delete sel.</button>
       <button class="secondary" id="fit">Fit view</button>
       <span style="flex:1"></span>
+      <span id="coordInfo" class="mini" style="font-variant-numeric:tabular-nums"></span>
       <span id="viewInfo">No file loaded.</span>
     </div>
     <div class="toolbar" style="border-top:none;padding-top:0">
-      <span class="mini">Drag = box-select · <span class="kbd">Shift</span> add · <span class="kbd">Alt</span> remove · Right-drag/<span class="kbd">Space</span> = pan · Scroll = zoom · <span class="kbd">Del</span> delete · <span class="kbd">Ctrl+Z</span> undo · <span class="kbd">B</span> bridge tool · <span class="kbd">Esc</span> clear · red ✚ = open endpoint</span>
+      <span class="mini">Drag = box-select · <span class="kbd">Shift</span> add · <span class="kbd">Alt</span> remove · Right-drag/<span class="kbd">Space</span> = pan · Scroll = zoom · <span class="kbd">Del</span> delete · <span class="kbd">Ctrl+Z</span> undo · <span class="kbd">Ctrl+Y</span> redo · <span class="kbd">R</span>/<span class="kbd">Shift+R</span> rotate · <span class="kbd">B</span> bridge · <span class="kbd">T</span> theme · <span class="kbd">F</span> fit · <span class="kbd">Esc</span> clear · red ✚ = open endpoint</span>
     </div>
     <canvas id="cv"></canvas>
     <div class="toast" id="toast"></div>
@@ -210,7 +232,7 @@
    - Drawing detection: spatial clustering / layer / block
    - Entity classification: geometry, dimension, text, construction, hatch, frame
    - Topology: endpoint graph with snap tolerance -> closed loops vs open chains
-   - Edits: delete, move (translate), join LINE/ARC chains into closed polylines
+   - Edits: delete, move (translate), rotate, join LINE/ARC chains into closed polylines
    - Export: original records verbatim (edited records rewritten), filters for
      "geometry only" and "closed profiles only"
    ========================================================================== */
@@ -225,6 +247,7 @@ let LAYERS = new Map(); // name -> {visible, count}
 let CLASS_HIDDEN = {geometry:false, dimension:false, text:false, construction:false, hatch:false, frame:false};
 let SEL_ENT = new Set();
 let UNDO = [];
+let REDO = [];
 let HANDLE_MAX = 0x200;
 let view = {scale:1, ox:0, oy:0};
 let uiMode = 'drawings';   // 'drawings' | 'entities'
@@ -515,7 +538,10 @@ function entityGeom(ent, blocks, depth=0){
       for(const be of blk.entities){
         const g=entityGeom(be,blocks,depth+1);
         if(g){
-          for(const [mx,my] of [g.min,g.max]){ const [tx,ty]=tf(mx,my); push(tx,ty); }
+          // Transform all four bbox corners; using only min/max is wrong after arbitrary rotation.
+          for(const [mx,my] of [[g.min[0],g.min[1]],[g.min[0],g.max[1]],[g.max[0],g.min[1]],[g.max[0],g.max[1]]]){
+            const [tx,ty]=tf(mx,my); push(tx,ty);
+          }
           for(const pr of g.draw){
             if(pr.type==='poly') prims.push({type:'poly',pts:pr.pts.map(([a,b])=>tf(a,b)),closed:pr.closed});
             else if(pr.type==='circle'){ const [cx2,cy2]=tf(pr.x,pr.y); prims.push({type:'circle',x:cx2,y:cy2,r:pr.r*Math.abs(sx)}); }
@@ -960,6 +986,7 @@ function analyzeAll(){
   $('#stLoops').textContent=loops;
   $('#stOpen').textContent=open;
   $('#stEnds').textContent=ends;
+  updateAreaReadout();
   const badge=$('#topoBadge');
   if(!DRAWINGS.length){ badge.textContent=''; badge.className='badge'; }
   else if(open===0 && ends===0){ badge.textContent='✓ all closed'; badge.className='badge ok'; }
@@ -972,8 +999,91 @@ function autoTol(){
   return Math.max(diag*1e-6, 1e-9);
 }
 
+/* ---------- closed-loop area / perimeter (section properties) ----------
+   Net area treats loops contained inside an odd number of larger loops as
+   holes (subtracted) — the value a stiffness/section tool cares about.     */
+function closedPolygonOf(e){
+  if(!e.geom || !e.geom.draw) return null;
+  for(const pr of e.geom.draw){
+    if(pr.type==='poly' && pr.closed && pr.pts.length>2) return pr.pts;
+  }
+  for(const pr of e.geom.draw){
+    if(pr.type==='circle'){
+      const n=64, pts=[];
+      for(let k=0;k<n;k++){ const a=2*Math.PI*k/n; pts.push([pr.x+pr.r*Math.cos(a), pr.y+pr.r*Math.sin(a)]); }
+      return pts;
+    }
+  }
+  return null;
+}
+function polyArea(pts){
+  let a=0;
+  for(let i=0;i<pts.length;i++){ const [x1,y1]=pts[i], [x2,y2]=pts[(i+1)%pts.length]; a+=x1*y2-x2*y1; }
+  return Math.abs(a)/2;
+}
+function polyPerim(pts){
+  let p=0;
+  for(let i=0;i<pts.length;i++){ const [x1,y1]=pts[i], [x2,y2]=pts[(i+1)%pts.length]; p+=Math.hypot(x2-x1,y2-y1); }
+  return p;
+}
+function pointInPoly(x,y,pts){
+  let inside=false;
+  for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+    const xi=pts[i][0], yi=pts[i][1], xj=pts[j][0], yj=pts[j][1];
+    if(((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi)+xi)) inside=!inside;
+  }
+  return inside;
+}
+function computeSelectionAreas(){
+  const sel=DRAWINGS.filter(d=>d.selected);
+  const targets=sel.length?sel:DRAWINGS;
+  const loops=[];
+  for(const d of targets){
+    if(!d.visible) continue;
+    for(const i of d.entityIdx){
+      if(!entVisible(i)) continue;
+      const e=ENTITIES[i];
+      const ee=entityEnds(e);
+      if(!ee || !ee.closed) continue;
+      const poly=closedPolygonOf(e);
+      if(!poly) continue;
+      loops.push({poly, area:polyArea(poly), perim:polyPerim(poly)});
+    }
+  }
+  let perim=0; for(const L of loops) perim+=L.perim;
+  // nesting depth by containment against larger loops
+  let net=0;
+  for(let a=0;a<loops.length;a++){
+    const La=loops[a];
+    const p=La.poly[0];
+    let depth=0;
+    for(let b=0;b<loops.length;b++){
+      if(a===b) continue;
+      const Lb=loops[b];
+      if(Lb.area>La.area && pointInPoly(p[0],p[1],Lb.poly)) depth++;
+    }
+    net += (depth%2===0? 1 : -1) * La.area;
+  }
+  return {count:loops.length, net, perim};
+}
+function fmtNum(v){
+  if(!isFinite(v)) return '–';
+  const a=Math.abs(v);
+  const dp = a>=1000?1 : a>=1?2 : 4;
+  return v.toLocaleString(undefined,{minimumFractionDigits:dp, maximumFractionDigits:dp});
+}
+function updateAreaReadout(){
+  const ea=$('#stArea'), ep=$('#stPerim');
+  if(!ea||!ep) return;
+  if(!DRAWINGS.length){ ea.textContent='–'; ep.textContent='–'; return; }
+  const r=computeSelectionAreas();
+  if(!r.count){ ea.textContent='–'; ep.textContent='–'; return; }
+  ea.textContent=fmtNum(r.net);
+  ep.textContent=fmtNum(r.perim);
+}
+
 /* =========================== EDITS ====================================== */
-function pushUndo(op){ UNDO.push(op); if(UNDO.length>60) UNDO.shift(); }
+function pushUndo(op){ UNDO.push(op); REDO.length=0; if(UNDO.length>60) UNDO.shift(); updateHistoryButtons(); }
 
 function refreshAfterEdit(){
   for(const d of DRAWINGS){
@@ -1021,6 +1131,64 @@ function translateRecord(rec, dx, dy){
     else if(map.y.includes(p[0])){ const v=parseFloat(p[1]); if(isFinite(v)) p[1]=fmt(v+dy); }
   }
 }
+
+/* Rotation maps: point pairs rotate about the selection centre; vector pairs
+   rotate about (0,0). Angle codes are advanced by the same DXF CCW angle.
+   Bulges and radii are invariant under rotation. */
+const ROTATE_CODES={
+  DEFAULT:{points:[[10,20]], vectors:[], angles:[]},
+  LINE:{points:[[10,20],[11,21]], vectors:[], angles:[]},
+  LWPOLYLINE:{points:[[10,20]], vectors:[], angles:[]},
+  VERTEX:{points:[[10,20]], vectors:[], angles:[]},
+  CIRCLE:{points:[[10,20]], vectors:[], angles:[]},
+  ARC:{points:[[10,20]], vectors:[], angles:[50,51]},
+  POINT:{points:[[10,20]], vectors:[], angles:[]},
+  TEXT:{points:[[10,20],[11,21]], vectors:[], angles:[50]},
+  ATTRIB:{points:[[10,20],[11,21]], vectors:[], angles:[50]},
+  ATTDEF:{points:[[10,20],[11,21]], vectors:[], angles:[50]},
+  MTEXT:{points:[[10,20]], vectors:[[11,21]], angles:[50]},
+  SOLID:{points:[[10,20],[11,21],[12,22],[13,23]], vectors:[], angles:[]},
+  TRACE:{points:[[10,20],[11,21],[12,22],[13,23]], vectors:[], angles:[]},
+  '3DFACE':{points:[[10,20],[11,21],[12,22],[13,23]], vectors:[], angles:[]},
+  DIMENSION:{points:[[10,20],[11,21],[12,22],[13,23],[14,24],[15,25],[16,26]], vectors:[], angles:[50,51,52,53]},
+  SPLINE:{points:[[10,20],[11,21]], vectors:[[12,22],[13,23]], angles:[]},
+  LEADER:{points:[[10,20]], vectors:[], angles:[]},
+  HATCH:{points:[[10,20],[11,21]], vectors:[], angles:[50,51,53]},
+  ELLIPSE:{points:[[10,20]], vectors:[[11,21]], angles:[]},
+  INSERT:{points:[[10,20]], vectors:[], angles:[50]},
+  XLINE:{points:[[10,20]], vectors:[[11,21]], angles:[]},
+  RAY:{points:[[10,20]], vectors:[[11,21]], angles:[]},
+};
+function normDeg(a){
+  const n=((a%360)+360)%360;
+  return Math.abs(n)<1e-10?0:n;
+}
+function rotateCodePair(rec, xCode, yCode, cx, cy, cos, sin){
+  const xi=[], yi=[];
+  rec.forEach((p,k)=>{ if(p[0]===xCode) xi.push(k); else if(p[0]===yCode) yi.push(k); });
+  const n=Math.min(xi.length,yi.length);
+  for(let j=0;j<n;j++){
+    const x=parseFloat(rec[xi[j]][1]), y=parseFloat(rec[yi[j]][1]);
+    if(!isFinite(x)||!isFinite(y)) continue;
+    const dx=x-cx, dy=y-cy;
+    rec[xi[j]][1]=fmt(cx+dx*cos-dy*sin);
+    rec[yi[j]][1]=fmt(cy+dx*sin+dy*cos);
+  }
+}
+function rotateRecord(rec, angleDeg, cx, cy){
+  const t=rec[0][1].trim().toUpperCase();
+  const map=ROTATE_CODES[t]||ROTATE_CODES.DEFAULT;
+  const a=angleDeg*Math.PI/180, cos=Math.cos(a), sin=Math.sin(a);
+  for(const [xc,yc] of map.points) rotateCodePair(rec,xc,yc,cx,cy,cos,sin);
+  for(const [xc,yc] of map.vectors) rotateCodePair(rec,xc,yc,0,0,cos,sin);
+  if(map.angles.length){
+    for(const p of rec){
+      if(!map.angles.includes(p[0])) continue;
+      const v=parseFloat(p[1]);
+      if(isFinite(v)) p[1]=fmt(normDeg(v+angleDeg));
+    }
+  }
+}
 function recomputeGeom(i){
   const e=ENTITIES[i];
   if(e.type==='POLYLINE' && e.raw.length>1){
@@ -1050,27 +1218,77 @@ function moveEntities(idxs, dx, dy, record=true){
   if(record) pushUndo({type:'move', idxs:[...idxs], dx, dy});
   refreshAfterEdit();
 }
+function rotateEntities(idxs, angleDeg, pivot=null, record=true){
+  const real=[...new Set(idxs)].filter(i=>ENTITIES[i]&&!ENTITIES[i].del);
+  if(!real.length) return null;
+  if(!isFinite(angleDeg) || Math.abs(angleDeg)%360<1e-12) return null;
+  const bb=bboxOf(real);
+  if(!bb) return null;
+  const cx=pivot?pivot[0]:(bb.min[0]+bb.max[0])/2;
+  const cy=pivot?pivot[1]:(bb.min[1]+bb.max[1])/2;
+  for(const i of real){
+    const e=ENTITIES[i];
+    for(const rec of e.raw) rotateRecord(rec,angleDeg,cx,cy);
+    recomputeGeom(i);
+  }
+  if(record) pushUndo({type:'rotate', idxs:real, angle:angleDeg, cx, cy});
+  refreshAfterEdit();
+  return {count:real.length,cx,cy};
+}
 
-function undo(){
-  const op=UNDO.pop();
-  if(!op){ toast('Nothing to undo.'); return; }
-  if(op.type==='delete'){ for(const i of op.idxs) ENTITIES[i].del=false; }
+/* Apply one operation in a direction: dir=+1 = forward (do/redo), -1 = inverse
+   (undo). Every op is symmetric so the same record drives undo and redo.     */
+function applyOp(op, dir){
+  if(op.type==='delete'){
+    const del = dir>0;                       // forward = delete, inverse = restore
+    for(const i of op.idxs) if(ENTITIES[i]) ENTITIES[i].del=del;
+  }
   else if(op.type==='move'){
+    const s=dir>0?1:-1;
     for(const i of op.idxs){
-      for(const rec of ENTITIES[i].raw) translateRecord(rec,-op.dx,-op.dy);
+      for(const rec of ENTITIES[i].raw) translateRecord(rec,s*op.dx,s*op.dy);
+      recomputeGeom(i);
+    }
+  }
+  else if(op.type==='rotate'){
+    const ang=dir>0?op.angle:-op.angle;
+    for(const i of op.idxs){
+      for(const rec of ENTITIES[i].raw) rotateRecord(rec,ang,op.cx,op.cy);
       recomputeGeom(i);
     }
   }
   else if(op.type==='join'){
-    for(const i of op.added) ENTITIES[i].del=true;
-    for(const i of op.removed) ENTITIES[i].del=false;
+    // forward: added entities live, source entities removed; inverse: swap
+    for(const i of op.added)   if(ENTITIES[i]) ENTITIES[i].del = dir<0;
+    for(const i of op.removed) if(ENTITIES[i]) ENTITIES[i].del = dir>0;
   }
   else if(op.type==='multi'){
-    for(let k=op.ops.length-1;k>=0;k--){ UNDO.push(op.ops[k]); undo(); }
-    return;
+    const seq = dir>0 ? op.ops : [...op.ops].reverse();
+    for(const sub of seq) applyOp(sub, dir);
   }
+}
+function undo(){
+  const op=UNDO.pop();
+  if(!op){ toast('Nothing to undo.'); return; }
+  applyOp(op,-1);
+  REDO.push(op);
   refreshAfterEdit();
+  updateHistoryButtons();
   toast('Undone: '+op.type+'.');
+}
+function redo(){
+  const op=REDO.pop();
+  if(!op){ toast('Nothing to redo.'); return; }
+  applyOp(op,+1);
+  UNDO.push(op);
+  refreshAfterEdit();
+  updateHistoryButtons();
+  toast('Redone: '+op.type+'.');
+}
+function updateHistoryButtons(){
+  const u=$('#undoBtn'), r=$('#redoBtn');
+  if(u) u.disabled=!UNDO.length;
+  if(r) r.disabled=!REDO.length;
 }
 
 /* ---------- join & close chains ---------- */
@@ -1274,6 +1492,7 @@ function renderDrawings(){
     });
     box.appendChild(el);
   });
+  updateAreaReadout();
 }
 
 function classCounts(){
@@ -1369,6 +1588,42 @@ function drawPrim(pr, color){
 
 let tempMove=null; // {set:Set, dx, dy} live preview while dragging in move tool
 
+/* ---------- theme ---------- */
+const THEMES={
+  dark:  {dimUnsel:'#3a4450', clsUnsel:'#333c46', bboxUnsel:'#556', labelUnsel:'#889', entSel:'#ffd33d', origin:'#4a5568', originAxis:'#39424f'},
+  light: {dimUnsel:'#9aa4b0', clsUnsel:'#b8c0c9', bboxUnsel:'#9aa4b3', labelUnsel:'#5a6572', entSel:'#c76a00', origin:'#9aa4b0', originAxis:'#cbd3dc'},
+};
+let TH=THEMES.dark;
+let THEME='dark';
+function applyTheme(t){
+  THEME = t==='light'?'light':'dark';
+  TH = THEMES[THEME];
+  document.documentElement.setAttribute('data-theme', THEME);
+  const btn=$('#themeToggle');
+  if(btn) btn.textContent = THEME==='dark' ? '🌙 Dark' : '☀️ Light';
+  try{ localStorage.setItem('dxfstudio-theme', THEME); }catch(e){}
+  draw();
+}
+function toggleTheme(){ applyTheme(THEME==='dark'?'light':'dark'); }
+
+/* origin crosshair — helps confirm where (0,0) is (relevant to the
+   far-from-origin issues that break some downstream tools). */
+function drawOrigin(){
+  const [ox,oy]=W2S(0,0);
+  const w=cv.width/devicePixelRatio, h=cv.height/devicePixelRatio;
+  ctx.save();
+  ctx.globalAlpha=0.9; ctx.lineWidth=1;
+  if(ox>-50 && ox<w+50 && oy>-50 && oy<h+50){
+    ctx.strokeStyle=TH.origin;
+    ctx.beginPath(); ctx.moveTo(ox-9,oy); ctx.lineTo(ox+9,oy);
+    ctx.moveTo(ox,oy-9); ctx.lineTo(ox,oy+9); ctx.stroke();
+    ctx.beginPath(); ctx.arc(ox,oy,4,0,Math.PI*2); ctx.stroke();
+    ctx.fillStyle=TH.labelUnsel; ctx.font='10px sans-serif';
+    ctx.fillText('0,0', ox+7, oy-7);
+  }
+  ctx.restore();
+}
+
 function draw(){
   ctx.clearRect(0,0,cv.width,cv.height);
   if(!DRAWINGS.length){ $('#viewInfo').textContent = DXF?'File parsed but no drawable entities found.':'No file loaded.'; return; }
@@ -1376,9 +1631,10 @@ function draw(){
   const alive=ENTITIES.filter(e=>!e.del).length;
   $('#viewInfo').textContent = `${DRAWINGS.length} drawing(s), ${nSel} selected · ${alive} entities · mode: ${uiMode}${SEL_ENT.size?` · ${SEL_ENT.size} entit${SEL_ENT.size===1?'y':'ies'} selected`:''}`;
   ctx.lineWidth=1;
+  drawOrigin();
   for(const d of DRAWINGS){
     if(!d.visible) continue;
-    const dim = d.selected? d.color : '#3a4450';
+    const dim = d.selected? d.color : TH.dimUnsel;
     for(const i of d.entityIdx){
       if(!entVisible(i)) continue;
       const e=ENTITIES[i];
@@ -1389,8 +1645,8 @@ function draw(){
       if(moving) ctx.translate(tempMove.dx*view.scale, -tempMove.dy*view.scale);
       ctx.globalAlpha = (d.selected||entSel)?1:0.5;
       let col=dim;
-      if(e.cls!=='geometry') col = d.selected ? CLS_META[e.cls].dot : '#333c46';
-      if(entSel){ col='#ffd33d'; ctx.lineWidth=2; }
+      if(e.cls!=='geometry') col = d.selected ? CLS_META[e.cls].dot : TH.clsUnsel;
+      if(entSel){ col=TH.entSel; ctx.lineWidth=2; }
       for(const pr of g.draw) drawPrim(pr, col);
       ctx.lineWidth=1;
       ctx.restore();
@@ -1399,9 +1655,9 @@ function draw(){
       const [x0,y0]=W2S(d.bbox.min[0],d.bbox.max[1]);
       const [x1,y1]=W2S(d.bbox.max[0],d.bbox.min[1]);
       ctx.globalAlpha=d.selected?0.9:0.35;
-      ctx.setLineDash([5,4]);ctx.strokeStyle=d.selected?d.color:'#556';
+      ctx.setLineDash([5,4]);ctx.strokeStyle=d.selected?d.color:TH.bboxUnsel;
       ctx.strokeRect(x0,y0,x1-x0,y1-y0);ctx.setLineDash([]);
-      ctx.fillStyle=d.selected?d.color:'#889';ctx.font='11px sans-serif';
+      ctx.fillStyle=d.selected?d.color:TH.labelUnsel;ctx.font='11px sans-serif';
       let label=d.name;
       if(d.topo && (d.topo.openChains>0||d.topo.openEnds.length>0)) label+=' ⚠';
       else if(d.topo && d.topo.loops>0) label+=' ✓';
@@ -1477,14 +1733,21 @@ window.addEventListener('keydown',e=>{
     if(uiMode==='entities' && SEL_ENT.size) deleteEntities([...SEL_ENT]);
     e.preventDefault();
   }
-  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){ undo(); e.preventDefault(); }
+  const ctrl=e.ctrlKey||e.metaKey;
+  if(ctrl && e.key.toLowerCase()==='z' && e.shiftKey){ redo(); e.preventDefault(); return; }
+  if(ctrl && e.key.toLowerCase()==='z'){ undo(); e.preventDefault(); return; }
+  if(ctrl && e.key.toLowerCase()==='y'){ redo(); e.preventDefault(); return; }
+  if(ctrl) return;   // leave other Ctrl/Cmd shortcuts to the browser
   if(e.key==='Escape'){
     SEL_ENT.clear();
     if(bridgeFirst){ bridgeFirst=null; toast('Bridge cancelled.'); }
     draw();
   }
   if(e.key.toLowerCase()==='m'){ setTool(tool==='move'?'select':'move'); }
+  if(e.key.toLowerCase()==='r'){ rotateCurrentSelection(e.shiftKey?-1:1); e.preventDefault(); }
   if(e.key.toLowerCase()==='b'){ setTool(tool==='bridge'?'select':'bridge'); if(tool==='bridge') toast('Bridge tool: click two open endpoints (red ✚) to connect them.'); }
+  if(e.key.toLowerCase()==='t'){ toggleTheme(); }
+  if(e.key.toLowerCase()==='f'){ fitView(); draw(); }
 });
 window.addEventListener('keyup',e=>{if(e.code==='Space'){spaceDown=false;}});
 cv.addEventListener('contextmenu',e=>e.preventDefault());
@@ -1538,6 +1801,17 @@ function currentMoveSet(){
   }
   return set;
 }
+function rotateCurrentSelection(sign=1){
+  if(!DRAWINGS.length){ toast('Load a DXF first.'); return; }
+  const set=currentMoveSet();
+  if(!set.size){ toast(uiMode==='entities'?'Select entities first.':'Select drawing(s) first.'); return; }
+  const val=parseFloat($('#rotAngle').value);
+  if(!isFinite(val)){ toast('Enter a valid rotation angle.'); return; }
+  const angle=sign*val;
+  if(Math.abs(angle)%360<1e-12){ toast('Rotation angle is 0° — nothing changed.'); return; }
+  const r=rotateEntities([...set],angle);
+  if(r) toast(`Rotated ${r.count} entit${r.count===1?'y':'ies'} ${Math.abs(angle).toFixed(3)}° ${angle>=0?'CCW':'CW'} about selection center.`);
+}
 
 cv.addEventListener('mousedown',e=>{
   const [px,py]=canvasPt(e);
@@ -1578,6 +1852,13 @@ window.addEventListener('mousemove',e=>{
     draw();
   }
 });
+cv.addEventListener('mousemove',e=>{
+  const ci=$('#coordInfo'); if(!ci) return;
+  const [px,py]=canvasPt(e);
+  const [wx,wy]=S2W(px,py);
+  ci.textContent = DXF ? `x ${wx.toFixed(3)}  y ${wy.toFixed(3)}` : '';
+});
+cv.addEventListener('mouseleave',()=>{ const ci=$('#coordInfo'); if(ci) ci.textContent=''; });
 window.addEventListener('mouseup',e=>{
   if(mode==='box' && box){
     const dx=Math.abs(box.x1-box.x0), dy=Math.abs(box.y1-box.y0);
@@ -1912,7 +2193,7 @@ $('#fileInput').addEventListener('change',async e=>{
     DXF=parseDXF(text);
     DXF.blocks=parseBlocks(DXF);
     ENTITIES=buildEntities(DXF, DXF.blocks);
-    UNDO=[]; SEL_ENT.clear();
+    UNDO=[]; REDO=[]; updateHistoryButtons(); SEL_ENT.clear();
     LAYERS=new Map();
     for(const en of ENTITIES){ if(!LAYERS.has(en.layer)) LAYERS.set(en.layer,{visible:true}); }
     const secList=DXF.order.join(', ')||'none';
@@ -1956,6 +2237,7 @@ $('#mergeSel').addEventListener('click',()=>{
 });
 $('#fit').addEventListener('click',()=>{fitView();draw();});
 $('#undoBtn').addEventListener('click',undo);
+$('#redoBtn').addEventListener('click',redo);
 $('#delBtn').addEventListener('click',()=>{
   if(uiMode==='entities'){
     if(!SEL_ENT.size){ toast('No entities selected — switch to Entities mode and click/box-select.'); return; }
@@ -2074,6 +2356,11 @@ $('#modeDw').addEventListener('click',()=>setUiMode('drawings'));
 $('#modeEnt').addEventListener('click',()=>setUiMode('entities'));
 $('#toolSel').addEventListener('click',()=>setTool('select'));
 $('#toolMove').addEventListener('click',()=>setTool('move'));
+$('#rotCCW').addEventListener('click',()=>rotateCurrentSelection(1));
+$('#rotCW').addEventListener('click',()=>rotateCurrentSelection(-1));
+$('#rotAngle').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){ rotateCurrentSelection(e.shiftKey?-1:1); e.preventDefault(); }
+});
 $('#toolBridge').addEventListener('click',()=>{ setTool('bridge'); toast('Bridge tool: click two open endpoints (red ✚) to connect them with a line.'); });
 $('#bridgeBtn').addEventListener('click',()=>{
   if(!DRAWINGS.length){ toast('Load a DXF first.'); return; }
@@ -2083,9 +2370,17 @@ $('#bridgeBtn').addEventListener('click',()=>{
     : 'Bridge tool active — but every visible profile is already closed. ✓');
 });
 
+$('#themeToggle').addEventListener('click',toggleTheme);
+
 window.addEventListener('resize',()=>{resizeCanvas();draw();});
 $('#spatialOpts').style.display='flex';
 renderClasses();
+// theme: restore saved preference, else follow the OS setting
+let savedTheme=null;
+try{ savedTheme=localStorage.getItem('dxfstudio-theme'); }catch(e){}
+if(!savedTheme && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) savedTheme='light';
+applyTheme(savedTheme||'dark');
+updateHistoryButtons();
 resizeCanvas();
 </script>
 </body>
