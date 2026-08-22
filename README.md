@@ -16,6 +16,16 @@ modern browser and drop a DXF in.
   clustering** (tunable gap), **layer**, or **block/INSERT**. Merge, rename,
   hide, or delete detected drawings.
 
+### Save & resume a session (JSON project)
+- **Save project** writes the entire working session to a `.json` file —
+  parsed geometry, every edit (deletes, moves, rotations, joined polylines),
+  drawing grouping and names, layer/class visibility, topology tolerance and
+  export settings, theme and view.
+- **Open project** restores it exactly, recomputing all derived geometry and
+  topology, so a large, complicated tire profile can be picked up right where
+  it was left off — no need to redo the cleanup. Round-trip is lossless: an
+  export from a restored session is byte-identical to the original.
+
 ### Classify & filter
 - Every entity is auto-classified: **geometry / dimensions / text /
   construction & center lines / hatches / frames-borders** (by entity type,

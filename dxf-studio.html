@@ -94,6 +94,12 @@
       <h2>1 · Load DXF</h2>
       <label class="file"><input id="fileInput" type="file" accept=".dxf,text/plain" /></label>
       <div id="loadStats" class="hint" style="margin-top:8px"></div>
+      <div class="row" style="margin-top:10px">
+        <button class="secondary" id="saveProj" title="Download the whole session as a .json project">💾 Save project</button>
+        <button class="secondary" id="openProjBtn" title="Reopen a saved .json project">📂 Open project</button>
+        <input id="projInput" type="file" accept=".json,application/json" style="display:none" />
+      </div>
+      <div class="hint" style="margin-top:6px">Save the entire session — geometry, edits, grouping, classes, visibility &amp; settings — to a JSON file, then reopen it later to continue exactly where you left off. Ideal for large, complex tire profiles.</div>
     </div>
 
     <div class="card">
@@ -2174,11 +2180,137 @@ function buildDXF(selectedDrawings){
     ? buildExportDXF(selectedDrawings)
     : buildCleanDXF(selectedDrawings);
 }
-function download(filename, text){
-  const blob=new Blob([text],{type:'application/dxf'});
+function download(filename, text, mime){
+  const blob=new Blob([text],{type:mime||'application/dxf'});
   const url=URL.createObjectURL(blob);
   const a=$('#dl'); a.href=url; a.download=filename; a.click();
   setTimeout(()=>URL.revokeObjectURL(url),3000);
+}
+
+/* =========================== PROJECT SAVE / OPEN ========================
+   Serialises the full working session to JSON so a large, partially-edited
+   profile can be reopened exactly where it was left off. Everything derived
+   (geometry, bounding boxes, topology) is recomputed on import.            */
+const PROJECT_FORMAT='dxf-studio-project';
+const PROJECT_VERSION=1;
+
+function serializeProject(){
+  // original DXF sections, minus ENTITIES (rebuilt from the live ENTITIES array)
+  const dxfSections={};
+  if(DXF && DXF.sections){
+    for(const name of Object.keys(DXF.sections)){
+      if(name==='ENTITIES') continue;
+      dxfSections[name]=DXF.sections[name].pairs;
+    }
+  }
+  return {
+    format:PROJECT_FORMAT,
+    version:PROJECT_VERSION,
+    savedAt:new Date().toISOString(),
+    baseName,
+    handleMax:HANDLE_MAX,
+    classHidden:CLASS_HIDDEN,
+    layers:[...LAYERS.entries()].map(([n,v])=>[n,{visible:v.visible}]),
+    ui:{
+      method:$('#method').value, gap:$('#gap').value, tol:$('#tol').value,
+      expFormat:$('#expFormat').value,
+      expGeomOnly:$('#expGeomOnly').checked, expClosedOnly:$('#expClosedOnly').checked,
+      expRecenter:$('#expRecenter').checked,
+      theme:THEME, uiMode, tool, rotAngle:$('#rotAngle')?$('#rotAngle').value:'90',
+    },
+    view:{scale:view.scale, ox:view.ox, oy:view.oy},
+    dxfOrder:DXF?DXF.order:[],
+    dxfSections,
+    entities:ENTITIES.map(e=>({
+      raw:e.raw, type:e.type, layer:e.layer, ltype:e.ltype||'',
+      del:!!e.del, cls:e.cls, block:e.block||null,
+      closed:!!e._closed, verts:e._verts||null,
+    })),
+    drawings:DRAWINGS.map(d=>({
+      id:d.id, name:d.name, color:d.color,
+      entityIdx:d.entityIdx.slice(), selected:!!d.selected, visible:!!d.visible,
+    })),
+    selEnt:[...SEL_ENT],
+  };
+}
+
+function saveProject(){
+  if(!ENTITIES.length){ toast('Nothing to save — load a DXF first.'); return; }
+  try{
+    const json=JSON.stringify(serializeProject());
+    download((baseName||'dxf-studio')+'.dxfproj.json', json, 'application/json');
+    toast('Project saved ('+(json.length/1024|0)+' KB). Reopen it anytime to continue.');
+  }catch(err){
+    console.error(err); toast('Save failed — see console.');
+  }
+}
+
+function loadProject(obj){
+  if(!obj || obj.format!==PROJECT_FORMAT) throw new Error('Not a DXF Studio project file.');
+  if(obj.version>PROJECT_VERSION) throw new Error('Project was saved by a newer version of DXF Studio.');
+
+  // rebuild DXF (sections carry only .pairs; blocks re-parsed)
+  DXF={sections:{}, order:obj.dxfOrder||[], raw:[], blocks:{}};
+  for(const name of Object.keys(obj.dxfSections||{})){
+    DXF.sections[name]={pairs:obj.dxfSections[name]};
+  }
+  DXF.blocks=parseBlocks(DXF);
+
+  HANDLE_MAX = obj.handleMax || 0x200;
+  CLASS_HIDDEN = Object.assign({geometry:false,dimension:false,text:false,construction:false,hatch:false,frame:false}, obj.classHidden||{});
+  baseName = obj.baseName || 'drawing';
+
+  // rebuild entities (geometry recomputed)
+  ENTITIES = (obj.entities||[]).map(se=>({
+    raw:se.raw, type:se.type, layer:se.layer, ltype:se.ltype||'',
+    geom:null, block:se.block||null, del:!!se.del, cls:se.cls,
+    _verts:se.verts||undefined, _closed:!!se.closed,
+  }));
+  for(let i=0;i<ENTITIES.length;i++) recomputeGeom(i);
+
+  // layers
+  LAYERS=new Map();
+  for(const [n,v] of (obj.layers||[])) LAYERS.set(n,{visible:v?v.visible!==false:true});
+  for(const e of ENTITIES){ if(!LAYERS.has(e.layer)) LAYERS.set(e.layer,{visible:true}); }
+
+  // drawings (bbox/topo recomputed)
+  DRAWINGS=(obj.drawings||[]).map(d=>({
+    id:d.id, name:d.name, color:d.color,
+    entityIdx:(d.entityIdx||[]).filter(i=>ENTITIES[i]),
+    selected:!!d.selected, visible:d.visible!==false, bbox:null, topo:null,
+  }));
+  for(const d of DRAWINGS) d.bbox=bboxOf(d.entityIdx);
+
+  SEL_ENT=new Set((obj.selEnt||[]).filter(i=>ENTITIES[i]));
+  UNDO=[]; REDO=[]; updateHistoryButtons();
+
+  // UI restore
+  const ui=obj.ui||{};
+  if(ui.method) $('#method').value=ui.method;
+  if(ui.gap!==undefined) $('#gap').value=ui.gap;
+  if(ui.tol!==undefined) $('#tol').value=ui.tol;
+  if(ui.expFormat) $('#expFormat').value=ui.expFormat;
+  $('#expGeomOnly').checked=!!ui.expGeomOnly;
+  $('#expClosedOnly').checked=!!ui.expClosedOnly;
+  $('#expRecenter').checked=!!ui.expRecenter;
+  if($('#rotAngle') && ui.rotAngle!==undefined) $('#rotAngle').value=ui.rotAngle;
+  $('#spatialOpts').style.display = $('#method').value==='spatial'?'flex':'none';
+  applyTheme(ui.theme==='light'?'light':'dark');
+  setUiMode(ui.uiMode==='entities'?'entities':'drawings');
+  setTool(ui.tool||'select');
+
+  if(obj.view && isFinite(obj.view.scale)){ view.scale=obj.view.scale; view.ox=obj.view.ox; view.oy=obj.view.oy; }
+  else fitView();
+
+  $('#dwCount').textContent=DRAWINGS.length;
+  analyzeAll();
+  renderDrawings(); renderClasses(); renderLayers();
+  resizeCanvas(); draw();
+
+  const secList=DXF.order.join(', ')||'none';
+  const when=obj.savedAt?new Date(obj.savedAt).toLocaleString():'—';
+  $('#loadStats').innerHTML=`Restored project <b>${baseName}</b> (saved ${when})<br>${ENTITIES.filter(e=>!e.del).length} live entities · ${DRAWINGS.length} drawing(s) · ${LAYERS.size} layers`;
+  toast('Project restored — continuing where you left off.');
 }
 
 /* =========================== WIRE-UP ==================================== */
@@ -2207,6 +2339,21 @@ $('#fileInput').addEventListener('change',async e=>{
     toast('Parse error — see console.');
   }
 });
+$('#saveProj').addEventListener('click',saveProject);
+$('#openProjBtn').addEventListener('click',()=>$('#projInput').click());
+$('#projInput').addEventListener('change',async e=>{
+  const f=e.target.files[0]; if(!f)return;
+  try{
+    const obj=JSON.parse(await f.text());
+    loadProject(obj);
+  }catch(err){
+    console.error(err);
+    $('#loadStats').innerHTML=`<span style="color:var(--danger)">Could not open project: ${err.message}</span>`;
+    toast('Open failed: '+err.message);
+  }
+  e.target.value='';   // allow re-opening the same file
+});
+
 function autoTolFromEntities(){
   let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity,any=false;
   for(const e of ENTITIES){ if(!e.geom) continue; any=true;
