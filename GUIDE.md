@@ -146,10 +146,28 @@ The arcs meet **tangentially**: `φ` is an integral, so it stays continuous
 however abruptly the radius steps. Curvature *is* discontinuous at each
 breakpoint, which is exactly what a multi-arc profile is.
 
-Leaving the field blank uses the two-radius fields instead, which blend
-smoothly from centre to shoulder rather than switching at a point. That is
-**smoother than a real profile** through the shoulder transition — fine as a
-default, but type the real arcs when you have them.
+### Leaving it blank does not mean flat
+
+There is no flat option, and there should not be — a flat crown has infinite
+radius, so `φ` is zero everywhere and the tyre can reach no lean at all.
+
+Blank falls back to the **two-radius blend** from the *Crown R centre* and
+*Crown R shoulder* fields. Leave those blank too and it uses the **selected
+tyre type's** defaults:
+
+| Tyre type | R centre | R shoulder | max reachable lean on a 220 mm tread |
+|---|---|---|---|
+| 2W | 125 mm | 55 mm | 64° |
+| PCR | 700 mm | 90 mm | 13° |
+| TBR | 1500 mm | 120 mm | 5.8° |
+
+The panel always names the radii actually in use and says when they came from
+the class defaults, because which crown you got decides every lean angle in the
+sweep. Changing the tyre type changes them immediately.
+
+The blend goes smoothly from centre to shoulder rather than switching at a
+point, which is **smoother than a real profile** through the shoulder
+transition — fine as a default, but type the real arcs when you have them.
 
 The **Contact patch** tab draws the resolved profile with the breakpoints
 marked and the contact point shown at every lean angle in the run, so a typed

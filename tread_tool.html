@@ -720,7 +720,12 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
 <div class="tablewrap"><table><thead><tr><th>Spec</th><th>Meaning</th></tr></thead><tbody><tr><td><code>300</code></td><td>one arc, constant radius to the edge</td></tr><tr><td><code>125@0.45, 55</code></td><td>125 mm out to 45% of the half width, then 55 mm to the edge</td></tr><tr><td><code>800@45mm, 300@88mm, 90</code></td><td>three arcs with breakpoints in mm from the centreline</td></tr><tr><td><code>800@45%, 300@80%, 90</code></td><td>the same, as percentages of the half width</td></tr></tbody></table></div>
 <p>A breakpoint of 1 or less is read as a fraction of the half width, above 1 as millimetres; <code>mm</code> and <code>%</code> can be written explicitly. Breakpoints are <strong>developed arc length</strong>, the same <code>y</code> as everywhere else in the tool — not projected width. Up to 8 arcs.</p>
 <p>The arcs meet <strong>tangentially</strong>: <code>φ</code> is an integral, so it stays continuous however abruptly the radius steps. Curvature <em>is</em> discontinuous at each breakpoint, which is exactly what a multi-arc profile is.</p>
-<p>Leaving the field blank uses the two-radius fields instead, which blend smoothly from centre to shoulder rather than switching at a point. That is <strong>smoother than a real profile</strong> through the shoulder transition — fine as a default, but type the real arcs when you have them.</p>
+<h3>Leaving it blank does not mean flat</h3>
+<p>There is no flat option, and there should not be — a flat crown has infinite radius, so <code>φ</code> is zero everywhere and the tyre can reach no lean at all.</p>
+<p>Blank falls back to the <strong>two-radius blend</strong> from the <em>Crown R centre</em> and <em>Crown R shoulder</em> fields. Leave those blank too and it uses the <strong>selected tyre type's</strong> defaults:</p>
+<div class="tablewrap"><table><thead><tr><th>Tyre type</th><th>R centre</th><th>R shoulder</th><th>max reachable lean on a 220 mm tread</th></tr></thead><tbody><tr><td>2W</td><td>125 mm</td><td>55 mm</td><td>64°</td></tr><tr><td>PCR</td><td>700 mm</td><td>90 mm</td><td>13°</td></tr><tr><td>TBR</td><td>1500 mm</td><td>120 mm</td><td>5.8°</td></tr></tbody></table></div>
+<p>The panel always names the radii actually in use and says when they came from the class defaults, because which crown you got decides every lean angle in the sweep. Changing the tyre type changes them immediately.</p>
+<p>The blend goes smoothly from centre to shoulder rather than switching at a point, which is <strong>smoother than a real profile</strong> through the shoulder transition — fine as a default, but type the real arcs when you have them.</p>
 <p>The <strong>Contact patch</strong> tab draws the resolved profile with the breakpoints marked and the contact point shown at every lean angle in the run, so a typed specification never has to be taken on trust.</p>
 <h3>What is not modelled</h3>
 <ul><li><strong>Camber thrust</strong> and lateral force generation. This is a contact and stiffness model, not a force model.</li><li><strong>Carcass deformation under camber</strong> — the belt is treated as rigid.</li><li><strong>Asymmetric crowns.</strong> The profile is mirrored about the centreline.</li><li>The <strong>projection correction</strong> (<em>curvature correction</em> checkbox) weights each raster row by <code>1/cos φ</code>. It is for patterns digitised in projection — an ink impression or a photograph. A mould DXF is already developed, so leave it off or the correction is applied twice.</li></ul>
@@ -71390,14 +71395,23 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   // The zone fractions follow the same logic: a TBR shoulder rib is a much
   // smaller fraction of the half width than a 2W shoulder. Typical values per
   // class; override the crown radii and break directly when you know better.
+  // The crown radii here are the fallback when the crown fields are left blank.
+  // They used to be a hard-coded 125/55 -- motorcycle numbers -- whatever class
+  // was selected, so a blank crown on a 220 mm truck tread was evaluated with
+  // 47 mm of edge drop and 63 degrees of reachable lean. A crown is never flat
+  // and never class-agnostic; if nothing is typed the class default is the only
+  // defensible guess.
   var TYRE_CLASS = {
     "2w":  { crown_break: 0.45, zone_center: 0.34, zone_intermediate: 0.72,
+             crown_r_center: 125, crown_r_shoulder: 55,
              load_rises_with_lean: true,
              note: "motorcycle: curved crown, leans far, load grows as Fz/cos(gamma)" },
     "pcr": { crown_break: 0.72, zone_center: 0.40, zone_intermediate: 0.78,
+             crown_r_center: 700, crown_r_shoulder: 90,
              load_rises_with_lean: false,
              note: "passenger car: flat crown rolling off in the outer quarter; camber is small, so cornering load comes from weight transfer rather than lean" },
     "tbr": { crown_break: 0.85, zone_center: 0.45, zone_intermediate: 0.82,
+             crown_r_center: 1500, crown_r_shoulder: 120,
              load_rises_with_lean: false,
              note: "truck & bus: nearly flat crown with the shoulder only at the very edge; barely cambers" },
   };
@@ -71556,7 +71570,14 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     opts = opts || {};
     if (opts.crown_arcs && opts.crown_arcs.length)
       return crownMultiArc(treadWidth, opts.crown_arcs);
-    return crownDualRadius(treadWidth, opts.crown_r_center, opts.crown_r_shoulder, opts.crown_break);
+    // Blank fields fall back to the selected class, not to a fixed pair of
+    // motorcycle radii. With no class named the answer is unchanged from before.
+    const cls = tyreClass(opts.tyre_class);
+    const pick = (v, d) => (v == null || v === "" || !Number.isFinite(+v) ? d : +v);
+    return crownDualRadius(treadWidth,
+      pick(opts.crown_r_center, cls.crown_r_center),
+      pick(opts.crown_r_shoulder, cls.crown_r_shoulder),
+      pick(opts.crown_break, cls.crown_break));
   }
 
   function crownTangentAngle(crown, y) { return interp(y, crown.y, crown.phi); }
@@ -72614,16 +72635,26 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   // running a truck tread on motorcycle defaults is not a small error.
   // Lean angles differ too: a truck barely leans, a motorcycle lives at 40 deg.
   var TYRE_PRESETS = {
-    "2w":  { crownCenter: 125, crownShoulder: 55,  wheelR: 320, cpLoad: 1500,
+    "2w":  { wheelR: 320, cpLoad: 1500,
              cpLength: 90,  cpWidth: 50,  cpCorner: 12, nsd: 8.5,
              leans: [0, 5, 10, 15, 20, 25, 30, 35, 40], label: "2W — motorcycle" },
-    "pcr": { crownCenter: 700, crownShoulder: 90,  wheelR: 315, cpLoad: 4000,
+    "pcr": { wheelR: 315, cpLoad: 4000,
              cpLength: 140, cpWidth: 160, cpCorner: 25, nsd: 8.0,
              leans: [0, 2, 4, 6, 8, 10], label: "PCR — passenger car" },
-    "tbr": { crownCenter: 1500, crownShoulder: 120, wheelR: 520, cpLoad: 26000,
+    "tbr": { wheelR: 520, cpLoad: 26000,
              cpLength: 230, cpWidth: 250, cpCorner: 30, nsd: 16.0,
              leans: [0, 2, 4, 6, 8], label: "TBR — truck & bus" },
   };
+
+  // The crown radii a preset writes are the same ones a blank field falls back
+  // to, so they live in the engine's class table and are read from there rather
+  // than kept in a second copy that can drift.
+  function presetFor(name) {
+    var t = TYRE_PRESETS[name];
+    if (!t) return null;
+    var cls = E.tyreClass(name);
+    return Object.assign({}, t, { crownCenter: cls.crown_r_center, crownShoulder: cls.crown_r_shoulder });
+  }
 
   function currentLeans() {
     var t = TYRE_PRESETS[$("tyreType").value];
@@ -72634,7 +72665,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   function tyreClassPhysics() { return E.tyreClass($("tyreType").value); }
 
   function applyTyrePreset() {
-    var t = TYRE_PRESETS[$("tyreType").value];
+    var t = presetFor($("tyreType").value);
     if (!t) return;
     ["crownCenter", "crownShoulder", "wheelR", "cpLoad", "cpLength", "cpWidth", "cpCorner", "nsd"]
       .forEach(function (k) { if ($(k)) $(k).value = t[k]; });
@@ -72792,18 +72823,29 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     try {
       var arcs = readCrownArcs(w);
       var crown = E.buildCrown(w, {
+        tyre_class: $("tyreType").value,
         crown_arcs: arcs,
         crown_r_center: $("crownCenter").value.trim() === "" ? undefined : num("crownCenter"),
         crown_r_shoulder: $("crownShoulder").value.trim() === "" ? undefined : num("crownShoulder"),
         crown_break: readCrownBreak(),
       });
       var half = w / 2;
-      var desc = arcs
-        ? arcs.map(function (a, i) {
-            return "<b>R" + (i + 1) + "</b> " + a.r + " mm to " +
-              (i === arcs.length - 1 ? "the edge" : a.to.toFixed(1) + " mm");
-          }).join(" · ")
-        : "<i>two-radius blend</i> (type an arc spec above for true arcs)";
+      var desc;
+      if (arcs) {
+        desc = "<b>true arcs</b> · " + arcs.map(function (a, i) {
+          return "<b>R" + (i + 1) + "</b> " + a.r + " mm to " +
+            (i === arcs.length - 1 ? "the edge" : a.to.toFixed(1) + " mm");
+        }).join(" · ");
+      } else {
+        // Never let a blank field read as "nothing set". A crown is never flat,
+        // and which one you got decides every lean angle in the sweep.
+        var blank = $("crownCenter").value.trim() === "" && $("crownShoulder").value.trim() === "";
+        var cls = E.tyreClass($("tyreType").value);
+        desc = "<b>two-radius blend</b> · <b>R centre</b> " + E.crownLocalRadius(crown, 0).toFixed(0) +
+          " mm · <b>R edge</b> " + E.crownLocalRadius(crown, half).toFixed(0) + " mm" +
+          (blank ? " <i>(from the " + $("tyreType").value.toUpperCase() +
+                   " defaults — nothing typed, and a blank crown is not a flat one)</i>" : "");
+      }
       box.innerHTML = desc +
         "<br>half width " + half.toFixed(1) + " mm · edge drop " + E.crownDrop(crown, half).toFixed(2) +
         " mm · <b>max reachable lean " + E.maxSupportedLean(crown).toFixed(1) + "°</b>";
@@ -72862,6 +72904,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     // tread width, which is not known until this DXF has been read. The crown
     // is rebuilt from every input by reconcilePattern() before each run.
     opts.crown_break = readCrownBreak();
+    opts.tyre_class = $("tyreType").value;
     opts.zone_center = ph.zone_center; opts.zone_intermediate = ph.zone_intermediate;
     opts.weld_tolerance = readWeldTol();
     opts.tiebar_area_fraction = readTiebarAreaFrac();
@@ -72940,6 +72983,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     var arcs = null;
     try { arcs = readCrownArcs(p.tread_width); } catch (err) { arcs = null; }
     p.crown = E.buildCrown(p.tread_width, {
+      tyre_class: $("tyreType").value,
       crown_arcs: arcs,
       crown_r_center: rc === "" ? undefined : parseFloat(rc),
       crown_r_shoulder: rs === "" ? undefined : parseFloat(rs),
@@ -75031,8 +75075,14 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     on($("exportJson"), "click", exportJSON);
     on($("exportTxt"), "click", exportSummary);
     on($("exportPdf"), "click", exportPDF);
-    on($("applyPreset"), "click", function () { applyTyrePreset(); updateLeanLoadReference(); });
-    on($("tyreType"), "change", function () { markStale(); });
+    on($("applyPreset"), "click", function () {
+      applyTyrePreset(); updateLeanLoadReference(); syncCrownArcInfo(); drawEditor();
+    });
+    // The class sets the crown the blank fields fall back to, so changing it
+    // changes the crown -- and the readout has to say so straight away.
+    on($("tyreType"), "change", function () {
+      syncCrownArcInfo(); refreshValidation(); drawEditor(); markStale();
+    });
     on($("modulusMode"), "change", function () { syncCompoundFields(); refreshValidation(); markStale(); });
     ["eModulus", "gentK"].forEach(function (id) {
       on($(id), "input", function () { this.dataset.touched = "1"; syncCompoundFields(); refreshValidation(); markStale(); });

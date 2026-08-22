@@ -33,16 +33,26 @@
   // running a truck tread on motorcycle defaults is not a small error.
   // Lean angles differ too: a truck barely leans, a motorcycle lives at 40 deg.
   var TYRE_PRESETS = {
-    "2w":  { crownCenter: 125, crownShoulder: 55,  wheelR: 320, cpLoad: 1500,
+    "2w":  { wheelR: 320, cpLoad: 1500,
              cpLength: 90,  cpWidth: 50,  cpCorner: 12, nsd: 8.5,
              leans: [0, 5, 10, 15, 20, 25, 30, 35, 40], label: "2W — motorcycle" },
-    "pcr": { crownCenter: 700, crownShoulder: 90,  wheelR: 315, cpLoad: 4000,
+    "pcr": { wheelR: 315, cpLoad: 4000,
              cpLength: 140, cpWidth: 160, cpCorner: 25, nsd: 8.0,
              leans: [0, 2, 4, 6, 8, 10], label: "PCR — passenger car" },
-    "tbr": { crownCenter: 1500, crownShoulder: 120, wheelR: 520, cpLoad: 26000,
+    "tbr": { wheelR: 520, cpLoad: 26000,
              cpLength: 230, cpWidth: 250, cpCorner: 30, nsd: 16.0,
              leans: [0, 2, 4, 6, 8], label: "TBR — truck & bus" },
   };
+
+  // The crown radii a preset writes are the same ones a blank field falls back
+  // to, so they live in the engine's class table and are read from there rather
+  // than kept in a second copy that can drift.
+  function presetFor(name) {
+    var t = TYRE_PRESETS[name];
+    if (!t) return null;
+    var cls = E.tyreClass(name);
+    return Object.assign({}, t, { crownCenter: cls.crown_r_center, crownShoulder: cls.crown_r_shoulder });
+  }
 
   function currentLeans() {
     var t = TYRE_PRESETS[$("tyreType").value];
@@ -53,7 +63,7 @@
   function tyreClassPhysics() { return E.tyreClass($("tyreType").value); }
 
   function applyTyrePreset() {
-    var t = TYRE_PRESETS[$("tyreType").value];
+    var t = presetFor($("tyreType").value);
     if (!t) return;
     ["crownCenter", "crownShoulder", "wheelR", "cpLoad", "cpLength", "cpWidth", "cpCorner", "nsd"]
       .forEach(function (k) { if ($(k)) $(k).value = t[k]; });
@@ -211,18 +221,29 @@
     try {
       var arcs = readCrownArcs(w);
       var crown = E.buildCrown(w, {
+        tyre_class: $("tyreType").value,
         crown_arcs: arcs,
         crown_r_center: $("crownCenter").value.trim() === "" ? undefined : num("crownCenter"),
         crown_r_shoulder: $("crownShoulder").value.trim() === "" ? undefined : num("crownShoulder"),
         crown_break: readCrownBreak(),
       });
       var half = w / 2;
-      var desc = arcs
-        ? arcs.map(function (a, i) {
-            return "<b>R" + (i + 1) + "</b> " + a.r + " mm to " +
-              (i === arcs.length - 1 ? "the edge" : a.to.toFixed(1) + " mm");
-          }).join(" · ")
-        : "<i>two-radius blend</i> (type an arc spec above for true arcs)";
+      var desc;
+      if (arcs) {
+        desc = "<b>true arcs</b> · " + arcs.map(function (a, i) {
+          return "<b>R" + (i + 1) + "</b> " + a.r + " mm to " +
+            (i === arcs.length - 1 ? "the edge" : a.to.toFixed(1) + " mm");
+        }).join(" · ");
+      } else {
+        // Never let a blank field read as "nothing set". A crown is never flat,
+        // and which one you got decides every lean angle in the sweep.
+        var blank = $("crownCenter").value.trim() === "" && $("crownShoulder").value.trim() === "";
+        var cls = E.tyreClass($("tyreType").value);
+        desc = "<b>two-radius blend</b> · <b>R centre</b> " + E.crownLocalRadius(crown, 0).toFixed(0) +
+          " mm · <b>R edge</b> " + E.crownLocalRadius(crown, half).toFixed(0) + " mm" +
+          (blank ? " <i>(from the " + $("tyreType").value.toUpperCase() +
+                   " defaults — nothing typed, and a blank crown is not a flat one)</i>" : "");
+      }
       box.innerHTML = desc +
         "<br>half width " + half.toFixed(1) + " mm · edge drop " + E.crownDrop(crown, half).toFixed(2) +
         " mm · <b>max reachable lean " + E.maxSupportedLean(crown).toFixed(1) + "°</b>";
@@ -281,6 +302,7 @@
     // tread width, which is not known until this DXF has been read. The crown
     // is rebuilt from every input by reconcilePattern() before each run.
     opts.crown_break = readCrownBreak();
+    opts.tyre_class = $("tyreType").value;
     opts.zone_center = ph.zone_center; opts.zone_intermediate = ph.zone_intermediate;
     opts.weld_tolerance = readWeldTol();
     opts.tiebar_area_fraction = readTiebarAreaFrac();
@@ -359,6 +381,7 @@
     var arcs = null;
     try { arcs = readCrownArcs(p.tread_width); } catch (err) { arcs = null; }
     p.crown = E.buildCrown(p.tread_width, {
+      tyre_class: $("tyreType").value,
       crown_arcs: arcs,
       crown_r_center: rc === "" ? undefined : parseFloat(rc),
       crown_r_shoulder: rs === "" ? undefined : parseFloat(rs),
@@ -2450,8 +2473,14 @@
     on($("exportJson"), "click", exportJSON);
     on($("exportTxt"), "click", exportSummary);
     on($("exportPdf"), "click", exportPDF);
-    on($("applyPreset"), "click", function () { applyTyrePreset(); updateLeanLoadReference(); });
-    on($("tyreType"), "change", function () { markStale(); });
+    on($("applyPreset"), "click", function () {
+      applyTyrePreset(); updateLeanLoadReference(); syncCrownArcInfo(); drawEditor();
+    });
+    // The class sets the crown the blank fields fall back to, so changing it
+    // changes the crown -- and the readout has to say so straight away.
+    on($("tyreType"), "change", function () {
+      syncCrownArcInfo(); refreshValidation(); drawEditor(); markStale();
+    });
     on($("modulusMode"), "change", function () { syncCompoundFields(); refreshValidation(); markStale(); });
     ["eModulus", "gentK"].forEach(function (id) {
       on($(id), "input", function () { this.dataset.touched = "1"; syncCompoundFields(); refreshValidation(); markStale(); });

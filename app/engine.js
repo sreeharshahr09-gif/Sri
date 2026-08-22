@@ -2201,14 +2201,23 @@
   // The zone fractions follow the same logic: a TBR shoulder rib is a much
   // smaller fraction of the half width than a 2W shoulder. Typical values per
   // class; override the crown radii and break directly when you know better.
+  // The crown radii here are the fallback when the crown fields are left blank.
+  // They used to be a hard-coded 125/55 -- motorcycle numbers -- whatever class
+  // was selected, so a blank crown on a 220 mm truck tread was evaluated with
+  // 47 mm of edge drop and 63 degrees of reachable lean. A crown is never flat
+  // and never class-agnostic; if nothing is typed the class default is the only
+  // defensible guess.
   var TYRE_CLASS = {
     "2w":  { crown_break: 0.45, zone_center: 0.34, zone_intermediate: 0.72,
+             crown_r_center: 125, crown_r_shoulder: 55,
              load_rises_with_lean: true,
              note: "motorcycle: curved crown, leans far, load grows as Fz/cos(gamma)" },
     "pcr": { crown_break: 0.72, zone_center: 0.40, zone_intermediate: 0.78,
+             crown_r_center: 700, crown_r_shoulder: 90,
              load_rises_with_lean: false,
              note: "passenger car: flat crown rolling off in the outer quarter; camber is small, so cornering load comes from weight transfer rather than lean" },
     "tbr": { crown_break: 0.85, zone_center: 0.45, zone_intermediate: 0.82,
+             crown_r_center: 1500, crown_r_shoulder: 120,
              load_rises_with_lean: false,
              note: "truck & bus: nearly flat crown with the shoulder only at the very edge; barely cambers" },
   };
@@ -2367,7 +2376,14 @@
     opts = opts || {};
     if (opts.crown_arcs && opts.crown_arcs.length)
       return crownMultiArc(treadWidth, opts.crown_arcs);
-    return crownDualRadius(treadWidth, opts.crown_r_center, opts.crown_r_shoulder, opts.crown_break);
+    // Blank fields fall back to the selected class, not to a fixed pair of
+    // motorcycle radii. With no class named the answer is unchanged from before.
+    const cls = tyreClass(opts.tyre_class);
+    const pick = (v, d) => (v == null || v === "" || !Number.isFinite(+v) ? d : +v);
+    return crownDualRadius(treadWidth,
+      pick(opts.crown_r_center, cls.crown_r_center),
+      pick(opts.crown_r_shoulder, cls.crown_r_shoulder),
+      pick(opts.crown_break, cls.crown_break));
   }
 
   function crownTangentAngle(crown, y) { return interp(y, crown.y, crown.phi); }

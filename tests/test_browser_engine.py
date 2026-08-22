@@ -1400,3 +1400,64 @@ def test_the_crown_is_visible_and_recorded():
     # and the resolved crown reaches every export
     assert "function crownSummary(" in ui and "function crownLine(" in ui
     assert ui.count("crownLine(s") >= 3
+
+
+def test_a_blank_crown_field_falls_back_to_the_tyre_class_not_to_a_motorcycle():
+    """A blank crown is not a flat crown, and it is not a 2W crown either.
+
+    The fallback used to be a hard-coded 125/55 whatever class was selected, so
+    a 220 mm truck tread with the crown fields left blank was evaluated with
+    47 mm of edge drop and 63 degrees of reachable lean.  Nothing on screen said
+    so.  The class default is the only defensible guess when nothing is typed.
+    """
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const w = 220, half = 110;
+const out = {{}};
+for (const t of ['2w', 'pcr', 'tbr']) {{
+  const c = E.buildCrown(w, {{tyre_class: t}});
+  out[t] = [E.crownLocalRadius(c, 0), E.crownLocalRadius(c, half), E.maxSupportedLean(c)];
+}}
+// a caller that names no class must be exactly as it was before
+const a = E.buildCrown(w, {{}}), b = E.crownDualRadius(w, 125, 55, 0.45);
+let worst = 0;
+for (let i = 0; i < b.y.length; i++) worst = Math.max(worst, Math.abs(a.phi[i] - b.phi[i]));
+// an explicit value always wins over the class default
+const explicit = E.buildCrown(w, {{tyre_class: 'tbr', crown_r_center: 400}});
+out.explicit = E.crownLocalRadius(explicit, 0);
+out.unchanged = worst;
+process.stdout.write(JSON.stringify(out));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
+    assert res.returncode == 0, res.stderr[:2000]
+    g = json.loads(res.stdout)
+
+    assert g["2w"][0] == pytest.approx(125) and g["2w"][1] == pytest.approx(55)
+    assert g["pcr"][0] == pytest.approx(700) and g["pcr"][1] == pytest.approx(90)
+    assert g["tbr"][0] == pytest.approx(1500) and g["tbr"][1] == pytest.approx(120)
+    # a truck crown must reach far less lean than a motorcycle one
+    assert g["tbr"][2] < g["pcr"][2] < g["2w"][2]
+    assert g["tbr"][2] < 10 and g["2w"][2] > 50
+    assert g["unchanged"] == 0.0, "naming no class must not change the old behaviour"
+    assert g["explicit"] == pytest.approx(400), "a typed radius must beat the class default"
+
+
+def test_the_resolved_crown_is_never_silent():
+    """Which crown you got decides every lean angle in the sweep, so a blank
+    field must never read as 'nothing set'."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    info = ui[ui.index("function syncCrownArcInfo("):ui.index("function readWear(")]
+    # it names the radii actually in use, whether typed or defaulted
+    assert "crownLocalRadius" in info and "R centre" in info and "R edge" in info
+    assert "a blank crown is not a flat one" in info
+    assert "maxSupportedLean" in info, "the reachable lean is the number most likely to surprise"
+    # and it refreshes when the class changes, because the class IS the fallback
+    init = ui[ui.index("function init()"):]
+    tyre = init[init.index('on($("tyreType")'):]
+    assert "syncCrownArcInfo();" in tyre[:200]
+    preset = init[init.index('on($("applyPreset")'):]
+    assert "syncCrownArcInfo();" in preset[:220]
+    # the class radii live in one place, not two
+    assert "crownCenter: cls.crown_r_center" in ui
+    assert "crownCenter: 125" not in ui and "crownCenter: 1500" not in ui
