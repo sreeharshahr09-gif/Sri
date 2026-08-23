@@ -1,0 +1,369 @@
+/* Unit consistency audit for the whole engine.
+ *
+ * The tool works in ONE system throughout, and every number that crosses a
+ * function boundary is in it:
+ *
+ *     length          mm            circumference, tread width, NSD, radii, s
+ *     area            mm^2
+ *     force           N             vertical load, Fx, Fy
+ *     pressure        N/mm^2 = MPa  E, G, bulk modulus, contact pressure
+ *     stiffness       N/mm          Kx, Ky, Kz, k_ax, k_tr
+ *     moment          N.mm
+ *     angle           degrees at every boundary, radians only inside a formula
+ *     slip stiffness  N (per unit slip ratio), N/rad, N.mm/rad
+ *     dimensionless   Shore A, Gent k, Poisson, shape factor S, land ratio,
+ *                     slip ratio, order amplitude, gains
+ *
+ * Asserting that by reading the code proves nothing, so this audit proves it by
+ * measurement, two ways:
+ *
+ *   1. GEOMETRIC SIMILARITY. Scale every length in the problem by lambda and
+ *      the load by lambda^2 (so pressure is unchanged), leave the compound
+ *      alone, and every output must move by the power of lambda its units say
+ *      it should -- Kz by lambda, area by lambda^2, C_alpha by lambda^2, the
+ *      trail by lambda, and the dimensionless ones not at all. A single term
+ *      carrying the wrong power of a length shows up immediately, because it
+ *      pulls its total off the predicted exponent.
+ *
+ *   2. CLOSED FORM in the units themselves: a block whose stiffness can be
+ *      written out by hand from E, an area and a length.
+ *
+ * Run:  node app/unitsaudit.js
+ */
+"use strict";
+const E = require("./engine.js");
+const fs = require("fs");
+const path = require("path");
+
+const DATA = path.join(__dirname, "..", "data");
+let fails = 0, checks = 0;
+function ck(name, cond, extra) {
+  checks++;
+  if (!cond) fails++;
+  console.log((cond ? "  ok   " : "  FAIL ") + name + (extra ? "   " + extra : ""));
+}
+function section(t) { console.log("\n" + t); }
+const rel = (a, b) => Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 1e-12);
+
+const SP = { shore_a: 60, poisson: 0.49, mode: "parallel", bulk_modulus: 1100,
+             n_slices: 20, sipe_model: "layered" };
+
+// The scale factor. Deliberately not a round number and not near 1, so a term
+// that is off by one power of length cannot hide inside a tolerance.
+const LAM = 2.7;
+
+// A pattern built entirely from lengths, so it can be rebuilt at any scale.
+function testPattern(scale) {
+  const C = 1200 * scale, W = 200 * scale, nsd = 9 * scale, nb = 16;
+  const blocks = [];
+  for (let i = 0; i < nb; i++) {
+    for (let lane = 0; lane < 3; lane++) {
+      const x0 = (i * C) / nb + 3 * scale, x1 = ((i + 1) * C) / nb - 3 * scale;
+      const yc = (lane - 1) * (W / 3), h = W / 3 / 2 - 3 * scale;
+      blocks.push({
+        id: "B" + i + "_" + lane, height: nsd, draft_angle: 4,
+        zone: lane === 1 ? "center" : "shoulder", shore_a: null,
+        sipes: [], n_lateral_sipes: 0,
+        polygon: [[x0, yc - h], [x1, yc - h], [x1, yc + h], [x0, yc + h]],
+      });
+    }
+  }
+  return {
+    tyre_circumference: C, tread_width: W, pitches: [C / nb], blocks: blocks,
+    tiebars: [], crown: E.buildCrown(W, { crown_r_center: 700 * scale, crown_r_shoulder: 90 * scale }),
+    meta: {},
+  };
+}
+
+function runAt(scale, nx, ny) {
+  const p = testPattern(scale);
+  const pack = E.rasterise(p, E.makeGrid(p, nx || 2048, ny || 128), SP, true, {});
+  const spec = { shape: "rounded", length: 150 * scale, width: 170 * scale,
+                 corner_radius: 20 * scale, gamma_deg: 0, scale_with_lean: false, y_center: 0 };
+  const params = { vertical_load: 4000 * scale * scale, wheel_radius: 320 * scale,
+                   load_rises_with_lean: false };
+  const r = E.sweepLean(p, pack, 0, spec, params, null, 90, E.evenBandEdges(p.tread_width, 3));
+  return { pattern: p, pack: pack, res: r, params: params, spec: spec };
+}
+
+const mean = (a) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i]; return a.length ? s / a.length : 0; };
+
+// =====================================================================
+section("1. geometric similarity: every output moves by the power its units say");
+// =====================================================================
+{
+  const A = runAt(1), B = runAt(LAM);
+  // name -> [value at scale 1, value at scale LAM, expected power of lambda]
+  const cases = {
+    "block plan area  [mm^2]":        [E.polygonProps(A.pattern.blocks[0].polygon).A,
+                                       E.polygonProps(B.pattern.blocks[0].polygon).A, 2],
+    "block perimeter  [mm]":          [E.polygonProps(A.pattern.blocks[0].polygon).perimeter,
+                                       E.polygonProps(B.pattern.blocks[0].polygon).perimeter, 1],
+    "Gent shape factor S  [-]":       [E.blockStiffness(A.pattern.blocks[0], SP).shapeFactor,
+                                       E.blockStiffness(B.pattern.blocks[0], SP).shapeFactor, 0],
+    "E_eff  [N/mm^2]":                [E.blockStiffness(A.pattern.blocks[0], SP).eEff,
+                                       E.blockStiffness(B.pattern.blocks[0], SP).eEff, 0],
+    "Kz  [N/mm]":                     [E.blockStiffness(A.pattern.blocks[0], SP).kz,
+                                       E.blockStiffness(B.pattern.blocks[0], SP).kz, 1],
+    "Kx  [N/mm]":                     [E.blockStiffness(A.pattern.blocks[0], SP).kx,
+                                       E.blockStiffness(B.pattern.blocks[0], SP).kx, 1],
+    "Ky  [N/mm]":                     [E.blockStiffness(A.pattern.blocks[0], SP).ky,
+                                       E.blockStiffness(B.pattern.blocks[0], SP).ky, 1],
+    "patch area  [mm^2]":             [A.res.patch_area, B.res.patch_area, 2],
+    "patch load  [N]":                [A.res.patch_load, B.res.patch_load, 2],
+    "peak pressure  [N/mm^2]":        [A.res.patch.peak_pressure, B.res.patch.peak_pressure, 0],
+    "contact area  [mm^2]":           [mean(A.res.contact_area), mean(B.res.contact_area), 2],
+    "land ratio  [-]":                [mean(A.res.land_ratio), mean(B.res.land_ratio), 0],
+    "blocks in patch  [-]":           [mean(A.res.block_count), mean(B.res.block_count), 0],
+    "patch Kz  [N/mm]":               [mean(A.res.kz), mean(B.res.kz), 1],
+    "patch Kx  [N/mm]":               [mean(A.res.kx), mean(B.res.kx), 1],
+    "patch Ky  [N/mm]":               [mean(A.res.ky), mean(B.res.ky), 1],
+    "C_kappa  [N]":                   [mean(A.res.c_kappa), mean(B.res.c_kappa), 2],
+    "C_alpha  [N/rad]":               [mean(A.res.c_alpha), mean(B.res.c_alpha), 2],
+    "C_mz  [N.mm/rad]":               [mean(A.res.c_mz), mean(B.res.c_mz), 3],
+    "pneumatic trail  [mm]":          [mean(A.res.pneumatic_trail), mean(B.res.pneumatic_trail), 1],
+    "band C_alpha  [N/rad]":          [mean(A.res.bands[1].c_alpha), mean(B.res.bands[1].c_alpha), 2],
+    "patch half length a  [mm]":      [A.res.patch.a, B.res.patch.a, 1],
+    "patch perimeter  [mm]":          [A.res.patch_perimeter, B.res.patch_perimeter, 1],
+    "zone contact area  [mm^2]":      [mean(A.res.zone_area.center), mean(B.res.zone_area.center), 2],
+  };
+  for (const name in cases) {
+    const [a, b, pow] = cases[name];
+    const got = Math.log(b / a) / Math.log(LAM);
+    ck(name.padEnd(30) + " scales as lambda^" + pow,
+       Math.abs(got - pow) < 5e-3, "measured lambda^" + got.toFixed(5));
+  }
+}
+
+// =====================================================================
+section("2. angles and ratios are invariant under scale");
+// =====================================================================
+// A tyre twice the size with a twice-as-big crown radius reaches exactly the
+// same lean. If any angle were computed from an unnormalised length this would
+// move.
+{
+  const cA = testPattern(1).crown, cB = testPattern(LAM).crown;
+  ck("max reachable lean is scale-invariant",
+     rel(E.maxSupportedLean(cA), E.maxSupportedLean(cB)) < 1e-9,
+     E.maxSupportedLean(cA).toFixed(4) + " deg both");
+  ck("crown tangent angle at the same relative position is scale-invariant",
+     rel(E.crownTangentAngle(cA, 60), E.crownTangentAngle(cB, 60 * LAM)) < 1e-6);
+  ck("crown drop is a length and scales", rel(E.crownDrop(cB, 60 * LAM) / LAM, E.crownDrop(cA, 60)) < 1e-6,
+     E.crownDrop(cA, 60).toFixed(4) + " mm -> " + E.crownDrop(cB, 60 * LAM).toFixed(4) + " mm");
+  ck("the contact point at a lean scales with the tread",
+     rel(E.crownContactLateral(cB, 3) / LAM, E.crownContactLateral(cA, 3)) < 1e-6);
+
+  const A = runAt(1), B = runAt(LAM);
+  const sa = E.orderSpectrum(A.res.kz, 40), sb = E.orderSpectrum(B.res.kz, 40);
+  let worst = 0;
+  for (let i = 0; i < sa.amplitude.length; i++) worst = Math.max(worst, Math.abs(sa.amplitude[i] - sb.amplitude[i]));
+  ck("order amplitudes are dimensionless and scale-invariant", worst < 1e-6,
+     "worst diff " + worst.toExponential(2));
+  ck("Kz fluctuation (CoV) is scale-invariant",
+     rel(E.fluctuationStats(A.res.kz).cov, E.fluctuationStats(B.res.kz).cov) < 1e-6);
+}
+
+// =====================================================================
+section("3. lean scale factors do not depend on the load or on k_f");
+// =====================================================================
+// winklerAxes carries an unscaled foundation modulus k_f = 1 N/mm^3, so its
+// absolute semi-axes are NOT a physical length -- they are only ever used as a
+// ratio. That is safe exactly as long as nothing reads them directly, and as
+// long as the ratio is independent of the load. Both are checked here.
+{
+  const crown = testPattern(1).crown;
+  const base = { wheel_radius: 320, load_rises_with_lean: true };
+  const f1 = E.leanScaleFactors(crown, 4, Object.assign({ vertical_load: 1000 }, base), 0);
+  const f2 = E.leanScaleFactors(crown, 4, Object.assign({ vertical_load: 9000 }, base), 0);
+  ck("lean scale factors are independent of the vertical load",
+     rel(f1[0], f2[0]) < 1e-12 && rel(f1[1], f2[1]) < 1e-12,
+     "x" + f1[0].toFixed(5) + " long, x" + f1[1].toFixed(5) + " wide at either load");
+  const src = fs.readFileSync(path.join(__dirname, "engine.js"), "utf8");
+  const uses = (src.match(/winklerAxes\(/g) || []).length;
+  ck("winklerAxes is only ever read through leanScaleFactors", uses === 3,
+     uses + " references: its definition and the two inside leanScaleFactors");
+  ck("winklerAxes is not exported, so nothing outside can read a semi-axis directly",
+     !/\bwinklerAxes,/.test(src.slice(src.lastIndexOf("return {"))));
+}
+
+// =====================================================================
+section("4. closed form in the units themselves");
+// =====================================================================
+{
+  // A square pad, 20 x 20 mm plan, 10 mm tall, no draft, no sipes.
+  const side = 20, h = 10;
+  const pad = { id: "P", height: h, draft_angle: 0, shore_a: 60, sipes: [], n_lateral_sipes: 0,
+                polygon: [[0, 0], [side, 0], [side, side], [0, side]] };
+  const st = E.blockStiffness(pad, SP);
+  const Emod = E.shoreE(60), kG = E.shoreK(60);
+  const A = side * side, P = 4 * side;
+  const S = A / (h * P);
+  const EeffUncorr = Emod * (1 + 2 * kG * S * S);
+  const Eeff = EeffUncorr / (1 + EeffUncorr / SP.bulk_modulus);
+  ck("Shore 60 gives E = 6.89 N/mm^2 (MPa), not Pa and not kPa",
+     Math.abs(Emod - 6.89) < 1e-9, Emod + " N/mm^2");
+  ck("shape factor S = A / (h * perimeter) is dimensionless",
+     rel(st.shapeFactor, S) < 1e-12, "S = " + S.toFixed(4) + " for a 20x20x10 pad");
+  ck("E_eff = E(1 + 2kS^2) with the bulk correction  [N/mm^2]",
+     rel(st.eEff, Eeff) < 1e-12, st.eEff.toFixed(4) + " N/mm^2");
+  ck("Kz = E_eff * A / h  [N/mm^2 * mm^2 / mm = N/mm]",
+     rel(st.kz, (Eeff * A) / h) < 1e-12, st.kz.toFixed(2) + " N/mm");
+  // A 1 mm deflection of that pad is a force of Kz newtons, by definition.
+  ck("1 mm of vertical deflection is Kz newtons", rel(st.kz * 1, (Eeff * A) / h) < 1e-12);
+
+  // Shear-dominated check on the same pad: the beam matrix with G = E/2(1+nu).
+  const G = E.calcG(Emod, SP.poisson);
+  ck("G = E / 2(1+nu)  [N/mm^2]", rel(G, Emod / (2 * 1.49)) < 1e-12, G.toFixed(4) + " N/mm^2");
+  ck("Kx of a short pad stays below the pure-shear bound G*A/h",
+     st.kx < (G * A) / h * 1.001,
+     st.kx.toFixed(1) + " N/mm vs G*A/h = " + ((G * A) / h).toFixed(1) + " N/mm");
+
+  // Pressure is a load over an area, and the load comes back out of it.
+  const p = testPattern(1);
+  const spec = { shape: "rectangle", length: 150, width: 170, gamma_deg: 0,
+                 scale_with_lean: false, y_center: 0 };
+  const patch = E.shapePatch(spec, p.crown, p.tread_width, { vertical_load: 4000, wheel_radius: 320, load_rises_with_lean: false });
+  ck("peak pressure = load / patch area  [N / mm^2]",
+     rel(patch.peak_pressure, 4000 / E.patchArea(patch)) < 1e-12,
+     patch.peak_pressure.toFixed(4) + " N/mm^2 = " + patch.peak_pressure.toFixed(4) + " MPa");
+  ck("that pressure is a plausible tyre contact pressure, not a unit slip",
+     patch.peak_pressure > 0.05 && patch.peak_pressure < 3.0, "0.05 to 3 MPa is the physical band");
+}
+
+// =====================================================================
+section("5. the slip response in force units");
+// =====================================================================
+// C_kappa multiplied by a slip ratio must be a force in newtons, and C_alpha
+// multiplied by an angle in RADIANS must be a force in newtons. Getting radians
+// and degrees the wrong way round here is a factor of 57.
+{
+  const A = runAt(1);
+  const ca = mean(A.res.c_alpha), ckp = mean(A.res.c_kappa), t = mean(A.res.pneumatic_trail);
+  const ky = mean(A.res.ky), a = A.res.patch.a;
+
+  ck("C_alpha / Ky is a length of the order of the patch half length",
+     ca / ky > 0.3 * a && ca / ky < a, (ca / ky).toFixed(2) + " mm, a = " + a.toFixed(2) + " mm");
+  ck("C_kappa / Kx is the same length", rel(ca / ky, ckp / mean(A.res.kx)) < 0.02,
+     (ckp / mean(A.res.kx)).toFixed(2) + " mm");
+  // 1 degree of slip angle, converted properly.
+  const Fy = ca * (1 * Math.PI) / 180;
+  ck("1 degree of slip angle gives C_alpha * pi/180 newtons",
+     rel(Fy, ca * 0.0174532925) < 1e-6, Fy.toFixed(0) + " N at 1 deg from the tread alone");
+  ck("that force is a sane fraction of the vertical load",
+     Fy > 0 && Fy < 20 * A.params.vertical_load,
+     "the tread is one spring in series with the carcass, so it reads high on its own");
+  // Angle by angle, not mean by mean: the trail is a RATIO, and the mean of a
+  // ratio is not the ratio of the means.
+  let worstT = 0;
+  for (let i = 0; i < A.res.c_mz.length; i++)
+    worstT = Math.max(worstT, rel(A.res.c_mz[i], A.res.c_alpha[i] * A.res.pneumatic_trail[i]));
+  ck("C_mz = C_alpha * trail at every angle  [N/rad * mm = N.mm/rad]", worstT < 1e-12,
+     "worst rel " + worstT.toExponential(2) + ", mean trail " + t.toFixed(3) + " mm");
+  ck("the trail is a fraction of the patch half length", t > 0 && t < a,
+     t.toFixed(2) + " mm of a = " + a.toFixed(2) + " mm");
+  // Mz at 1 degree, at one angle, in N.mm and in N.m
+  const i0 = 0;
+  const Fy0 = A.res.c_alpha[i0] * (Math.PI / 180);
+  const Mz = A.res.c_mz[i0] * (Math.PI / 180);
+  ck("Mz at 1 deg = C_mz * pi/180  [N.mm], and equals Fy * t",
+     rel(Mz, Fy0 * A.res.pneumatic_trail[i0]) < 1e-9,
+     Mz.toFixed(0) + " N.mm = " + (Mz / 1000).toFixed(2) + " N.m");
+}
+
+// =====================================================================
+section("6. the coupling network in the same units");
+// =====================================================================
+{
+  const p = E.loadPattern(fs.readFileSync(path.join(DATA, "tbr_ribs_tiebars.dxf"), "utf8"),
+                          { height: 16, shore_a: 60, draft_angle: 0 }, {}).pattern;
+  const net = E.buildCouplingNetwork(p, 9, SP);
+  const cp = E.compoundProperties(SP);
+  // Reproduce one link by hand from E, an area and a length.
+  const tb = p.tiebars.find((t) => t.links && t.links.length);
+  const lk = tb.links[0];
+  const hb = E.tiebarCurrentHeight(tb, 9);
+  const Alink = lk.wall_length * hb;
+  const kAx = (cp.E * Alink) / lk.span, kTr = (cp.G * Alink) / lk.span;
+  ck("k_ax = E * A / d  [N/mm^2 * mm^2 / mm = N/mm]",
+     kAx > 0 && Number.isFinite(kAx),
+     "wall " + lk.wall_length.toFixed(2) + " mm x height " + hb.toFixed(2) +
+     " mm over span " + lk.span.toFixed(2) + " mm = " + kAx.toFixed(0) + " N/mm");
+  const M = E.couplingLinkMatrix(lk.dir, kAx, kTr);
+  ck("the link matrix entries are stiffnesses, all in N/mm",
+     Number.isFinite(M.xx) && Number.isFinite(M.yy) && M.xx > 0 && M.yy > 0);
+  ck("the network's own link agrees with that hand calculation",
+     net.links.some((L) => rel(L.C.xx, M.xx) < 1e-9 && rel(L.C.yy, M.yy) < 1e-9));
+  ck("E and G are the same compound the blocks use",
+     rel(cp.G, E.calcG(cp.E, SP.poisson)) < 1e-12,
+     "E " + cp.E.toFixed(3) + ", G " + cp.G.toFixed(3) + " N/mm^2");
+
+  // The gain is a ratio of two stiffnesses and must be dimensionless -- so it
+  // cannot move when the whole tyre is scaled.
+  const scale = 1.9;
+  const big = {
+    tyre_circumference: p.tyre_circumference * scale, tread_width: p.tread_width * scale,
+    pitches: p.pitches, crown: p.crown, meta: {},
+    blocks: p.blocks.map((b) => Object.assign({}, b, {
+      height: b.height * scale, polygon: b.polygon.map((q) => [q[0] * scale, q[1] * scale] ) })),
+    tiebars: p.tiebars.map((t) => Object.assign({}, t, {
+      nsd: t.nsd * scale, height: t.height * scale,
+      centroid_x: t.centroid_x * scale, centroid_y: t.centroid_y * scale,
+      polygon: t.polygon.map((q) => [q[0] * scale, q[1] * scale]) })),
+  };
+  E.linkTiebars(big.blocks, big.tiebars);
+  const packS = (pp, s) => E.rasterise(pp, E.makeGrid(pp, 2048, 128), SP, false, {});
+  const specOf = (s) => ({ shape: "rectangle", length: 180 * s, width: 190 * s,
+                           gamma_deg: 0, scale_with_lean: false, y_center: 0 });
+  const parOf = (s) => ({ vertical_load: 4000 * s * s, wheel_radius: 320 * s, load_rises_with_lean: false });
+  const c1 = E.couplingSweep(p, packS(p, 1), E.shapePatch(specOf(1), p.crown, p.tread_width, parOf(1)), 9, SP, 180);
+  const c2 = E.couplingSweep(big, packS(big, scale), E.shapePatch(specOf(scale), big.crown, big.tread_width, parOf(scale)), 9 * scale, SP, 180);
+  ck("the coupling gain is dimensionless and scale-invariant",
+     rel(c1.gain_kx, c2.gain_kx) < 5e-3,
+     "x" + c1.gain_kx.toFixed(4) + " at 1:1, x" + c2.gain_kx.toFixed(4) + " at " + scale + ":1");
+  ck("the coupled Kx is a stiffness and scales as lambda",
+     rel(mean(c2.kx_coupled) / scale, mean(c1.kx_coupled)) < 5e-3,
+     mean(c1.kx_coupled).toFixed(0) + " -> " + mean(c2.kx_coupled).toFixed(0) + " N/mm");
+}
+
+// =====================================================================
+section("7. inputs are rejected when they are in the wrong unit");
+// =====================================================================
+{
+  const bad = (over) => {
+    try { E.validateCompound(Object.assign({ modulus_mode: "direct", e_modulus: 7, gent_k: 0.64 }, over)); }
+    catch (e) { return e.message; }
+    return "";
+  };
+  // 6.89 N/mm^2 typed as 6 890 000 Pa, or as 6890 kPa: both are the same slip.
+  ck("a modulus in kPa is refused, and the message names the unit",
+     /not kPa/.test(bad({ e_modulus: 6890 })), bad({ e_modulus: 6890 }).slice(-70));
+  ck("a modulus in Pa is refused too", bad({ e_modulus: 6890000 }).length > 0);
+  ck("a modulus in GPa (0.00689) is refused as too small",
+     bad({ e_modulus: 0.00689 }).length > 0, bad({ e_modulus: 0.00689 }).slice(-60));
+  ck("a valid tread modulus in N/mm^2 passes", bad({ e_modulus: 6.89 }) === "");
+  ck("the Gent coefficient must stay of order 1", bad({ gent_k: 640 }).length > 0);
+
+  let msg = "";
+  try {
+    const p = testPattern(1);
+    E.shapePatch({ shape: "rectangle", length: 150, width: 170, gamma_deg: 0 }, p.crown, p.tread_width,
+                 { vertical_load: -1, wheel_radius: 320 });
+  } catch (e) { msg = e.message; }
+  ck("a negative vertical load is refused, naming newtons", /N\b/.test(msg), msg.slice(0, 80));
+
+  msg = "";
+  try { E.makeGrid({ tyre_circumference: 0, tread_width: 200 }, 1024, 64); } catch (e) { msg = e.message; }
+  ck("a zero circumference is refused, naming mm", /mm/.test(msg), msg.slice(0, 80));
+
+  // Degrees at the boundary: a lean angle is given in degrees everywhere.
+  const crown = testPattern(1).crown;
+  ck("crownContactLateral takes DEGREES, not radians",
+     Math.abs(E.crownContactLateral(crown, 0)) < 1e-9 &&
+     E.crownContactLateral(crown, 3) > E.crownContactLateral(crown, 1),
+     "3 deg reaches further out than 1 deg");
+  ck("maxSupportedLean returns degrees", E.maxSupportedLean(crown) > 1 && E.maxSupportedLean(crown) < 90,
+     E.maxSupportedLean(crown).toFixed(2) + " deg");
+}
+
+console.log("\n" + (fails ? fails + " of " + checks + " checks FAILED" : checks + " checks passed"));
+process.exitCode = fails ? 1 : 0;

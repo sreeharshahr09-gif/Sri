@@ -58,6 +58,48 @@ the tyre upright.
 | **Zone** | The tread split into three lateral bands: **centre** (used upright, straight-line), **intermediate** (used in the transition into a corner), **shoulder** (used at full lean). |
 | **Tie bar** | A raised strip in the bottom of a groove, bridging two blocks. Its height is *less* than the NSD, so on a new tyre it sits below the road and touches nothing. It comes into contact part-worn and stiffens the block row against heel-and-toe wear. Common on TBR, sometimes on PCR. |
 | **Wear** | How much tread has been worn off, in mm. Every block's bending length is NSD − wear, so a worn tread is stiffer. Wear is also what brings tie bars into contact. |
+| **Cα / Cκ** | Slip stiffness. How much force the tread makes per unit of slip — Cα in N/rad for cornering, Cκ in N per unit slip ratio for braking and drive. Not the same as Ky and Kx: see *Slip response* below. |
+| **Pneumatic trail** | How far behind the centre of the contact patch the lateral force actually acts, in mm. It is what makes a steering wheel self-centre. |
+
+---
+
+## Units
+
+**One system throughout.** Every number crossing a function boundary in this
+tool is in it, and nothing is converted anywhere:
+
+| Quantity | Unit | Examples |
+|---|---|---|
+| length | **mm** | circumference, tread width, NSD, crown radii, trail |
+| area | **mm²** | block area, contact area, patch area |
+| force | **N** | vertical load, Fx, Fy |
+| pressure / modulus | **N/mm² (= MPa)** | E, G, bulk modulus, contact pressure |
+| stiffness | **N/mm** | Kx, Ky, Kz, tie-bar link stiffness |
+| moment | **N·mm** | aligning moment Mz |
+| angle | **degrees** at every input and output; radians only inside a formula | lean γ, rotation θ, draft |
+| slip stiffness | **N** (per unit slip ratio), **N/rad**, **N·mm/rad** | Cκ, Cα, Cmz |
+| dimensionless | — | Shore A, Gent k, Poisson ν, shape factor S, land ratio, order amplitude, coupling gain |
+
+The commonest way to get this wrong is the modulus. **E is in N/mm², which is
+the same as MPa** — a tread compound is roughly 1.5 to 12. If you type 6890
+(kPa) or 6 890 000 (Pa) the tool refuses the run and says so, rather than
+returning stiffnesses a thousand times too large.
+
+This is not a claim on paper: `app/unitsaudit.js` proves it by measurement.
+Scale every length in a problem by λ and the load by λ², leave the compound
+alone, and every output must move by the power of λ its units demand — areas by
+λ², stiffnesses by λ, Cα by λ², the trail by λ, and the dimensionless ones not
+at all. A single term carrying the wrong power of a length pulls its total off
+the predicted exponent immediately. All 24 outputs land on their exponent to
+five decimal places, and the reachable lean angle and the coupling gain do not
+move at all.
+
+One honest wrinkle it does surface: **the patch area is rasterised**. The sweep
+measures a whole number of pixels, so it differs from the exact area of the
+patch outline by a fraction of a percent, and the reported patch load is under
+the load you entered by that same fraction. Both areas are reported, and a
+physics note appears if the gap ever exceeds 1% — at which point the grid is too
+coarse for the patch and every area on the page is biased.
 
 ---
 
@@ -245,6 +287,90 @@ the patch got emptier.
 The dotted line is the mean, so the swing about it can be read straight off.
 That swing is the same ripple the Order-content tab decomposes, expressed in
 the units a designer thinks in.
+
+---
+
+## Slip response: from stiffness to force
+
+The bottom three rows of the θ sweep — **Cκ**, **Cα** and the **pneumatic
+trail** — are the only ones on the page that are forces rather than stiffnesses.
+
+Kx and Ky say how hard the rubber in the patch is. They are not forces, because
+a tyre only makes a force when it *slips*. The **brush model** supplies the
+missing step. A tread element enters the patch stuck to the road with no
+deflection. While it is stuck, the carcass keeps moving, so by the time the
+element is a distance `s` past the leading edge it has been dragged by
+
+```
+longitudinal   u = κ · s          κ = slip ratio
+lateral        u = tan α · s      α = slip angle
+```
+
+Each element then pushes back with its own stiffness times that deflection.
+Adding up over everything in the patch:
+
+| quantity | definition | units |
+|---|---|---|
+| **Cκ** = ∂Fx/∂κ | Σ kx,i · si | N per unit slip ratio |
+| **Cα** = ∂Fy/∂α | Σ ky,i · si | N/rad — × π/180 for N per degree |
+| **Cmz** | −Σ ky,i · si · ui | N·mm/rad |
+| **trail t** | Cmz / Cα | mm behind the patch centre |
+
+### Why this is not Ky in disguise
+
+These are **first moments about the leading edge**, not sums. Rubber near the
+exit has been dragged the furthest and is worth far more than rubber that has
+only just entered — an element at the trailing edge counts for the full contact
+length, one at the leading edge for nothing. So Cα can move *opposite* to Ky
+over a revolution, and on a real pattern it swings several times harder: on the
+bundled 2W sample, Ky fluctuates 1.6% per revolution and Cα 6.2%.
+
+The consequence worth designing around: **the Cα curve is the Ky curve delayed
+by the trail**. A block generates its cornering force about a third of a patch
+length after it looks like it should.
+
+### It knows which way the tyre is rolling
+
+Nothing else on this page does. Because `s` is measured *from the leading edge*,
+reversing the rolling direction swaps which edge that is, and a fore-aft
+asymmetric tread — a directional pattern, a stepped block, a swept rib — gives a
+different curve forwards and backwards. Mirror the tread and Ky simply mirrors
+its curve; Cα does not.
+
+Rotation runs in the direction of travel, so a block **enters the patch at high
+θ and leaves at low θ**.
+
+Note that the *mean* of Cα over a revolution cannot see any of this. The mean of
+a circular correlation is (mean of the pattern) × (sum of the kernel), so it
+depends only on the total rubber and the patch shape — arrange the blocks any
+way you like and the mean is identical. **The design information is entirely in
+the curve**, which is exactly why the tool plots it against θ rather than
+reporting a number.
+
+### What it is not
+
+**This is the tread's share, not the tyre's cornering stiffness.** The tread is
+one spring in series with the carcass and the belt, and on a real tyre the
+carcass usually dominates. The absolute value here will not match a Flat-Trac
+measurement and is not meant to. Compare designs on the same settings, and read
+the *variation over θ* — that part is what the pattern controls.
+
+Two more limits worth knowing:
+
+- **No friction limit.** These are slopes at zero slip. The peak of a real
+  Fx(κ) or Fy(α) curve is μ·Fz — compound and load, not pattern — so saturation
+  is deliberately not modelled. The pattern lives in the slope.
+- **No camber thrust.** At lean a tyre makes lateral force at zero slip angle,
+  from the crown geometry rather than from slip. That is a different mechanism
+  and is not added into Cα.
+
+### Where else it appears
+
+The **Lean map**, **Order content**, **Ribs** and **Compare** tabs all accept
+Cα and Cκ as their metric. The rib breakdown is the interesting one: it answers
+*which rib actually generates the cornering force*, which is not the same
+question as which rib has the stiffest rubber. The per-rib values sum exactly to
+the tread total.
 
 ---
 

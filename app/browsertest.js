@@ -75,6 +75,73 @@ const fs = require("fs");
     await page.waitForTimeout(150);
   }
 
+  // ---- slip response: the brush-model rows ---------------------------------
+  // Three rows were added to the stack, and they must be real curves, not
+  // rescaled copies of Ky. The engine's own audit proves the physics; this only
+  // proves the page is wired to it.
+  {
+    const slip = await page.evaluate(() => {
+      const st = window.__ttState ? window.__ttState() : null;
+      const gd = document.getElementById("thetaStack");
+      const rows = gd && gd._fullLayout ? Object.keys(gd._fullLayout).filter((k) => /^yaxis\d*$/.test(k)).length : 0;
+      const titles = gd && gd._fullLayout
+        ? Object.keys(gd._fullLayout).filter((k) => /^yaxis\d*$/.test(k))
+            .map((k) => (gd._fullLayout[k].title && gd._fullLayout[k].title.text) || "")
+        : [];
+      return { rows: rows, titles: titles, cards: document.getElementById("cards").textContent, res: st };
+    });
+    console.log("theta stack rows:", slip.rows, "|", slip.titles.join(" · "));
+    for (const want of ["Cα (N/rad)", "Cκ (N)", "Trail t (mm)"])
+      if (!slip.titles.includes(want)) errors.push(`slip row "${want}" missing from the theta stack`);
+    if (!/N\/rad/.test(slip.cards)) errors.push("the cards do not report Cα in N/rad");
+    if (!/behind patch centre/.test(slip.cards)) errors.push("the cards do not report the pneumatic trail");
+
+    const num = await page.evaluate(() => {
+      const r = window.__ttResult ? window.__ttResult() : null;
+      if (!r || !r.c_alpha) return null;
+      const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+      const ratio = r.c_alpha.map((v, i) => v / r.ky[i]);
+      const m = mean(ratio);
+      const sd = Math.sqrt(mean(ratio.map((v) => (v - m) * (v - m))));
+      return { ca: mean(r.c_alpha), ck: mean(r.c_kappa), t: mean(r.pneumatic_trail),
+               ky: mean(r.ky), a: r.patch.a, ratioCov: sd / m,
+               minCa: Math.min(...r.c_alpha), minT: Math.min(...r.pneumatic_trail) };
+    });
+    if (!num) {
+      errors.push("the run carries no slip-response arrays");
+    } else {
+      console.log(`slip: Ca ${num.ca.toFixed(0)} N/rad, Ck ${num.ck.toFixed(0)} N, trail ${num.t.toFixed(2)} mm (a = ${num.a.toFixed(2)} mm)`);
+      if (!(num.minCa > 0)) errors.push("Ca goes non-positive somewhere in the revolution");
+      if (!(num.minT > 0 && num.t < num.a)) errors.push(`the trail is outside (0, a): ${num.t} vs a = ${num.a}`);
+      // Ca/Ky is a length; on a real pattern it must be a decent fraction of a
+      // and must NOT be constant, or the row would be Ky in disguise.
+      const len = num.ca / num.ky;
+      if (!(len > 0.2 * num.a && len < num.a))
+        errors.push(`Ca/Ky = ${len.toFixed(2)} mm is not a sane fraction of a = ${num.a.toFixed(2)} mm`);
+      if (!(num.ratioCov > 1e-4))
+        errors.push("Ca is proportional to Ky — the leading-edge weighting is not being applied");
+      console.log(`       Ca/Ky = ${len.toFixed(2)} mm, and it varies ${(num.ratioCov * 100).toFixed(2)}% over the revolution`);
+    }
+
+    // The metric selectors must offer them and must not blow up when picked.
+    for (const [sel, val] of [["#heatMetric", "c_alpha"], ["#orderMetric", "c_kappa"], ["#compareMetric", "pneumatic_trail"]]) {
+      const has = await page.$eval(sel, (e, v) => Array.from(e.options).some((o) => o.value === v), val);
+      if (!has) errors.push(`${sel} does not offer ${val}`);
+    }
+    // The selector lives on the lean tab, so the tab has to be open first --
+    // Playwright will not drive a control that is not visible.
+    await page.click('.tabs button[data-tab="lean"]');
+    await page.waitForTimeout(400);
+    await page.selectOption("#heatMetric", "c_alpha");
+    await page.waitForTimeout(500);
+    const heatTitle = await page.$eval("#leanHeat", (e) => e._fullLayout.title.text);
+    console.log("lean map metric:", heatTitle);
+    if (!/N\/rad/.test(heatTitle)) errors.push("the lean map does not label Cα in N/rad: " + heatTitle);
+    await page.selectOption("#heatMetric", "kz");
+    await page.click('.tabs button[data-tab="stack"]');
+    await page.waitForTimeout(300);
+  }
+
   const tabs = ["lean", "orders", "zones", "patch", "diag", "guide"];
   for (const t of tabs) {
     await page.click(`.tabs button[data-tab="${t}"]`);

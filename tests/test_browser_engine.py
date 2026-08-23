@@ -1734,3 +1734,98 @@ def test_every_setup_section_has_a_heading_a_purpose_and_its_own_colour():
             place[gid] = (int(m.group(2)), int(m.group(1)))
     order = [g for g, _ in sorted(place.items(), key=lambda kv: kv[1])]
     assert order == [g for g in ids if g in place], f"visual order does not follow the numbering: {order}"
+
+
+# ---------------------------------------------------------------------------
+# slip response ("Level 2") and unit consistency
+# ---------------------------------------------------------------------------
+
+
+def test_slip_audit_passes():
+    """The full audit of the brush-model slip response.
+
+    C_kappa, C_alpha, C_mz and the pneumatic trail are the first quantities in
+    the tool that are forces rather than stiffnesses, so they rest on a physical
+    model the rest of the engine does not.  The audit checks them against the
+    textbook closed forms for a rectangular and an elliptical patch, against a
+    direct non-FFT summation, and against the statements the feature rests on --
+    including that the curve is direction-sensitive while its mean cannot be.
+    """
+    node = _node()
+    proc = subprocess.run([node, os.path.join(APP, "slipaudit.js")],
+                          capture_output=True, text=True, cwd=REPO, timeout=900)
+    assert proc.returncode == 0, proc.stdout[-8000:] + proc.stderr[-2000:]
+    assert "checks passed" in proc.stdout
+
+
+def test_units_audit_passes():
+    """Dimensional consistency of the whole engine, proved by measurement.
+
+    Scaling every length by lambda and the load by lambda^2 must move every
+    output by the power of lambda its units say it should -- Kz by lambda, areas
+    by lambda^2, C_alpha by lambda^2, the trail by lambda, and the dimensionless
+    ones not at all.  A single term carrying the wrong power of a length pulls
+    its total off the predicted exponent immediately.
+    """
+    node = _node()
+    proc = subprocess.run([node, os.path.join(APP, "unitsaudit.js")],
+                          capture_output=True, text=True, cwd=REPO, timeout=900)
+    assert proc.returncode == 0, proc.stdout[-8000:] + proc.stderr[-2000:]
+    assert "checks passed" in proc.stdout
+
+
+def test_slip_response_reaches_every_surface_that_reports_a_curve():
+    """A quantity that only exists in the engine is not a feature.
+
+    C_alpha and C_kappa have to arrive on the page, survive the worker's
+    downsampling, and appear in every export -- with their units attached, since
+    N/rad and N/mm differ by a length and would otherwise be indistinguishable
+    on a chart axis.
+    """
+    eng = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    wk = open(os.path.join(APP, "worker.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+
+    assert "function slipKernels(" in eng
+    for key in ("c_kappa", "c_alpha", "c_mz", "pneumatic_trail"):
+        assert key in eng, key
+        assert key in wk, f"{key} does not survive the worker"
+    # per-band, so a rib can be asked what share of the cornering force it makes
+    assert "c_alpha: bCa[b]" in eng and "c_alpha: sub(b.c_alpha)" in wk
+
+    # units, stated once and reused
+    assert "var METRIC_LABEL" in ui
+    assert '"Cα (N/rad)"' in ui and '"Cκ (N)"' in ui
+    assert "Pneumatic trail (mm)" in ui
+    # the CSV names the unit in the column header, where a stray number would
+    # otherwise be unattributable months later
+    for col in ("c_kappa_N", "c_alpha_N_per_rad", "c_mz_Nmm_per_rad", "pneumatic_trail_mm"):
+        assert f'"{col}"' in ui, col
+    # and the page says what these are and what they are not
+    assert "brush model" in tpl
+    assert "series with the carcass" in tpl
+
+
+def test_the_slip_rows_are_a_moment_not_a_sum():
+    """The point of the feature, asserted where it can rot: C_alpha weights each
+    element by how far it has been dragged since entering the patch.  If that
+    weighting were ever dropped it would silently become Ky times a constant,
+    the charts would still look plausible, and the direction sensitivity -- the
+    only thing on the page that can tell a directional tread from its mirror --
+    would be gone."""
+    eng = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    slip = eng[eng.index("function slipKernels("):eng.index("function discreteBlockCount(")]
+    # s is measured from the row's own entry edge, at the pixel's outer face
+    assert "uMax + dx / 2" in slip
+    assert "e - u[c]" in slip
+    # the moment arm for the aligning term is taken about the MEASURED centre
+    assert "u[c] - uc" in slip
+    # and the sweep correlates the stiffness maps with that kernel, not the plain one
+    sweep = eng[eng.index("function sweepLean("):eng.index("function sweep(")]
+    assert 'correlate(cache.get("ky", pack.ky), ksSpec.re' in sweep
+    assert 'correlate(cache.get("kx", pack.kx), ksSpec.re' in sweep
+    # C_mz must not be clamped at zero -- it is negative whenever the resultant
+    # sits behind the patch centre, which is every normal case
+    assert "maxClamp(correlate(cache.get(\"ky\", pack.ky), ksuSpec" not in sweep
+    assert "const mzRaw = correlate(" in sweep

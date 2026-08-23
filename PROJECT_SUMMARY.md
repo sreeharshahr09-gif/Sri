@@ -177,8 +177,22 @@ v6.4 reference JS  ──(~1e-9)──  Python engine  ──(<2e-3)──  Brow
   (every template input is read and vice versa), every input documented, exports
   wired and frozen.
 - `app/selftest.js` — 13 engine checks under Node.
+- `app/couplingaudit.js` — 58 checks on the tie-bar network: linear algebra
+  against closed forms, the assembled system against equilibrium, a three-node
+  case against a hand solution.
+- `app/slipaudit.js` — 43 checks on the brush-model slip response: the textbook
+  closed forms for a rectangular patch (Cα = Ky·a, t = a/3) and an elliptical
+  one (Cα/Ky = 8a/3π, t = 3πa/32), the FFT against a direct summation to 1e-15,
+  and the direction sensitivity that no other quantity on the page has.
+- `app/unitsaudit.js` — 64 checks on dimensional consistency, proved by
+  geometric similarity: scale every length by λ and the load by λ², and all 24
+  outputs land on the power of λ their units demand, to five decimals.
 - `app/browsertest.js` — a real Chromium run: load, compute, crown
   reconciliation, all three exports, drag interaction, zero page errors.
+- `app/casecheck.js` — two complete tyres (2W blocked tread with a 40° lean
+  sweep; TBR ribs with 38 tie bars, 9 mm worn, 4 ribs) driven end to end through
+  the built page, with 35 physical statements checked on the numbers that come
+  out — not against a stored baseline.
 
 ---
 
@@ -249,7 +263,11 @@ app/
   style.css              theme-aware styles
   vendor_jspdf.js        vendored jsPDF (MIT)
   selftest.js            engine checks under Node
+  couplingaudit.js       tie-bar network audit
+  slipaudit.js           brush-model slip response audit
+  unitsaudit.js          dimensional consistency audit
   browsertest.js         Playwright smoke test
+  casecheck.js           two complete tyres end to end through the built page
   parity.js              JS↔Python parity harness
 
 tread_eval/              the Python pipeline (schema, stiffness, dxf, raster,

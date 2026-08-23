@@ -907,6 +907,14 @@
       ["Blocks in patch", bc.mean.toFixed(1), "avg"],
       ["Dominant Kz order", dom ? String(dom.order) : "–", "per rev"],
     ];
+    if (r.c_alpha && r.c_alpha.length) {
+      var caS = E.fluctuationStats(r.c_alpha), trS = E.fluctuationStats(r.pneumatic_trail);
+      cards.push(["Mean Cα (tread share)", caS.mean.toFixed(0), "N/rad — " +
+        (caS.mean * Math.PI / 180).toFixed(0) + " N per degree of slip"]);
+      cards.push(["Cα fluctuation", (caS.cov * 100).toFixed(1), "% CoV over θ"]);
+      cards.push(["Mean Cκ", E.fluctuationStats(r.c_kappa).mean.toFixed(0), "N per unit slip ratio"]);
+      cards.push(["Pneumatic trail", trS.mean.toFixed(1), "mm behind patch centre"]);
+    }
     var html = "";
     for (var i = 0; i < cards.length; i++)
       html += "<div class='card'><div class='k'>" + cards[i][0] + "</div><div class='v'>" + cards[i][1] + "</div><div class='u'>" + cards[i][2] + "</div></div>";
@@ -943,6 +951,21 @@
                  name: "blocks >50% in", color: th.accent, shape: "hv" } },
       { y: r.centroid_y, name: "Contact centroid", axis: "Centroid y (mm)", color: th.accent2 },
     ];
+    // Slip response. These are the first rows on this page that are forces
+    // rather than stiffnesses, and they are NOT rescaled versions of the two
+    // rows above: they weight each element by how far it has been dragged since
+    // it entered the patch, so rubber near the exit counts for far more. They
+    // can move opposite to Kx and Ky, which is the reason they are here.
+    if (r.c_alpha && r.c_alpha.length) {
+      rows.push({ y: r.c_alpha, name: "Cα — cornering (tread only)", axis: "Cα (N/rad)", color: th.bad });
+      rows.push({ y: r.c_kappa, name: "Cκ — longitudinal slip", axis: "Cκ (N)", color: th.accent2 });
+      var tMean = 0;
+      for (var ti = 0; ti < r.pneumatic_trail.length; ti++) tMean += r.pneumatic_trail[ti];
+      tMean = r.pneumatic_trail.length ? tMean / r.pneumatic_trail.length : 0;
+      rows.push({ y: r.pneumatic_trail, name: "Pneumatic trail", axis: "Trail t (mm)", color: th.good,
+        extra: { x: [x[0], x[x.length - 1]], y: [tMean, tMean],
+                 name: "mean " + tMean.toFixed(2) + " mm", color: th.inkDim } });
+    }
     var data = [], layout = {
       paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
       showlegend: true,
@@ -1183,13 +1206,26 @@
     syncFrom(strip, plot);
   }
 
+  // One place for the units of every sweep quantity, so a curve, a colour bar,
+  // a band chart and an export can never disagree about what a number is.
+  var METRIC_LABEL = {
+    kz: "Kz (N/mm)", kx: "Kx (N/mm)", ky: "Ky (N/mm)",
+    contact_area: "Contact area (mm²)", block_count: "Blocks", land_ratio: "Land ratio",
+    c_alpha: "Cα (N/rad)", c_kappa: "Cκ (N)", c_mz: "Cmz (N·mm/rad)",
+    pneumatic_trail: "Pneumatic trail (mm)",
+  };
+  var ORDER_LABEL = {
+    kz: "Kz", kx: "Kx", ky: "Ky", contact_area: "contact area", block_count: "block count",
+    c_alpha: "Cα (cornering)", c_kappa: "Cκ (longitudinal)",
+  };
+
   function renderLeanHeatmap() {
     var th = plotTheme();
     var metric = state.heatMetric;
     var x = state.results[0].theta_deg;
     var y = [], z = [];
     for (var i = 0; i < state.results.length; i++) { y.push(state.results[i].gamma_deg); z.push(state.results[i][metric]); }
-    var label = { kz: "Kz (N/mm)", kx: "Kx (N/mm)", ky: "Ky (N/mm)", contact_area: "Contact area (mm²)", block_count: "Blocks", land_ratio: "Land ratio" }[metric];
+    var label = METRIC_LABEL[metric];
     var data = [{ z: z, x: x, y: y, type: "heatmap", colorscale: "Viridis", colorbar: { title: { text: label, font: { size: 11 } } } }];
     var layout = {
       paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
@@ -1211,7 +1247,7 @@
       return th.accent;
     });
     var data = [{ x: spec.orders, y: spec.amplitude, type: "bar", marker: { color: colors } }];
-    var label = { kz: "Kz", kx: "Kx", ky: "Ky", contact_area: "contact area", block_count: "block count" }[metric];
+    var label = ORDER_LABEL[metric];
     var layout = {
       paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
       margin: { l: 60, r: 16, t: 40, b: 44 }, height: 380,
@@ -1739,7 +1775,8 @@
 
   // ---- bands (ribs) ----------------------------------------------------
   var BAND_LABEL = { contact_area: "contact area (mm²)", kz: "Kz (N/mm)", kx: "Kx (N/mm)",
-                     ky: "Ky (N/mm)", block_count: "blocks in patch" };
+                     ky: "Ky (N/mm)", block_count: "blocks in patch",
+                     c_alpha: "Cα (N/rad)", c_kappa: "Cκ (N)" };
 
   function bandName(b) { return "y " + b.y_lo.toFixed(1) + " to " + b.y_hi.toFixed(1) + " mm"; }
 
@@ -2284,19 +2321,25 @@
     var common = list.map(function (e) { return e.results.map(function (r) { return r.gamma_deg; }); })
                      .reduce(function (a, b) { return a.filter(function (g) { return b.indexOf(g) >= 0; }); });
     var gamma = common.length ? Math.min.apply(null, common) : 0;
+    // A run exported before a metric existed simply does not carry it. Drop it
+    // from the chart with a note rather than plotting an undefined series.
+    var missing = 0;
     var data = list.map(function (e, i) {
       var r = e.results.find(function (x) { return x.gamma_deg === gamma; }) || e.results[0];
+      if (!r[metric]) { missing++; return null; }
       return { x: r.theta_deg, y: r[metric], type: "scatter", mode: "lines",
                name: e.label.slice(0, 42), line: { color: palette[i % palette.length], width: 1.4 } };
-    });
+    }).filter(Boolean);
     Plotly.react($("comparePlot"), data, {
       paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
       margin: { l: 72, r: 16, t: 40, b: 92 }, height: 460,
       legend: { orientation: "h", y: -0.18, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
-      title: { text: BAND_LABEL[metric] + " compared at γ = " + gamma + "°" +
-               (common.length ? "" : "  (runs share no lean angle — first of each shown)"), font: { size: 13 } },
+      title: { text: METRIC_LABEL[metric] + " compared at γ = " + gamma + "°" +
+               (common.length ? "" : "  (runs share no lean angle — first of each shown)") +
+               (missing ? "  — " + missing + " run(s) predate this metric and are not shown" : ""),
+               font: { size: 13 } },
       xaxis: { title: { text: "rotation angle θ (deg)", font: { size: 11 } }, range: [0, 360], gridcolor: th.grid },
-      yaxis: { title: { text: BAND_LABEL[metric], font: { size: 11 } }, gridcolor: th.grid },
+      yaxis: { title: { text: METRIC_LABEL[metric], font: { size: 11 } }, gridcolor: th.grid },
     }, { responsive: true, displayModeBar: false });
 
     var base = null;
@@ -2304,6 +2347,11 @@
       "<th>max</th><th>vs first</th></tr>";
     list.forEach(function (e) {
       var r = e.results.find(function (x) { return x.gamma_deg === gamma; }) || e.results[0];
+      if (!r[metric]) {
+        rows += "<tr><td>" + escapeHtml(e.label) +
+          "</td><td colspan='5' class='hint'>run predates this metric</td></tr>";
+        return;
+      }
       var st = E.fluctuationStats(r[metric]);
       if (base === null) base = st.mean;
       var d = base ? (100 * (st.mean - base) / base) : 0;
@@ -2435,6 +2483,7 @@
       "kx_N_per_mm", "ky_N_per_mm", "kz_N_per_mm",
       "block_count_effective", "centroid_y_mm",
       "zone_center_mm2", "zone_intermediate_mm2", "zone_shoulder_mm2",
+      "c_kappa_N", "c_alpha_N_per_rad", "c_mz_Nmm_per_rad", "pneumatic_trail_mm",
     ].join(","));
     for (var i = 0; i < state.results.length; i++) {
       var r = state.results[i];
@@ -2445,10 +2494,18 @@
           r.block_count[j].toFixed(4), r.centroid_y[j].toFixed(4),
           r.zone_area.center[j].toFixed(4), r.zone_area.intermediate[j].toFixed(4),
           r.zone_area.shoulder[j].toFixed(4),
+          slipAt(r, "c_kappa", j), slipAt(r, "c_alpha", j),
+          slipAt(r, "c_mz", j), slipAt(r, "pneumatic_trail", j),
         ].join(","));
       }
     }
     download(safeName() + "_sweep.csv", lines.join("\n"), "text/csv;charset=utf-8");
+  }
+
+  // A run loaded from an older exported JSON has no slip columns; emit a blank
+  // rather than "undefined" or a zero that would read as a measurement.
+  function slipAt(r, key, j) {
+    return r[key] && r[key][j] != null ? r[key][j].toFixed(4) : "";
   }
 
   function exportJSON() {
@@ -2491,6 +2548,23 @@
         (kz.cov * 100).toFixed(2), kx.mean.toFixed(0), ky.mean.toFixed(0), bc.mean.toFixed(2),
       ].map(function (v) { return String(v).padStart(11); }).join(""));
     });
+    if (state.results[0].c_alpha) {
+      out.push("");
+      out.push("SLIP RESPONSE (brush model, TREAD SHARE ONLY -- the carcass is a");
+      out.push("second spring in series and usually the larger one, so compare");
+      out.push("designs on these numbers rather than reading them as tyre data.)");
+      out.push(["gamma", "Ca_N/rad", "Ca_CoV%", "Ck_N", "Ck_CoV%", "trail_mm", "Fy@1deg_N"]
+        .map(function (h) { return h.padStart(12); }).join(""));
+      state.results.forEach(function (r) {
+        var ca = E.fluctuationStats(r.c_alpha), ckk = E.fluctuationStats(r.c_kappa);
+        var tr = E.fluctuationStats(r.pneumatic_trail);
+        out.push([
+          r.gamma_deg + "°", ca.mean.toFixed(0), (ca.cov * 100).toFixed(2),
+          ckk.mean.toFixed(0), (ckk.cov * 100).toFixed(2), tr.mean.toFixed(2),
+          (ca.mean * Math.PI / 180).toFixed(0),
+        ].map(function (v) { return String(v).padStart(12); }).join(""));
+      });
+    }
     if ((s.physics_notes || []).length) {
       out.push("", "PHYSICS NOTES");
       s.physics_notes.forEach(function (n) { out.push(" - " + n.replace(/\s+/g, " ")); });
@@ -2651,6 +2725,14 @@
       ["Kz fluctuation", (E.fluctuationStats(r0.kz).cov * 100).toFixed(2) + " % CoV"],
       ["Blocks in patch", E.fluctuationStats(r0.block_count).mean.toFixed(2)],
     ];
+    if (r0.c_alpha && r0.c_alpha.length) {
+      var caR = E.fluctuationStats(r0.c_alpha);
+      cards.push(["Mean Cα (tread only)", caR.mean.toFixed(0) + " N/rad  (" +
+        (caR.mean * Math.PI / 180).toFixed(0) + " N per degree of slip)"]);
+      cards.push(["Cα fluctuation", (caR.cov * 100).toFixed(2) + " % CoV"]);
+      cards.push(["Mean Cκ", E.fluctuationStats(r0.c_kappa).mean.toFixed(0) + " N per unit slip ratio"]);
+      cards.push(["Pneumatic trail", E.fluctuationStats(r0.pneumatic_trail).mean.toFixed(2) + " mm"]);
+    }
     cards.forEach(function (c) {
       doc.setTextColor(110); doc.text(c[0], M, y);
       doc.setTextColor(0); doc.text(c[1], M + 55, y); y += 5.4;
@@ -2874,6 +2956,9 @@
       patchTheta: state.patchTheta == null ? null : clampPatchTheta(state.patchTheta),
     };
   };
+  // The whole result for the lean on screen, so a test can check a curve rather
+  // than a summary of it. Same object the charts read; nothing is recomputed.
+  window.__ttResult = function () { return state.results ? currentResult() : null; };
   window.__ttSetPatchTheta = setPatchTheta;
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

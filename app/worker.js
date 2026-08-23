@@ -104,6 +104,24 @@
           ", Ky x" + g[0].gain_ky.toFixed(3) + ". This is the sub-surface effect the contact " +
           "model cannot see -- it adds no contact area.");
       }
+      // The patch is rasterised to whole pixels, so the area the sweep measures
+      // is not exactly the area of the outline the pressure came from. A
+      // fraction of a percent is the price of the FFT; several percent means the
+      // grid is too coarse for this patch and EVERY area on the page is biased
+      // by it, so say so rather than let it read as geometry.
+      var worstQuant = 0;
+      for (var qi = 0; qi < results.length; qi++) {
+        var ro = results[qi];
+        if (!(ro.patch_area_outline > 0)) continue;
+        worstQuant = Math.max(worstQuant, Math.abs(ro.patch_area / ro.patch_area_outline - 1));
+      }
+      if (worstQuant > 0.01) {
+        notes.push("the contact patch rasterises to " + (100 * worstQuant).toFixed(1) +
+          "% away from the area of its outline, so every area and stiffness on this page " +
+          "carries that bias and the reported patch load is under the load you entered by the " +
+          "same amount. Raise the grid resolution, or use a larger patch.");
+      }
+
       // per-block stiffness summary for the diagnostics tab
       var stiffSummary = summariseStiffness(pattern, pack);
       // Any patch clipped by the tread edge is geometry the model did not
@@ -156,18 +174,23 @@
       kx: sub(r.kx), ky: sub(r.ky), kz: sub(r.kz),
       block_count: sub(r.block_count),
       centroid_y: sub(r.centroid_y),
+      // slip response: N, N/rad, N.mm/rad, mm
+      c_kappa: sub(r.c_kappa), c_alpha: sub(r.c_alpha),
+      c_mz: sub(r.c_mz), pneumatic_trail: sub(r.pneumatic_trail),
       zone_area: zone,
       bands: r.bands ? r.bands.map(function (b) {
         return { index: b.index, y_lo: b.y_lo, y_hi: b.y_hi, width_mm: b.width_mm,
                  contact_area: sub(b.contact_area), kx: sub(b.kx), ky: sub(b.ky),
-                 kz: sub(b.kz), block_count: sub(b.block_count) };
+                 kz: sub(b.kz), block_count: sub(b.block_count),
+                 c_kappa: sub(b.c_kappa), c_alpha: sub(b.c_alpha) };
       }) : null,
       block_count_discrete: Array.prototype.slice.call(r.block_count_discrete),
       theta_discrete: Array.prototype.slice.call(r.theta_discrete),
       patch: { source: r.patch.source, provenance: r.patch.provenance, y_center: r.patch.y_center,
         a: r.patch.a, b: r.patch.b, clipped: r.patch.clipped, outline: r.patch.outline,
         normal_load: r.patch.normal_load, peak_pressure: r.patch.peak_pressure },
-      patch_area: r.patch_area, patch_perimeter: r.patch_perimeter, patch_load: r.patch_load,
+      patch_area: r.patch_area, patch_area_outline: r.patch_area_outline,
+      patch_perimeter: r.patch_perimeter, patch_load: r.patch_load,
       shape: r.shape,
     };
   }

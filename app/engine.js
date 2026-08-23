@@ -3082,7 +3082,12 @@
     const row = new Float64Array(nx);
     for (let r = 0; r < ny; r++) {
       const base = r * nx;
-      for (let c = 0; c < nx; c++) row[c] = map[base + c];
+      // Every kernel here is a contact patch: most rows of the tread are outside
+      // it and transform to zero, which the arrays already hold. Skipping them
+      // is exact, and it is what keeps three kernels per lean affordable.
+      let any = false;
+      for (let c = 0; c < nx; c++) { const v = map[base + c]; row[c] = v; if (v !== 0) any = true; }
+      if (!any) continue;
       const f = rfftRow(row, nx);
       re.set(f.re, r * half); im.set(f.im, r * half);
     }
@@ -3090,6 +3095,88 @@
   }
 
   function maxClamp(arr) { for (let i = 0; i < arr.length; i++) if (arr[i] < 0) arr[i] = 0; return arr; }
+
+  // ---------------------------------------------------------------------
+  // slip response: the brush model's first moment about the leading edge
+  // ---------------------------------------------------------------------
+  //
+  // Kx and Ky answer "how hard is the rubber in the patch". They do NOT give a
+  // force, because force needs slip. The brush model supplies the missing step:
+  // a tread element enters the patch stuck to the road with zero deflection,
+  // and while the carcass runs on it is dragged by
+  //
+  //     longitudinal   u = kappa * s          (kappa = slip ratio)
+  //     lateral        u = tan(alpha) * s     (alpha = slip angle)
+  //
+  // where s is how far that element has travelled since it entered. Summing
+  // element force k*u over the patch,
+  //
+  //     C_kappa = dFx/dkappa  = SUM k_x,i * s_i          [N]
+  //     C_alpha = dFy/dalpha  = SUM k_y,i * s_i          [N/rad]
+  //
+  // -- the FIRST MOMENT of tread stiffness about the leading edge, not the sum.
+  // Rubber near the exit is worth far more than rubber at the entry, which is
+  // why this curve is not a rescaled Kx or Ky and can move the other way.
+  //
+  // Taking the same moment again about the patch centre gives the aligning
+  // stiffness and the pneumatic trail:
+  //
+  //     C_mz = -SUM k_y,i * s_i * u_i         [N.mm/rad]   Mz = -C_mz * alpha
+  //     t    =  C_mz / C_alpha                [mm]
+  //
+  // For a uniform patch of half-length a this reduces to C_alpha = 2*c_p*a^2 and
+  // t = a/3, the textbook brush results -- both checked in slipaudit.js.
+  //
+  // Rolling direction. At angle theta the patch covers pattern x in
+  // [x_c - a, x_c + a] with x_c = C*theta/360; that is what the correlation
+  // means by "the patch at theta". As theta advances, a fixed point of the tread
+  // enters at the +x end and leaves at the -x end, so the LEADING (entry) edge
+  // is the +x edge and s runs from 0 there to the row's contact length at the
+  // exit. Reversing the rolling direction mirrors s, which is exactly why a
+  // directional pattern is not symmetric in these curves.
+  //
+  // Entry is taken at the OUTER face of the entry pixel, not its centre, so the
+  // discrete sum is the midpoint rule for the integral and lands on 2*c_p*a^2
+  // exactly rather than short by half a pixel per row.
+  function slipKernels(masks, grid) {
+    const nx = grid.nx, ny = grid.ny, N = nx * ny, dx = grid.dx;
+    const u = gridXRel(grid), bin = masks.binary;
+    const s = new Float32Array(N), su = new Float32Array(N);
+    const entry = new Float64Array(ny).fill(NaN);
+    const rowLength = new Float64Array(ny);
+
+    // Longitudinal centre of the patch, measured rather than assumed: a rotated
+    // or tapered outline need not be centred on column 0, and the trail is
+    // quoted from the patch centre.
+    let uSum = 0, nPix = 0;
+    for (let r = 0; r < ny; r++) {
+      const base = r * nx;
+      for (let c = 0; c < nx; c++) if (bin[base + c] > 0) { uSum += u[c]; nPix++; }
+    }
+    const uc = nPix ? uSum / nPix : 0;
+
+    for (let r = 0; r < ny; r++) {
+      const base = r * nx;
+      let uMax = -Infinity, uMin = Infinity, n = 0;
+      for (let c = 0; c < nx; c++) {
+        if (!(bin[base + c] > 0)) continue;
+        if (u[c] > uMax) uMax = u[c];
+        if (u[c] < uMin) uMin = u[c];
+        n++;
+      }
+      if (!n) continue;
+      const e = uMax + dx / 2;
+      entry[r] = e;
+      rowLength[r] = uMax - uMin + dx;
+      for (let c = 0; c < nx; c++) {
+        if (!(bin[base + c] > 0)) continue;
+        const sv = e - u[c];
+        s[base + c] = sv;
+        su[base + c] = sv * (u[c] - uc);
+      }
+    }
+    return { s: s, su: su, entry: entry, row_length: rowLength, u_center: uc, n_pixels: nPix };
+  }
 
   function discreteBlockCount(pack, patch, nSamples, threshold) {
     nSamples = nSamples || 360; threshold = threshold == null ? 0.5 : threshold;
@@ -3164,6 +3251,15 @@
     // plus a correlation per lean angle. (The Python side keeps it because it
     // can carry a measured pressure grid, where the weighting is real.)
 
+    // The two extra kernels the slip response needs: the patch weighted by
+    // distance behind its leading edge, and that weighted again by longitudinal
+    // position. The MAP transforms are the same cached kx/ky ones the sums
+    // above use -- only the kernel changes -- so this costs two kernel
+    // transforms and three correlations per lean, not a second sweep.
+    const sk = slipKernels(masks, grid);
+    const ksSpec = kernelSpectrum(sk.s, grid);
+    const ksuSpec = kernelSpectrum(sk.su, grid);
+
     const contactArea = maxClamp(correlate(cache.get("area", pack.area), kb.re, kb.im, nx));
     const kx = maxClamp(correlate(cache.get("kx", pack.kx), kb.re, kb.im, nx));
     const ky = maxClamp(correlate(cache.get("ky", pack.ky), kb.re, kb.im, nx));
@@ -3173,6 +3269,20 @@
     const zoneArea = {};
     for (const z of ZONES) zoneArea[z] = maxClamp(correlate(cache.get("zone_" + z, pack.zoneArea[z]), kb.re, kb.im, nx));
 
+    // Slip response. C_kappa and C_alpha are non-negative by construction; the
+    // raw aligning moment is not, and must not be clamped -- it is negative
+    // whenever the resultant sits behind the patch centre, which is the normal
+    // case and the whole reason a pneumatic trail exists.
+    const cKappa = maxClamp(correlate(cache.get("kx", pack.kx), ksSpec.re, ksSpec.im, nx));
+    const cAlpha = maxClamp(correlate(cache.get("ky", pack.ky), ksSpec.re, ksSpec.im, nx));
+    const mzRaw = correlate(cache.get("ky", pack.ky), ksuSpec.re, ksuSpec.im, nx);
+    const cMz = new Float64Array(nx), trail = new Float64Array(nx);
+    for (let i = 0; i < nx; i++) {
+      cMz[i] = -mzRaw[i];
+      // Below a newton per radian the trail is a ratio of two rounding errors.
+      trail[i] = cAlpha[i] > 1 ? cMz[i] / cAlpha[i] : 0;
+    }
+
     // Per-band aggregates, if the designer has divided the tread into ribs.
     // Reuses the same cached map transforms as the totals above, so the extra
     // cost is a handful of inverse transforms rather than a second sweep.
@@ -3181,9 +3291,13 @@
       const nB = bandEdges.length - 1;
       const rowIdx = bandRowIndex(grid, bandEdges);
       const by = (key, map) => correlateByBand(cache.get(key, map), kb.re, kb.im, nx, rowIdx, nB).map(maxClamp);
+      // Same rows, s-weighted kernel: which rib actually generates the
+      // cornering force, rather than which rib merely has stiff rubber.
+      const bys = (key, map) => correlateByBand(cache.get(key, map), ksSpec.re, ksSpec.im, nx, rowIdx, nB).map(maxClamp);
       const bArea = by("area", pack.area), bKx = by("kx", pack.kx),
             bKy = by("ky", pack.ky), bKz = by("kz", pack.kz),
-            bCount = by("block_frac", pack.blockFrac);
+            bCount = by("block_frac", pack.blockFrac),
+            bCk = bys("kx", pack.kx), bCa = bys("ky", pack.ky);
       // Geometric width of each band, so a per-mm comparison is possible.
       bands = [];
       for (let b = 0; b < nB; b++) {
@@ -3192,6 +3306,7 @@
           y_lo: bandEdges[b], y_hi: bandEdges[b + 1],
           width_mm: bandEdges[b + 1] - bandEdges[b],
           contact_area: bArea[b], kx: bKx[b], ky: bKy[b], kz: bKz[b], block_count: bCount[b],
+          c_kappa: bCk[b], c_alpha: bCa[b],
         });
       }
     }
@@ -3211,9 +3326,22 @@
       gamma_deg: gammaDeg, patch: { source: patch.source, provenance: patch.provenance, y_center: patch.y_center, a: patch.a, b: patch.b, clipped: patch.clipped, outline: patch.outline, normal_load: patch.normal_load, peak_pressure: patch.peak_pressure },
       theta_deg: gridThetaDeg(grid), contact_area: contactArea, land_ratio: landRatio,
       kx: kx, ky: ky, kz: kz, block_count: blockCount, centroid_y: centroidY,
+      // Slip response (brush model). Units: C_kappa N per unit slip ratio,
+      // C_alpha N/rad, C_mz N.mm/rad, trail mm. These are the TREAD's share --
+      // the carcass is a second spring in series and usually the larger one --
+      // so read the variation over theta, not the absolute value.
+      c_kappa: cKappa, c_alpha: cAlpha, c_mz: cMz, pneumatic_trail: trail,
       zone_area: zoneArea, bands: bands,
       block_count_discrete: disc.count, theta_discrete: disc.theta,
-      patch_area: patchAreaVal, patch_perimeter: shape.perimeter_mm, patch_load: patchLoad, shape: shape,
+      // patch_area is the RASTERISED area -- a whole number of pixels -- because
+      // contact_area is measured the same way and the land ratio is their
+      // quotient. patch_area_outline is the exact polygon area the pressure was
+      // derived from. They differ by the raster quantisation, which is also why
+      // patch_load (the raster integral of pressure) comes back a fraction of a
+      // percent under the stated normal_load. Both are reported rather than
+      // reconciled, and the worker warns if the gap grows past 1%.
+      patch_area: patchAreaVal, patch_area_outline: patchArea(patch),
+      patch_perimeter: shape.perimeter_mm, patch_load: patchLoad, shape: shape,
     };
   }
 
@@ -3311,6 +3439,7 @@
     validateSpec, leanScaleFactors, maxSupportedLean, isPowerOfTwo,
     // sweep
     MapFFTCache, sweepLean, sweep, correlateByBand, bandRowIndex, evenBandEdges, validateBandEdges,
+    kernelSpectrum, correlate, slipKernels,
     // metrics
     fluctuationStats, orderSpectrum, dominantOrders,
   };
