@@ -1461,3 +1461,146 @@ def test_the_resolved_crown_is_never_silent():
     # the class radii live in one place, not two
     assert "crownCenter: cls.crown_r_center" in ui
     assert "crownCenter: 125" not in ui and "crownCenter: 1500" not in ui
+
+
+# ---------------------------------------------------------------------------
+# tie-bar grouping
+# ---------------------------------------------------------------------------
+
+
+def test_grouping_collapses_repeated_tie_bars():
+    """A mould repeats the same bar, so setting each one is transcription.
+
+    The rib drawing's 38 bars are one family; a 476-bar drawing is two.  Setting
+    each individually is the work this removes.
+    """
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const fs = require('fs');
+const {{pattern}} = E.loadPattern(fs.readFileSync({json.dumps(TIEBAR_DXF)}, 'utf8'), {{height: 16, draft_angle: 2}}, {{}});
+const out = {{n: pattern.tiebars.length}};
+for (const m of ['shape_position', 'shape', 'zone', 'none']) {{
+  const g = E.groupTiebars(pattern.tiebars, m);
+  out[m] = {{groups: g.length, counts: g.map(x => x.count), covered: g.reduce((s, x) => s + x.count, 0)}};
+}}
+const g0 = E.groupTiebars(pattern.tiebars, 'shape_position')[0];
+out.first = {{zone: g0.zone, area: g0.area_mm2, span: g0.span_mm, width: g0.width_mm, y: g0.y_range}};
+// an unknown mode must not silently do something surprising
+out.fallback = E.groupTiebars(pattern.tiebars, 'nonsense').length;
+process.stdout.write(JSON.stringify(out));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=180)
+    assert res.returncode == 0, res.stderr[:2000]
+    g = json.loads(res.stdout)
+
+    assert g["n"] == 38
+    assert g["shape_position"]["groups"] == 1, "identical bars in one groove are one family"
+    assert g["none"]["groups"] == 38, "'individually' must not group at all"
+    # every mode must account for every bar exactly once
+    for m in ("shape_position", "shape", "zone", "none"):
+        assert g[m]["covered"] == 38, f"{m} lost or duplicated bars"
+    assert g["first"]["area"] == pytest.approx(84.0, rel=1e-6)
+    assert g["first"]["span"] == pytest.approx(6.0, rel=1e-6)
+    assert g["first"]["width"] == pytest.approx(14.0, rel=1e-6)
+    # mirror pairs group together, and the y range shows it
+    assert g["first"]["y"][0] < 0 < g["first"]["y"][1]
+    assert g["fallback"] == g["shape_position"]["groups"], "an unknown mode falls back to the default"
+
+
+def test_grouping_clusters_by_tolerance_not_by_bucket():
+    """Two bars a hair apart must never land in different groups.
+
+    This is the same failure the DXF welder had: hashing into buckets means a
+    bucket edge can fall between two values that are for all purposes equal.
+    """
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+function bar(id, x, y, w, h) {{
+  const poly = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+  return {{id: id, polygon: poly, zone: 'center', nsd: 16, height: 8, enabled: true,
+          force_contact: false, area: w * h, centroid_x: x + w / 2, centroid_y: y + h / 2}};
+}}
+// three bars that differ by a hair, and one that is genuinely different
+const near = [bar('A', 0, -7, 6.00, 14.0), bar('B', 20, -7, 6.001, 14.0), bar('C', 40, -7, 5.999, 14.002)];
+const far = [bar('D', 60, -7, 12.0, 14.0)];
+const g1 = E.groupTiebars(near, 'shape_position');
+const g2 = E.groupTiebars(near.concat(far), 'shape_position');
+// the same bars in a different input order must group the same way
+const shuffled = [near[2], far[0], near[0], near[1]];
+const g3 = E.groupTiebars(shuffled, 'shape_position');
+process.stdout.write(JSON.stringify({{
+  near: g1.length, mixed: g2.length,
+  shuffledCounts: g3.map(x => x.count).sort(),
+  mixedCounts: g2.map(x => x.count).sort(),
+}}));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
+    assert res.returncode == 0, res.stderr[:2000]
+    g = json.loads(res.stdout)
+    assert g["near"] == 1, "bars differing by a thousandth of a mm must be one group"
+    assert g["mixed"] == 2, "a genuinely different bar must be its own group"
+    assert g["mixedCounts"] == [1, 3]
+    assert g["shuffledCounts"] == [1, 3], "grouping must not depend on input order"
+
+
+def test_a_group_edit_reaches_every_member_and_no_others():
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const fs = require('fs');
+const {{pattern}} = E.loadPattern(fs.readFileSync({json.dumps(TIEBAR_DXF)}, 'utf8'), {{height: 16, draft_angle: 2}}, {{}});
+const tb = pattern.tiebars;
+// force two families by making half the bars taller in plan
+tb.forEach((t, i) => {{ if (i % 2) t.zone = 'shoulder'; }});
+const groups = E.groupTiebars(tb, 'zone');
+const n = E.applyToTiebarGroup(tb, groups[0], {{height: 3.5}});
+const after = E.groupTiebars(tb, 'zone');
+const other = groups[1];
+process.stdout.write(JSON.stringify({{
+  groups: groups.length, touched: n,
+  editedHeight: after[0].height, editedMixed: after[0].mixed_height,
+  otherHeights: Array.from(new Set(other.members.map(k => +tb[k].height.toFixed(6)))),
+  // a per-bar change makes the group mixed...
+  mixedAfterOverride: (function () {{ tb[groups[0].members[0]].height = 9; return E.groupTiebars(tb, 'zone')[0].mixed_height; }})(),
+  // ...and setting the group again clears it
+  cleanAfterReset: (function () {{ E.applyToTiebarGroup(tb, groups[0], {{height_fraction: 0.5}}); const g = E.groupTiebars(tb, 'zone')[0]; return [g.mixed_height, g.height]; }})(),
+  // height is clamped to the NSD -- a bar taller than its block is not a bar
+  clamped: (function () {{ E.applyToTiebarGroup(tb, groups[0], {{height: 999}}); return tb[groups[0].members[0]].height; }})(),
+}}));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=180)
+    assert res.returncode == 0, res.stderr[:2000]
+    g = json.loads(res.stdout)
+    assert g["groups"] == 2
+    assert g["touched"] == 19
+    assert g["editedHeight"] == pytest.approx(3.5) and not g["editedMixed"]
+    assert g["otherHeights"] == [pytest.approx(8.8)], "the other group must be untouched"
+    assert g["mixedAfterOverride"] is True
+    assert g["cleanAfterReset"][0] is False and g["cleanAfterReset"][1] == pytest.approx(8.0)
+    assert g["clamped"] == pytest.approx(16.0), "a bar cannot be taller than the block beside it"
+
+
+def test_the_group_editor_is_wired_and_does_not_rebuild_under_the_cursor():
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert 'id="tbGroupMode"' in tpl and 'id="tbGroupTable"' in tpl and 'id="tbIndividual"' in tpl
+    for mode in ("shape_position", "shape", "zone", "none"):
+        assert f'value="{mode}"' in tpl, mode
+    assert "function renderTiebarGroups(" in ui and "function onTiebarGroupEdit(" in ui
+    assert "applyToTiebarGroup" in ui
+    # the individual list survives, for overriding one bar in a family
+    assert "Show every bar individually" in tpl
+    # value changes update in place; only a change of shape rebuilds -- typing a
+    # new NSD then clicking a group field fires NSD's change at blur, and a
+    # rebuild there destroys the node the click is landing on
+    def body(name):
+        start = ui.index(f"function {name}(")
+        nxt = ui.find("\n  function ", start + 1)
+        return ui[start: nxt if nxt > 0 else len(ui)]
+
+    idle = body("refreshTiebarGroupsIfIdle")
+    assert "sameShape" in idle and "document.activeElement" in idle
+    edit = body("onTiebarGroupEdit")
+    assert "refreshTiebarGroupsIfIdle();" in edit and "renderTiebarGroups();" not in edit

@@ -485,6 +485,14 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
             </div>
             <div id="tbBody" style="display:none">
               <div class="filerow">
+                <label class="hint" title="A mould repeats the same bar around the circumference, so a drawing with 150 bars usually has two or three distinct ones. Bars that match on shape and lateral position are shown as one row you can set in a single edit. 'Shape only' ignores where the bar sits; 'zone' lumps everything in the centre, intermediate or shoulder band together; 'individually' is the ungrouped list.">Group bars by
+                  <select id="tbGroupMode" style="width:auto">
+                    <option value="shape_position">shape + position</option>
+                    <option value="shape">shape only</option>
+                    <option value="zone">zone</option>
+                    <option value="none">individually</option>
+                  </select>
+                </label>
                 <label class="hint">Set all heights to <input id="tbAllFrac" type="number" value="0.55" step="0.05" min="0.05" max="1" style="width:80px" /> × NSD</label>
                 <button id="tbApplyAll" class="btn secondary">Apply to all</button>
                 <button id="tbEnableAll" class="btn secondary">Enable all</button>
@@ -492,7 +500,11 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
                 <span id="tbSummary" class="hint"></span>
               </div>
               <div id="tbPlot" class="plot"></div>
-              <div class="tb-scroll"><div id="tbTable"></div></div>
+              <div id="tbGroupTable"></div>
+              <details id="tbIndividual" style="margin-top:10px">
+                <summary class="hint" style="cursor:pointer"><b>Show every bar individually</b> — for overriding one bar in a group</summary>
+                <div class="tb-scroll" style="margin-top:8px"><div id="tbTable"></div></div>
+              </details>
             </div>
           </div>
         </div>
@@ -705,6 +717,13 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
 <p>Put the groove bottom at zero. A block's top starts at <strong>NSD</strong> and, after the tyre has worn <em>w</em> mm, sits at <strong>NSD − w</strong>. A tie bar is a raised strip of that groove bottom of height <strong>h &lt; NSD</strong>, so its top starts <strong>NSD − h below the road and touches nothing</strong>.</p>
 <p>It engages once <strong>w ≥ NSD − h</strong>. From then on it is flush with the blocks and is simply more land at the same height — which is the point of a tie bar: it arrives part-worn and stiffens the block row against the heel-and-toe wear that is developing by then.</p>
 <p>So at the default <strong>wear = 0</strong> the bars are listed and drawn but contribute nothing, which is the truth for a new tyre. Raise <strong>Tread worn</strong> in <em>6 · Wear &amp; tie bars</em> and watch the contact area step up and the θ-fluctuation drop as they come in — that step is the tie bar doing its job, and its position on the wear axis is a design decision you can now see.</p>
+<h3>150 bars, two edits</h3>
+<p>A mould repeats the same bar around the circumference, so a drawing with 150 tie bars usually has only two or three <em>distinct</em> ones. Setting each one is transcription, not design.</p>
+<p>The panel groups them automatically. Bars that match on shape and lateral position are shown as <strong>one row</strong>, and editing that row sets every bar in the family. A 476-bar drawing collapses to two rows; the 38-bar rib sample to one.</p>
+<p><strong>Group bars by</strong> offers four options:</p>
+<div class="tablewrap"><table><thead><tr><th>Mode</th><th>Groups bars that share</th></tr></thead><tbody><tr><td><strong>shape + position</strong> (default)</td><td>zone, plan shape and lateral position — the mould feature</td></tr><tr><td><strong>shape only</strong></td><td>zone and plan shape, wherever they sit</td></tr><tr><td><strong>zone</strong></td><td>just centre / intermediate / shoulder</td></tr><tr><td><strong>individually</strong></td><td>nothing; the ungrouped list</td></tr></tbody></table></div>
+<p>Matching is by tolerance, not by bucket: two bars a thousandth of a millimetre apart in area are always one group. Mirror pairs at +y and −y group together, and the row's <strong>y range</strong> shows it.</p>
+<p><strong>Show every bar individually</strong> opens the full list underneath, so a single bar can still be overridden. Do that and its group reads <strong>mixed</strong> until you set the group again — the tool will not pick one member's value and present it as the family's.</p>
 <p><strong>How they are detected.</strong> A tie bar usually has no outline of its own: its two long sides <em>are</em> the groove walls of the blocks either side. The importer builds the planar arrangement of every line in the drawing and takes its enclosed regions, so a bar falls out as its own region even though it shares most of its boundary with its neighbours. A region counts as a tie bar if it shares an edge with two or more blocks and its area is below the <strong>tie-bar area limit</strong> (default half the typical block). That is only the first guess — <strong>6 · Wear &amp; tie bars</strong> in the setup panel lists every candidate with its area, height, engagement wear and a checkbox, so you can reject one, promote another, or set heights bar by bar. It sits with the other inputs, before <strong>Run</strong>, because that is what it is: the heights you set here decide what the sweep computes.</p>
 <hr>
 <h2>Camber and the tread arc profile</h2>
@@ -69930,6 +69949,116 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   // height is clamped. The tie-bar height input is bounded well above it.
   const COUPLING_MIN_HEIGHT = 0.1;
 
+  // ---------------------------------------------------------------------
+  // grouping tie bars
+  // ---------------------------------------------------------------------
+  // A mould repeats the same bar around the circumference, so a drawing with
+  // 150 bars usually has two or three distinct ones. Setting each individually
+  // is transcription, not design. Cluster them by what a designer would call
+  // "the same bar" and the work collapses to one edit per family.
+  //
+  // Clustered against a representative with tolerances, not hashed into
+  // buckets: two bars 0.001 mm apart in area must never land in different
+  // groups because a bucket edge fell between them.
+  var TIEBAR_GROUP_MODES = ["shape_position", "shape", "zone", "none"];
+
+  function tiebarMetrics(tb) {
+    const b = bbox(tb.polygon);
+    return { span: b[1] - b[0], width: b[3] - b[2], area: Math.abs(tb.area), y: tb.centroid_y };
+  }
+
+  function groupTiebars(tiebars, mode, tol) {
+    tiebars = tiebars || [];
+    mode = TIEBAR_GROUP_MODES.indexOf(mode) >= 0 ? mode : "shape_position";
+    tol = tol || {};
+    const areaRel = tol.area_rel == null ? 0.02 : tol.area_rel;   // 2% of area
+    const lenAbs = tol.length_mm == null ? 0.5 : tol.length_mm;   // mm
+    const yAbs = tol.y_mm == null ? 1.0 : tol.y_mm;               // mm
+
+    const idx = tiebars.map((t, i) => i);
+    // Stable order so the grouping is reproducible run to run.
+    const m = tiebars.map(tiebarMetrics);
+    idx.sort((a, b) =>
+      (m[a].area - m[b].area) || (Math.abs(m[a].y) - Math.abs(m[b].y)) ||
+      (m[a].span - m[b].span) || (a - b));
+
+    const groups = [];
+    for (const i of idx) {
+      const t = tiebars[i], mi = m[i];
+      let found = null;
+      if (mode !== "none") {
+        for (const g of groups) {
+          const mr = m[g.rep];
+          if (tiebars[g.rep].zone !== t.zone) continue;
+          if (mode !== "zone") {
+            if (Math.abs(mi.area - mr.area) > areaRel * Math.max(mi.area, mr.area, 1e-9)) continue;
+            if (Math.abs(mi.span - mr.span) > lenAbs) continue;
+            if (Math.abs(mi.width - mr.width) > lenAbs) continue;
+          }
+          // Mirror pairs at +y and -y are the same mould feature, so they group
+          // together; the group reports the y range so that stays visible.
+          if (mode === "shape_position" && Math.abs(Math.abs(mi.y) - Math.abs(mr.y)) > yAbs) continue;
+          found = g;
+          break;
+        }
+      }
+      if (found) found.members.push(i);
+      else groups.push({ rep: i, members: [i] });
+    }
+
+    return groups.map(function (g, gi) {
+      const mem = g.members.slice().sort((a, b) => a - b);
+      const first = tiebars[g.rep], fm = m[g.rep];
+      let yLo = Infinity, yHi = -Infinity, aLo = Infinity, aHi = -Infinity;
+      let height = null, mixedHeight = false, nEnabled = 0, nForced = 0;
+      for (const k of mem) {
+        const t = tiebars[k];
+        yLo = Math.min(yLo, t.centroid_y); yHi = Math.max(yHi, t.centroid_y);
+        aLo = Math.min(aLo, Math.abs(t.area)); aHi = Math.max(aHi, Math.abs(t.area));
+        if (height == null) height = +t.height;
+        else if (Math.abs(+t.height - height) > 1e-9) mixedHeight = true;
+        if (t.enabled !== false) nEnabled++;
+        if (t.force_contact) nForced++;
+      }
+      return {
+        index: gi,
+        id: "G" + String(gi).padStart(2, "0"),
+        members: mem,
+        count: mem.length,
+        zone: first.zone,
+        nsd: first.nsd,
+        height: mixedHeight ? null : height,
+        mixed_height: mixedHeight,
+        n_enabled: nEnabled,
+        n_forced: nForced,
+        area_mm2: fm.area,
+        area_range: [aLo, aHi],
+        span_mm: fm.span,
+        width_mm: fm.width,
+        y_range: [yLo, yHi],
+      };
+    });
+  }
+
+  // Apply one property to every bar in a group.
+  function applyToTiebarGroup(tiebars, group, changes) {
+    for (const k of group.members) {
+      const t = tiebars[k];
+      if (!t) continue;
+      if (changes.height != null) {
+        const h = +changes.height;
+        if (Number.isFinite(h) && h > 0) { t.height = Math.min(h, +t.nsd); t.height_set_by_user = true; }
+      }
+      if (changes.height_fraction != null) {
+        const f = +changes.height_fraction;
+        if (Number.isFinite(f) && f > 0) { t.height = Math.min(+t.nsd, f * +t.nsd); t.height_set_by_user = true; }
+      }
+      if (changes.enabled != null) t.enabled = !!changes.enabled;
+      if (changes.force_contact != null) t.force_contact = !!changes.force_contact;
+    }
+    return group.members.length;
+  }
+
   function buildCouplingNetwork(pattern, wear, params) {
     wear = Math.max(0, +wear || 0);
     const cp = compoundProperties(params);
@@ -72378,6 +72507,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     crownMultiArc, parseCrownArcs, validateCrownArcs, buildCrown, MAX_CROWN_ARCS,
     compoundProperties, validateCompound, interpShore,
     tiebarEngagementWear, tiebarEngaged, effectiveBlocks, validateWear, patternAtWear,
+    groupTiebars, applyToTiebarGroup, tiebarMetrics, TIEBAR_GROUP_MODES,
     linkTiebars, polygonEdgeKeys, couplingLinkMatrix, tiebarCurrentHeight,
     buildCouplingNetwork, factorCouplingNetwork, choleskyInverse, invert2x2,
     effectiveStiffnessAt, couplingSweep, prepareCouplingNetwork,
@@ -74280,6 +74410,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     refreshTiebarSummary();
     drawTiebarPlan();
 
+    renderTiebarGroups();
+
     var rows = "<table class='metrics'><tr><th>Bar</th><th>zone</th><th>θ (deg)</th><th>y (mm)</th>" +
       "<th>area (mm²)</th><th>NSD (mm)</th><th>height (mm)</th><th>engages at wear</th>" +
       "<th>state</th><th>use</th><th title='Analyse the bar as a short proud block even though it is still below the surface. A what-if, not a wear state.'>force</th></tr>";
@@ -74309,6 +74441,98 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
     var inputs = $("tbTable").querySelectorAll("[data-tb]");
     for (var k = 0; k < inputs.length; k++) on(inputs[k], "change", onTiebarEdit);
+  }
+
+  // ---- tie-bar groups --------------------------------------------------
+  // 150 bars is transcription, not design. A mould repeats the same bar, so the
+  // list collapses to one row per distinct bar and one edit sets the family.
+  // The individual list stays available underneath for overriding a single bar.
+  function tiebarGroupMode() {
+    var el = $("tbGroupMode");
+    return el ? el.value : "shape_position";
+  }
+
+  function currentTiebarGroups() {
+    return E.groupTiebars(tiebarList(), tiebarGroupMode());
+  }
+
+  function renderTiebarGroups() {
+    var host = $("tbGroupTable");
+    if (!host) return;
+    var tb = tiebarList();
+    if (!tb.length) { host.innerHTML = ""; return; }
+    var groups = currentTiebarGroups();
+    state.tiebarGroups = groups;
+    var wear = readWear();
+
+    if (tiebarGroupMode() === "none") {
+      host.innerHTML = "<div class='hint'>Grouping off — set each bar in the list below.</div>";
+      return;
+    }
+
+    var rows = "<table class='metrics'><tr><th>Group</th><th>bars</th><th>zone</th>" +
+      "<th>shape (circ × lat)</th><th>area (mm²)</th><th>y range (mm)</th><th>NSD (mm)</th>" +
+      "<th>height (mm)</th><th>engages at wear</th><th>state</th><th>use</th>" +
+      "<th title='Analyse the bars as short proud blocks even though they are still below the surface.'>force</th></tr>";
+    groups.forEach(function (g, i) {
+      // A group is "in contact" only if it is uniform; a mixed group says so
+      // rather than picking one member's answer and presenting it as the truth.
+      var eng = g.members.filter(function (k) { return E.tiebarEngaged(tb[k], wear); }).length;
+      var at = g.mixed_height ? null : Math.max(0, g.nsd - g.height);
+      var state1 = eng === 0 ? ["off", "below surface"]
+        : eng === g.count ? ["on", "in contact"]
+        : ["off", eng + " of " + g.count + " in contact"];
+      rows += "<tr class='" + (g.n_enabled === 0 ? "off" : eng === g.count ? "engaged" : "") + "'>" +
+        "<td><b>" + g.id + "</b></td>" +
+        "<td class='num'>" + g.count + "</td>" +
+        "<td>" + escapeHtml(g.zone) + "</td>" +
+        "<td class='num'>" + g.span_mm.toFixed(1) + " × " + g.width_mm.toFixed(1) + "</td>" +
+        "<td class='num'>" + g.area_mm2.toFixed(1) + "</td>" +
+        "<td class='num'>" + g.y_range[0].toFixed(1) + " … " + g.y_range[1].toFixed(1) + "</td>" +
+        "<td class='num'>" + (+g.nsd).toFixed(2) + "</td>" +
+        "<td class='num'><input type='number' step='0.1' min='0.1' data-tg='" + i + "' data-tgfield='height'" +
+          (g.mixed_height ? " placeholder='mixed' value=''" : " value='" + (+g.height).toFixed(2) + "'") + " /></td>" +
+        "<td class='num'>" + (at == null ? "<i>mixed</i>" : at.toFixed(2) + " mm") + "</td>" +
+        "<td><span class='tb-state " + state1[0] + "'>" + state1[1] + "</span></td>" +
+        "<td><input type='checkbox' data-tg='" + i + "' data-tgfield='enabled'" +
+          (g.n_enabled === g.count ? " checked" : g.n_enabled === 0 ? "" : " checked") +
+          (g.n_enabled > 0 && g.n_enabled < g.count ? " data-mixed='1'" : "") + " /></td>" +
+        "<td><input type='checkbox' data-tg='" + i + "' data-tgfield='force_contact'" +
+          (g.n_forced === g.count ? " checked" : "") + " /></td></tr>";
+    });
+    host.innerHTML = rows + "</table>" +
+      "<div class='hint' style='margin-top:6px'>" + tb.length + " bar(s) in <b>" + groups.length +
+      "</b> group(s). Editing a group row sets every bar in it. A bar changed on its own shows the " +
+      "group as <i>mixed</i> until the group is set again.</div>";
+
+    var inputs = host.querySelectorAll("[data-tg]");
+    for (var k = 0; k < inputs.length; k++) on(inputs[k], "change", onTiebarGroupEdit);
+  }
+
+  function onTiebarGroupEdit(ev) {
+    var el = ev.target;
+    var gi = parseInt(el.getAttribute("data-tg"), 10);
+    var field = el.getAttribute("data-tgfield");
+    var g = (state.tiebarGroups || [])[gi];
+    if (!g) return;
+    var changes = {};
+    if (field === "height") {
+      var v = parseFloat(el.value);
+      if (!isFinite(v) || v <= 0) {
+        // Put the field back rather than rebuilding: the user may still be in
+        // it, and a rebuild would take the element out from under them.
+        el.value = g.mixed_height ? "" : (+g.height).toFixed(2);
+        return;
+      }
+      changes.height = v;
+    } else {
+      changes[field] = !!el.checked;
+    }
+    E.applyToTiebarGroup(tiebarList(), g, changes);
+    refreshTiebarGroupsIfIdle();
+    refreshTiebarRows();
+    drawEditor();
+    markStale();
   }
 
   function refreshTiebarSummary() {
@@ -74355,6 +74579,48 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     drawTiebarPlan();
   }
 
+  // A per-bar edit can make a group mixed, so the group table has to follow.
+  //
+  // In place, never by rebuilding. Typing a new NSD and then clicking straight
+  // onto a group field fires NSD's change at blur, and a rebuild at that moment
+  // destroys the node the click is landing on -- the same failure the
+  // individual table had. Group membership only changes when the grouping mode
+  // or the drawing changes, so a rebuild is only needed if the shape of the
+  // table actually differs.
+  function refreshTiebarGroupsIfIdle() {
+    var host = $("tbGroupTable");
+    if (!host || !host.querySelector("table")) { renderTiebarGroups(); return; }
+    var groups = E.groupTiebars(tiebarList(), tiebarGroupMode());
+    var prev = state.tiebarGroups || [];
+    var sameShape = groups.length === prev.length && groups.every(function (g, i) {
+      return g.count === prev[i].count && g.members[0] === prev[i].members[0];
+    });
+    if (!sameShape) { renderTiebarGroups(); return; }
+    state.tiebarGroups = groups;
+    var tb = tiebarList(), wear = readWear();
+    groups.forEach(function (g, i) {
+      var row = host.querySelector("tr:nth-child(" + (i + 2) + ")");
+      if (!row || row.cells.length < 12) return;
+      var eng = g.members.filter(function (k) { return E.tiebarEngaged(tb[k], wear); }).length;
+      var at = g.mixed_height ? null : Math.max(0, g.nsd - g.height);
+      row.className = g.n_enabled === 0 ? "off" : eng === g.count ? "engaged" : "";
+      row.cells[6].textContent = (+g.nsd).toFixed(2);
+      var hIn = row.cells[7].firstChild;
+      if (hIn && hIn !== document.activeElement) {
+        if (g.mixed_height) { hIn.value = ""; hIn.placeholder = "mixed"; }
+        else { hIn.value = (+g.height).toFixed(2); hIn.placeholder = ""; }
+      }
+      row.cells[8].innerHTML = at == null ? "<i>mixed</i>" : at.toFixed(2) + " mm";
+      var chip = row.cells[9].firstChild;
+      chip.className = "tb-state " + (eng === g.count && eng > 0 ? "on" : "off");
+      chip.textContent = eng === 0 ? "below surface"
+        : eng === g.count ? "in contact" : eng + " of " + g.count + " in contact";
+      var useBox = row.cells[10].firstChild, forceBox = row.cells[11].firstChild;
+      if (useBox && useBox !== document.activeElement) useBox.checked = g.n_enabled > 0;
+      if (forceBox && forceBox !== document.activeElement) forceBox.checked = g.n_forced === g.count;
+    });
+  }
+
   function onTiebarEdit(ev) {
     var el = ev.target, i = parseInt(el.getAttribute("data-tb"), 10);
     var field = el.getAttribute("data-tbfield");
@@ -74372,6 +74638,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     }
     refreshTiebarRow(i);
     refreshTiebarSummary();
+    refreshTiebarGroupsIfIdle();
     drawTiebarPlan();
     drawEditor();          // the patch preview shows the bars too
     markStale();
@@ -74383,6 +74650,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       t.height_set_by_user = true;
     });
     refreshTiebarRows();
+    refreshTiebarGroupsIfIdle();
     drawEditor();
   }
 
@@ -74391,6 +74659,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     var boxes = $("tbTable").querySelectorAll("input[data-tbfield='enabled']");
     for (var i = 0; i < boxes.length; i++) boxes[i].checked = enabled;
     refreshTiebarRows();
+    refreshTiebarGroupsIfIdle();
     drawEditor();
   }
 
@@ -75091,6 +75360,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       var f = parseFloat($("tbAllFrac").value);
       if (isFinite(f) && f > 0 && f <= 1) { applyTiebarHeights(f); markStale(); }
     });
+    on($("tbGroupMode"), "change", function () { renderTiebarGroups(); });
     on($("tbEnableAll"), "click", function () { setAllTiebars(true); markStale(); });
     on($("tbDisableAll"), "click", function () { setAllTiebars(false); markStale(); });
     on($("bandMetric"), "change", function () { state.bandMetric = this.value; renderBands(); });
@@ -75153,6 +75423,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       t.height = t.height_set_by_user ? Math.min(t.height, d.height) : Math.min(d.height, frac * d.height);
     });
     refreshTiebarRows();
+    refreshTiebarGroupsIfIdle();
   }
 
   // ---- lean-load reference (display only) -------------------------------

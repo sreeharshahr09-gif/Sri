@@ -215,6 +215,13 @@ const fs = require("fs");
     console.log("tie-bar drawing:", banner2.slice(0, 130));
     if (!/tie bars/.test(banner2)) errors.push("tie bars not reported in the import banner");
 
+    // Bars are grouped by default now -- one row per distinct bar rather than
+    // one per bar. Check the grouping, then open the individual list.
+    const groupRows = await page.$$eval("#tbGroupTable tr", (r) => Math.max(0, r.length - 1));
+    console.log("tie-bar groups:", groupRows);
+    if (groupRows !== 1) errors.push(`38 identical bars should be one group, got ${groupRows}`);
+    await page.click("#tbIndividual summary");
+    await page.waitForTimeout(300);
     const rows = await page.$$eval("#tbTable tr", (r) => r.length - 1);
     console.log("tie bars listed:", rows);
     if (rows !== 38) errors.push(`expected 38 tie bars on the rib drawing, listed ${rows}`);

@@ -88,6 +88,34 @@ It engages once **w ≥ NSD − h**. From then on it is flush with the blocks an
 
 So at the default **wear = 0** the bars are listed and drawn but contribute nothing, which is the truth for a new tyre. Raise **Tread worn** in *6 · Wear & tie bars* and watch the contact area step up and the θ-fluctuation drop as they come in — that step is the tie bar doing its job, and its position on the wear axis is a design decision you can now see.
 
+### 150 bars, two edits
+
+A mould repeats the same bar around the circumference, so a drawing with 150
+tie bars usually has only two or three *distinct* ones. Setting each one is
+transcription, not design.
+
+The panel groups them automatically. Bars that match on shape and lateral
+position are shown as **one row**, and editing that row sets every bar in the
+family. A 476-bar drawing collapses to two rows; the 38-bar rib sample to one.
+
+**Group bars by** offers four options:
+
+| Mode | Groups bars that share |
+|---|---|
+| **shape + position** (default) | zone, plan shape and lateral position — the mould feature |
+| **shape only** | zone and plan shape, wherever they sit |
+| **zone** | just centre / intermediate / shoulder |
+| **individually** | nothing; the ungrouped list |
+
+Matching is by tolerance, not by bucket: two bars a thousandth of a millimetre
+apart in area are always one group. Mirror pairs at +y and −y group together,
+and the row's **y range** shows it.
+
+**Show every bar individually** opens the full list underneath, so a single bar
+can still be overridden. Do that and its group reads **mixed** until you set the
+group again — the tool will not pick one member's value and present it as the
+family's.
+
 **How they are detected.** A tie bar usually has no outline of its own: its two long sides *are* the groove walls of the blocks either side. The importer builds the planar arrangement of every line in the drawing and takes its enclosed regions, so a bar falls out as its own region even though it shares most of its boundary with its neighbours. A region counts as a tie bar if it shares an edge with two or more blocks and its area is below the **tie-bar area limit** (default half the typical block). That is only the first guess — **6 · Wear & tie bars** in the setup panel lists every candidate with its area, height, engagement wear and a checkbox, so you can reject one, promote another, or set heights bar by bar. It sits with the other inputs, before **Run**, because that is what it is: the heights you set here decide what the sweep computes.
 
 ---

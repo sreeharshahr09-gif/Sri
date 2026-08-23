@@ -171,6 +171,14 @@
             </div>
             <div id="tbBody" style="display:none">
               <div class="filerow">
+                <label class="hint" title="A mould repeats the same bar around the circumference, so a drawing with 150 bars usually has two or three distinct ones. Bars that match on shape and lateral position are shown as one row you can set in a single edit. 'Shape only' ignores where the bar sits; 'zone' lumps everything in the centre, intermediate or shoulder band together; 'individually' is the ungrouped list.">Group bars by
+                  <select id="tbGroupMode" style="width:auto">
+                    <option value="shape_position">shape + position</option>
+                    <option value="shape">shape only</option>
+                    <option value="zone">zone</option>
+                    <option value="none">individually</option>
+                  </select>
+                </label>
                 <label class="hint">Set all heights to <input id="tbAllFrac" type="number" value="0.55" step="0.05" min="0.05" max="1" style="width:80px" /> × NSD</label>
                 <button id="tbApplyAll" class="btn secondary">Apply to all</button>
                 <button id="tbEnableAll" class="btn secondary">Enable all</button>
@@ -178,7 +186,11 @@
                 <span id="tbSummary" class="hint"></span>
               </div>
               <div id="tbPlot" class="plot"></div>
-              <div class="tb-scroll"><div id="tbTable"></div></div>
+              <div id="tbGroupTable"></div>
+              <details id="tbIndividual" style="margin-top:10px">
+                <summary class="hint" style="cursor:pointer"><b>Show every bar individually</b> — for overriding one bar in a group</summary>
+                <div class="tb-scroll" style="margin-top:8px"><div id="tbTable"></div></div>
+              </details>
             </div>
           </div>
         </div>

@@ -736,6 +736,116 @@
   // height is clamped. The tie-bar height input is bounded well above it.
   const COUPLING_MIN_HEIGHT = 0.1;
 
+  // ---------------------------------------------------------------------
+  // grouping tie bars
+  // ---------------------------------------------------------------------
+  // A mould repeats the same bar around the circumference, so a drawing with
+  // 150 bars usually has two or three distinct ones. Setting each individually
+  // is transcription, not design. Cluster them by what a designer would call
+  // "the same bar" and the work collapses to one edit per family.
+  //
+  // Clustered against a representative with tolerances, not hashed into
+  // buckets: two bars 0.001 mm apart in area must never land in different
+  // groups because a bucket edge fell between them.
+  var TIEBAR_GROUP_MODES = ["shape_position", "shape", "zone", "none"];
+
+  function tiebarMetrics(tb) {
+    const b = bbox(tb.polygon);
+    return { span: b[1] - b[0], width: b[3] - b[2], area: Math.abs(tb.area), y: tb.centroid_y };
+  }
+
+  function groupTiebars(tiebars, mode, tol) {
+    tiebars = tiebars || [];
+    mode = TIEBAR_GROUP_MODES.indexOf(mode) >= 0 ? mode : "shape_position";
+    tol = tol || {};
+    const areaRel = tol.area_rel == null ? 0.02 : tol.area_rel;   // 2% of area
+    const lenAbs = tol.length_mm == null ? 0.5 : tol.length_mm;   // mm
+    const yAbs = tol.y_mm == null ? 1.0 : tol.y_mm;               // mm
+
+    const idx = tiebars.map((t, i) => i);
+    // Stable order so the grouping is reproducible run to run.
+    const m = tiebars.map(tiebarMetrics);
+    idx.sort((a, b) =>
+      (m[a].area - m[b].area) || (Math.abs(m[a].y) - Math.abs(m[b].y)) ||
+      (m[a].span - m[b].span) || (a - b));
+
+    const groups = [];
+    for (const i of idx) {
+      const t = tiebars[i], mi = m[i];
+      let found = null;
+      if (mode !== "none") {
+        for (const g of groups) {
+          const mr = m[g.rep];
+          if (tiebars[g.rep].zone !== t.zone) continue;
+          if (mode !== "zone") {
+            if (Math.abs(mi.area - mr.area) > areaRel * Math.max(mi.area, mr.area, 1e-9)) continue;
+            if (Math.abs(mi.span - mr.span) > lenAbs) continue;
+            if (Math.abs(mi.width - mr.width) > lenAbs) continue;
+          }
+          // Mirror pairs at +y and -y are the same mould feature, so they group
+          // together; the group reports the y range so that stays visible.
+          if (mode === "shape_position" && Math.abs(Math.abs(mi.y) - Math.abs(mr.y)) > yAbs) continue;
+          found = g;
+          break;
+        }
+      }
+      if (found) found.members.push(i);
+      else groups.push({ rep: i, members: [i] });
+    }
+
+    return groups.map(function (g, gi) {
+      const mem = g.members.slice().sort((a, b) => a - b);
+      const first = tiebars[g.rep], fm = m[g.rep];
+      let yLo = Infinity, yHi = -Infinity, aLo = Infinity, aHi = -Infinity;
+      let height = null, mixedHeight = false, nEnabled = 0, nForced = 0;
+      for (const k of mem) {
+        const t = tiebars[k];
+        yLo = Math.min(yLo, t.centroid_y); yHi = Math.max(yHi, t.centroid_y);
+        aLo = Math.min(aLo, Math.abs(t.area)); aHi = Math.max(aHi, Math.abs(t.area));
+        if (height == null) height = +t.height;
+        else if (Math.abs(+t.height - height) > 1e-9) mixedHeight = true;
+        if (t.enabled !== false) nEnabled++;
+        if (t.force_contact) nForced++;
+      }
+      return {
+        index: gi,
+        id: "G" + String(gi).padStart(2, "0"),
+        members: mem,
+        count: mem.length,
+        zone: first.zone,
+        nsd: first.nsd,
+        height: mixedHeight ? null : height,
+        mixed_height: mixedHeight,
+        n_enabled: nEnabled,
+        n_forced: nForced,
+        area_mm2: fm.area,
+        area_range: [aLo, aHi],
+        span_mm: fm.span,
+        width_mm: fm.width,
+        y_range: [yLo, yHi],
+      };
+    });
+  }
+
+  // Apply one property to every bar in a group.
+  function applyToTiebarGroup(tiebars, group, changes) {
+    for (const k of group.members) {
+      const t = tiebars[k];
+      if (!t) continue;
+      if (changes.height != null) {
+        const h = +changes.height;
+        if (Number.isFinite(h) && h > 0) { t.height = Math.min(h, +t.nsd); t.height_set_by_user = true; }
+      }
+      if (changes.height_fraction != null) {
+        const f = +changes.height_fraction;
+        if (Number.isFinite(f) && f > 0) { t.height = Math.min(+t.nsd, f * +t.nsd); t.height_set_by_user = true; }
+      }
+      if (changes.enabled != null) t.enabled = !!changes.enabled;
+      if (changes.force_contact != null) t.force_contact = !!changes.force_contact;
+    }
+    return group.members.length;
+  }
+
   function buildCouplingNetwork(pattern, wear, params) {
     wear = Math.max(0, +wear || 0);
     const cp = compoundProperties(params);
@@ -3184,6 +3294,7 @@
     crownMultiArc, parseCrownArcs, validateCrownArcs, buildCrown, MAX_CROWN_ARCS,
     compoundProperties, validateCompound, interpShore,
     tiebarEngagementWear, tiebarEngaged, effectiveBlocks, validateWear, patternAtWear,
+    groupTiebars, applyToTiebarGroup, tiebarMetrics, TIEBAR_GROUP_MODES,
     linkTiebars, polygonEdgeKeys, couplingLinkMatrix, tiebarCurrentHeight,
     buildCouplingNetwork, factorCouplingNetwork, choleskyInverse, invert2x2,
     effectiveStiffnessAt, couplingSweep, prepareCouplingNetwork,
