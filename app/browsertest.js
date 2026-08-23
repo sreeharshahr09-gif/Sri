@@ -272,6 +272,43 @@ const fs = require("fs");
       if (!(s1.cov < s0.cov)) errors.push("engaging tie bars did not damp the contact-area fluctuation");
     }
 
+    // The coupling tab carries the same tread below its curve: dimmed blocks,
+    // the bars, and one line per bonded link. Without it the network plot is a
+    // pair of curves with no way to see which part of the pattern they belong
+    // to. Its x axis is tied to the curve above but NOT to the sweep tab's.
+    await page.click('.tabs button[data-tab="coupling"]');
+    await page.waitForTimeout(800);
+    const cpl = await page.evaluate(() => {
+      const e = document.getElementById("cplStrip");
+      if (!e || !e._fullLayout) return null;
+      const s = e._fullLayout.shapes || [];
+      return {
+        total: s.length,
+        links: s.filter((x) => x.type === "line" && x.xref === "x").length,
+        paths: s.filter((x) => x.type === "path").length,
+      };
+    });
+    if (!cpl) {
+      errors.push("the coupling tab has no rolled-out pattern below its curve");
+    } else {
+      console.log(`coupling strip: ${cpl.paths} outlines, ${cpl.links} bonded links`);
+      if (cpl.paths < 38) errors.push(`coupling strip drew ${cpl.paths} outlines, expected the whole tread`);
+      if (cpl.links < 38) errors.push(`coupling strip drew ${cpl.links} link lines, expected at least one per bar`);
+      const thetaBefore = await page.$eval("#patternStrip", (e) => e._fullLayout.xaxis.range.map((v) => +v.toFixed(1)));
+      await page.evaluate(() => Plotly.relayout(document.getElementById("cplPlot"), { "xaxis.range": [90, 180] }));
+      await page.waitForTimeout(500);
+      const stripRange = await page.$eval("#cplStrip", (e) => e._fullLayout.xaxis.range.map((v) => +v.toFixed(1)));
+      const thetaAfter = await page.$eval("#patternStrip", (e) => e._fullLayout.xaxis.range.map((v) => +v.toFixed(1)));
+      console.log("coupling strip follows the curve's zoom:", stripRange, "sweep tab unchanged:", thetaAfter);
+      if (Math.abs(stripRange[0] - 90) > 1 || Math.abs(stripRange[1] - 180) > 1)
+        errors.push(`coupling strip did not follow the zoom above it: ${stripRange}`);
+      if (String(thetaAfter) !== String(thetaBefore))
+        errors.push(`zooming the coupling tab re-framed the sweep tab: ${thetaBefore} -> ${thetaAfter}`);
+      await page.screenshot({ path: path.join(outDir, "tab-coupling.png"), fullPage: false });
+      await page.evaluate(() => Plotly.relayout(document.getElementById("cplPlot"), { "xaxis.range": [0, 360] }));
+      await page.waitForTimeout(300);
+    }
+
     await page.click("#sampleBtn");
     await page.fill("#wear", "0");
     await page.fill("#nsd", "8.5");

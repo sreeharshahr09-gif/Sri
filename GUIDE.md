@@ -289,6 +289,8 @@ where `A` is the bonded wall area (shared wall length × bar height) and `d` the
 
 The gain is **largest when few blocks are loaded** and smallest when the patch covers a whole tied rib. That is not an artefact — blocks moving together put no load into the bars at all.
 
+Below the curve is the **same rolled-out tread**, on the same θ axis — zoom either and both follow. Blocks are dimmed, tie bars are violet, and the thin violet lines are the bonded links the solver actually assembled: one per shared wall, joining a bar to the block it is tied to. This is the fastest way to check a drawing. **A bar with no line touches nothing along a shared edge**, so it contributes no coupling stiffness however solid it looks on the pattern — usually its outline does not quite meet the groove wall. A bar drawn dotted is still below the tread surface: it adds no contact area yet, but it *is* already coupling the blocks either side of it, which is why the gain is there from new.
+
 ### Two mechanisms, at opposite ends of the tyre's life
 
 The coupling works **from new**, and its relative value *falls* as the tread wears: a block stiffens as roughly 1/L³ as it shortens, while the bar only shrinks once the tread reaches it. On a 16 mm NSD with an 8.8 mm bar the model gives ×1.32 at zero wear falling to ×1.05 at 12 mm.

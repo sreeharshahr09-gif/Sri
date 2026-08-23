@@ -1078,7 +1078,10 @@ def test_coupling_is_reported_but_never_folded_into_the_main_curves():
     assert 'data-tab="coupling"' in tpl and 'id="panel-coupling"' in tpl
     assert "function renderCoupling(" in ui
     # the main sweep rows must not be scaled by any coupling factor
-    stack = ui[ui.index("function renderThetaStack("):ui.index("function renderPatternStrip(")]
+    # ranEngaged() is the next function after renderThetaStack(); slicing to it
+    # keeps this to the sweep rows themselves rather than to whatever happens to
+    # be declared between here and the pattern strip.
+    stack = ui[ui.index("function renderThetaStack("):ui.index("function ranEngaged(")]
     for token in ("coupling", "gain_kx", "gain_ky"):
         assert token not in stack, f"the theta sweep must not be adjusted by {token}"
     # both curves, all three stiffnesses, and the assumptions stated on the page
@@ -1088,6 +1091,29 @@ def test_coupling_is_reported_but_never_folded_into_the_main_curves():
     # and it reaches every export
     assert "function couplingLine(" in ui and ui.count("couplingLine(s") >= 3
     assert "tiebar_coupling" in ui
+
+
+def test_coupling_tab_carries_the_rolled_out_pattern():
+    """A pair of stiffness curves says nothing about which part of the tread is
+    under the patch when the gain moves, so the same rolled-out pattern sits
+    below them.  It is built by the one shape builder the sweep tab uses -- the
+    two strips can never disagree about the geometry -- with the solver's own
+    bonded links drawn on top, and its own zoom state so that zooming one tab
+    does not silently re-frame another."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert 'id="cplStrip"' in tpl
+    assert "function renderCouplingStrip(" in ui
+    # one builder, used by both strips: the definition plus exactly two calls
+    assert "function patternStripShapes(" in ui
+    assert ui.count("patternStripShapes(") == 3
+    # the links drawn are the solver's link records, not a redraw rule of their own
+    links = ui[ui.index("function couplingLinkShapes("):ui.index("function stripLayout(")]
+    assert "tb.links" in links and "lk.kind" in links
+    # separate zoom state from the sweep tab
+    assert "cplRange" in ui and "state.thetaRange" in ui
+    cpl = ui[ui.index("function renderCouplingStrip("):ui.index("function linkCouplingFigures(")]
+    assert "state.thetaRange" not in cpl
 
 
 def test_coupling_never_changes_the_contact_area():

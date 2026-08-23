@@ -23,6 +23,7 @@
     bandEdges: null,     // rib cuts the last run used
     bandMetric: "contact_area",
     thetaRange: null,    // shared x-range across the sweep rows and the pattern
+    cplRange: null,      // and the coupling tab's own, kept apart from it
     compareMetric: "kz",
   };
 
@@ -1001,9 +1002,16 @@
       (on < tb.length ? " (dotted outline = still below the surface)" : "");
   }
 
-  function renderPatternStrip() {
+  // The rolled-out tread as Plotly shapes. Shared by the sweep tab's strip and
+  // the coupling tab's, so the two can never drift apart: same geometry, same
+  // theta axis, same tie-bar state -- only the emphasis differs.
+  //   dimBlocks  blocks drawn faint, so the bars and their links read first
+  //   links      draw the bonded links the network solver actually assembled
+  function patternStripShapes(opts) {
+    opts = opts || {};
     var p = state.pattern, th = plotTheme(), C = p.tyre_circumference;
     var shapes = [], zoneColor = { center: th.accent, intermediate: th.good, shoulder: th.accent2 };
+    var blockAlpha = opts.dimBlocks ? 0.20 : 0.55;
     for (var bi = 0; bi < p.blocks.length; bi++) {
       var blk = p.blocks[bi];
       var pieces = E.splitAtSeam(blk.polygon, C);
@@ -1014,7 +1022,7 @@
           path += (v === 0 ? "M" : "L") + TH.toFixed(3) + "," + poly[v][1].toFixed(3) + " ";
         }
         path += "Z";
-        shapes.push({ type: "path", path: path, xref: "x", yref: "y", fillcolor: hexA(zoneColor[blk.zone] || th.accent, 0.55), line: { width: 0 } });
+        shapes.push({ type: "path", path: path, xref: "x", yref: "y", fillcolor: hexA(zoneColor[blk.zone] || th.accent, blockAlpha), line: { width: 0 } });
       }
     }
     // Tie bars, on the same strip as the blocks. The sweep already counts the
@@ -1023,7 +1031,6 @@
     // step in the curves at some wear had no visible cause on the pattern.
     // Engaged bars are filled like land; bars still below the surface are drawn
     // as outlines so you can see where they sit and what is about to arrive.
-    var tbWear = state.wear ? state.wear.mm : readWear();
     for (var ti = 0; ti < (p.tiebars || []).length; ti++) {
       var tb = p.tiebars[ti];
       if (tb.enabled === false) continue;
@@ -1041,23 +1048,139 @@
           line: { width: 1.1, color: TIEBAR_COLOR, dash: engaged ? undefined : "dot" } });
       }
     }
+    // The bonded links, drawn exactly as the solver assembled them: one line per
+    // shared wall, from the bar's centre out to that wall. Submerged bars carry
+    // links too -- that is the whole point of the tab.
+    if (opts.links) shapes = shapes.concat(couplingLinkShapes(C));
     // The designer's rib cuts, drawn where they actually fall on the tread.
     if (state.bandEdges) {
-      for (var bi = 0; bi < state.bandEdges.length; bi++) {
+      for (var be = 0; be < state.bandEdges.length; be++) {
         shapes.push({ type: "line", xref: "paper", x0: 0, x1: 1, yref: "y",
-          y0: state.bandEdges[bi], y1: state.bandEdges[bi],
+          y0: state.bandEdges[be], y1: state.bandEdges[be],
           line: { color: th.ink || cssVar("--ink"), width: 1.5 } });
       }
     }
-    var layout = {
+    return shapes;
+  }
+
+  // Block centroids, which the pattern does not carry (only the bars do).
+  // Cached against the pattern object, so re-rendering the strip on a theme
+  // change or a lean change does not re-integrate a few hundred outlines.
+  var blockCentroids = { of: null, list: null };
+
+  function blockCentroid(i) {
+    var p = state.pattern;
+    if (blockCentroids.of !== p) {
+      blockCentroids.of = p;
+      blockCentroids.list = p.blocks.map(function (b) { return E.polygonCentroid(b.polygon); });
+    }
+    return blockCentroids.list[i];
+  }
+
+  // A link bonds two outlines that share a wall, so across θ it spans about one
+  // pitch. Anything wider is the seam wrap-around and is dropped rather than
+  // streaked across the whole strip.
+  var LINK_MAX_SPAN_DEG = 45;
+
+  // One line per bonded wall, from the tie bar to whatever it is bonded to.
+  // These are the solver's own links, read straight off tb.links -- so a bar
+  // whose outline misses the groove wall shows no line here, which is exactly
+  // why it contributes no coupling stiffness above.
+  function couplingLinkShapes(C) {
+    var p = state.pattern, bars = p.tiebars || [], out = [];
+    for (var i = 0; i < bars.length; i++) {
+      var tb = bars[i];
+      if (tb.enabled === false || !tb.links) continue;
+      for (var k = 0; k < tb.links.length; k++) {
+        var lk = tb.links[k], oc;
+        if (lk.kind === "block") {
+          if (!p.blocks[lk.index]) continue;
+          oc = blockCentroid(lk.index);
+        } else {
+          var ob = bars[lk.index];
+          if (!ob || ob.enabled === false) continue;
+          oc = [ob.centroid_x, ob.centroid_y];
+        }
+        var x0 = (tb.centroid_x / C) * 360, x1 = (oc[0] / C) * 360;
+        if (Math.abs(x1 - x0) > LINK_MAX_SPAN_DEG) continue;
+        out.push({ type: "line", xref: "x", yref: "y",
+          x0: x0, y0: tb.centroid_y, x1: x1, y1: oc[1],
+          line: { color: hexA(TIEBAR_COLOR, 0.6), width: 1.2 } });
+      }
+    }
+    return out;
+  }
+
+  function stripLayout(th, title, range) {
+    var p = state.pattern;
+    return {
       paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
-      margin: { l: 78, r: 16, t: 24, b: 40 }, height: 220, shapes: shapes,
-      title: { text: patternStripTitle(tbWear), font: { size: 13 } },
-      xaxis: { range: (state.thetaRange || [0, 360]).slice(), gridcolor: th.grid, zeroline: false, title: { text: "rotation angle θ (deg)", font: { size: 11 } }, tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
+      margin: { l: 78, r: 16, t: 24, b: 40 }, height: 220,
+      title: { text: title, font: { size: 13 } },
+      xaxis: { range: range.slice(), gridcolor: th.grid, zeroline: false, title: { text: "rotation angle θ (deg)", font: { size: 11 } }, tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
       yaxis: { range: [-p.tread_width / 2, p.tread_width / 2], gridcolor: th.grid, zeroline: false, title: { text: "lateral y (mm)", font: { size: 10 } }, scaleanchor: undefined },
     };
-    Plotly.react($("patternStrip"), [{ x: [0], y: [0], type: "scatter", mode: "markers", marker: { opacity: 0 }, hoverinfo: "skip" }], layout, { responsive: true, displayModeBar: false })
+  }
+
+  // Plotly needs a trace to lay out the axes even when everything drawn is a
+  // shape, so both strips carry one invisible point.
+  var STRIP_TRACE = [{ x: [0], y: [0], type: "scatter", mode: "markers", marker: { opacity: 0 }, hoverinfo: "skip" }];
+
+  function renderPatternStrip() {
+    var th = plotTheme();
+    var tbWear = state.wear ? state.wear.mm : readWear();
+    var layout = stripLayout(th, patternStripTitle(tbWear), state.thetaRange || [0, 360]);
+    layout.shapes = patternStripShapes({});
+    Plotly.react($("patternStrip"), STRIP_TRACE, layout, { responsive: true, displayModeBar: false })
       .then(linkThetaFigures);
+  }
+
+  // The same tread under the coupling curve. Without it the network plot is a
+  // pair of lines with no way to see which part of the pattern is under the
+  // patch when the gain moves.
+  function renderCouplingStrip(c) {
+    var gd = $("cplStrip");
+    if (!gd) return;
+    var th = plotTheme();
+    var bars = (state.pattern.tiebars || []).filter(function (t) { return t.enabled !== false; });
+    var title = "Rolled-out tread pattern (same θ axis) — " + c.n_links + " bonded link(s) across " +
+      bars.length + " tie bar(s), " + c.n_components + " independent group(s)";
+    var layout = stripLayout(th, title, state.cplRange || [0, 360]);
+    layout.shapes = patternStripShapes({ dimBlocks: true, links: true });
+    Plotly.react(gd, STRIP_TRACE, layout, { responsive: true, displayModeBar: false })
+      .then(linkCouplingFigures);
+  }
+
+  // Zoom on either coupling figure moves both. Deliberately its own range state
+  // rather than sharing thetaRange with the sweep tab: zooming one tab must not
+  // silently re-frame another.
+  function linkCouplingFigures() {
+    if (cplLink.hooked) return;
+    var plot = $("cplPlot"), strip = $("cplStrip");
+    if (!plot || !strip) return;
+    // The two figures are drawn in order but resolve independently, so the
+    // curve above may not be a Plotly graph yet when the strip below finishes.
+    if (typeof plot.on !== "function" || typeof strip.on !== "function") {
+      setTimeout(linkCouplingFigures, 60);
+      return;
+    }
+    cplLink.hooked = true;
+    function syncFrom(src, dst) {
+      src.on("plotly_relayout", function (ev) {
+        if (cplLink.syncing || !ev) return;
+        var lo = ev["xaxis.range[0]"], hi = ev["xaxis.range[1]"];
+        if (lo == null && Array.isArray(ev["xaxis.range"])) { lo = ev["xaxis.range"][0]; hi = ev["xaxis.range"][1]; }
+        var reset = ev["xaxis.autorange"] === true;
+        if (lo == null && !reset) return;
+        state.cplRange = reset ? [0, 360] : [lo, hi];
+        cplLink.syncing = true;
+        Plotly.relayout(dst, { "xaxis.range": state.cplRange.slice() })
+          .then(function () { cplLink.syncing = false; })
+          .catch(function () { cplLink.syncing = false; });
+      });
+    }
+    syncFrom(plot, strip);
+    syncFrom(strip, plot);
   }
 
   function renderLeanHeatmap() {
@@ -1297,6 +1420,7 @@
   // mousemove rates, relayouting a figure that carries ~170 block polygons is
   // far too slow to track a cursor, and a div costs nothing.
   var linkState = { hooked: false, syncing: false };
+  var cplLink = { hooked: false, syncing: false };
 
   function plotGeom(gd) {
     if (!gd || !gd._fullLayout || !gd._fullLayout._size) return null;
@@ -2003,7 +2127,12 @@
     if (!empty || !body) return;
     empty.style.display = c ? "none" : "";
     body.style.display = c ? "" : "none";
-    if (!c) { Plotly.purge($("cplPlot")); $("cplCards").innerHTML = ""; $("cplTable").innerHTML = ""; return; }
+    if (!c) {
+      Plotly.purge($("cplPlot"));
+      if ($("cplStrip")) Plotly.purge($("cplStrip"));
+      $("cplCards").innerHTML = ""; $("cplTable").innerHTML = "";
+      return;
+    }
 
     var th = plotTheme();
     var mean = function (a) { var s = 0; for (var i = 0; i < a.length; i++) s += a[i]; return a.length ? s / a.length : 0; };
@@ -2043,13 +2172,17 @@
       legend: { orientation: "h", y: -0.18, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
       title: { text: "Network stiffness vs θ — dotted = independent springs, solid = bonded network  (γ = " +
                      (currentResult() ? currentResult().gamma_deg : 0) + "°)", font: { size: 13 } },
-      xaxis: { title: { text: "rotation angle θ (deg)", font: { size: 11 } }, range: [0, 360], gridcolor: th.grid },
+      xaxis: { title: { text: "rotation angle θ (deg)", font: { size: 11 } },
+               range: (state.cplRange || [0, 360]).slice(), gridcolor: th.grid,
+               tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
       yaxis: { title: { text: "Kx, Ky (N/mm)", font: { size: 11 } }, gridcolor: th.grid },
       yaxis2: { title: { text: "Kxy (N/mm)", font: { size: 11 }, standoff: 6 },
                 overlaying: "y", side: "right", range: [-kxyMax, kxyMax],
                 zeroline: true, zerolinecolor: th.grid, showgrid: false,
                 tickfont: { color: th.accent2 }, titlefont: { color: th.accent2 } },
     }, { responsive: true, displayModeBar: false });
+
+    renderCouplingStrip(c);
 
     var row = function (label, u, cc) {
       var g = u !== 0 ? cc / u : 1;
