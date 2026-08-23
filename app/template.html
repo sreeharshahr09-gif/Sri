@@ -17,7 +17,7 @@
   <div class="layout">
     <aside class="sidebar">
       <div class="group" id="grp-project">
-        <div class="title">0 · Project</div>
+        <div class="ghead"><span class="gnum">0</span><span class="gtext"><span class="gtitle">Project</span><span class="gsub">Who and what this run is for. Everything here appears on the PDF report.</span></span></div>
         <div class="field" title="Programme or project this design belongs to. Appears on the PDF report and in every export."><label>Project</label><input id="projName" type="text" placeholder="e.g. TBR-2026-LH" /></div>
         <div class="field" title="Name of this specific tread pattern or design variant. Used to label it in comparisons and to name exported files."><label>Tread / design</label><input id="treadName" type="text" placeholder="e.g. Endurace RA v3" /></div>
         <div class="field" title="Tyre class. Choosing one presets the crown radii, load, wheel radius and contact patch to values typical of that class — a TBR crown is far flatter than a 2W one, so the defaults genuinely matter. You can override every value afterwards."><label>Tyre type</label>
@@ -33,7 +33,7 @@
       </div>
 
       <div class="group" id="grp-plan">
-        <div class="title">1 · Tread plan</div>
+        <div class="ghead"><span class="gnum">1</span><span class="gtext"><span class="gtitle">Tread plan</span><span class="gsub">The DXF geometry, and how strictly its outlines are stitched together.</span></span></div>
         <div class="filerow">
           <label class="btn secondary" for="fileInput">Load DXF…</label>
           <input id="fileInput" type="file" accept=".dxf" style="display:none" />
@@ -45,7 +45,7 @@
       </div>
 
       <div class="group" id="grp-compound">
-        <div class="title">2 · Block depth &amp; compound</div>
+        <div class="ghead"><span class="gnum">2</span><span class="gtext"><span class="gtitle">Block depth &amp; compound</span><span class="gsub">What the 2D drawing cannot tell you: how deep the tread is and what it is made of.</span></span></div>
         <div class="field" title="Non-skid depth — the block height above the groove base. A 2D tread plan does not carry it, so you must supply it. It sets both the bending length of each block and the Gent shape factor, which makes it the single most influential number on this panel. Typical 2W: 6–10 mm."><label>NSD / block height (mm)</label><input id="nsd" type="number" value="8.5" step="0.5" /></div>
         <div class="field" title="Mould draft angle, per side. Positive draft makes the block base wider than its top, so it adds material below the surface and STIFFENS the block. Typical: 2–5°."><label>Draft angle (deg)</label><input id="draft" type="number" value="3.0" step="0.5" /></div>
         <div class="field" title="Number of lateral sipes cut across each block. A sipe softens the block in the direction it cuts. Set 0 if the pattern has none — a 2D plan does not show sipes, so this is your input."><label>Lateral sipes / block</label><input id="sipes" type="number" value="0" step="1" min="0" /></div>
@@ -75,7 +75,7 @@
       </div>
 
       <div class="group" id="grp-patch">
-        <div class="title">3 · Contact patch (shape)</div>
+        <div class="ghead"><span class="gnum">3</span><span class="gtext"><span class="gtitle">Contact patch</span><span class="gsub">The footprint that sweeps the pattern. Drag the handles or type its size.</span></span></div>
         <div class="field" title="Standard contact-patch outlines. Pick the one closest to your measured footprint, then set its dimensions below. Every shape feeds the same sweep, so a stated rectangle is treated exactly like a pressure-film scan."><label>Shape</label>
           <select id="shape">
             <option value="rounded">rounded rectangle</option>
@@ -107,7 +107,7 @@
 
 
       <div class="group" id="grp-divisions">
-        <div class="title">4 · Divisions (ribs)</div>
+        <div class="ghead"><span class="gnum">4</span><span class="gtext"><span class="gtitle">Divisions (ribs)</span><span class="gsub">Optional. Split the tread into lateral bands and report each one separately.</span></span></div>
         <div class="field" title="Split the rolled-out tread into lateral bands (ribs) by lines running along the circumference, and report contact area, Kx, Ky, Kz and block count separately for each. Set 0 to switch the feature off.">
           <label>Number of bands</label><input id="nBands" type="number" value="0" step="1" min="0" max="24" /></div>
         <div class="field" title="Leave blank for bands of equal width. Otherwise give the INTERNAL cut positions in mm from the tread centreline, comma separated — the two tread edges are added automatically. Example: -40,-15,15,40 gives five ribs.">
@@ -116,7 +116,7 @@
       </div>
 
       <div class="group" id="grp-load">
-        <div class="title">5 · Load &amp; advanced</div>
+        <div class="ghead"><span class="gnum">5</span><span class="gtext"><span class="gtitle">Load &amp; advanced</span><span class="gsub">Vertical load, wheel and crown geometry — these set the whole lean axis.</span></span></div>
         <div class="field" title="Static vertical load carried by this tyre when upright. Sets the patch pressure, and with the box below, how that load grows as the bike leans."><label>Vertical load Fz (N)</label><input id="cpLoad" type="number" value="1500" step="50" /></div>
         <div class="field" title="In a steady turn the resultant of gravity and cornering force acts along the bike's plane, so the tyre carries Fz/cos(lean) rather than Fz. Uncheck to hold the load constant across the lean sweep (useful for isolating geometry from load).">
           <label><input id="cpAutoLoad" type="checkbox" checked /> load rises with lean (Fz / cos γ)</label></div>
@@ -150,7 +150,7 @@
       </div>
 
       <div class="group" id="grp-wear">
-        <div class="title">6 · Wear &amp; tie bars</div>
+        <div class="ghead"><span class="gnum">6</span><span class="gtext"><span class="gtitle">Wear &amp; tie bars</span><span class="gsub">How worn the tread is, and which bars bridge its grooves.</span></span></div>
         <div class="tb-setup">
           <div class="tb-setup-fields">
             <div class="field" title="How much tread has been worn off, in mm. Every block's bending length becomes NSD − wear, so the tread stiffens as it wears. It also decides which tie bars have reached the road: a bar of height h engages once wear reaches NSD − h. Leave at 0 for a new tyre.">
@@ -203,7 +203,7 @@
       </button>
 
       <div class="group" id="grp-export" style="margin-top:14px">
-        <div class="title">7 · Export</div>
+        <div class="ghead"><span class="gnum">7</span><span class="gtext"><span class="gtitle">Export</span><span class="gsub">Everything downloads locally. Nothing is uploaded.</span></span></div>
         <div class="filerow">
           <button id="exportCsv" class="btn secondary" disabled title="Every theta and lean sample as CSV, with a commented header recording the settings that produced it.">CSV data</button>
           <button id="exportJson" class="btn secondary" disabled title="The complete run — settings, import report, physics notes, per-block stiffness summary and all results — as JSON.">JSON run</button>

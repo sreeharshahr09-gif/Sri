@@ -296,6 +296,10 @@ const fs = require("fs");
   }
 
   // drag the editor centre handle to move y_center, verify input updates
+  // (scroll it into view first -- the mouse works in viewport coordinates, and
+  // the setup sections are tall enough to push it below the fold)
+  await page.evaluate(() => document.getElementById("editor").scrollIntoView({ block: "center" }));
+  await page.waitForTimeout(300);
   const before = await page.inputValue("#cpY");
   const box = await page.$eval("#editor", (el) => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
   await page.mouse.move(box.x + box.w / 2, box.y + box.h / 2);

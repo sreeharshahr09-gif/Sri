@@ -554,9 +554,14 @@
     return Math.max(0, nsd - h);
   }
 
+  // A bar is in contact when the tread has worn down to it, and at no other
+  // time. There is deliberately no override: a bar shorter than the blocks
+  // around it cannot touch the road while they do, so "in contact anyway" is
+  // not a what-if, it is an impossible geometry. A bar that really does reach
+  // the surface has height == NSD, which engages here at zero wear with the
+  // geometry actually matching the claim.
   function tiebarEngaged(tb, wear) {
     if (tb.enabled === false) return false;
-    if (tb.force_contact) return true;
     return (wear || 0) >= tiebarEngagementWear(tb) - 1e-9;
   }
 
@@ -574,11 +579,9 @@
     const engaged = [];
     for (const tb of pattern.tiebars || []) {
       if (!tiebarEngaged(tb, wear)) continue;
-      // Worn into: flush with the blocks. Forced into contact while still below
-      // the surface: a short proud block of its own height, which is the closest
-      // a surface-contact model can get to a what-if.
-      const wornIn = wear >= tiebarEngagementWear(tb) - 1e-9;
-      const h = wornIn ? Math.max(minH, (tb.nsd || 0) - wear) : Math.max(minH, tb.height || 0);
+      // Engaged means worn into, so the bar is flush with the blocks and has
+      // their current height. There is no other way to be in contact.
+      const h = Math.max(minH, (tb.nsd || 0) - wear);
       engaged.push({
         id: tb.id, pitch_id: tb.pitch_id || "", polygon: tb.polygon, zone: tb.zone,
         height: h, draft_angle: tb.draft_angle || 0,
@@ -797,7 +800,7 @@
       const mem = g.members.slice().sort((a, b) => a - b);
       const first = tiebars[g.rep], fm = m[g.rep];
       let yLo = Infinity, yHi = -Infinity, aLo = Infinity, aHi = -Infinity;
-      let height = null, mixedHeight = false, nEnabled = 0, nForced = 0;
+      let height = null, mixedHeight = false, nEnabled = 0;
       for (const k of mem) {
         const t = tiebars[k];
         yLo = Math.min(yLo, t.centroid_y); yHi = Math.max(yHi, t.centroid_y);
@@ -805,7 +808,6 @@
         if (height == null) height = +t.height;
         else if (Math.abs(+t.height - height) > 1e-9) mixedHeight = true;
         if (t.enabled !== false) nEnabled++;
-        if (t.force_contact) nForced++;
       }
       return {
         index: gi,
@@ -817,7 +819,6 @@
         height: mixedHeight ? null : height,
         mixed_height: mixedHeight,
         n_enabled: nEnabled,
-        n_forced: nForced,
         area_mm2: fm.area,
         area_range: [aLo, aHi],
         span_mm: fm.span,
@@ -841,7 +842,6 @@
         if (Number.isFinite(f) && f > 0) { t.height = Math.min(+t.nsd, f * +t.nsd); t.height_set_by_user = true; }
       }
       if (changes.enabled != null) t.enabled = !!changes.enabled;
-      if (changes.force_contact != null) t.force_contact = !!changes.force_contact;
     }
     return group.members.length;
   }
@@ -2249,7 +2249,7 @@
         draft_angle: defaults.draft_by_zone[zone] != null ? defaults.draft_by_zone[zone] : defaults.draft_angle,
         shore_a: defaults.shore_a, sipes: [], n_lateral_sipes: 0,
         sipe_depth_fraction: defaults.sipe_depth_fraction, sipe_width: 0.5,
-        enabled: true, force_contact: false,
+        enabled: true,
         area: polygonArea(poly), centroid_x: c[0], centroid_y: c[1],
         n_neighbours: (tiebarFaces[i].neighbours || []).length,
       });

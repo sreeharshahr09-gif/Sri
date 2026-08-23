@@ -72,18 +72,79 @@ header .spacer { flex: 1; }
   display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 12px; align-items: stretch;
 }
+/* Each setup section gets its own colour, a numbered badge and a line saying
+   what it is for. Eight near-identical grey cards were hard to navigate and
+   gave no clue which one a given input lived in. --g is the section's hue;
+   everything below derives from it, so a new section needs one line. */
 .sidebar > .group {
-  min-width: 0; margin: 0 !important; padding: 13px 14px 14px;
+  --g: var(--accent);
+  min-width: 0; margin: 0 !important; padding: 0 0 14px;
   background: var(--panel); border: 1px solid var(--edge); border-radius: 10px;
+  border-top: 3px solid var(--g); overflow: hidden;
 }
-.sidebar > .group > .title { margin-bottom: 10px; font-size: 11px; letter-spacing: 0.9px; }
+.sidebar > .group > .ghead {
+  display: flex; align-items: flex-start; gap: 11px;
+  padding: 12px 14px 11px; margin-bottom: 12px;
+  background: color-mix(in srgb, var(--g) 11%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--g) 28%, var(--edge));
+}
+.ghead .gnum {
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 7px;
+  background: var(--g); color: #fff; font-weight: 700; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+.ghead .gtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ghead .gtitle { font-size: 15px; font-weight: 650; color: var(--ink); letter-spacing: 0.1px; }
+.ghead .gsub { font-size: 12px; color: var(--ink-dim); line-height: 1.4; }
+.sidebar > .group > *:not(.ghead) { margin-left: 14px; margin-right: 14px; }
+.sidebar > .group > .plot, .sidebar > .group > .tb-setup { margin-left: 14px; margin-right: 14px; }
+
+/* Section hues. Bright enough for the dark default; deepened for light below. */
+#grp-project   { --g: #8b7bff; }
+#grp-plan      { --g: #4ea1ff; }
+#grp-compound  { --g: #21c2b8; }
+#grp-patch     { --g: #4fc47a; }
+#grp-divisions { --g: #e0b13c; }
+#grp-load      { --g: #f0913f; }
+#grp-wear      { --g: #ef7aa8; }
+#grp-export    { --g: #93a4b8; }
+:root[data-theme="light"] {
+  --g-project: #6247d6; --g-plan: #1f6feb; --g-compound: #0a8f88;
+  --g-patch: #2f8f52; --g-divisions: #a97c06; --g-load: #c26516;
+  --g-wear: #c2437a; --g-export: #5b6b7b;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --g-project: #6247d6; --g-plan: #1f6feb; --g-compound: #0a8f88;
+    --g-patch: #2f8f52; --g-divisions: #a97c06; --g-load: #c26516;
+    --g-wear: #c2437a; --g-export: #5b6b7b;
+  }
+  :root:not([data-theme="dark"]) #grp-project   { --g: var(--g-project); }
+  :root:not([data-theme="dark"]) #grp-plan      { --g: var(--g-plan); }
+  :root:not([data-theme="dark"]) #grp-compound  { --g: var(--g-compound); }
+  :root:not([data-theme="dark"]) #grp-patch     { --g: var(--g-patch); }
+  :root:not([data-theme="dark"]) #grp-divisions { --g: var(--g-divisions); }
+  :root:not([data-theme="dark"]) #grp-load      { --g: var(--g-load); }
+  :root:not([data-theme="dark"]) #grp-wear      { --g: var(--g-wear); }
+  :root:not([data-theme="dark"]) #grp-export    { --g: var(--g-export); }
+}
+:root[data-theme="light"] #grp-project   { --g: var(--g-project); }
+:root[data-theme="light"] #grp-plan      { --g: var(--g-plan); }
+:root[data-theme="light"] #grp-compound  { --g: var(--g-compound); }
+:root[data-theme="light"] #grp-patch     { --g: var(--g-patch); }
+:root[data-theme="light"] #grp-divisions { --g: var(--g-divisions); }
+:root[data-theme="light"] #grp-load      { --g: var(--g-load); }
+:root[data-theme="light"] #grp-wear      { --g: var(--g-wear); }
+:root[data-theme="light"] #grp-export    { --g: var(--g-export); }
 
 #grp-project   { grid-column: 1 / span 4;  grid-row: 1; }
 #grp-plan      { grid-column: 5 / span 4;  grid-row: 1; }
 #grp-compound  { grid-column: 9 / span 4;  grid-row: 1; }
+/* Reading order must match the numbering, or a numbered workflow is a lie. */
 #grp-patch     { grid-column: 1 / span 5;  grid-row: 2; }
-#grp-load      { grid-column: 6 / span 4;  grid-row: 2; }
-#grp-divisions { grid-column: 10 / span 3; grid-row: 2; }
+#grp-divisions { grid-column: 6 / span 3;  grid-row: 2; }
+#grp-load      { grid-column: 9 / span 4;  grid-row: 2; }
 /* Tie bars are an INPUT: which regions are bars, how tall each one is, and how
    worn the tread is all feed the sweep. So the editor sits in the setup grid
    before Run, on its own full-width row -- the table needs the room. */

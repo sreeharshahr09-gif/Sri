@@ -78,18 +78,79 @@ header .spacer { flex: 1; }
   display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 12px; align-items: stretch;
 }
+/* Each setup section gets its own colour, a numbered badge and a line saying
+   what it is for. Eight near-identical grey cards were hard to navigate and
+   gave no clue which one a given input lived in. --g is the section's hue;
+   everything below derives from it, so a new section needs one line. */
 .sidebar > .group {
-  min-width: 0; margin: 0 !important; padding: 13px 14px 14px;
+  --g: var(--accent);
+  min-width: 0; margin: 0 !important; padding: 0 0 14px;
   background: var(--panel); border: 1px solid var(--edge); border-radius: 10px;
+  border-top: 3px solid var(--g); overflow: hidden;
 }
-.sidebar > .group > .title { margin-bottom: 10px; font-size: 11px; letter-spacing: 0.9px; }
+.sidebar > .group > .ghead {
+  display: flex; align-items: flex-start; gap: 11px;
+  padding: 12px 14px 11px; margin-bottom: 12px;
+  background: color-mix(in srgb, var(--g) 11%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--g) 28%, var(--edge));
+}
+.ghead .gnum {
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 7px;
+  background: var(--g); color: #fff; font-weight: 700; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+.ghead .gtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ghead .gtitle { font-size: 15px; font-weight: 650; color: var(--ink); letter-spacing: 0.1px; }
+.ghead .gsub { font-size: 12px; color: var(--ink-dim); line-height: 1.4; }
+.sidebar > .group > *:not(.ghead) { margin-left: 14px; margin-right: 14px; }
+.sidebar > .group > .plot, .sidebar > .group > .tb-setup { margin-left: 14px; margin-right: 14px; }
+
+/* Section hues. Bright enough for the dark default; deepened for light below. */
+#grp-project   { --g: #8b7bff; }
+#grp-plan      { --g: #4ea1ff; }
+#grp-compound  { --g: #21c2b8; }
+#grp-patch     { --g: #4fc47a; }
+#grp-divisions { --g: #e0b13c; }
+#grp-load      { --g: #f0913f; }
+#grp-wear      { --g: #ef7aa8; }
+#grp-export    { --g: #93a4b8; }
+:root[data-theme="light"] {
+  --g-project: #6247d6; --g-plan: #1f6feb; --g-compound: #0a8f88;
+  --g-patch: #2f8f52; --g-divisions: #a97c06; --g-load: #c26516;
+  --g-wear: #c2437a; --g-export: #5b6b7b;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --g-project: #6247d6; --g-plan: #1f6feb; --g-compound: #0a8f88;
+    --g-patch: #2f8f52; --g-divisions: #a97c06; --g-load: #c26516;
+    --g-wear: #c2437a; --g-export: #5b6b7b;
+  }
+  :root:not([data-theme="dark"]) #grp-project   { --g: var(--g-project); }
+  :root:not([data-theme="dark"]) #grp-plan      { --g: var(--g-plan); }
+  :root:not([data-theme="dark"]) #grp-compound  { --g: var(--g-compound); }
+  :root:not([data-theme="dark"]) #grp-patch     { --g: var(--g-patch); }
+  :root:not([data-theme="dark"]) #grp-divisions { --g: var(--g-divisions); }
+  :root:not([data-theme="dark"]) #grp-load      { --g: var(--g-load); }
+  :root:not([data-theme="dark"]) #grp-wear      { --g: var(--g-wear); }
+  :root:not([data-theme="dark"]) #grp-export    { --g: var(--g-export); }
+}
+:root[data-theme="light"] #grp-project   { --g: var(--g-project); }
+:root[data-theme="light"] #grp-plan      { --g: var(--g-plan); }
+:root[data-theme="light"] #grp-compound  { --g: var(--g-compound); }
+:root[data-theme="light"] #grp-patch     { --g: var(--g-patch); }
+:root[data-theme="light"] #grp-divisions { --g: var(--g-divisions); }
+:root[data-theme="light"] #grp-load      { --g: var(--g-load); }
+:root[data-theme="light"] #grp-wear      { --g: var(--g-wear); }
+:root[data-theme="light"] #grp-export    { --g: var(--g-export); }
 
 #grp-project   { grid-column: 1 / span 4;  grid-row: 1; }
 #grp-plan      { grid-column: 5 / span 4;  grid-row: 1; }
 #grp-compound  { grid-column: 9 / span 4;  grid-row: 1; }
+/* Reading order must match the numbering, or a numbered workflow is a lie. */
 #grp-patch     { grid-column: 1 / span 5;  grid-row: 2; }
-#grp-load      { grid-column: 6 / span 4;  grid-row: 2; }
-#grp-divisions { grid-column: 10 / span 3; grid-row: 2; }
+#grp-divisions { grid-column: 6 / span 3;  grid-row: 2; }
+#grp-load      { grid-column: 9 / span 4;  grid-row: 2; }
 /* Tie bars are an INPUT: which regions are bars, how tall each one is, and how
    worn the tread is all feed the sweep. So the editor sits in the setup grid
    before Run, on its own full-width row -- the table needs the room. */
@@ -331,7 +392,7 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
   <div class="layout">
     <aside class="sidebar">
       <div class="group" id="grp-project">
-        <div class="title">0 · Project</div>
+        <div class="ghead"><span class="gnum">0</span><span class="gtext"><span class="gtitle">Project</span><span class="gsub">Who and what this run is for. Everything here appears on the PDF report.</span></span></div>
         <div class="field" title="Programme or project this design belongs to. Appears on the PDF report and in every export."><label>Project</label><input id="projName" type="text" placeholder="e.g. TBR-2026-LH" /></div>
         <div class="field" title="Name of this specific tread pattern or design variant. Used to label it in comparisons and to name exported files."><label>Tread / design</label><input id="treadName" type="text" placeholder="e.g. Endurace RA v3" /></div>
         <div class="field" title="Tyre class. Choosing one presets the crown radii, load, wheel radius and contact patch to values typical of that class — a TBR crown is far flatter than a 2W one, so the defaults genuinely matter. You can override every value afterwards."><label>Tyre type</label>
@@ -347,7 +408,7 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
       </div>
 
       <div class="group" id="grp-plan">
-        <div class="title">1 · Tread plan</div>
+        <div class="ghead"><span class="gnum">1</span><span class="gtext"><span class="gtitle">Tread plan</span><span class="gsub">The DXF geometry, and how strictly its outlines are stitched together.</span></span></div>
         <div class="filerow">
           <label class="btn secondary" for="fileInput">Load DXF…</label>
           <input id="fileInput" type="file" accept=".dxf" style="display:none" />
@@ -359,7 +420,7 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
       </div>
 
       <div class="group" id="grp-compound">
-        <div class="title">2 · Block depth &amp; compound</div>
+        <div class="ghead"><span class="gnum">2</span><span class="gtext"><span class="gtitle">Block depth &amp; compound</span><span class="gsub">What the 2D drawing cannot tell you: how deep the tread is and what it is made of.</span></span></div>
         <div class="field" title="Non-skid depth — the block height above the groove base. A 2D tread plan does not carry it, so you must supply it. It sets both the bending length of each block and the Gent shape factor, which makes it the single most influential number on this panel. Typical 2W: 6–10 mm."><label>NSD / block height (mm)</label><input id="nsd" type="number" value="8.5" step="0.5" /></div>
         <div class="field" title="Mould draft angle, per side. Positive draft makes the block base wider than its top, so it adds material below the surface and STIFFENS the block. Typical: 2–5°."><label>Draft angle (deg)</label><input id="draft" type="number" value="3.0" step="0.5" /></div>
         <div class="field" title="Number of lateral sipes cut across each block. A sipe softens the block in the direction it cuts. Set 0 if the pattern has none — a 2D plan does not show sipes, so this is your input."><label>Lateral sipes / block</label><input id="sipes" type="number" value="0" step="1" min="0" /></div>
@@ -389,7 +450,7 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
       </div>
 
       <div class="group" id="grp-patch">
-        <div class="title">3 · Contact patch (shape)</div>
+        <div class="ghead"><span class="gnum">3</span><span class="gtext"><span class="gtitle">Contact patch</span><span class="gsub">The footprint that sweeps the pattern. Drag the handles or type its size.</span></span></div>
         <div class="field" title="Standard contact-patch outlines. Pick the one closest to your measured footprint, then set its dimensions below. Every shape feeds the same sweep, so a stated rectangle is treated exactly like a pressure-film scan."><label>Shape</label>
           <select id="shape">
             <option value="rounded">rounded rectangle</option>
@@ -421,7 +482,7 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
 
 
       <div class="group" id="grp-divisions">
-        <div class="title">4 · Divisions (ribs)</div>
+        <div class="ghead"><span class="gnum">4</span><span class="gtext"><span class="gtitle">Divisions (ribs)</span><span class="gsub">Optional. Split the tread into lateral bands and report each one separately.</span></span></div>
         <div class="field" title="Split the rolled-out tread into lateral bands (ribs) by lines running along the circumference, and report contact area, Kx, Ky, Kz and block count separately for each. Set 0 to switch the feature off.">
           <label>Number of bands</label><input id="nBands" type="number" value="0" step="1" min="0" max="24" /></div>
         <div class="field" title="Leave blank for bands of equal width. Otherwise give the INTERNAL cut positions in mm from the tread centreline, comma separated — the two tread edges are added automatically. Example: -40,-15,15,40 gives five ribs.">
@@ -430,7 +491,7 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
       </div>
 
       <div class="group" id="grp-load">
-        <div class="title">5 · Load &amp; advanced</div>
+        <div class="ghead"><span class="gnum">5</span><span class="gtext"><span class="gtitle">Load &amp; advanced</span><span class="gsub">Vertical load, wheel and crown geometry — these set the whole lean axis.</span></span></div>
         <div class="field" title="Static vertical load carried by this tyre when upright. Sets the patch pressure, and with the box below, how that load grows as the bike leans."><label>Vertical load Fz (N)</label><input id="cpLoad" type="number" value="1500" step="50" /></div>
         <div class="field" title="In a steady turn the resultant of gravity and cornering force acts along the bike's plane, so the tyre carries Fz/cos(lean) rather than Fz. Uncheck to hold the load constant across the lean sweep (useful for isolating geometry from load).">
           <label><input id="cpAutoLoad" type="checkbox" checked /> load rises with lean (Fz / cos γ)</label></div>
@@ -464,7 +525,7 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
       </div>
 
       <div class="group" id="grp-wear">
-        <div class="title">6 · Wear &amp; tie bars</div>
+        <div class="ghead"><span class="gnum">6</span><span class="gtext"><span class="gtitle">Wear &amp; tie bars</span><span class="gsub">How worn the tread is, and which bars bridge its grooves.</span></span></div>
         <div class="tb-setup">
           <div class="tb-setup-fields">
             <div class="field" title="How much tread has been worn off, in mm. Every block's bending length becomes NSD − wear, so the tread stiffens as it wears. It also decides which tie bars have reached the road: a bar of height h engages once wear reaches NSD − h. Leave at 0 for a new tyre.">
@@ -517,7 +578,7 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
       </button>
 
       <div class="group" id="grp-export" style="margin-top:14px">
-        <div class="title">7 · Export</div>
+        <div class="ghead"><span class="gnum">7</span><span class="gtext"><span class="gtitle">Export</span><span class="gsub">Everything downloads locally. Nothing is uploaded.</span></span></div>
         <div class="filerow">
           <button id="exportCsv" class="btn secondary" disabled title="Every theta and lean sample as CSV, with a commented header recording the settings that produced it.">CSV data</button>
           <button id="exportJson" class="btn secondary" disabled title="The complete run — settings, import report, physics notes, per-block stiffness summary and all results — as JSON.">JSON run</button>
@@ -723,11 +784,10 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
 <p><strong>Group bars by</strong> offers four options:</p>
 <div class="tablewrap"><table><thead><tr><th>Mode</th><th>Groups bars that share</th></tr></thead><tbody><tr><td><strong>shape + position</strong> (default)</td><td>zone, plan shape and lateral position — the mould feature</td></tr><tr><td><strong>shape only</strong></td><td>zone and plan shape, wherever they sit</td></tr><tr><td><strong>zone</strong></td><td>just centre / intermediate / shoulder</td></tr><tr><td><strong>individually</strong></td><td>nothing; the ungrouped list</td></tr></tbody></table></div>
 <p>Matching is by tolerance, not by bucket: two bars a thousandth of a millimetre apart in area are always one group. Mirror pairs at +y and −y group together, and the row's <strong>y range</strong> shows it.</p>
-<h3>include vs force contact</h3>
-<p>Two checkboxes on each row that sound alike but act at different levels:</p>
-<div class="tablewrap"><table><thead><tr><th></th><th>Question it answers</th><th>Off means</th><th>On means</th></tr></thead><tbody><tr><td><strong>include</strong></td><td>Is this region a tie bar at all?</td><td>excluded from everything — no contact area, no coupling stiffness, not in the network</td><td>it is a bar; the wear state decides what it does</td></tr><tr><td><strong>force contact</strong></td><td>Pretend it has already worn in?</td><td>the tread wear decides — the honest setting</td><td>treat it as touching the road now, as a short proud block of its own height</td></tr></tbody></table></div>
-<p><strong>include</strong> is about <em>existence</em>, <strong>force contact</strong> is about the <em>wear state</em>. Untick <strong>include</strong> for a region the detector picked up that is really open groove. Tick <strong>force contact</strong> only for a what-if — it is not a wear state, and it overstates a new tyre.</p>
-<p><strong>include</strong> wins. An excluded bar ignores everything else on its row, including <strong>force contact</strong> — otherwise "exclude this, it is really groove" would not mean what it says.</p>
+<h3>include</h3>
+<p>One checkbox per row: <strong>is this region a tie bar at all?</strong> Untick it and the region is excluded from everything — no contact area, no coupling stiffness, not in the network. Use it for something the detector picked up that is really open groove.</p>
+<p>There is deliberately <strong>no way to force a bar into contact</strong>. A bar shorter than the blocks around it cannot touch the road while they do, so "in contact anyway" is not a what-if — it is an impossible geometry, and the model would have had to place an 8 mm element at the road surface beside 16 mm blocks.</p>
+<p>A bar that genuinely <em>does</em> reach the tread surface as moulded is expressed honestly: give it <strong>height = NSD</strong>. Its engagement wear is then 0 and it is in contact from new, with the geometry matching the claim.</p>
 <p><strong>Show every bar individually</strong> opens the full list underneath, so a single bar can still be overridden. Do that and its group reads <strong>mixed</strong> until you set the group again — the tool will not pick one member's value and present it as the family's.</p>
 <p><strong>How they are detected.</strong> A tie bar usually has no outline of its own: its two long sides <em>are</em> the groove walls of the blocks either side. The importer builds the planar arrangement of every line in the drawing and takes its enclosed regions, so a bar falls out as its own region even though it shares most of its boundary with its neighbours. A region counts as a tie bar if it shares an edge with two or more blocks and its area is below the <strong>tie-bar area limit</strong> (default half the typical block). That is only the first guess — <strong>6 · Wear &amp; tie bars</strong> in the setup panel lists every candidate with its area, height, engagement wear and a checkbox, so you can reject one, promote another, or set heights bar by bar. It sits with the other inputs, before <strong>Run</strong>, because that is what it is: the heights you set here decide what the sweep computes.</p>
 <hr>
@@ -69772,9 +69832,14 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     return Math.max(0, nsd - h);
   }
 
+  // A bar is in contact when the tread has worn down to it, and at no other
+  // time. There is deliberately no override: a bar shorter than the blocks
+  // around it cannot touch the road while they do, so "in contact anyway" is
+  // not a what-if, it is an impossible geometry. A bar that really does reach
+  // the surface has height == NSD, which engages here at zero wear with the
+  // geometry actually matching the claim.
   function tiebarEngaged(tb, wear) {
     if (tb.enabled === false) return false;
-    if (tb.force_contact) return true;
     return (wear || 0) >= tiebarEngagementWear(tb) - 1e-9;
   }
 
@@ -69792,11 +69857,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     const engaged = [];
     for (const tb of pattern.tiebars || []) {
       if (!tiebarEngaged(tb, wear)) continue;
-      // Worn into: flush with the blocks. Forced into contact while still below
-      // the surface: a short proud block of its own height, which is the closest
-      // a surface-contact model can get to a what-if.
-      const wornIn = wear >= tiebarEngagementWear(tb) - 1e-9;
-      const h = wornIn ? Math.max(minH, (tb.nsd || 0) - wear) : Math.max(minH, tb.height || 0);
+      // Engaged means worn into, so the bar is flush with the blocks and has
+      // their current height. There is no other way to be in contact.
+      const h = Math.max(minH, (tb.nsd || 0) - wear);
       engaged.push({
         id: tb.id, pitch_id: tb.pitch_id || "", polygon: tb.polygon, zone: tb.zone,
         height: h, draft_angle: tb.draft_angle || 0,
@@ -70015,7 +70078,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       const mem = g.members.slice().sort((a, b) => a - b);
       const first = tiebars[g.rep], fm = m[g.rep];
       let yLo = Infinity, yHi = -Infinity, aLo = Infinity, aHi = -Infinity;
-      let height = null, mixedHeight = false, nEnabled = 0, nForced = 0;
+      let height = null, mixedHeight = false, nEnabled = 0;
       for (const k of mem) {
         const t = tiebars[k];
         yLo = Math.min(yLo, t.centroid_y); yHi = Math.max(yHi, t.centroid_y);
@@ -70023,7 +70086,6 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         if (height == null) height = +t.height;
         else if (Math.abs(+t.height - height) > 1e-9) mixedHeight = true;
         if (t.enabled !== false) nEnabled++;
-        if (t.force_contact) nForced++;
       }
       return {
         index: gi,
@@ -70035,7 +70097,6 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         height: mixedHeight ? null : height,
         mixed_height: mixedHeight,
         n_enabled: nEnabled,
-        n_forced: nForced,
         area_mm2: fm.area,
         area_range: [aLo, aHi],
         span_mm: fm.span,
@@ -70059,7 +70120,6 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         if (Number.isFinite(f) && f > 0) { t.height = Math.min(+t.nsd, f * +t.nsd); t.height_set_by_user = true; }
       }
       if (changes.enabled != null) t.enabled = !!changes.enabled;
-      if (changes.force_contact != null) t.force_contact = !!changes.force_contact;
     }
     return group.members.length;
   }
@@ -71467,7 +71527,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         draft_angle: defaults.draft_by_zone[zone] != null ? defaults.draft_by_zone[zone] : defaults.draft_angle,
         shore_a: defaults.shore_a, sipes: [], n_lateral_sipes: 0,
         sipe_depth_fraction: defaults.sipe_depth_fraction, sipe_width: 0.5,
-        enabled: true, force_contact: false,
+        enabled: true,
         area: polygonArea(poly), centroid_x: c[0], centroid_y: c[1],
         n_neighbours: (tiebarFaces[i].neighbours || []).length,
       });
@@ -74420,8 +74480,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     var rows = "<table class='metrics'><tr><th>Bar</th><th>zone</th><th>θ (deg)</th><th>y (mm)</th>" +
       "<th>area (mm²)</th><th>NSD (mm)</th><th>height (mm)</th><th>engages at wear</th>" +
       "<th>state</th>" +
-      "<th title=\"Is this region a tie bar at all? Untick to exclude it completely — no contact area, no coupling stiffness, not in the network. Use it for a region the detector picked up that is really open groove. An excluded bar ignores everything else on its row.\">include</th>" +
-      "<th title=\"A what-if, not a wear state. Analyse the bar as if it had already worn into contact, even though the tread has not reached it — it becomes a short proud block of its own height. Leave it off to let the tread wear decide, which is the honest answer.\">force contact</th></tr>";
+      "<th title='Is this region a tie bar at all? Untick to exclude it completely — no contact " +
+      "area, no coupling stiffness, not in the network. Use it for a region the detector picked " +
+      "up that is really open groove.'>include</th></tr>";
     var circ = state.pattern.tyre_circumference;
     tb.forEach(function (t, i) {
       var engaged = E.tiebarEngaged(t, wear);
@@ -74438,17 +74499,15 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
           "' data-tbfield='height' value='" + (+t.height).toFixed(2) + "' /></td>" +
         "<td class='num'>" + at.toFixed(2) + " mm</td>" +
         "<td><span class='tb-state " + (engaged ? "on" : "off") + "'>" +
-          (engaged ? (t.force_contact && wear < at ? "forced" : "in contact") : "below surface") + "</span></td>" +
+          (engaged ? "in contact" : "below surface") + "</span></td>" +
         "<td><input type='checkbox' data-tb='" + i + "' data-tbfield='enabled'" +
-          (t.enabled === false ? "" : " checked") + " /></td>" +
-        "<td><input type='checkbox' data-tb='" + i + "' data-tbfield='force_contact'" +
-          (t.force_contact ? " checked" : "") + " /></td></tr>";
+          (t.enabled === false ? "" : " checked") + " /></td></tr>";
     });
     $("tbTable").innerHTML = rows + "</table>" + "<div class='hint tb-legend' style='margin-top:6px'>" +
       "<b>include</b> — is this a tie bar at all? Untick and it is excluded from everything: no contact " +
       "area, no coupling, not in the network. For a region that is really open groove.<br>" +
-      "<b>force contact</b> — a what-if. Treat the bar as already worn into contact even though the " +
-      "tread has not reached it. Off is the honest setting; the wear state decides." +
+      "<b>engages at wear</b> — the tread has to wear this far down before the bar touches the road. " +
+      "A bar that reaches the surface as moulded has height = NSD and engages at 0." +
       "</div>";
 
     var inputs = $("tbTable").querySelectorAll("[data-tb]");
@@ -74485,8 +74544,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     var rows = "<table class='metrics'><tr><th>Group</th><th>bars</th><th>zone</th>" +
       "<th>shape (circ × lat)</th><th>area (mm²)</th><th>y range (mm)</th><th>NSD (mm)</th>" +
       "<th>height (mm)</th><th>engages at wear</th><th>state</th>" +
-      "<th title=\"Is this region a tie bar at all? Untick to exclude it completely — no contact area, no coupling stiffness, not in the network. Use it for a region the detector picked up that is really open groove. An excluded bar ignores everything else on its row.\">include</th>" +
-      "<th title=\"A what-if, not a wear state. Analyse the bar as if it had already worn into contact, even though the tread has not reached it — it becomes a short proud block of its own height. Leave it off to let the tread wear decide, which is the honest answer.\">force contact</th></tr>";
+      "<th title='Is this region a tie bar at all? Untick to exclude it completely — no contact " +
+      "area, no coupling stiffness, not in the network. Use it for a region the detector picked " +
+      "up that is really open groove.'>include</th></tr>";
     groups.forEach(function (g, i) {
       // A group is "in contact" only if it is uniform; a mixed group says so
       // rather than picking one member's answer and presenting it as the truth.
@@ -74508,10 +74568,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         "<td class='num'>" + (at == null ? "<i>mixed</i>" : at.toFixed(2) + " mm") + "</td>" +
         "<td><span class='tb-state " + state1[0] + "'>" + state1[1] + "</span></td>" +
         "<td><input type='checkbox' data-tg='" + i + "' data-tgfield='enabled'" +
-          (g.n_enabled === g.count ? " checked" : g.n_enabled === 0 ? "" : " checked") +
-          (g.n_enabled > 0 && g.n_enabled < g.count ? " data-mixed='1'" : "") + " /></td>" +
-        "<td><input type='checkbox' data-tg='" + i + "' data-tgfield='force_contact'" +
-          (g.n_forced === g.count ? " checked" : "") + " /></td></tr>";
+          (g.n_enabled > 0 ? " checked" : "") +
+          (g.n_enabled > 0 && g.n_enabled < g.count ? " data-mixed='1'" : "") + " /></td></tr>";
     });
     host.innerHTML = rows + "</table>" +
       "<div class='hint' style='margin-top:6px'>" + tb.length + " bar(s) in <b>" + groups.length +
@@ -74519,8 +74577,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       "group as <i>mixed</i> until the group is set again.</div>" + "<div class='hint tb-legend' style='margin-top:6px'>" +
       "<b>include</b> — is this a tie bar at all? Untick and it is excluded from everything: no contact " +
       "area, no coupling, not in the network. For a region that is really open groove.<br>" +
-      "<b>force contact</b> — a what-if. Treat the bar as already worn into contact even though the " +
-      "tread has not reached it. Off is the honest setting; the wear state decides." +
+      "<b>engages at wear</b> — the tread has to wear this far down before the bar touches the road. " +
+      "A bar that reaches the surface as moulded has height = NSD and engages at 0." +
       "</div>";
 
     var inputs = host.querySelectorAll("[data-tg]");
@@ -74587,7 +74645,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     row.cells[7].textContent = at.toFixed(2) + " mm";
     var chip = row.cells[8].firstChild;
     chip.className = "tb-state " + (engaged ? "on" : "off");
-    chip.textContent = engaged ? (t.force_contact && wear < at ? "forced" : "in contact") : "below surface";
+    chip.textContent = engaged ? "in contact" : "below surface";
   }
 
   function refreshTiebarRows() {
@@ -74618,7 +74676,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     var tb = tiebarList(), wear = readWear();
     groups.forEach(function (g, i) {
       var row = host.querySelector("tr:nth-child(" + (i + 2) + ")");
-      if (!row || row.cells.length < 12) return;
+      if (!row || row.cells.length < 11) return;
       var eng = g.members.filter(function (k) { return E.tiebarEngaged(tb[k], wear); }).length;
       var at = g.mixed_height ? null : Math.max(0, g.nsd - g.height);
       row.className = g.n_enabled === 0 ? "off" : eng === g.count ? "engaged" : "";
@@ -74633,9 +74691,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       chip.className = "tb-state " + (eng === g.count && eng > 0 ? "on" : "off");
       chip.textContent = eng === 0 ? "below surface"
         : eng === g.count ? "in contact" : eng + " of " + g.count + " in contact";
-      var useBox = row.cells[10].firstChild, forceBox = row.cells[11].firstChild;
+      var useBox = row.cells[10].firstChild;
       if (useBox && useBox !== document.activeElement) useBox.checked = g.n_enabled > 0;
-      if (forceBox && forceBox !== document.activeElement) forceBox.checked = g.n_forced === g.count;
     });
   }
 
@@ -74985,7 +75042,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         tiebars: tiebarList().map(function (t) {
           return { id: t.id, zone: t.zone, area_mm2: t.area, nsd_mm: t.nsd, height_mm: t.height,
                    engages_at_wear_mm: E.tiebarEngagementWear(t), enabled: t.enabled !== false,
-                   force_contact: !!t.force_contact, centroid_x_mm: t.centroid_x, centroid_y_mm: t.centroid_y };
+                   centroid_x_mm: t.centroid_x, centroid_y_mm: t.centroid_y };
         }),
       },
       import_report: state.report,
@@ -75131,7 +75188,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     var wear = +(w.wear_mm || 0);
     if (!bars.length) return "tread worn " + wear.toFixed(2) + " mm; no tie bars in this drawing";
     var engaged = bars.filter(function (t) {
-      return t.enabled && (t.force_contact || wear >= t.engages_at_wear_mm - 1e-9);
+      return t.enabled && wear >= t.engages_at_wear_mm - 1e-9;
     }).length;
     var hs = bars.map(function (t) { return t.height_mm; });
     var lo = Math.min.apply(null, hs), hi = Math.max.apply(null, hs);

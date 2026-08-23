@@ -111,23 +111,21 @@ Matching is by tolerance, not by bucket: two bars a thousandth of a millimetre
 apart in area are always one group. Mirror pairs at +y and −y group together,
 and the row's **y range** shows it.
 
-### include vs force contact
+### include
 
-Two checkboxes on each row that sound alike but act at different levels:
+One checkbox per row: **is this region a tie bar at all?** Untick it and the
+region is excluded from everything — no contact area, no coupling stiffness,
+not in the network. Use it for something the detector picked up that is really
+open groove.
 
-| | Question it answers | Off means | On means |
-|---|---|---|---|
-| **include** | Is this region a tie bar at all? | excluded from everything — no contact area, no coupling stiffness, not in the network | it is a bar; the wear state decides what it does |
-| **force contact** | Pretend it has already worn in? | the tread wear decides — the honest setting | treat it as touching the road now, as a short proud block of its own height |
+There is deliberately **no way to force a bar into contact**. A bar shorter than
+the blocks around it cannot touch the road while they do, so "in contact anyway"
+is not a what-if — it is an impossible geometry, and the model would have had to
+place an 8 mm element at the road surface beside 16 mm blocks.
 
-**include** is about *existence*, **force contact** is about the *wear state*.
-Untick **include** for a region the detector picked up that is really open
-groove. Tick **force contact** only for a what-if — it is not a wear state, and
-it overstates a new tyre.
-
-**include** wins. An excluded bar ignores everything else on its row, including
-**force contact** — otherwise "exclude this, it is really groove" would not mean
-what it says.
+A bar that genuinely *does* reach the tread surface as moulded is expressed
+honestly: give it **height = NSD**. Its engagement wear is then 0 and it is in
+contact from new, with the geometry matching the claim.
 
 **Show every bar individually** opens the full list underneath, so a single bar
 can still be overridden. Do that and its group reads **mixed** until you set the

@@ -1683,8 +1683,9 @@
     var rows = "<table class='metrics'><tr><th>Bar</th><th>zone</th><th>θ (deg)</th><th>y (mm)</th>" +
       "<th>area (mm²)</th><th>NSD (mm)</th><th>height (mm)</th><th>engages at wear</th>" +
       "<th>state</th>" +
-      "<th title=\"Is this region a tie bar at all? Untick to exclude it completely — no contact area, no coupling stiffness, not in the network. Use it for a region the detector picked up that is really open groove. An excluded bar ignores everything else on its row.\">include</th>" +
-      "<th title=\"A what-if, not a wear state. Analyse the bar as if it had already worn into contact, even though the tread has not reached it — it becomes a short proud block of its own height. Leave it off to let the tread wear decide, which is the honest answer.\">force contact</th></tr>";
+      "<th title='Is this region a tie bar at all? Untick to exclude it completely — no contact " +
+      "area, no coupling stiffness, not in the network. Use it for a region the detector picked " +
+      "up that is really open groove.'>include</th></tr>";
     var circ = state.pattern.tyre_circumference;
     tb.forEach(function (t, i) {
       var engaged = E.tiebarEngaged(t, wear);
@@ -1701,17 +1702,15 @@
           "' data-tbfield='height' value='" + (+t.height).toFixed(2) + "' /></td>" +
         "<td class='num'>" + at.toFixed(2) + " mm</td>" +
         "<td><span class='tb-state " + (engaged ? "on" : "off") + "'>" +
-          (engaged ? (t.force_contact && wear < at ? "forced" : "in contact") : "below surface") + "</span></td>" +
+          (engaged ? "in contact" : "below surface") + "</span></td>" +
         "<td><input type='checkbox' data-tb='" + i + "' data-tbfield='enabled'" +
-          (t.enabled === false ? "" : " checked") + " /></td>" +
-        "<td><input type='checkbox' data-tb='" + i + "' data-tbfield='force_contact'" +
-          (t.force_contact ? " checked" : "") + " /></td></tr>";
+          (t.enabled === false ? "" : " checked") + " /></td></tr>";
     });
     $("tbTable").innerHTML = rows + "</table>" + "<div class='hint tb-legend' style='margin-top:6px'>" +
       "<b>include</b> — is this a tie bar at all? Untick and it is excluded from everything: no contact " +
       "area, no coupling, not in the network. For a region that is really open groove.<br>" +
-      "<b>force contact</b> — a what-if. Treat the bar as already worn into contact even though the " +
-      "tread has not reached it. Off is the honest setting; the wear state decides." +
+      "<b>engages at wear</b> — the tread has to wear this far down before the bar touches the road. " +
+      "A bar that reaches the surface as moulded has height = NSD and engages at 0." +
       "</div>";
 
     var inputs = $("tbTable").querySelectorAll("[data-tb]");
@@ -1748,8 +1747,9 @@
     var rows = "<table class='metrics'><tr><th>Group</th><th>bars</th><th>zone</th>" +
       "<th>shape (circ × lat)</th><th>area (mm²)</th><th>y range (mm)</th><th>NSD (mm)</th>" +
       "<th>height (mm)</th><th>engages at wear</th><th>state</th>" +
-      "<th title=\"Is this region a tie bar at all? Untick to exclude it completely — no contact area, no coupling stiffness, not in the network. Use it for a region the detector picked up that is really open groove. An excluded bar ignores everything else on its row.\">include</th>" +
-      "<th title=\"A what-if, not a wear state. Analyse the bar as if it had already worn into contact, even though the tread has not reached it — it becomes a short proud block of its own height. Leave it off to let the tread wear decide, which is the honest answer.\">force contact</th></tr>";
+      "<th title='Is this region a tie bar at all? Untick to exclude it completely — no contact " +
+      "area, no coupling stiffness, not in the network. Use it for a region the detector picked " +
+      "up that is really open groove.'>include</th></tr>";
     groups.forEach(function (g, i) {
       // A group is "in contact" only if it is uniform; a mixed group says so
       // rather than picking one member's answer and presenting it as the truth.
@@ -1771,10 +1771,8 @@
         "<td class='num'>" + (at == null ? "<i>mixed</i>" : at.toFixed(2) + " mm") + "</td>" +
         "<td><span class='tb-state " + state1[0] + "'>" + state1[1] + "</span></td>" +
         "<td><input type='checkbox' data-tg='" + i + "' data-tgfield='enabled'" +
-          (g.n_enabled === g.count ? " checked" : g.n_enabled === 0 ? "" : " checked") +
-          (g.n_enabled > 0 && g.n_enabled < g.count ? " data-mixed='1'" : "") + " /></td>" +
-        "<td><input type='checkbox' data-tg='" + i + "' data-tgfield='force_contact'" +
-          (g.n_forced === g.count ? " checked" : "") + " /></td></tr>";
+          (g.n_enabled > 0 ? " checked" : "") +
+          (g.n_enabled > 0 && g.n_enabled < g.count ? " data-mixed='1'" : "") + " /></td></tr>";
     });
     host.innerHTML = rows + "</table>" +
       "<div class='hint' style='margin-top:6px'>" + tb.length + " bar(s) in <b>" + groups.length +
@@ -1782,8 +1780,8 @@
       "group as <i>mixed</i> until the group is set again.</div>" + "<div class='hint tb-legend' style='margin-top:6px'>" +
       "<b>include</b> — is this a tie bar at all? Untick and it is excluded from everything: no contact " +
       "area, no coupling, not in the network. For a region that is really open groove.<br>" +
-      "<b>force contact</b> — a what-if. Treat the bar as already worn into contact even though the " +
-      "tread has not reached it. Off is the honest setting; the wear state decides." +
+      "<b>engages at wear</b> — the tread has to wear this far down before the bar touches the road. " +
+      "A bar that reaches the surface as moulded has height = NSD and engages at 0." +
       "</div>";
 
     var inputs = host.querySelectorAll("[data-tg]");
@@ -1850,7 +1848,7 @@
     row.cells[7].textContent = at.toFixed(2) + " mm";
     var chip = row.cells[8].firstChild;
     chip.className = "tb-state " + (engaged ? "on" : "off");
-    chip.textContent = engaged ? (t.force_contact && wear < at ? "forced" : "in contact") : "below surface";
+    chip.textContent = engaged ? "in contact" : "below surface";
   }
 
   function refreshTiebarRows() {
@@ -1881,7 +1879,7 @@
     var tb = tiebarList(), wear = readWear();
     groups.forEach(function (g, i) {
       var row = host.querySelector("tr:nth-child(" + (i + 2) + ")");
-      if (!row || row.cells.length < 12) return;
+      if (!row || row.cells.length < 11) return;
       var eng = g.members.filter(function (k) { return E.tiebarEngaged(tb[k], wear); }).length;
       var at = g.mixed_height ? null : Math.max(0, g.nsd - g.height);
       row.className = g.n_enabled === 0 ? "off" : eng === g.count ? "engaged" : "";
@@ -1896,9 +1894,8 @@
       chip.className = "tb-state " + (eng === g.count && eng > 0 ? "on" : "off");
       chip.textContent = eng === 0 ? "below surface"
         : eng === g.count ? "in contact" : eng + " of " + g.count + " in contact";
-      var useBox = row.cells[10].firstChild, forceBox = row.cells[11].firstChild;
+      var useBox = row.cells[10].firstChild;
       if (useBox && useBox !== document.activeElement) useBox.checked = g.n_enabled > 0;
-      if (forceBox && forceBox !== document.activeElement) forceBox.checked = g.n_forced === g.count;
     });
   }
 
@@ -2248,7 +2245,7 @@
         tiebars: tiebarList().map(function (t) {
           return { id: t.id, zone: t.zone, area_mm2: t.area, nsd_mm: t.nsd, height_mm: t.height,
                    engages_at_wear_mm: E.tiebarEngagementWear(t), enabled: t.enabled !== false,
-                   force_contact: !!t.force_contact, centroid_x_mm: t.centroid_x, centroid_y_mm: t.centroid_y };
+                   centroid_x_mm: t.centroid_x, centroid_y_mm: t.centroid_y };
         }),
       },
       import_report: state.report,
@@ -2394,7 +2391,7 @@
     var wear = +(w.wear_mm || 0);
     if (!bars.length) return "tread worn " + wear.toFixed(2) + " mm; no tie bars in this drawing";
     var engaged = bars.filter(function (t) {
-      return t.enabled && (t.force_contact || wear >= t.engages_at_wear_mm - 1e-9);
+      return t.enabled && wear >= t.engages_at_wear_mm - 1e-9;
     }).length;
     var hs = bars.map(function (t) { return t.height_mm; });
     var lo = Math.min.apply(null, hs), hi = Math.max.apply(null, hs);

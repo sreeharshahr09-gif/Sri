@@ -833,8 +833,8 @@ catch (e) {{ process.stdout.write(e.message); }}
 def test_the_tie_bar_editor_lets_every_bar_be_set_individually():
     ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
     tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
-    # a per-bar height field, an include/exclude box and a force-contact override
-    for field in ("'height'", "'enabled'", "'force_contact'"):
+    # a per-bar height field and an include/exclude box
+    for field in ("'height'", "'enabled'"):
         assert "data-tbfield=" in ui and field in ui, field
     # bulk helpers, so 38 bars do not have to be typed one at a time
     for control in ("tbApplyAll", "tbEnableAll", "tbDisableAll"):
@@ -1606,43 +1606,105 @@ def test_the_group_editor_is_wired_and_does_not_rebuild_under_the_cursor():
     assert "refreshTiebarGroupsIfIdle();" in edit and "renderTiebarGroups();" not in edit
 
 
-def test_both_tie_bar_checkbox_columns_are_explained():
-    """'use' and 'force' sat side by side as three-letter labels with a tooltip
-    on only one of them, and were forgotten twice.  Two switches that sound
-    alike but act at different levels have to say which is which."""
+def test_the_include_column_is_explained():
+    """'use' was a three-letter header with no tooltip at all, sitting beside a
+    second one that sounded like it.  The second is gone now; the survivor still
+    has to say what it does."""
     ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
-    # renamed to something readable
-    assert ">include<" in ui and ">force contact<" in ui
-    assert "<th>use</th>" not in ui and ">force</th>" not in ui
-    # both headers carry a tooltip, in both the group table and the bar table
+    assert ">include<" in ui
+    assert "<th>use</th>" not in ui
+    # a tooltip in both the group table and the bar table, and a legend under
+    # each -- a tooltip only helps someone who suspects there is one
     assert ui.count("Is this region a tie bar at all?") == 2
-    assert ui.count("A what-if, not a wear state.") == 2
-    # and a legend under each table, because a tooltip only helps if you hover
     assert ui.count("tb-legend") == 2
-    assert "not in the network" in ui and "the wear state decides" in ui
+    assert "not in the network" in ui
 
 
-def test_include_dominates_force():
-    """An excluded bar ignores everything else on its row -- otherwise 'exclude
-    this region, it is really groove' would not mean what it says."""
+def test_a_tie_bar_is_in_contact_only_when_the_tread_has_worn_to_it():
+    """There is deliberately no override.
+
+    A bar shorter than the blocks around it cannot touch the road while they do,
+    so "in contact anyway" was not a what-if but an impossible geometry: an 8 mm
+    bar on a 16 mm NSD was analysed as an 8 mm element at the road surface.  The
+    one legitimate case -- a bar that really does reach the surface as moulded --
+    is expressed honestly by giving it height == NSD, which engages at zero wear
+    with the geometry matching the claim.
+    """
     node = _node()
     script = f"""
 const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
-const bar = (o) => Object.assign({{nsd: 16, height: 8, enabled: true, force_contact: false}}, o);
+const bar = (o) => Object.assign({{nsd: 16, height: 8, enabled: true}}, o);
+const p = (o) => ({{blocks: [], tiebars: [bar(o)]}});
 process.stdout.write(JSON.stringify({{
-  // wear has not reached it: only 'force contact' brings it in
-  belowSurface:  E.tiebarEngaged(bar({{}}), 0),
-  forced:        E.tiebarEngaged(bar({{force_contact: true}}), 0),
-  wornInto:      E.tiebarEngaged(bar({{}}), 8),
-  // excluded beats both
-  excluded:      E.tiebarEngaged(bar({{enabled: false}}), 8),
-  excludedForced: E.tiebarEngaged(bar({{enabled: false, force_contact: true}}), 12),
+  belowSurface: E.tiebarEngaged(bar({{}}), 0),
+  atEngagement: E.tiebarEngaged(bar({{}}), 8),
+  wornPast:     E.tiebarEngaged(bar({{}}), 12),
+  excluded:     E.tiebarEngaged(bar({{enabled: false}}), 12),
+  // a full-height bar is in contact from new, the honest way
+  fullHeightWear: E.tiebarEngagementWear(bar({{height: 16}})),
+  fullHeightNew:  E.tiebarEngaged(bar({{height: 16}}), 0),
+  // and once engaged it is flush with the blocks, never proud
+  heightAt10: E.effectiveBlocks(p({{height: 16}}), 10).map(b => b.height),
+  // a stale force_contact flag from an older file must be inert
+  staleFlag: E.tiebarEngaged(bar({{force_contact: true}}), 0),
 }}));
 """
     res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=60)
     assert res.returncode == 0, res.stderr[:2000]
     g = json.loads(res.stdout)
-    assert g["belowSurface"] is False, "a sub-surface bar carries nothing by default"
-    assert g["forced"] is True, "'force contact' overrides the wear state"
-    assert g["wornInto"] is True, "wearing down to it brings it in on its own"
-    assert g["excluded"] is False and g["excludedForced"] is False, "'include' off must win"
+    assert g["belowSurface"] is False
+    assert g["atEngagement"] is True and g["wornPast"] is True
+    assert g["excluded"] is False, "'include' off must win"
+    assert g["fullHeightWear"] == pytest.approx(0.0)
+    assert g["fullHeightNew"] is True, "height == NSD is how a surface bar is expressed"
+    assert g["heightAt10"] == [pytest.approx(6.0)], "an engaged bar is flush with the blocks"
+    assert g["staleFlag"] is False, "the removed override must not come back through old data"
+
+
+def test_no_force_contact_override_remains():
+    for name in ("engine.js", "ui.js", "worker.js"):
+        src = open(os.path.join(APP, name), encoding="utf-8").read()
+        assert "force_contact" not in src, f"{name} still carries the removed override"
+
+
+def test_every_setup_section_has_a_heading_a_purpose_and_its_own_colour():
+    """Eight near-identical grey cards gave no clue which one an input lived in.
+
+    Each section now carries a numbered badge, a real heading, a line saying what
+    it is for, and its own hue -- and the numbering has to match the order they
+    are actually read in, or a numbered workflow is a lie.
+    """
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    css = open(os.path.join(APP, "style.css"), encoding="utf-8").read()
+    import re
+
+    setup = tpl[tpl.index('<aside class="sidebar">'):tpl.index("</aside>")]
+    heads = re.findall(
+        r'<div class="ghead"><span class="gnum">(\d+)</span>'
+        r'<span class="gtext"><span class="gtitle">(.*?)</span>'
+        r'<span class="gsub">(.*?)</span>', setup)
+    assert len(heads) == 8, f"expected 8 setup sections, found {len(heads)}"
+    assert [n for n, _, _ in heads] == [str(i) for i in range(8)], "badges must run 0..7 in document order"
+    for n, title, sub in heads:
+        assert len(title) > 3, f"section {n} has no real heading"
+        assert len(sub) > 25, f"section {n} does not say what it is for"
+    assert "<div class=\"title\">" not in setup, "the old bare titles must be gone"
+
+    # every section id has a hue, in both themes
+    ids = re.findall(r'id="(grp-[a-z]+)"', setup)
+    assert len(ids) == 8
+    for gid in ids:
+        assert re.search(r"#" + gid + r"\s*{[^}]*--g:", css), f"{gid} has no colour"
+        assert f':root[data-theme="light"] #{gid}' in css, f"{gid} has no light-theme colour"
+    # the hues must be distinct, or colour-coding conveys nothing
+    hues = re.findall(r"#grp-[a-z]+\s*{ --g: (#[0-9a-f]{6}); }", css)
+    assert len(hues) == 8 and len(set(hues)) == 8, hues
+
+    # the grid must lay them out in numbered order: row, then column
+    place = {}
+    for gid in ids:
+        m = re.search(r"#" + gid + r"\s*{ grid-column: (\d+) / span \d+;\s*grid-row: (\d+);", css)
+        if m:
+            place[gid] = (int(m.group(2)), int(m.group(1)))
+    order = [g for g, _ in sorted(place.items(), key=lambda kv: kv[1])]
+    assert order == [g for g in ids if g in place], f"visual order does not follow the numbering: {order}"
