@@ -1682,7 +1682,9 @@
 
     var rows = "<table class='metrics'><tr><th>Bar</th><th>zone</th><th>θ (deg)</th><th>y (mm)</th>" +
       "<th>area (mm²)</th><th>NSD (mm)</th><th>height (mm)</th><th>engages at wear</th>" +
-      "<th>state</th><th>use</th><th title='Analyse the bar as a short proud block even though it is still below the surface. A what-if, not a wear state.'>force</th></tr>";
+      "<th>state</th>" +
+      "<th title=\"Is this region a tie bar at all? Untick to exclude it completely — no contact area, no coupling stiffness, not in the network. Use it for a region the detector picked up that is really open groove. An excluded bar ignores everything else on its row.\">include</th>" +
+      "<th title=\"A what-if, not a wear state. Analyse the bar as if it had already worn into contact, even though the tread has not reached it — it becomes a short proud block of its own height. Leave it off to let the tread wear decide, which is the honest answer.\">force contact</th></tr>";
     var circ = state.pattern.tyre_circumference;
     tb.forEach(function (t, i) {
       var engaged = E.tiebarEngaged(t, wear);
@@ -1705,7 +1707,12 @@
         "<td><input type='checkbox' data-tb='" + i + "' data-tbfield='force_contact'" +
           (t.force_contact ? " checked" : "") + " /></td></tr>";
     });
-    $("tbTable").innerHTML = rows + "</table>";
+    $("tbTable").innerHTML = rows + "</table>" + "<div class='hint tb-legend' style='margin-top:6px'>" +
+      "<b>include</b> — is this a tie bar at all? Untick and it is excluded from everything: no contact " +
+      "area, no coupling, not in the network. For a region that is really open groove.<br>" +
+      "<b>force contact</b> — a what-if. Treat the bar as already worn into contact even though the " +
+      "tread has not reached it. Off is the honest setting; the wear state decides." +
+      "</div>";
 
     var inputs = $("tbTable").querySelectorAll("[data-tb]");
     for (var k = 0; k < inputs.length; k++) on(inputs[k], "change", onTiebarEdit);
@@ -1740,8 +1747,9 @@
 
     var rows = "<table class='metrics'><tr><th>Group</th><th>bars</th><th>zone</th>" +
       "<th>shape (circ × lat)</th><th>area (mm²)</th><th>y range (mm)</th><th>NSD (mm)</th>" +
-      "<th>height (mm)</th><th>engages at wear</th><th>state</th><th>use</th>" +
-      "<th title='Analyse the bars as short proud blocks even though they are still below the surface.'>force</th></tr>";
+      "<th>height (mm)</th><th>engages at wear</th><th>state</th>" +
+      "<th title=\"Is this region a tie bar at all? Untick to exclude it completely — no contact area, no coupling stiffness, not in the network. Use it for a region the detector picked up that is really open groove. An excluded bar ignores everything else on its row.\">include</th>" +
+      "<th title=\"A what-if, not a wear state. Analyse the bar as if it had already worn into contact, even though the tread has not reached it — it becomes a short proud block of its own height. Leave it off to let the tread wear decide, which is the honest answer.\">force contact</th></tr>";
     groups.forEach(function (g, i) {
       // A group is "in contact" only if it is uniform; a mixed group says so
       // rather than picking one member's answer and presenting it as the truth.
@@ -1771,7 +1779,12 @@
     host.innerHTML = rows + "</table>" +
       "<div class='hint' style='margin-top:6px'>" + tb.length + " bar(s) in <b>" + groups.length +
       "</b> group(s). Editing a group row sets every bar in it. A bar changed on its own shows the " +
-      "group as <i>mixed</i> until the group is set again.</div>";
+      "group as <i>mixed</i> until the group is set again.</div>" + "<div class='hint tb-legend' style='margin-top:6px'>" +
+      "<b>include</b> — is this a tie bar at all? Untick and it is excluded from everything: no contact " +
+      "area, no coupling, not in the network. For a region that is really open groove.<br>" +
+      "<b>force contact</b> — a what-if. Treat the bar as already worn into contact even though the " +
+      "tread has not reached it. Off is the honest setting; the wear state decides." +
+      "</div>";
 
     var inputs = host.querySelectorAll("[data-tg]");
     for (var k = 0; k < inputs.length; k++) on(inputs[k], "change", onTiebarGroupEdit);

@@ -1604,3 +1604,45 @@ def test_the_group_editor_is_wired_and_does_not_rebuild_under_the_cursor():
     assert "sameShape" in idle and "document.activeElement" in idle
     edit = body("onTiebarGroupEdit")
     assert "refreshTiebarGroupsIfIdle();" in edit and "renderTiebarGroups();" not in edit
+
+
+def test_both_tie_bar_checkbox_columns_are_explained():
+    """'use' and 'force' sat side by side as three-letter labels with a tooltip
+    on only one of them, and were forgotten twice.  Two switches that sound
+    alike but act at different levels have to say which is which."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    # renamed to something readable
+    assert ">include<" in ui and ">force contact<" in ui
+    assert "<th>use</th>" not in ui and ">force</th>" not in ui
+    # both headers carry a tooltip, in both the group table and the bar table
+    assert ui.count("Is this region a tie bar at all?") == 2
+    assert ui.count("A what-if, not a wear state.") == 2
+    # and a legend under each table, because a tooltip only helps if you hover
+    assert ui.count("tb-legend") == 2
+    assert "not in the network" in ui and "the wear state decides" in ui
+
+
+def test_include_dominates_force():
+    """An excluded bar ignores everything else on its row -- otherwise 'exclude
+    this region, it is really groove' would not mean what it says."""
+    node = _node()
+    script = f"""
+const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
+const bar = (o) => Object.assign({{nsd: 16, height: 8, enabled: true, force_contact: false}}, o);
+process.stdout.write(JSON.stringify({{
+  // wear has not reached it: only 'force contact' brings it in
+  belowSurface:  E.tiebarEngaged(bar({{}}), 0),
+  forced:        E.tiebarEngaged(bar({{force_contact: true}}), 0),
+  wornInto:      E.tiebarEngaged(bar({{}}), 8),
+  // excluded beats both
+  excluded:      E.tiebarEngaged(bar({{enabled: false}}), 8),
+  excludedForced: E.tiebarEngaged(bar({{enabled: false, force_contact: true}}), 12),
+}}));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=60)
+    assert res.returncode == 0, res.stderr[:2000]
+    g = json.loads(res.stdout)
+    assert g["belowSurface"] is False, "a sub-surface bar carries nothing by default"
+    assert g["forced"] is True, "'force contact' overrides the wear state"
+    assert g["wornInto"] is True, "wearing down to it brings it in on its own"
+    assert g["excluded"] is False and g["excludedForced"] is False, "'include' off must win"
