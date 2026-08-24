@@ -374,6 +374,30 @@ the tread total.
 
 ---
 
+## Ten rows on one screen
+
+The θ sweep now stacks ten rows, which is taller than any screen. Two controls
+sit above it.
+
+**Pin pattern to the bottom** (on by default) glues the rolled-out tread to the
+foot of the window. It stays there for the whole height of the stack and lets go
+at the end of the section, so whichever curve you are reading — the top row or
+the bottom one — the tread it belongs to is on screen, on the same θ axis, with
+the contact-patch band running between them. Turn it off if you would rather
+have the height back.
+
+**The row chips** switch individual rows on and off. The stack is *rebuilt*
+rather than hidden, so four rows get the full height of four rows instead of a
+tenth of the page each. Each chip is coloured to match its curve and labelled
+with its units — which is what tells Cκ (N) from Kx (N/mm). The chart title says
+how many rows are hidden, and the last row on cannot be switched off.
+
+A useful four for a first look: **contact area, Kz, Ky, Cα**. Area and Kz are
+the ride and wear story, Ky and Cα are the handling one, and the difference
+between the last two is the whole point of the brush model.
+
+---
+
 ## The contact-patch band
 
 On the **θ sweep + pattern** tab the contact patch is drawn where it actually

@@ -379,6 +379,38 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
 .explain ul { margin: 6px 0 8px; padding-left: 20px; }
 .explain .lead { color: var(--ink); font-weight: 600; }
 .explain code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+/* The rolled-out pattern, pinned.
+   With ten rows the stack is far taller than a screen, so the tread the curves
+   belong to was always off the bottom of the window -- and reading a dip at
+   140 deg against the blocks under it meant scrolling back and forth. Sticky to
+   the BOTTOM of the viewport keeps it on screen for the whole height of the
+   stack and releases it naturally at the end of the section. plotGeom() works
+   in host-relative coordinates, so the band overlay and the crosshair travel
+   with it and need no special handling. */
+.stack-wrap { position: relative; }
+.stack-wrap.pinned #stripHost {
+  position: sticky; bottom: 0; z-index: 6;
+  background: var(--bg);
+  border-top: 1px solid var(--edge);
+  box-shadow: 0 -10px 20px -12px var(--shadow);
+}
+
+/* Which rows to draw. Ten is right for a full read and too many for a quick
+   look, so the stack is the user's to trim -- the rows are rebuilt, not merely
+   hidden, so what is left keeps the full height rather than a tenth of it. */
+.rowbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 8px; }
+.rowbar .spacer { flex: 1; }
+.rowbar-lead { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--ink-dim); }
+.rowchips { display: flex; gap: 5px; flex-wrap: wrap; }
+.rowchip {
+  font-size: 12px; padding: 3px 10px; border-radius: 11px; cursor: pointer;
+  border: 1px solid var(--edge); background: var(--panel-2); color: var(--ink-dim);
+  user-select: none; line-height: 1.5;
+}
+.rowchip.on { background: var(--panel); color: var(--ink); border-color: currentColor; font-weight: 600; }
+.rowchip:hover { border-color: var(--ink-dim); }
+.rowpin { font-size: 12px; color: var(--ink-dim); display: flex; align-items: center; gap: 5px; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -631,11 +663,21 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
           <span id="patchThetaLabel"></span>
         </div>
         <div class="hint" style="margin-bottom:6px">Move the cursor over any chart below: a line follows it through every row and down onto the pattern, and the values at that angle appear above. <b>Drag the shaded band</b> to slide the contact patch around the tyre — it moves along θ only, since the crown and lean angle fix where it sits laterally. Drag anywhere else to zoom; all the charts and the pattern zoom together, and double-click resets.</div>
-        <div class="plot-host"><div id="thetaStack" class="plot"></div></div>
-        <div class="plot-host"><div id="patternStrip" class="plot"></div></div>
+        <div class="rowbar">
+          <span class="rowbar-lead">Rows</span>
+          <span id="rowToggles" class="rowchips"></span>
+          <span class="spacer"></span>
+          <label class="rowpin" title="Keep the rolled-out pattern glued to the bottom of the window while you scroll the rows, so any curve can be read against the tread it belongs to without scrolling back.">
+            <input id="pinStrip" type="checkbox" checked /> Pin pattern to the bottom
+          </label>
+        </div>
+        <div class="stack-wrap">
+          <div class="plot-host"><div id="thetaStack" class="plot"></div></div>
+          <div class="plot-host" id="stripHost"><div id="patternStrip" class="plot"></div></div>
+        </div>
         <div class="explain" style="margin-top:12px">
-          <h4>The last three rows: slip response</h4>
-          <p><span class="lead">Kx and Ky say how hard the rubber in the patch is. They are not forces.</span> A tyre only makes a force when it slips, so the bottom three rows add the step that turns stiffness into force — the <b>brush model</b>. A tread element enters the patch stuck to the road with no deflection; while the carcass runs on, the element is dragged by <code>κ·s</code> longitudinally or <code>tan α·s</code> laterally, where <code>s</code> is how far it has travelled since it entered. Adding up <code>k·deflection</code> over the patch gives</p>
+          <h4>Slip response: Cα, Cκ and the pneumatic trail</h4>
+          <p><span class="lead">Kx and Ky say how hard the rubber in the patch is. They are not forces.</span> A tyre only makes a force when it slips, so three of the rows above add the step that turns stiffness into force — the <b>brush model</b>. A tread element enters the patch stuck to the road with no deflection; while the carcass runs on, the element is dragged by <code>κ·s</code> longitudinally or <code>tan α·s</code> laterally, where <code>s</code> is how far it has travelled since it entered. Adding up <code>k·deflection</code> over the patch gives</p>
           <ul>
             <li><b>Cκ</b> = ∂Fx/∂κ = Σ k<sub>x</sub>·s — longitudinal slip stiffness, in <b>N</b> per unit slip ratio.</li>
             <li><b>Cα</b> = ∂Fy/∂α = Σ k<sub>y</sub>·s — cornering stiffness, in <b>N/rad</b>. Multiply by π/180 for newtons per degree of slip.</li>
@@ -859,6 +901,12 @@ lateral        u = tan α · s      α = slip angle</code></pre>
 <ul><li><strong>No friction limit.</strong> These are slopes at zero slip. The peak of a real Fx(κ) or Fy(α) curve is μ·Fz — compound and load, not pattern — so saturation is deliberately not modelled. The pattern lives in the slope.</li><li><strong>No camber thrust.</strong> At lean a tyre makes lateral force at zero slip angle, from the crown geometry rather than from slip. That is a different mechanism and is not added into Cα.</li></ul>
 <h3>Where else it appears</h3>
 <p>The <strong>Lean map</strong>, <strong>Order content</strong>, <strong>Ribs</strong> and <strong>Compare</strong> tabs all accept Cα and Cκ as their metric. The rib breakdown is the interesting one: it answers <em>which rib actually generates the cornering force</em>, which is not the same question as which rib has the stiffest rubber. The per-rib values sum exactly to the tread total.</p>
+<hr>
+<h2>Ten rows on one screen</h2>
+<p>The θ sweep now stacks ten rows, which is taller than any screen. Two controls sit above it.</p>
+<p><strong>Pin pattern to the bottom</strong> (on by default) glues the rolled-out tread to the foot of the window. It stays there for the whole height of the stack and lets go at the end of the section, so whichever curve you are reading — the top row or the bottom one — the tread it belongs to is on screen, on the same θ axis, with the contact-patch band running between them. Turn it off if you would rather have the height back.</p>
+<p><strong>The row chips</strong> switch individual rows on and off. The stack is <em>rebuilt</em> rather than hidden, so four rows get the full height of four rows instead of a tenth of the page each. Each chip is coloured to match its curve and labelled with its units — which is what tells Cκ (N) from Kx (N/mm). The chart title says how many rows are hidden, and the last row on cannot be switched off.</p>
+<p>A useful four for a first look: <strong>contact area, Kz, Ky, Cα</strong>. Area and Kz are the ride and wear story, Ky and Cα are the handling one, and the difference between the last two is the whole point of the brush model.</p>
 <hr>
 <h2>The contact-patch band</h2>
 <p>On the <strong>θ sweep + pattern</strong> tab the contact patch is drawn where it actually sits on the rolled-out tread, and a translucent band of the same circumferential extent runs up through every sweep row above it. That turns "there is a dip near 140°" and "these are the blocks under the patch there" into one picture instead of two.</p>
@@ -73015,6 +73063,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     bandMetric: "contact_area",
     thetaRange: null,    // shared x-range across the sweep rows and the pattern
     cplRange: null,      // and the coupling tab's own, kept apart from it
+    stackRows: {},       // sweep rows switched off by the user (key -> false)
+    pinStrip: true,      // keep the rolled-out pattern at the foot of the window
     compareMetric: "kz",
   };
 
@@ -73912,6 +73962,52 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     $("cards").innerHTML = html;
   }
 
+  // The row chips. Rendered from the same list renderThetaStack() builds, so a
+  // row can never exist without a chip or a chip without a row -- and the labels
+  // carry the units, since that is what tells Ck (N) from Kx (N/mm).
+  function renderRowChips(all, shown) {
+    var host = $("rowToggles");
+    if (!host) return;
+    var on = {};
+    for (var i = 0; i < shown.length; i++) on[shown[i].key] = true;
+    var html = "";
+    for (var k = 0; k < all.length; k++) {
+      var rw = all[k];
+      html += "<span class='rowchip" + (on[rw.key] ? " on" : "") + "' data-row='" +
+        escapeHtml(rw.key) + "' style='" + (on[rw.key] ? "color:" + rw.color + ";" : "") +
+        "' title='" + escapeHtml(rw.axis) + "'>" + escapeHtml(rw.axis) + "</span>";
+    }
+    host.innerHTML = html;
+  }
+
+  function toggleStackRow(key) {
+    // Refuse to switch off the last row that is on. Without this the stack
+    // silently falls back to showing the first row while its chip still reads
+    // "on", so clicking that chip appears to do nothing -- the control and what
+    // is on screen would be saying different things.
+    var keys = state.stackRowKeys || [];
+    if (state.stackRows[key] !== false) {
+      var others = 0;
+      for (var i = 0; i < keys.length; i++)
+        if (keys[i] !== key && state.stackRows[keys[i]] !== false) others++;
+      if (!others) return;
+    }
+    state.stackRows[key] = state.stackRows[key] === false;
+    renderThetaStack();
+    // The rows changed height, so the band's pixel geometry did too.
+    setTimeout(function () { moveCursor(null); drawPatchBand(); }, 60);
+  }
+
+  // Sticky-bottom, so the tread stays on screen for the whole height of the
+  // stack. It is a class on the wrapper rather than a style on the strip
+  // because sticky needs an ancestor that spans both figures.
+  function applyStripPin() {
+    var wrap = document.querySelector(".stack-wrap");
+    if (!wrap) return;
+    wrap.classList.toggle("pinned", state.pinStrip !== false);
+    setTimeout(function () { moveCursor(null); drawPatchBand(); }, 60);
+  }
+
   function renderThetaStack() {
     var r = currentResult(), th = plotTheme();
     var x = r.theta_deg;
@@ -73927,20 +74023,20 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     }
     landMean = landPct.length ? landMean / landPct.length : 0;
 
-    var rows = [
-      { y: r.contact_area, name: "Contact area", axis: "Contact area (mm²)", color: th.accent },
-      { y: landPct, name: "Land in patch", axis: "Land (%)", color: "#9b6bff",
+    var all = [
+      { key: "area", y: r.contact_area, name: "Contact area", axis: "Contact area (mm²)", color: th.accent },
+      { key: "land", y: landPct, name: "Land in patch", axis: "Land (%)", color: "#9b6bff",
         extra: { x: [x[0], x[x.length - 1]], y: [landMean, landMean],
                  name: "mean " + landMean.toFixed(1) + "%", color: th.inkDim } },
-      { y: r.kz, name: "Kz (vertical)", axis: "Kz (N/mm)", color: th.good },
-      { y: r.kx, name: "Kx (longitudinal)", axis: "Kx (N/mm)", color: th.accent2 },
-      { y: r.ky, name: "Ky (lateral)", axis: "Ky (N/mm)", color: th.bad },
+      { key: "kz", y: r.kz, name: "Kz (vertical)", axis: "Kz (N/mm)", color: th.good },
+      { key: "kx", y: r.kx, name: "Kx (longitudinal)", axis: "Kx (N/mm)", color: th.accent2 },
+      { key: "ky", y: r.ky, name: "Ky (lateral)", axis: "Ky (N/mm)", color: th.bad },
       // The discrete count is sampled on its own theta grid, so it rides along
       // as a second trace on this row rather than being resampled.
-      { y: r.block_count, name: "Blocks in patch", axis: "Blocks", color: th.inkDim,
+      { key: "blocks", y: r.block_count, name: "Blocks in patch", axis: "Blocks", color: th.inkDim,
         extra: { x: r.theta_discrete, y: r.block_count_discrete,
                  name: "blocks >50% in", color: th.accent, shape: "hv" } },
-      { y: r.centroid_y, name: "Contact centroid", axis: "Centroid y (mm)", color: th.accent2 },
+      { key: "centroid", y: r.centroid_y, name: "Contact centroid", axis: "Centroid y (mm)", color: th.accent2 },
     ];
     // Slip response. These are the first rows on this page that are forces
     // rather than stiffnesses, and they are NOT rescaled versions of the two
@@ -73948,15 +74044,24 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     // it entered the patch, so rubber near the exit counts for far more. They
     // can move opposite to Kx and Ky, which is the reason they are here.
     if (r.c_alpha && r.c_alpha.length) {
-      rows.push({ y: r.c_alpha, name: "Cα — cornering (tread only)", axis: "Cα (N/rad)", color: th.bad });
-      rows.push({ y: r.c_kappa, name: "Cκ — longitudinal slip", axis: "Cκ (N)", color: th.accent2 });
+      all.push({ key: "c_alpha", y: r.c_alpha, name: "Cα — cornering (tread only)", axis: "Cα (N/rad)", color: th.bad });
+      all.push({ key: "c_kappa", y: r.c_kappa, name: "Cκ — longitudinal slip", axis: "Cκ (N)", color: th.accent2 });
       var tMean = 0;
       for (var ti = 0; ti < r.pneumatic_trail.length; ti++) tMean += r.pneumatic_trail[ti];
       tMean = r.pneumatic_trail.length ? tMean / r.pneumatic_trail.length : 0;
-      rows.push({ y: r.pneumatic_trail, name: "Pneumatic trail", axis: "Trail t (mm)", color: th.good,
+      all.push({ key: "trail", y: r.pneumatic_trail, name: "Pneumatic trail", axis: "Trail t (mm)", color: th.good,
         extra: { x: [x[0], x[x.length - 1]], y: [tMean, tMean],
                  name: "mean " + tMean.toFixed(2) + " mm", color: th.inkDim } });
     }
+    // Only the rows the user has left switched on, and never none of them.
+    // toggleStackRow() will not let the last one be switched off, so this is a
+    // guard against stale state from a run that carried different rows -- and it
+    // writes the fallback back into the state so the chips cannot disagree with
+    // what is drawn.
+    state.stackRowKeys = all.map(function (rw) { return rw.key; });
+    var rows = all.filter(function (rw) { return state.stackRows[rw.key] !== false; });
+    if (!rows.length) { rows = [all[0]]; state.stackRows[all[0].key] = true; }
+    renderRowChips(all, rows);
     var data = [], layout = {
       paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
       showlegend: true,
@@ -73965,7 +74070,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       // ~120 px a row, so adding one does not squeeze the rest.
       height: 120 * rows.length + 60,
       grid: { rows: rows.length, columns: 1, pattern: "independent", roworder: "top to bottom" },
-      title: { text: "In-patch aggregates vs rotation angle θ  (γ = " + r.gamma_deg + "°)", font: { size: 13 } },
+      title: { text: "In-patch aggregates vs rotation angle θ  (γ = " + r.gamma_deg + "°)" +
+               (rows.length < all.length ? "  —  " + rows.length + " of " + all.length + " rows shown" : ""),
+               font: { size: 13 } },
     };
     for (var i = 0; i < rows.length; i++) {
       var xa = "x" + (i + 1), ya = "y" + (i + 1);
@@ -75817,6 +75924,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     initTheme();
     initTabs();
     editorSetup();
+    if ($("pinStrip")) state.pinStrip = $("pinStrip").checked;
+    applyStripPin();
 
     on($("fileInput"), "change", function (e) { if (e.target.files[0]) loadFile(e.target.files[0]); });
     on($("sampleBtn"), "click", function () {
@@ -75848,6 +75957,14 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     on($("tbEnableAll"), "click", function () { setAllTiebars(true); markStale(); });
     on($("tbDisableAll"), "click", function () { setAllTiebars(false); markStale(); });
     on($("bandMetric"), "change", function () { state.bandMetric = this.value; renderBands(); });
+
+    // Row chips: delegated, because the chips are rebuilt on every render.
+    var chips = $("rowToggles");
+    if (chips) on(chips, "click", function (ev) {
+      var chip = ev.target.closest ? ev.target.closest(".rowchip") : null;
+      if (chip && chip.dataset.row) toggleStackRow(chip.dataset.row);
+    });
+    on($("pinStrip"), "change", function () { state.pinStrip = this.checked; applyStripPin(); });
     on($("compareMetric"), "change", function () { state.compareMetric = this.value; renderCompare(); });
     on($("addCompare"), "click", addCurrentToComparison);
     on($("addCompareSide"), "click", function () {

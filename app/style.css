@@ -373,3 +373,35 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
 .explain ul { margin: 6px 0 8px; padding-left: 20px; }
 .explain .lead { color: var(--ink); font-weight: 600; }
 .explain code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+/* The rolled-out pattern, pinned.
+   With ten rows the stack is far taller than a screen, so the tread the curves
+   belong to was always off the bottom of the window -- and reading a dip at
+   140 deg against the blocks under it meant scrolling back and forth. Sticky to
+   the BOTTOM of the viewport keeps it on screen for the whole height of the
+   stack and releases it naturally at the end of the section. plotGeom() works
+   in host-relative coordinates, so the band overlay and the crosshair travel
+   with it and need no special handling. */
+.stack-wrap { position: relative; }
+.stack-wrap.pinned #stripHost {
+  position: sticky; bottom: 0; z-index: 6;
+  background: var(--bg);
+  border-top: 1px solid var(--edge);
+  box-shadow: 0 -10px 20px -12px var(--shadow);
+}
+
+/* Which rows to draw. Ten is right for a full read and too many for a quick
+   look, so the stack is the user's to trim -- the rows are rebuilt, not merely
+   hidden, so what is left keeps the full height rather than a tenth of it. */
+.rowbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 8px; }
+.rowbar .spacer { flex: 1; }
+.rowbar-lead { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--ink-dim); }
+.rowchips { display: flex; gap: 5px; flex-wrap: wrap; }
+.rowchip {
+  font-size: 12px; padding: 3px 10px; border-radius: 11px; cursor: pointer;
+  border: 1px solid var(--edge); background: var(--panel-2); color: var(--ink-dim);
+  user-select: none; line-height: 1.5;
+}
+.rowchip.on { background: var(--panel); color: var(--ink); border-color: currentColor; font-weight: 600; }
+.rowchip:hover { border-color: var(--ink-dim); }
+.rowpin { font-size: 12px; color: var(--ink-dim); display: flex; align-items: center; gap: 5px; cursor: pointer; }

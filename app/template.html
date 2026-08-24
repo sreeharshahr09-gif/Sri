@@ -256,11 +256,21 @@
           <span id="patchThetaLabel"></span>
         </div>
         <div class="hint" style="margin-bottom:6px">Move the cursor over any chart below: a line follows it through every row and down onto the pattern, and the values at that angle appear above. <b>Drag the shaded band</b> to slide the contact patch around the tyre — it moves along θ only, since the crown and lean angle fix where it sits laterally. Drag anywhere else to zoom; all the charts and the pattern zoom together, and double-click resets.</div>
-        <div class="plot-host"><div id="thetaStack" class="plot"></div></div>
-        <div class="plot-host"><div id="patternStrip" class="plot"></div></div>
+        <div class="rowbar">
+          <span class="rowbar-lead">Rows</span>
+          <span id="rowToggles" class="rowchips"></span>
+          <span class="spacer"></span>
+          <label class="rowpin" title="Keep the rolled-out pattern glued to the bottom of the window while you scroll the rows, so any curve can be read against the tread it belongs to without scrolling back.">
+            <input id="pinStrip" type="checkbox" checked /> Pin pattern to the bottom
+          </label>
+        </div>
+        <div class="stack-wrap">
+          <div class="plot-host"><div id="thetaStack" class="plot"></div></div>
+          <div class="plot-host" id="stripHost"><div id="patternStrip" class="plot"></div></div>
+        </div>
         <div class="explain" style="margin-top:12px">
-          <h4>The last three rows: slip response</h4>
-          <p><span class="lead">Kx and Ky say how hard the rubber in the patch is. They are not forces.</span> A tyre only makes a force when it slips, so the bottom three rows add the step that turns stiffness into force — the <b>brush model</b>. A tread element enters the patch stuck to the road with no deflection; while the carcass runs on, the element is dragged by <code>κ·s</code> longitudinally or <code>tan α·s</code> laterally, where <code>s</code> is how far it has travelled since it entered. Adding up <code>k·deflection</code> over the patch gives</p>
+          <h4>Slip response: Cα, Cκ and the pneumatic trail</h4>
+          <p><span class="lead">Kx and Ky say how hard the rubber in the patch is. They are not forces.</span> A tyre only makes a force when it slips, so three of the rows above add the step that turns stiffness into force — the <b>brush model</b>. A tread element enters the patch stuck to the road with no deflection; while the carcass runs on, the element is dragged by <code>κ·s</code> longitudinally or <code>tan α·s</code> laterally, where <code>s</code> is how far it has travelled since it entered. Adding up <code>k·deflection</code> over the patch gives</p>
           <ul>
             <li><b>Cκ</b> = ∂Fx/∂κ = Σ k<sub>x</sub>·s — longitudinal slip stiffness, in <b>N</b> per unit slip ratio.</li>
             <li><b>Cα</b> = ∂Fy/∂α = Σ k<sub>y</sub>·s — cornering stiffness, in <b>N/rad</b>. Multiply by π/180 for newtons per degree of slip.</li>

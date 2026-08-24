@@ -123,6 +123,87 @@ const fs = require("fs");
       console.log(`       Ca/Ky = ${len.toFixed(2)} mm, and it varies ${(num.ratioCov * 100).toFixed(2)}% over the revolution`);
     }
 
+    // ---- ten rows is taller than a screen ---------------------------------
+    // Two things stop that being a scrolling problem: the pattern is pinned to
+    // the foot of the window so any curve can be read against the tread it
+    // belongs to, and rows can be switched off so a quick look fits on one
+    // screen. Both are checked here because both are geometry, and geometry
+    // breaks silently.
+    {
+      await page.evaluate(() => {
+        const gd = document.getElementById("thetaStack");
+        window.scrollTo(0, gd.getBoundingClientRect().top + window.scrollY - 40);
+      });
+      await page.waitForTimeout(500);
+      const pinned = await page.evaluate(() => {
+        const s = document.getElementById("stripHost").getBoundingClientRect();
+        const gd = document.getElementById("thetaStack").getBoundingClientRect();
+        return { bottom: Math.round(s.bottom), vh: window.innerHeight,
+                 stackBelowFold: gd.bottom > window.innerHeight };
+      });
+      console.log("pinned strip:", JSON.stringify(pinned));
+      if (!pinned.stackBelowFold) errors.push("the stack fits on screen, so this check proves nothing");
+      if (Math.abs(pinned.bottom - pinned.vh) > 2)
+        errors.push(`the pattern is not pinned to the foot of the window: bottom ${pinned.bottom} of ${pinned.vh}`);
+      // Unpinning must let it fall back below the fold.
+      await page.uncheck("#pinStrip");
+      await page.waitForTimeout(400);
+      const loose = await page.$eval("#stripHost", (e) => Math.round(e.getBoundingClientRect().bottom));
+      if (!(loose > pinned.vh)) errors.push("unpinning did not release the pattern strip");
+      await page.check("#pinStrip");
+      await page.waitForTimeout(400);
+
+      // Row chips: one per row, and switching some off rebuilds a shorter stack
+      // rather than squashing the rest.
+      const chips = await page.$$eval(".rowchip", (n) => n.map((c) => c.dataset.row));
+      const rowsBefore = await page.$eval("#thetaStack", (e) =>
+        Object.keys(e._fullLayout).filter((k) => /^yaxis\d*$/.test(k)).length);
+      console.log("row chips:", chips.join(","), "| rows:", rowsBefore);
+      if (chips.length !== rowsBefore)
+        errors.push(`${chips.length} chips for ${rowsBefore} rows — the two lists have drifted apart`);
+      const hBefore = await page.$eval("#thetaStack", (e) => e.getBoundingClientRect().height);
+      for (const k of ["land", "blocks", "centroid", "c_kappa", "trail", "kx"]) {
+        await page.click(`.rowchip[data-row="${k}"]`);
+        await page.waitForTimeout(150);
+      }
+      const after = await page.evaluate(() => {
+        const e = document.getElementById("thetaStack");
+        const ax = Object.keys(e._fullLayout).filter((k) => /^yaxis\d*$/.test(k));
+        return { n: ax.length, h: e.getBoundingClientRect().height,
+                 titles: ax.map((k) => (e._fullLayout[k].title || {}).text),
+                 title: e._fullLayout.title.text };
+      });
+      console.log("trimmed to:", after.titles.join(" · "), "|", after.title.slice(-18));
+      if (after.n !== rowsBefore - 6) errors.push(`turning 6 rows off left ${after.n} of ${rowsBefore}`);
+      if (!(after.h < hBefore * 0.7)) errors.push("the stack did not get shorter when rows were switched off");
+      if (!/4 of 10 rows shown/.test(after.title)) errors.push("the title does not say how many rows are hidden: " + after.title);
+      // Trying to switch off every row must leave one on, with its chip still
+      // reading "on" -- a control that says one thing while the chart shows
+      // another is worse than the scrolling it was meant to fix.
+      for (const k of ["area", "kz", "ky", "c_alpha"]) {
+        await page.click(`.rowchip[data-row="${k}"]`);
+        await page.waitForTimeout(150);
+      }
+      const floor = await page.evaluate(() => {
+        const e = document.getElementById("thetaStack");
+        return { rows: Object.keys(e._fullLayout).filter((k) => /^yaxis\d*$/.test(k)).length,
+                 chipsOn: document.querySelectorAll(".rowchip.on").length };
+      });
+      console.log("with every chip clicked off the stack keeps", floor.rows, "row,", floor.chipsOn, "chip on");
+      if (floor.rows !== 1) errors.push(`switching every row off left ${floor.rows} rows`);
+      if (floor.chipsOn !== 1) errors.push(`${floor.chipsOn} chips read "on" while 1 row is drawn`);
+      // Restore by reading the DOM rather than replaying the clicks: the refusal
+      // above means the sequence is no longer a pure toggle.
+      const off = await page.$$eval(".rowchip:not(.on)", (n) => n.map((c) => c.dataset.row));
+      for (const k of off) {
+        await page.click(`.rowchip[data-row="${k}"]`);
+        await page.waitForTimeout(120);
+      }
+      const restored = await page.$eval("#thetaStack", (e) =>
+        Object.keys(e._fullLayout).filter((k) => /^yaxis\d*$/.test(k)).length);
+      if (restored !== rowsBefore) errors.push(`rows did not come back: ${restored} of ${rowsBefore}`);
+    }
+
     // The metric selectors must offer them and must not blow up when picked.
     for (const [sel, val] of [["#heatMetric", "c_alpha"], ["#orderMetric", "c_kappa"], ["#compareMetric", "pneumatic_trail"]]) {
       const has = await page.$eval(sel, (e, v) => Array.from(e.options).some((o) => o.value === v), val);

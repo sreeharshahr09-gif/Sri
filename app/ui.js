@@ -24,6 +24,8 @@
     bandMetric: "contact_area",
     thetaRange: null,    // shared x-range across the sweep rows and the pattern
     cplRange: null,      // and the coupling tab's own, kept apart from it
+    stackRows: {},       // sweep rows switched off by the user (key -> false)
+    pinStrip: true,      // keep the rolled-out pattern at the foot of the window
     compareMetric: "kz",
   };
 
@@ -921,6 +923,52 @@
     $("cards").innerHTML = html;
   }
 
+  // The row chips. Rendered from the same list renderThetaStack() builds, so a
+  // row can never exist without a chip or a chip without a row -- and the labels
+  // carry the units, since that is what tells Ck (N) from Kx (N/mm).
+  function renderRowChips(all, shown) {
+    var host = $("rowToggles");
+    if (!host) return;
+    var on = {};
+    for (var i = 0; i < shown.length; i++) on[shown[i].key] = true;
+    var html = "";
+    for (var k = 0; k < all.length; k++) {
+      var rw = all[k];
+      html += "<span class='rowchip" + (on[rw.key] ? " on" : "") + "' data-row='" +
+        escapeHtml(rw.key) + "' style='" + (on[rw.key] ? "color:" + rw.color + ";" : "") +
+        "' title='" + escapeHtml(rw.axis) + "'>" + escapeHtml(rw.axis) + "</span>";
+    }
+    host.innerHTML = html;
+  }
+
+  function toggleStackRow(key) {
+    // Refuse to switch off the last row that is on. Without this the stack
+    // silently falls back to showing the first row while its chip still reads
+    // "on", so clicking that chip appears to do nothing -- the control and what
+    // is on screen would be saying different things.
+    var keys = state.stackRowKeys || [];
+    if (state.stackRows[key] !== false) {
+      var others = 0;
+      for (var i = 0; i < keys.length; i++)
+        if (keys[i] !== key && state.stackRows[keys[i]] !== false) others++;
+      if (!others) return;
+    }
+    state.stackRows[key] = state.stackRows[key] === false;
+    renderThetaStack();
+    // The rows changed height, so the band's pixel geometry did too.
+    setTimeout(function () { moveCursor(null); drawPatchBand(); }, 60);
+  }
+
+  // Sticky-bottom, so the tread stays on screen for the whole height of the
+  // stack. It is a class on the wrapper rather than a style on the strip
+  // because sticky needs an ancestor that spans both figures.
+  function applyStripPin() {
+    var wrap = document.querySelector(".stack-wrap");
+    if (!wrap) return;
+    wrap.classList.toggle("pinned", state.pinStrip !== false);
+    setTimeout(function () { moveCursor(null); drawPatchBand(); }, 60);
+  }
+
   function renderThetaStack() {
     var r = currentResult(), th = plotTheme();
     var x = r.theta_deg;
@@ -936,20 +984,20 @@
     }
     landMean = landPct.length ? landMean / landPct.length : 0;
 
-    var rows = [
-      { y: r.contact_area, name: "Contact area", axis: "Contact area (mm²)", color: th.accent },
-      { y: landPct, name: "Land in patch", axis: "Land (%)", color: "#9b6bff",
+    var all = [
+      { key: "area", y: r.contact_area, name: "Contact area", axis: "Contact area (mm²)", color: th.accent },
+      { key: "land", y: landPct, name: "Land in patch", axis: "Land (%)", color: "#9b6bff",
         extra: { x: [x[0], x[x.length - 1]], y: [landMean, landMean],
                  name: "mean " + landMean.toFixed(1) + "%", color: th.inkDim } },
-      { y: r.kz, name: "Kz (vertical)", axis: "Kz (N/mm)", color: th.good },
-      { y: r.kx, name: "Kx (longitudinal)", axis: "Kx (N/mm)", color: th.accent2 },
-      { y: r.ky, name: "Ky (lateral)", axis: "Ky (N/mm)", color: th.bad },
+      { key: "kz", y: r.kz, name: "Kz (vertical)", axis: "Kz (N/mm)", color: th.good },
+      { key: "kx", y: r.kx, name: "Kx (longitudinal)", axis: "Kx (N/mm)", color: th.accent2 },
+      { key: "ky", y: r.ky, name: "Ky (lateral)", axis: "Ky (N/mm)", color: th.bad },
       // The discrete count is sampled on its own theta grid, so it rides along
       // as a second trace on this row rather than being resampled.
-      { y: r.block_count, name: "Blocks in patch", axis: "Blocks", color: th.inkDim,
+      { key: "blocks", y: r.block_count, name: "Blocks in patch", axis: "Blocks", color: th.inkDim,
         extra: { x: r.theta_discrete, y: r.block_count_discrete,
                  name: "blocks >50% in", color: th.accent, shape: "hv" } },
-      { y: r.centroid_y, name: "Contact centroid", axis: "Centroid y (mm)", color: th.accent2 },
+      { key: "centroid", y: r.centroid_y, name: "Contact centroid", axis: "Centroid y (mm)", color: th.accent2 },
     ];
     // Slip response. These are the first rows on this page that are forces
     // rather than stiffnesses, and they are NOT rescaled versions of the two
@@ -957,15 +1005,24 @@
     // it entered the patch, so rubber near the exit counts for far more. They
     // can move opposite to Kx and Ky, which is the reason they are here.
     if (r.c_alpha && r.c_alpha.length) {
-      rows.push({ y: r.c_alpha, name: "Cα — cornering (tread only)", axis: "Cα (N/rad)", color: th.bad });
-      rows.push({ y: r.c_kappa, name: "Cκ — longitudinal slip", axis: "Cκ (N)", color: th.accent2 });
+      all.push({ key: "c_alpha", y: r.c_alpha, name: "Cα — cornering (tread only)", axis: "Cα (N/rad)", color: th.bad });
+      all.push({ key: "c_kappa", y: r.c_kappa, name: "Cκ — longitudinal slip", axis: "Cκ (N)", color: th.accent2 });
       var tMean = 0;
       for (var ti = 0; ti < r.pneumatic_trail.length; ti++) tMean += r.pneumatic_trail[ti];
       tMean = r.pneumatic_trail.length ? tMean / r.pneumatic_trail.length : 0;
-      rows.push({ y: r.pneumatic_trail, name: "Pneumatic trail", axis: "Trail t (mm)", color: th.good,
+      all.push({ key: "trail", y: r.pneumatic_trail, name: "Pneumatic trail", axis: "Trail t (mm)", color: th.good,
         extra: { x: [x[0], x[x.length - 1]], y: [tMean, tMean],
                  name: "mean " + tMean.toFixed(2) + " mm", color: th.inkDim } });
     }
+    // Only the rows the user has left switched on, and never none of them.
+    // toggleStackRow() will not let the last one be switched off, so this is a
+    // guard against stale state from a run that carried different rows -- and it
+    // writes the fallback back into the state so the chips cannot disagree with
+    // what is drawn.
+    state.stackRowKeys = all.map(function (rw) { return rw.key; });
+    var rows = all.filter(function (rw) { return state.stackRows[rw.key] !== false; });
+    if (!rows.length) { rows = [all[0]]; state.stackRows[all[0].key] = true; }
+    renderRowChips(all, rows);
     var data = [], layout = {
       paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
       showlegend: true,
@@ -974,7 +1031,9 @@
       // ~120 px a row, so adding one does not squeeze the rest.
       height: 120 * rows.length + 60,
       grid: { rows: rows.length, columns: 1, pattern: "independent", roworder: "top to bottom" },
-      title: { text: "In-patch aggregates vs rotation angle θ  (γ = " + r.gamma_deg + "°)", font: { size: 13 } },
+      title: { text: "In-patch aggregates vs rotation angle θ  (γ = " + r.gamma_deg + "°)" +
+               (rows.length < all.length ? "  —  " + rows.length + " of " + all.length + " rows shown" : ""),
+               font: { size: 13 } },
     };
     for (var i = 0; i < rows.length; i++) {
       var xa = "x" + (i + 1), ya = "y" + (i + 1);
@@ -2826,6 +2885,8 @@
     initTheme();
     initTabs();
     editorSetup();
+    if ($("pinStrip")) state.pinStrip = $("pinStrip").checked;
+    applyStripPin();
 
     on($("fileInput"), "change", function (e) { if (e.target.files[0]) loadFile(e.target.files[0]); });
     on($("sampleBtn"), "click", function () {
@@ -2857,6 +2918,14 @@
     on($("tbEnableAll"), "click", function () { setAllTiebars(true); markStale(); });
     on($("tbDisableAll"), "click", function () { setAllTiebars(false); markStale(); });
     on($("bandMetric"), "change", function () { state.bandMetric = this.value; renderBands(); });
+
+    // Row chips: delegated, because the chips are rebuilt on every render.
+    var chips = $("rowToggles");
+    if (chips) on(chips, "click", function (ev) {
+      var chip = ev.target.closest ? ev.target.closest(".rowchip") : null;
+      if (chip && chip.dataset.row) toggleStackRow(chip.dataset.row);
+    });
+    on($("pinStrip"), "change", function () { state.pinStrip = this.checked; applyStripPin(); });
     on($("compareMetric"), "change", function () { state.compareMetric = this.value; renderCompare(); });
     on($("addCompare"), "click", addCurrentToComparison);
     on($("addCompareSide"), "click", function () {

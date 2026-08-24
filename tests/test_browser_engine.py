@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -1829,3 +1830,43 @@ def test_the_slip_rows_are_a_moment_not_a_sum():
     # sits behind the patch centre, which is every normal case
     assert "maxClamp(correlate(cache.get(\"ky\", pack.ky), ksuSpec" not in sweep
     assert "const mzRaw = correlate(" in sweep
+
+
+def test_the_theta_stack_stays_readable_at_ten_rows():
+    """Ten rows is taller than any screen, so the tread the curves belong to was
+    always off the bottom of the window -- and reading a dip at 140 degrees
+    against the blocks under it meant scrolling back and forth.
+
+    Two controls answer that, and both are structural: the pattern is sticky to
+    the BOTTOM of the viewport (so it rides along for the whole height of the
+    stack and releases at the end of the section), and the rows can be switched
+    off individually.  The rows are rebuilt rather than hidden, so what is left
+    keeps full height; and the last row on cannot be switched off, because a chip
+    reading "on" while the chart shows something else is worse than the scrolling
+    it was meant to fix.
+    """
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    css = open(os.path.join(APP, "style.css"), encoding="utf-8").read()
+
+    # the sticky wrapper has to span BOTH figures, or there is nothing to stick to
+    wrap = tpl[tpl.index('<div class="stack-wrap">'):tpl.index("</section>", tpl.index('<div class="stack-wrap">'))]
+    assert 'id="thetaStack"' in wrap and 'id="stripHost"' in wrap
+    assert re.search(r"\.stack-wrap\.pinned #stripHost\s*{[^}]*position: sticky", css)
+    assert re.search(r"\.stack-wrap\.pinned #stripHost\s*{[^}]*bottom: 0", css)
+    # opaque, or the curves scroll through it
+    assert re.search(r"\.stack-wrap\.pinned #stripHost\s*{[^}]*background:", css)
+    assert 'id="pinStrip"' in tpl and 'checked' in tpl[tpl.index('id="pinStrip"'):tpl.index('id="pinStrip"') + 60]
+    assert "function applyStripPin(" in ui
+
+    # rows are filtered and REBUILT -- the height must follow the row count
+    assert "function renderRowChips(" in ui and "function toggleStackRow(" in ui
+    stack = ui[ui.index("function renderThetaStack("):ui.index("function ranEngaged(")]
+    assert "state.stackRows[rw.key] !== false" in stack
+    assert "height: 120 * rows.length" in stack
+    assert "grid: { rows: rows.length" in stack
+    # and the chips come from the same list the rows do
+    assert "renderRowChips(all, rows)" in stack
+    # the last row on is not switchable
+    toggle = ui[ui.index("function toggleStackRow("):ui.index("function applyStripPin(")]
+    assert "if (!others) return;" in toggle
