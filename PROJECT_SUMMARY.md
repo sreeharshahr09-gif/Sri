@@ -191,6 +191,10 @@ v6.4 reference JS  ──(~1e-9)──  Python engine  ──(<2e-3)──  Brow
   against the same tread laid out by hand in a DXF (two routes sharing nothing
   but the importer), hand-computed land ratios for both scaling conventions,
   and the closure diagnostics on a pattern that deliberately does not tile.
+- `app/crownaudit.js` — 67 checks on the crown: a single arc against its closed
+  form, arcs round-tripped to drops and back to fourteen digits, scale
+  invariance, and proof that the two-radius blend and class fallbacks are
+  untouched by the drop-first path.
 - `app/browsertest.js` — a real Chromium run: load, compute, crown
   reconciliation, all three exports, drag interaction, zero page errors.
 - `app/casecheck.js` — two complete tyres (2W blocked tread with a 40° lean
@@ -271,6 +275,7 @@ app/
   slipaudit.js           brush-model slip response audit
   unitsaudit.js          dimensional consistency audit
   pitchaudit.js          pitch replication and closure audit
+  crownaudit.js          crown arcs, drops and the solver between them
   browsertest.js         Playwright smoke test
   casecheck.js           two complete tyres end to end through the built page
   parity.js              JS↔Python parity harness

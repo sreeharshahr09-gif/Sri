@@ -1950,3 +1950,89 @@ def test_pitch_replication_reaches_the_page():
     assert "if (pitch) opts.pitch = pitch;" in ui
     assert "function markPitchStale(" in ui
     assert "take effect at import, not at run" in ui
+
+
+# ---------------------------------------------------------------------------
+# drop-first crown
+# ---------------------------------------------------------------------------
+
+
+def test_crown_audit_passes():
+    """The full audit of the crown, both ways round.
+
+    A crown can now be given as arc radii or as the drop a designer actually
+    works from, and the two must describe the same profile.  The audit checks a
+    single arc against its closed form, round-trips arcs to drops and back, and
+    proves the two-radius blend and the class fallbacks are untouched.
+    """
+    node = _node()
+    proc = subprocess.run([node, os.path.join(APP, "crownaudit.js")],
+                          capture_output=True, text=True, cwd=REPO, timeout=900)
+    assert proc.returncode == 0, proc.stdout[-8000:] + proc.stderr[-2000:]
+    assert "checks passed" in proc.stdout
+
+
+def test_the_crown_can_be_given_as_drops_and_the_radii_are_solved():
+    """Designers know the width and the drop and work the radii until the drop
+    comes out right; the tool asked for the radii, which is the last step of that
+    process rather than the first.
+
+    The solver is a one-dimensional root find per arc on the exact arc formula,
+    walked outward with the tangent carried across each breakpoint -- so tangent
+    continuity is automatic and the answer is an ordinary arc spec that goes
+    through crownMultiArc like any other.  The solved radii are handed back,
+    because "what arcs give me this drop?" is the question being asked.
+    """
+    eng = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+
+    for fn in ("function crownFromDrops(", "function crownArcsFromDrops(",
+               "function parseCrownDrops(", "function validateCrownDrops(",
+               "function solveArcRadius(", "function arcDropAfter("):
+        assert fn in eng, fn
+    # the exact arc relation, not a small-angle approximation
+    assert "R * (Math.cos(phi0) - Math.cos(phi0 + L / R))" in eng
+    # solved radii reach the page
+    assert "solved <b>" in ui and 'id="crownDrops"' in tpl and 'id="crownMode"' in tpl
+    # and the achieved drop is measured back rather than assumed
+    assert "achieved_mm: crownDrop(crown, at)" in eng
+
+
+def test_a_multi_arc_crown_is_integrated_exactly():
+    """r(y) is a step function for a run of arcs, so trapezoiding it over a
+    uniform grid puts every breakpoint up to half a cell late -- about 35 um of
+    edge drop on a 90 mm shoulder.  Small, but the drop is exactly what a
+    drop-first crown is asked to hit, so the arc path is solved in closed form
+    and the sample grid is built to contain every breakpoint as a node."""
+    eng = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    assert "function crownFromArcs(" in eng
+    arcs = eng[eng.index("function crownFromArcs("):eng.index("function crownMultiArc(")]
+    # closed form for phi, z and y_proj, carried across the breakpoints
+    assert "phiK[k] + (a - bp[k]) / Rk[k]" in arcs
+    assert "Math.cos(phiK[k]) - Math.cos(p)" in arcs
+    assert "Math.sin(p) - Math.sin(phiK[k])" in arcs
+    # every breakpoint is a grid node
+    assert "bp[k] + (L * i) / steps" in arcs
+    assert "cumtrapz0" not in arcs, "the arc path must not go back through quadrature"
+    # the blended and measured profiles still use the generic integrator
+    assert "function crownFromRadiusProfile(" in eng
+    assert "crownFromRadiusProfile(y, r, false)" in eng
+
+
+def test_the_crown_precedence_is_visible_rather_than_only_documented():
+    """Three ways of setting the crown, in strict precedence: drops, then arc
+    radii, then the two-radius cells, then the tyre class.  The two-radius cells
+    stay live when nothing above them is typed, so a user who HAS typed
+    something above has no way of knowing they are now inert -- which is exactly
+    the confusion that was reported.  They are greyed out instead."""
+    eng = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    build = eng[eng.index("function buildCrown("):]
+    build = build[:build.index("\n  }")]
+    assert "if (hasArcs && hasDrops)" in build, "both at once must be refused, not ranked"
+    assert build.index("if (hasDrops)") < build.index("if (hasArcs)")
+    assert "crownDualRadius" in build
+    assert "function syncCrownFields(" in ui
+    assert "el.disabled = overridden" in ui
+    assert "Overridden by the" in ui

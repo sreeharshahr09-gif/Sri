@@ -2952,22 +2952,236 @@
     return arcs;
   }
 
-  function crownMultiArc(treadWidth, arcs, n) {
-    validateCrownArcs(arcs, treadWidth);
+  // A run of circular arcs is integrated EXACTLY rather than sampled.
+  //
+  // The generic crownFromRadiusProfile trapezoids 1/r over a uniform grid, which
+  // is right for a blended or a measured profile but wrong here: r is a step
+  // function, and on a 0.25 mm grid each breakpoint lands up to half a cell
+  // late. On a 90 mm shoulder that misplaces the tangent by about a milliradian
+  // and the edge drop by 35 um -- small, but this is exactly the quantity a
+  // drop-first crown is being asked to hit, so it is solved in closed form:
+  //
+  //     phi(y) = phi_k + (y - y_k) / R          within arc k
+  //     z(y)   = z_k   + R [ cos phi_k - cos phi(y) ]
+  //     yproj  = yp_k  + R [ sin phi(y) - sin phi_k ]
+  //
+  // with phi, z and yproj carried across the breakpoints. Curvature still jumps
+  // at each one -- that is what a multi-arc profile is -- but nothing else does.
+  function crownFromArcs(treadWidth, arcs, n) {
     n = n || 801;
     const half = treadWidth / 2;
-    const y = new Float64Array(n), r = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
-      y[i] = -half + (2 * half * i) / (n - 1);
-      const a = Math.abs(y[i]);
-      let k = arcs.length - 1;
-      for (let j = 0; j < arcs.length - 1; j++) if (a < arcs[j].to) { k = j; break; }
-      r[i] = arcs[k].r;
+    const m = arcs.length;
+    // running phi, z, y_proj at each breakpoint, from the centreline out
+    const bp = new Float64Array(m + 1), Rk = new Float64Array(m);
+    const phiK = new Float64Array(m + 1), zK = new Float64Array(m + 1), ypK = new Float64Array(m + 1);
+    for (let k = 0; k < m; k++) {
+      Rk[k] = arcs[k].r;
+      bp[k + 1] = k === m - 1 ? half : arcs[k].to;
+      const L = bp[k + 1] - bp[k];
+      phiK[k + 1] = phiK[k] + L / Rk[k];
+      zK[k + 1] = zK[k] + Rk[k] * (Math.cos(phiK[k]) - Math.cos(phiK[k + 1]));
+      ypK[k + 1] = ypK[k] + Rk[k] * (Math.sin(phiK[k + 1]) - Math.sin(phiK[k]));
     }
-    const crown = crownFromRadiusProfile(y, r, false);
+    // Sample each arc on its own sub-grid so that every breakpoint IS a node.
+    // The crown is read back through interpolation, and a breakpoint that falls
+    // between two nodes is read with a second-order error -- which lands exactly
+    // where the profile is specified, and so exactly where a drop-first crown is
+    // judged. Points are shared out by arc length, so the spacing stays even.
+    const halfNodes = [0];
+    const budget = Math.max(m + 1, (n - 1) >> 1);
+    for (let k = 0; k < m; k++) {
+      const L = bp[k + 1] - bp[k];
+      const steps = Math.max(2, Math.round((budget * L) / half));
+      for (let i = 1; i <= steps; i++) halfNodes.push(bp[k] + (L * i) / steps);
+    }
+    halfNodes[halfNodes.length - 1] = half;           // exactly, not 1 ulp short
+    const nn = halfNodes.length * 2 - 1;
+    const y = new Float64Array(nn), r = new Float64Array(nn);
+    const phi = new Float64Array(nn), z = new Float64Array(nn), yProj = new Float64Array(nn);
+    for (let i = 0; i < nn; i++) {
+      const j = i - (halfNodes.length - 1);           // -half..+half by node index
+      const a = halfNodes[Math.abs(j)], sgn = j < 0 ? -1 : 1;
+      // At a breakpoint the arc BELOW it owns the node for r; phi, z and y_proj
+      // are continuous there, so which side is used makes no difference to them.
+      let k = m - 1;
+      for (let q = 0; q < m - 1; q++) if (a < bp[q + 1]) { k = q; break; }
+      const p = phiK[k] + (a - bp[k]) / Rk[k];
+      y[i] = sgn * a;
+      r[i] = Rk[k];
+      phi[i] = sgn * p;
+      z[i] = zK[k] + Rk[k] * (Math.cos(phiK[k]) - Math.cos(p));
+      yProj[i] = sgn * (ypK[k] + Rk[k] * (Math.sin(p) - Math.sin(phiK[k])));
+    }
+    return { y: y, phi: phi, z: z, y_proj: yProj, r: r, measured: false };
+  }
+
+  function crownMultiArc(treadWidth, arcs, n) {
+    validateCrownArcs(arcs, treadWidth);
+    const half = treadWidth / 2;
+    const crown = crownFromArcs(treadWidth, arcs, n);
     crown.arcs = arcs.map(function (a, i) {
       return { radius: a.r, to_mm: i === arcs.length - 1 ? half : a.to };
     });
+    return crown;
+  }
+
+  // ---------------------------------------------------------------------
+  // the crown the other way round: drop first, radii solved
+  // ---------------------------------------------------------------------
+  //
+  // A designer knows the tread width and the DROP -- how far below the
+  // centreline the profile has fallen at a given lateral station -- and works
+  // the arc radii until the drop comes out right. The tool asked for the radii,
+  // which is the last step of that process rather than the first.
+  //
+  // So take the drops and solve for the radii. On one arc of constant radius R,
+  // starting at developed position y0 with tangent angle phi0 and drop z0, the
+  // drop after a further developed length L is
+  //
+  //     z(L) = z0 + R * [ cos(phi0) - cos(phi0 + L/R) ]
+  //
+  // -- exact, not a small-angle form. That is strictly decreasing in R: a bigger
+  // radius is flatter and drops less. So each arc's radius is a one-dimensional
+  // root find, solved outward from the centreline with phi and z carried along,
+  // and tangent continuity is automatic because phi0 is inherited.
+  //
+  // The answer is an ordinary arc specification, which then goes through
+  // crownMultiArc like any other. Nothing downstream knows the difference, and
+  // the solved radii are handed back so a designer can see what their drops imply.
+  const CROWN_MAX_PHI = (89 * Math.PI) / 180;
+
+  function arcDropAfter(R, phi0, L) {
+    return R * (Math.cos(phi0) - Math.cos(phi0 + L / R));
+  }
+
+  // The radius that drops exactly `need` mm over a developed length L, starting
+  // at tangent angle phi0. Bisection on log R: monotone, and the bracket spans
+  // seven orders of magnitude.
+  function solveArcRadius(need, phi0, L, index) {
+    const straight = L * Math.sin(phi0);          // R -> infinity: carry on straight
+    if (!(need > straight + 1e-12))
+      throw new Error(
+        "crown arc " + index + " cannot drop " + need.toFixed(4) + " mm over " + L.toFixed(2) +
+        " mm: the profile already leans at " + ((phi0 * 180) / Math.PI).toFixed(2) +
+        " deg there, so even a dead straight continuation drops " + straight.toFixed(4) +
+        " mm. Give a larger drop at this station, or move the station outboard."
+      );
+    const rMin = L / Math.max(CROWN_MAX_PHI - phi0, 1e-6);   // tightest allowed
+    const maxDrop = arcDropAfter(rMin, phi0, L);
+    if (need > maxDrop)
+      throw new Error(
+        "crown arc " + index + " cannot drop " + need.toFixed(4) + " mm over " + L.toFixed(2) +
+        " mm: that needs a tangent steeper than " + ((CROWN_MAX_PHI * 180) / Math.PI).toFixed(0) +
+        " deg, which is a fold rather than a crown (the most this arc can drop is " +
+        maxDrop.toFixed(4) + " mm). Move the station outboard, or reduce the drop."
+      );
+    let lo = rMin, hi = Math.max(rMin * 10, 1e7);
+    for (let it = 0; it < 200; it++) {
+      const mid = Math.sqrt(lo * hi);
+      if (arcDropAfter(mid, phi0, L) > need) lo = mid; else hi = mid;
+      if (hi / lo < 1 + 1e-14) break;
+    }
+    return Math.sqrt(lo * hi);
+  }
+
+  // drops: [{z, to}] ascending in `to` (developed mm from the centreline), the
+  // last entry running to the tread edge with `to` left NaN.
+  function validateCrownDrops(drops, treadWidth) {
+    if (!drops || !drops.length) throw new Error("a drop profile needs at least one station");
+    if (drops.length > MAX_CROWN_ARCS)
+      throw new Error("at most " + MAX_CROWN_ARCS + " drop stations are supported, got " + drops.length);
+    const half = treadWidth / 2;
+    let prevTo = 0, prevZ = 0;
+    for (let i = 0; i < drops.length; i++) {
+      const d = drops[i];
+      if (!Number.isFinite(d.z) || d.z <= 0)
+        throw new Error("drop " + (i + 1) + " must be a positive number of mm below the centreline, got " + d.z);
+      if (d.z <= prevZ)
+        throw new Error("drop " + (i + 1) + " (" + d.z + " mm) must be greater than the one before it (" +
+          prevZ + " mm) — the profile falls away from the centreline, it does not rise");
+      const to = i === drops.length - 1 ? half : d.to;
+      if (i === drops.length - 1) {
+        if (Number.isFinite(d.to))
+          throw new Error("the last drop is at the tread edge, so it must not carry a station. " +
+            "Write \"" + d.z + "\" on its own, or add the station that follows it.");
+      } else {
+        if (!Number.isFinite(d.to) || d.to <= prevTo)
+          throw new Error("drop station " + (i + 1) + " must increase along the half width; got " +
+            d.to + " after " + prevTo);
+        if (d.to >= half)
+          throw new Error("drop station " + (i + 1) + " (" + d.to.toFixed(2) +
+            " mm) is at or beyond the tread edge (" + half.toFixed(2) + " mm)");
+      }
+      if (d.z >= half)
+        throw new Error("drop " + (i + 1) + " of " + d.z + " mm is more than half the tread width (" +
+          half.toFixed(1) + " mm) — check the units, this field is the drop below the centreline in mm");
+      prevTo = to; prevZ = d.z;
+    }
+    return true;
+  }
+
+  // "9.5"                 one arc, 9.5 mm of drop at the edge
+  // "1.2@0.45, 9.5"       1.2 mm at 45% of the half width, 9.5 mm at the edge
+  // "1.2@36mm, 4@60mm, 9.5"
+  // Same station conventions as the arc parser: <= 1 is a fraction of the half
+  // width, > 1 is millimetres, and mm or % can be written explicitly.
+  function parseCrownDrops(text, treadWidth) {
+    const half = treadWidth / 2;
+    const parts = String(text || "").split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+    if (!parts.length) return null;
+    const drops = [];
+    for (let i = 0; i < parts.length; i++) {
+      const m = /^([-+0-9.eE]+)\s*(?:@\s*([-+0-9.eE]+)\s*(mm|%)?)?$/.exec(parts[i]);
+      if (!m)
+        throw new Error("could not read drop '" + parts[i] +
+          "'. Use drop@station, e.g. \"1.2@0.45, 9.5\" or \"1.2@36mm, 9.5\".");
+      const z = parseFloat(m[1]);
+      let to = m[2] == null ? NaN : parseFloat(m[2]);
+      if (m[2] != null) {
+        if (m[3] === "%") to = (to / 100) * half;
+        else if (m[3] !== "mm") to = to <= 1 ? to * half : to;
+      }
+      if (i < parts.length - 1 && !Number.isFinite(to))
+        throw new Error("drop '" + parts[i] + "' needs a station (only the last one may omit it)");
+      drops.push({ z: z, to: to });
+    }
+    validateCrownDrops(drops, treadWidth);
+    return drops;
+  }
+
+  // Drops -> arc radii. Exported on its own because "what arcs give me this
+  // drop?" is a question worth asking without building a crown for it.
+  function crownArcsFromDrops(treadWidth, drops) {
+    validateCrownDrops(drops, treadWidth);
+    const half = treadWidth / 2;
+    const arcs = [];
+    let y0 = 0, phi = 0, z = 0;
+    for (let i = 0; i < drops.length; i++) {
+      const last = i === drops.length - 1;
+      const to = last ? half : drops[i].to;
+      const L = to - y0;
+      const R = solveArcRadius(drops[i].z - z, phi, L, i + 1);
+      arcs.push({ r: R, to: last ? NaN : to });
+      z += arcDropAfter(R, phi, L);
+      phi += L / R;
+      y0 = to;
+    }
+    return arcs;
+  }
+
+  function crownFromDrops(treadWidth, drops, n) {
+    const arcs = crownArcsFromDrops(treadWidth, drops);
+    const crown = crownMultiArc(treadWidth, arcs, n);
+    const half = treadWidth / 2;
+    // What the finished profile actually drops at each station. The radii are
+    // solved from the exact arc formula but the crown is then re-integrated
+    // numerically, so this is reported rather than assumed -- if the two ever
+    // disagree it is visible instead of silent.
+    crown.drops = drops.map(function (d, i) {
+      const at = i === drops.length - 1 ? half : d.to;
+      return { at_mm: at, asked_mm: d.z, achieved_mm: crownDrop(crown, at) };
+    });
+    crown.from_drops = true;
     return crown;
   }
 
@@ -2975,7 +3189,13 @@
   // the CLI and the tests cannot drift apart.
   function buildCrown(treadWidth, opts) {
     opts = opts || {};
-    if (opts.crown_arcs && opts.crown_arcs.length)
+    const hasArcs = opts.crown_arcs && opts.crown_arcs.length;
+    const hasDrops = opts.crown_drops && opts.crown_drops.length;
+    if (hasArcs && hasDrops)
+      throw new Error("the crown was given both arc radii and drops. They are two ways of saying the same " +
+        "thing and they will not agree — supply one or the other.");
+    if (hasDrops) return crownFromDrops(treadWidth, opts.crown_drops);
+    if (hasArcs)
       return crownMultiArc(treadWidth, opts.crown_arcs);
     // Blank fields fall back to the selected class, not to a fixed pair of
     // motorcycle radii. With no class named the answer is unchanged from before.
@@ -3912,6 +4132,8 @@
     dxfPairs, planarArrangement, classifyFaces, faceAdjacency, bulgeArc,
     replicatePitch, pitchInstanceLengths, pitchClosure, pitchStretchMap, landSpansX, PITCH_SCALING,
     crownMultiArc, parseCrownArcs, validateCrownArcs, buildCrown, MAX_CROWN_ARCS,
+    crownFromDrops, crownArcsFromDrops, parseCrownDrops, validateCrownDrops, solveArcRadius, arcDropAfter,
+    crownFromArcs,
     compoundProperties, validateCompound, interpShore,
     tiebarEngagementWear, tiebarEngaged, effectiveBlocks, validateWear, patternAtWear,
     groupTiebars, applyToTiebarGroup, tiebarMetrics, TIEBAR_GROUP_MODES,

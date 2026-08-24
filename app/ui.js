@@ -206,11 +206,49 @@
   // back to the two-radius fields. Throws on a malformed spec so the caller can
   // put the message in front of the user rather than silently ignoring it.
   function readCrownArcs(treadWidth) {
+    if (crownMode() !== "arcs") return null;
     var el = $("crownArcs");
     if (!el || !el.value.trim()) return null;
     var w = treadWidth || (state.pattern ? state.pattern.tread_width : 0);
     if (!(w > 0)) return null;
     return E.parseCrownArcs(el.value, w);
+  }
+
+  function crownMode() { return $("crownMode") ? $("crownMode").value : "arcs"; }
+
+  // The drop profile, when the designer is working the way they actually do:
+  // width and drop known, radii to be found. Same shape as readCrownArcs --
+  // null to fall through, throws so the message reaches the user.
+  function readCrownDrops(treadWidth) {
+    if (crownMode() !== "drops") return null;
+    var el = $("crownDrops");
+    if (!el || !el.value.trim()) return null;
+    var w = treadWidth || (state.pattern ? state.pattern.tread_width : 0);
+    if (!(w > 0)) return null;
+    return E.parseCrownDrops(el.value, w);
+  }
+
+  // Which crown inputs are live, and which have been overridden. The two-radius
+  // cells are still read when nothing else is typed, and a user who has typed an
+  // arc spec above them has no way of knowing they are now inert -- which is
+  // exactly the confusion this greys out.
+  function syncCrownFields() {
+    var mode = crownMode();
+    if ($("rowCrownArcs")) $("rowCrownArcs").style.display = mode === "arcs" ? "" : "none";
+    if ($("rowCrownDrops")) $("rowCrownDrops").style.display = mode === "drops" ? "" : "none";
+    var overridden = mode === "drops"
+      ? !!($("crownDrops") && $("crownDrops").value.trim())
+      : !!($("crownArcs") && $("crownArcs").value.trim());
+    ["crownCenter", "crownShoulder", "crownBreak"].forEach(function (id) {
+      var el = $(id);
+      if (!el) return;
+      el.disabled = overridden;
+      var row = el.closest ? el.closest(".field") : null;
+      if (row) row.style.opacity = overridden ? 0.45 : "";
+      if (row) row.title = overridden
+        ? "Overridden by the " + (mode === "drops" ? "drop profile" : "tread arc radii") + " above."
+        : row.getAttribute("data-title") || row.title;
+    });
   }
 
   // Show what the typed arcs actually resolve to, and what they imply. The
@@ -223,16 +261,27 @@
     if (!(w > 0)) { box.innerHTML = "<i>Load a tread plan to resolve the arc profile.</i>"; return; }
     try {
       var arcs = readCrownArcs(w);
+      var drops = readCrownDrops(w);
       var crown = E.buildCrown(w, {
         tyre_class: $("tyreType").value,
         crown_arcs: arcs,
+        crown_drops: drops,
         crown_r_center: $("crownCenter").value.trim() === "" ? undefined : num("crownCenter"),
         crown_r_shoulder: $("crownShoulder").value.trim() === "" ? undefined : num("crownShoulder"),
         crown_break: readCrownBreak(),
       });
       var half = w / 2;
       var desc;
-      if (arcs) {
+      if (drops) {
+        // The solved radii are the answer to "what arcs give me this drop?", so
+        // they are put in front of the designer rather than kept internal.
+        desc = "<b>from drops</b> · solved <b>" + crown.arcs.map(function (a, i) {
+          return "R" + (i + 1) + " " + a.radius.toFixed(1) + " mm to " +
+            (i === crown.arcs.length - 1 ? "the edge" : a.to_mm.toFixed(1) + " mm");
+        }).join(" · ") + "</b><br>drop " + crown.drops.map(function (d) {
+          return d.asked_mm.toFixed(2) + " mm at " + d.at_mm.toFixed(1) + " mm";
+        }).join(" · ");
+      } else if (arcs) {
         desc = "<b>true arcs</b> · " + arcs.map(function (a, i) {
           return "<b>R" + (i + 1) + "</b> " + a.r + " mm to " +
             (i === arcs.length - 1 ? "the edge" : a.to.toFixed(1) + " mm");
@@ -260,8 +309,10 @@
     if (!state.pattern || !state.pattern.crown) return null;
     var c = state.pattern.crown, half = state.pattern.tread_width / 2;
     return {
-      source: c.arcs ? "tread arc specification" : "two-radius blend",
+      source: c.from_drops ? "drop profile (radii solved)"
+            : c.arcs ? "tread arc specification" : "two-radius blend",
       arcs: c.arcs || null,
+      drops: c.drops || null,
       r_center_mm: E.crownLocalRadius(c, 0),
       r_edge_mm: E.crownLocalRadius(c, half),
       edge_drop_mm: E.crownDrop(c, half),
@@ -273,7 +324,9 @@
     var c = s.crown;
     if (!c) return "no crown resolved";
     var head = c.arcs
-      ? c.arcs.map(function (a, i) { return "R" + (i + 1) + " " + a.radius + " mm to " + a.to_mm.toFixed(1) + " mm"; }).join(", ")
+      ? (c.drops ? "from drops (" + c.drops.map(function (d) {
+            return d.asked_mm.toFixed(2) + " mm at " + d.at_mm.toFixed(1) + " mm"; }).join(", ") + ") -> " : "") +
+        c.arcs.map(function (a, i) { return "R" + (i + 1) + " " + a.radius.toFixed(1) + " mm to " + a.to_mm.toFixed(1) + " mm"; }).join(", ")
       : "two-radius blend, " + c.r_center_mm.toFixed(0) + " mm centre to " + c.r_edge_mm.toFixed(0) + " mm edge";
     return head + "; edge drop " + c.edge_drop_mm.toFixed(2) + " mm; max reachable lean " +
       c.max_reachable_lean_deg.toFixed(1) + " deg";
@@ -301,9 +354,10 @@
     if (csh) opts.crown_r_shoulder = parseFloat(csh);
     var np = $("nPitches").value; if (np) opts.n_pitches = parseInt(np, 10);
     var ph = tyreClassPhysics();
-    // No crown_arcs here on purpose: the breakpoints can be fractions of the
-    // tread width, which is not known until this DXF has been read. The crown
-    // is rebuilt from every input by reconcilePattern() before each run.
+    // No crown_arcs or crown_drops here on purpose: their stations can be
+    // fractions of the tread width, which is not known until this DXF has been
+    // read. The crown is rebuilt from every input by reconcilePattern() before
+    // each run.
     opts.crown_break = readCrownBreak();
     opts.tyre_class = $("tyreType").value;
     opts.zone_center = ph.zone_center; opts.zone_intermediate = ph.zone_intermediate;
@@ -469,11 +523,13 @@
     // A half-typed arc spec throws, and this runs on every keystroke via
     // drawEditor. Fall back to the two-radius fields until it parses; the
     // message is already in front of the user and the run is already blocked.
-    var arcs = null;
+    var arcs = null, drops = null;
     try { arcs = readCrownArcs(p.tread_width); } catch (err) { arcs = null; }
+    try { drops = readCrownDrops(p.tread_width); } catch (err) { drops = null; }
     p.crown = E.buildCrown(p.tread_width, {
       tyre_class: $("tyreType").value,
       crown_arcs: arcs,
+      crown_drops: drops,
       crown_r_center: rc === "" ? undefined : parseFloat(rc),
       crown_r_shoulder: rs === "" ? undefined : parseFloat(rs),
       crown_break: readCrownBreak(),
@@ -726,6 +782,8 @@
       try { E.validateSpec(readSpec()); }
       catch (err) { errs.push(err.message); }
       try { E.validateCompound(readStiffParams()); }
+      catch (err) { errs.push(err.message); }
+      try { readCrownDrops(state.pattern ? state.pattern.tread_width : 0); }
       catch (err) { errs.push(err.message); }
       try { readCrownArcs(state.pattern ? state.pattern.tread_width : 0); }
       catch (err) { errs.push(err.message); }
@@ -2976,6 +3034,7 @@
     if ($("pinStrip")) state.pinStrip = $("pinStrip").checked;
     applyStripPin();
     syncPitchFields();
+    syncCrownFields();
 
     on($("fileInput"), "change", function (e) { if (e.target.files[0]) loadFile(e.target.files[0]); });
     on($("sampleBtn"), "click", function () {
@@ -3019,6 +3078,13 @@
     // Pitch replication. Changing any of these changes the tread itself, so the
     // DXF has to be read again -- unlike NSD or the compound, which only change
     // what is computed from an already-imported drawing.
+    on($("crownMode"), "change", function () {
+      syncCrownFields(); syncCrownArcInfo(); refreshValidation(); drawEditor(); markStale();
+    });
+    ["crownDrops"].forEach(function (id) {
+      on($(id), "input", function () { syncCrownFields(); syncCrownArcInfo(); refreshValidation(); drawEditor(); markStale(); });
+      on($(id), "change", function () { syncCrownFields(); syncCrownArcInfo(); refreshValidation(); drawEditor(); markStale(); });
+    });
     on($("pitchOn"), "change", function () { syncPitchFields(); markPitchStale(); });
     on($("pitchMode"), "change", function () { syncPitchFields(); markPitchStale(); });
     ["pitchBase", "pitchCount", "pitchLens", "pitchSeq", "pitchScale", "pitchSnap"].forEach(function (id) {
@@ -3051,8 +3117,8 @@
     ["nsd", "draft", "sipes", "sipeDepth", "shore", "poisson", "mode", "sipeModel", "quality", "curv",
      "wheelR", "crownCenter", "crownShoulder", "crownArcs", "nPitches", "wear",
      "tiebarHeight", "weldTol", "tiebarFrac"].forEach(function (id) {
-      on($(id), "input", function () { refreshValidation(); syncCompoundFields(); syncCrownArcInfo(); drawEditor(); reconcileAndRedrawTiebars(); markStale(); });
-      on($(id), "change", function () { refreshValidation(); syncCompoundFields(); syncCrownArcInfo(); drawEditor(); reconcileAndRedrawTiebars(); markStale(); });
+      on($(id), "input", function () { refreshValidation(); syncCompoundFields(); syncCrownFields(); syncCrownArcInfo(); drawEditor(); reconcileAndRedrawTiebars(); markStale(); });
+      on($(id), "change", function () { refreshValidation(); syncCompoundFields(); syncCrownFields(); syncCrownArcInfo(); drawEditor(); reconcileAndRedrawTiebars(); markStale(); });
     });
     on($("cpLoad"), "input", updateLeanLoadReference);
 

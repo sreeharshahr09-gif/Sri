@@ -175,6 +175,59 @@ edge, and you are told about it.
 
 ---
 
+## The crown, either way round
+
+The crown decides the contact point at every lean, the patch size there, the
+effective rolling radius, and the maximum lean the tyre can reach at all. It can
+be specified two ways, chosen with **Crown given as** in *5 · Load & advanced*.
+
+**Arc radii** — the mould drawing's own language. `800@45mm, 300@88mm, 90`
+means 800 mm out to 45 mm from the centreline, then 300 mm to 88 mm, then 90 mm
+to the edge.
+
+**Drop** — the way a designer actually works. You know the width and how far the
+profile has fallen at each station, and the radii follow. Same format, with the
+drop in place of the radius: `1.2@36mm, 4@60mm, 9.5`. Stations follow the same
+convention as arcs — a value of 1 or less is a fraction of the half width, above
+1 is millimetres, and `mm` or `%` can be written explicitly.
+
+**The tool solves the radii and shows you what they are.** That readout is the
+answer to "what arcs give me this drop?", which is the question the arc-radius
+field could never answer.
+
+### How it is solved
+
+On one arc of radius R, starting at developed position y₀ with tangent φ₀ and
+drop z₀, the drop after a further developed length L is
+
+```
+z(L) = z₀ + R · [ cos φ₀ − cos(φ₀ + L/R) ]
+```
+
+exactly — not a small-angle form. That is strictly decreasing in R, so each
+arc's radius is a one-dimensional root find, solved outward from the centreline
+with φ and z carried along. **Tangent continuity is automatic**, because each arc
+inherits φ₀ from the one before.
+
+Round-tripping is exact: take a crown built from radii, read its drops, solve the
+radii back, and you get the numbers you started with to fourteen digits.
+
+### Two things worth knowing
+
+**The radii need not fall monotonically.** A drop set that looks progressive can
+imply a *flatter* middle arc — because by the time the profile reaches a station
+it is already leaning, and a straight continuation alone drops a certain amount.
+If you ask for less than that, the tool refuses and tells you what the straight
+continuation would give.
+
+**Precedence, now visible.** Drops override arc radii, which override the
+two-radius cells, which fall back to the tyre class. The two-radius cells are now
+**greyed out** the moment something above them is typed, rather than sitting
+there looking live. Giving both drops and arcs at once is refused rather than
+silently ranked.
+
+---
+
 ## Compound: where the modulus comes from
 
 Every stiffness in this tool scales with Young's modulus **E**. There are two ways to set it, and the panel always shows what was used:
