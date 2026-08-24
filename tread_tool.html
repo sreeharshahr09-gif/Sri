@@ -449,6 +449,29 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
         <div class="hint">ASCII DXF: LINE, ARC, CIRCLE, ELLIPSE, LWPOLYLINE (with bulges), old-style POLYLINE, SPLINE, and INSERT references into BLOCKS. Depth, draft and sipes are supplied below — a 2D plan has none.</div>
         <div class="field" title="How far apart two endpoints may be and still be treated as the same corner. CAD exports routinely leave corners a few microns apart after a trim, and an unwelded corner loses the whole block. 0.01 mm is two orders below the finest tread feature and two above the usual export round-off. Raise it if outlines are reported as not closing; lower it if separate features are being merged."><label>Weld tolerance (mm)</label><input id="weldTol" type="number" value="0.01" step="0.005" min="0.0001" max="1" /></div>
         <div class="field" title="A region between blocks counts as a tie bar if its area is below this fraction of the typical block area. Only affects the initial guess — every candidate is listed in 6 · Wear &amp; tie bars for you to confirm or reject."><label>Tie-bar area limit</label><input id="tiebarFrac" type="number" value="0.5" step="0.05" min="0.02" max="1" /></div>
+
+        <div class="field" title="Tick this when the DXF is ONE pitch rather than the whole tread. The tool repeats it to build the complete rolled-out pattern, at the lengths and in the order you give below."><label><input id="pitchOn" type="checkbox" /> <b>the DXF is one pitch — build the tread from it</b></label></div>
+        <div id="pitchBox" style="display:none">
+          <div class="field" title="The circumferential length of ONE pitch, including the groove that follows the blocks. This is NOT the same as the drawing's extent: if the blocks stop before the pitch boundary — which they usually do — the drawing is shorter than the pitch, and the tool cannot tell by how much."><label>Pitch length (mm)</label><input id="pitchBase" type="number" step="0.1" min="0.1" placeholder="one repeat" /></div>
+          <div class="field" title="How the tread is pitched. 'Single length' repeats the drawn pitch unchanged. 'Sequence' takes named pitch lengths and the production order, which is what a PCR or TBR actually uses."><label>Pitching</label>
+            <select id="pitchMode">
+              <option value="count">single length × count</option>
+              <option value="sequence">named lengths + sequence</option>
+            </select>
+          </div>
+          <div class="field" id="rowPitchCount" title="How many pitches go round the tyre. Circumference = pitch length × count."><label>Number of pitches</label><input id="pitchCount" type="number" step="1" min="1" placeholder="e.g. 62" /></div>
+          <div class="field" id="rowPitchLens" style="display:none" title="One length per pitch letter, in mm. Format: A=32.4, B=36.0, C=40.2 — as many as the design uses."><label>Pitch lengths (mm)</label><input id="pitchLens" type="text" placeholder="A=32.4, B=36.0, C=40.2" /></div>
+          <div class="field" id="rowPitchSeq" style="display:none" title="The production pitch sequence, as the letters defined above, in order around the tyre. Spaces and punctuation are ignored. The circumference is whatever these add up to."><label>Sequence</label><input id="pitchSeq" type="text" placeholder="ABCBACAB…" /></div>
+          <div class="field" id="rowPitchScale" style="display:none" title="THE TOOL WILL NOT GUESS THIS. When a pitch is stretched to a different length, either the whole pitch scales (blocks get longer with the pitch) or the blocks keep their circumferential length and the grooves absorb the difference. Both are used in industry and they give different order content, so the convention has to come from your design office."><label>Length scaling</label>
+            <select id="pitchScale">
+              <option value="">— choose —</option>
+              <option value="uniform">uniform: whole pitch scales</option>
+              <option value="groove_only">groove only: blocks keep their length</option>
+            </select>
+          </div>
+          <div class="field" title="Competitor patterns digitised from a photograph often do not quite tile: the geometry at one pitch boundary is a few tenths out from the other. Leave at 0 to be told about it and stop. Set a limit to have the tool pull the two edges together — the tread is then not exactly the drawing, and it says so."><label>Boundary snap limit (mm)</label><input id="pitchSnap" type="number" value="0" step="0.05" min="0" /></div>
+          <div id="pitchInfo" class="hint" style="margin:2px 0 6px;padding:6px 9px;background:var(--panel-2);border:1px solid var(--edge);border-radius:6px;line-height:1.55"></div>
+        </div>
       </div>
 
       <div class="group" id="grp-compound">
@@ -829,6 +852,22 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
 <p>The commonest way to get this wrong is the modulus. <strong>E is in N/mm², which is the same as MPa</strong> — a tread compound is roughly 1.5 to 12. If you type 6890 (kPa) or 6 890 000 (Pa) the tool refuses the run and says so, rather than returning stiffnesses a thousand times too large.</p>
 <p>This is not a claim on paper: <code>app/unitsaudit.js</code> proves it by measurement. Scale every length in a problem by λ and the load by λ², leave the compound alone, and every output must move by the power of λ its units demand — areas by λ², stiffnesses by λ, Cα by λ², the trail by λ, and the dimensionless ones not at all. A single term carrying the wrong power of a length pulls its total off the predicted exponent immediately. All 24 outputs land on their exponent to five decimal places, and the reachable lean angle and the coupling gain do not move at all.</p>
 <p>One honest wrinkle it does surface: <strong>the patch area is rasterised</strong>. The sweep measures a whole number of pixels, so it differs from the exact area of the patch outline by a fraction of a percent, and the reported patch load is under the load you entered by that same fraction. Both areas are reported, and a physics note appears if the gap ever exceeds 1% — at which point the grid is too coarse for the patch and every area on the page is biased.</p>
+<hr>
+<h2>Building the tread from one pitch</h2>
+<p>A design office draws <strong>one pitch</strong>. Tick <em>the DXF is one pitch</em> in <strong>1 · Tread plan</strong> and the tool repeats it into the whole rolled-out tread — after which every other tab behaves exactly as it does for a drawing supplied whole. Blocks, tie bars, seam wrapping and the sweep cannot tell the difference.</p>
+<h3>What you have to supply</h3>
+<p><strong>Pitch length.</strong> Not the drawing's extent. If the blocks stop before the pitch boundary — which they usually do, the groove between one pitch and the next is part of the pitch — the drawing is shorter than the pitch and the tool cannot see by how much. It will only take the extent when you ask for that same length throughout; the moment a sequence asks for a different length, the ratio between the two decides every scaled coordinate and the pitch length must be stated.</p>
+<p><strong>Pitching</strong>, either as a single length × count, or as <strong>named lengths and a sequence</strong> — <code>A=32.4, B=36.0, C=40.2</code> with <code>ABCBACAB…</code>. The circumference is whatever the sequence adds up to. That is the multi-pitch case a PCR or TBR actually uses, and the sequence is what spreads the tread noise across orders instead of concentrating it at the pitch count.</p>
+<h3>The one thing the tool will not decide</h3>
+<p>When a pitch is stretched to a different length, two conventions are in use:</p>
+<div class="tablewrap"><table><thead><tr><th></th><th>what happens</th></tr></thead><tbody><tr><td><strong>uniform</strong></td><td>the whole pitch scales — a block in a long pitch is longer</td></tr><tr><td><strong>groove only</strong></td><td>blocks keep their circumferential length; the grooves absorb the difference</td></tr></tbody></table></div>
+<p><strong>Both are used in industry and they give different answers.</strong> On the bundled test pattern the same sequence gives a land ratio of 0.644 one way and 0.664 the other, and different order content with it. The tool therefore refuses a stretching sequence that does not name a convention, rather than picking one and letting it look like a result. Get the answer from your design office.</p>
+<h3>Closure: does the drawn pitch actually tile?</h3>
+<p>Your own designs close exactly. Competitor patterns digitised from a photograph often do not — the geometry at one boundary is a few tenths out from the other, and repeating it would leave gaps.</p>
+<p>Before building anything the tool pairs up the outline points on the two circumferential boundaries and measures the mismatch. What it does next depends on what it finds:</p>
+<ul><li><strong>Equal numbers of points on both edges</strong> — they are meant to join, so any difference in y is a defect. The import <strong>stops</strong> and says by how much, at which y positions, and what snap tolerance would close it. Set a <strong>boundary snap limit</strong> to have the two edges pulled together; the run then warns that the tread is no longer exactly the drawing, and says how many points moved.</li><li><strong>Different numbers</strong> — the tool cannot tell a missing rib from a legitimate blocked pattern with a groove at the pitch boundary, so it <strong>warns and continues</strong> rather than guessing.</li><li><strong>Nothing reaching the far boundary</strong> — the join is a clean lateral groove and nothing has to meet.</li></ul>
+<h3>Cut lines</h3>
+<p>Most pitch drawings carry the two lines where the pitch was cut out of the tread. They are <strong>not tread edges</strong>. Left in, they sit inside a continuous rib at every join and chop it into one block per pitch, which gets the rib's shape factor — and so its vertical stiffness — badly wrong. The tool finds them by their twin at the opposite boundary, removes them before repeating, and puts them back only at the two ends, where they are what closes a rib that runs the whole way round. A boundary outline with <strong>no</strong> twin is kept as a real tread edge, and you are told about it.</p>
 <hr>
 <h2>Compound: where the modulus comes from</h2>
 <p>Every stiffness in this tool scales with Young's modulus <strong>E</strong>. There are two ways to set it, and the panel always shows what was used:</p>
@@ -71439,6 +71478,414 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     }
   }
 
+  // =====================================================================
+  // pitch replication: one drawn pitch -> the whole rolled-out tread
+  // =====================================================================
+  //
+  // A design office draws ONE pitch. The tyre is that pitch repeated, and on a
+  // PCR or TBR it is repeated at several different LENGTHS in a sequence chosen
+  // to spread the tread noise across orders. Replication happens here, at the
+  // chain stage, before the planar arrangement -- so welding, edge splitting,
+  // face traversal, seam wrapping, block classification and tie-bar detection
+  // all run on the finished rolled-out tread exactly as they do for a drawing
+  // that was supplied whole. Nothing downstream knows the difference.
+  //
+  // HOW A PITCH IS STRETCHED IS A DESIGN-OFFICE CONVENTION, NOT A FACT.
+  // Two are in use and they give materially different order content:
+  //
+  //   uniform      the whole pitch scales, blocks and grooves together. The
+  //                block gets longer in a long pitch.
+  //   groove_only  the blocks keep their circumferential length and the extra
+  //                length goes into the grooves between them.
+  //
+  // Both are implemented. Neither is a default that can be reached by accident:
+  // a caller replicating at more than one length must name one, and the choice
+  // is echoed in the import report and on the page.
+  const PITCH_SCALING = ["uniform", "groove_only"];
+
+  // Instance lengths from a pitch specification. Three ways to say it:
+  //   {length: 33.2, count: 24}                        24 identical pitches
+  //   {lengths: {A:30,B:35,C:40}, sequence: "ABCBA"}   named lengths + order
+  //   {sequence: [30, 35, 40, 35]}                     the lengths themselves
+  function pitchInstanceLengths(spec) {
+    if (!spec) return null;
+    if (Array.isArray(spec.sequence) && spec.sequence.length) {
+      const out = spec.sequence.map(Number);
+      for (const v of out)
+        if (!Number.isFinite(v) || v <= 0)
+          throw new Error("every pitch length in the sequence must be a positive number of mm, got " + v);
+      return out;
+    }
+    if (typeof spec.sequence === "string" && spec.sequence.trim()) {
+      const names = spec.sequence.toUpperCase().replace(/[^A-Z]/g, "").split("");
+      if (!names.length)
+        throw new Error("the pitch sequence '" + spec.sequence + "' contains no pitch letters");
+      const table = {};
+      for (const k in (spec.lengths || {})) table[k.toUpperCase()] = Number(spec.lengths[k]);
+      const out = [];
+      for (const n of names) {
+        const v = table[n];
+        if (!Number.isFinite(v) || v <= 0)
+          throw new Error("pitch '" + n + "' appears in the sequence but has no length; " +
+            "define a length for every letter used (have: " + (Object.keys(table).join(", ") || "none") + ")");
+        out.push(v);
+      }
+      return out;
+    }
+    const n = Number(spec.count);
+    const L = Number(spec.length);
+    if (!Number.isFinite(n) || n < 1 || n % 1 !== 0)
+      throw new Error("pitch count must be a whole number >= 1, got " + spec.count);
+    if (n > 5000) throw new Error("pitch count of " + n + " is implausible (limit 5000)");
+    if (!Number.isFinite(L) || L <= 0)
+      throw new Error("pitch length must be a positive number of mm, got " + spec.length);
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(L);
+    return out;
+  }
+
+  // Does the drawn pitch tile itself?
+  //
+  // Every point where geometry meets the left boundary must have a partner at
+  // the same y on the right boundary, or the tread will not join up when the
+  // pitch is repeated. Chains are in local coordinates spanning [0, L].
+  //
+  // A pitch with NO geometry on either boundary closes trivially -- the grooves
+  // run along the boundary and nothing has to meet.
+  function pitchClosure(chains, L, tol) {
+    tol = tol || 0.01;
+    const left = [], right = [];
+    for (let ci = 0; ci < chains.length; ci++) {
+      const ch = chains[ci];
+      for (let vi = 0; vi < ch.length; vi++) {
+        const p = ch[vi];
+        if (p[0] <= tol) left.push({ y: p[1], chain: ci, vertex: vi });
+        else if (p[0] >= L - tol) right.push({ y: p[1], chain: ci, vertex: vi });
+      }
+    }
+    left.sort((a, b) => a.y - b.y);
+    right.sort((a, b) => a.y - b.y);
+
+    // Whether the two edges are MEANT to join is the whole question, and the
+    // only honest signal is the count. Equal counts on both boundaries means
+    // every outline that reaches one edge has a partner on the other -- a rib
+    // running through -- so any difference in y is a defect, and it is measured.
+    //
+    // Unequal counts is NOT a defect. A blocked pattern with a lateral groove at
+    // the pitch boundary legitimately has land on one side and nothing on the
+    // other, and a block that merely touches the boundary from inside needs no
+    // partner at all. The tool cannot tell that apart from a drawing that is
+    // missing geometry, so it says so rather than guessing.
+    const pairs = [];
+    const paired = left.length === right.length && left.length > 0;
+    if (paired)
+      for (let i = 0; i < left.length; i++)
+        pairs.push({ left: left[i], right: right[i], gap: Math.abs(left[i].y - right[i].y) });
+    let maxGap = 0;
+    for (const p of pairs) maxGap = Math.max(maxGap, p.gap);
+    return {
+      n_left: left.length, n_right: right.length,
+      pairs: pairs, max_gap_mm: maxGap, paired: paired,
+      // Whether anything reaches the FAR boundary. The importer shifts the
+      // drawing so its left edge sits at x = 0, so there is always something on
+      // the near one -- the far one is the only side that carries information,
+      // and it is what says whether the drawn extent is the pitch length.
+      reaches_far: right.length > 0,
+      ambiguous: left.length !== right.length,
+      closes: !paired || maxGap <= tol,
+    };
+  }
+
+  // Pull the right boundary onto the left one, pair by pair, and pin both
+  // boundaries to exactly x = 0 and x = L. Only ever applied when the caller
+  // asks for it and only within the stated tolerance -- a 2 mm mismatch on a
+  // competitor pattern usually means the digitising is wrong, and closing it
+  // silently would bury that.
+  function snapPitchBoundary(chains, L, closure, tol) {
+    let moved = 0, worst = 0;
+    for (const pr of closure.pairs) {
+      if (pr.gap > tol) continue;
+      const target = pr.left.y;
+      const p = chains[pr.right.chain][pr.right.vertex];
+      if (p[1] !== target) { worst = Math.max(worst, Math.abs(p[1] - target)); moved++; }
+      p[1] = target;
+      p[0] = L;
+    }
+    for (const l of closure.pairs) chains[l.left.chain][l.left.vertex][0] = 0;
+    return { moved: moved, worst_mm: worst };
+  }
+
+  // x-intervals of the base pitch that carry land, for groove_only scaling.
+  // Found by running the existing arrangement on the base pitch alone and
+  // taking the x-extent of every closed outline, including the ones that wrap
+  // the pitch boundary.
+  function landSpansX(chains, L, weldTol) {
+    const arr = planarArrangement(chains, weldTol);
+    const seam = closeAcrossSeam(arr.openChains, L, weldTol);
+    const loops = arr.faces.map((f) => f.polygon).concat(seam.loops);
+    const spans = [];
+    for (const poly of loops) {
+      let lo = Infinity, hi = -Infinity;
+      for (const p of poly) { if (p[0] < lo) lo = p[0]; if (p[0] > hi) hi = p[0]; }
+      if (hi > lo) spans.push([Math.max(0, lo), Math.min(L, hi)]);
+    }
+    spans.sort((a, b) => a[0] - b[0]);
+    const merged = [];
+    for (const s of spans) {
+      const last = merged[merged.length - 1];
+      if (last && s[0] <= last[1] + 1e-9) last[1] = Math.max(last[1], s[1]);
+      else merged.push([s[0], s[1]]);
+    }
+    return merged;
+  }
+
+  // Monotone piecewise-linear map from the base pitch's x to an instance of a
+  // different length. `spans` is null for uniform scaling.
+  function pitchStretchMap(L0, L1, spans) {
+    if (!spans) {
+      const k = L1 / L0;
+      return (x) => x * k;
+    }
+    // Land keeps its length; the voids between absorb the difference, shared
+    // out in proportion to how wide each already is.
+    let land = 0;
+    for (const s of spans) land += s[1] - s[0];
+    const voidTotal = L0 - land;
+    const delta = L1 - L0;
+    if (voidTotal <= 1e-9)
+      throw new Error(
+        "groove-only scaling needs circumferential gaps between the blocks, and this pitch has none: " +
+        "every position across the pitch has land somewhere on the tread width. That is normal for a " +
+        "directional or heavily angled pattern, where blocks overlap in the rolling direction. " +
+        "Use uniform scaling for this drawing."
+      );
+    if (delta < -voidTotal + 1e-9)
+      throw new Error(
+        "groove-only scaling cannot shorten this pitch from " + L0.toFixed(2) + " mm to " + L1.toFixed(2) +
+        " mm: the blocks alone occupy " + land.toFixed(2) + " mm and would have to overlap. " +
+        "Use uniform scaling, or a longer pitch."
+      );
+    const f = 1 + delta / voidTotal;
+    // Breakpoints: alternating void / land, walked left to right.
+    const xs = [0], ys = [0];
+    let cursor = 0, out = 0;
+    for (const s of spans) {
+      if (s[0] > cursor) { out += (s[0] - cursor) * f; cursor = s[0]; xs.push(cursor); ys.push(out); }
+      out += s[1] - s[0]; cursor = s[1]; xs.push(cursor); ys.push(out);
+    }
+    if (cursor < L0) { out += (L0 - cursor) * f; xs.push(L0); ys.push(out); }
+    return function (x) {
+      if (x <= xs[0]) return ys[0];
+      for (let i = 1; i < xs.length; i++) {
+        if (x <= xs[i]) {
+          const t = xs[i] === xs[i - 1] ? 0 : (x - xs[i - 1]) / (xs[i] - xs[i - 1]);
+          return ys[i - 1] + t * (ys[i] - ys[i - 1]);
+        }
+      }
+      return ys[ys.length - 1];
+    };
+  }
+
+  // Cut lines.
+  //
+  // A pitch drawing usually carries the two lines where the pitch was cut out of
+  // the tread. They are not tread edges. Repeat the pitch and they land in the
+  // middle of a continuous rib, where the arrangement reads them as real walls
+  // and chops the rib into one block per pitch -- which gets the rib's shape
+  // factor, and so its vertical stiffness, badly wrong.
+  //
+  // A cut line is recognised by having a TWIN at the other boundary covering the
+  // same y. A rib that genuinely ends at the pitch edge has no twin, so it is
+  // left alone.
+  function stripCutLines(chains, L0, tol) {
+    const onLeft = [], onRight = [];
+    for (let i = 0; i < chains.length; i++) {
+      const ch = chains[i];
+      let allL = true, allR = true;
+      for (const p of ch) {
+        if (p[0] > tol) allL = false;
+        if (p[0] < L0 - tol) allR = false;
+      }
+      if (allL) onLeft.push(i);
+      else if (allR) onRight.push(i);
+    }
+    const span = (ch) => {
+      let lo = Infinity, hi = -Infinity;
+      for (const p of ch) { if (p[1] < lo) lo = p[1]; if (p[1] > hi) hi = p[1]; }
+      return [lo, hi];
+    };
+    const drop = new Set();
+    const usedRight = new Set();
+    for (const li of onLeft) {
+      const a = span(chains[li]);
+      for (const ri of onRight) {
+        if (usedRight.has(ri)) continue;
+        const b = span(chains[ri]);
+        if (Math.abs(a[0] - b[0]) <= tol && Math.abs(a[1] - b[1]) <= tol) {
+          drop.add(li); drop.add(ri); usedRight.add(ri);
+          break;
+        }
+      }
+    }
+    if (!drop.size) return { chains: chains, removed: 0, unpaired: onLeft.length + onRight.length, caps: [] };
+    return {
+      chains: chains.filter((_, i) => !drop.has(i)),
+      removed: drop.size,
+      unpaired: (onLeft.length + onRight.length) - drop.size,
+      // The left-hand halves, kept so the ends of the finished tread can be
+      // capped: a cut line is an artefact at every INTERIOR join, but at the
+      // global seam it is the only thing closing a rib that runs the whole way
+      // round. Without it the rib is two parallel lines and no outline at all.
+      caps: onLeft.filter((i) => drop.has(i)).map((i) => chains[i].map((p) => [p[0], p[1]])),
+    };
+  }
+
+  // Replicate the base pitch into the whole rolled-out tread.
+  // `chains` are in local coordinates spanning [0, L0]; returns new chains
+  // spanning [0, circumference] plus a report of what was done.
+  function replicatePitch(chains, spec, weldTol) {
+    const lengths = pitchInstanceLengths(spec);
+    if (!lengths || !lengths.length) throw new Error("no pitch sequence to replicate");
+
+    // The pitch length is NOT the drawing's extent. A pitch whose blocks stop
+    // short of the boundary -- which is most of them, the groove between one
+    // pitch and the next is part of the pitch -- draws narrower than it is. Take
+    // the extent only when the geometry actually reaches both boundaries, and
+    // otherwise insist on being told.
+    let drawn = 0;
+    for (const ch of chains) for (const p of ch) if (p[0] > drawn) drawn = p[0];
+    if (!(drawn > 0)) throw new Error("the drawn pitch has no circumferential extent to replicate");
+    let L0 = Number(spec.base_length);
+    const stated = Number.isFinite(L0) && L0 > 0;
+    if (!stated) L0 = drawn;
+    if (L0 < drawn - weldTol)
+      throw new Error(
+        "the pitch length given (" + L0 + " mm) is shorter than the drawing, which spans " +
+        drawn.toFixed(3) + " mm. One pitch cannot be shorter than the geometry drawn in it."
+      );
+
+    const varies = lengths.some((v) => Math.abs(v - lengths[0]) > 1e-9) ||
+                   Math.abs(lengths[0] - L0) > 1e-6;
+    // The drawn extent may be taken as the pitch length ONLY when the sequence
+    // asks for that same length throughout -- repeat the drawing as it stands
+    // and nothing has to be assumed. The moment a different length is wanted,
+    // the ratio between it and the drawn pitch decides every scaled coordinate,
+    // and a ratio measured against the drawing's extent is wrong by however much
+    // groove was drawn after the last block.
+    if (!stated && varies)
+      throw new Error(
+        "the pitch length has to be given. The sequence asks for pitch lengths that differ from the " +
+        drawn.toFixed(2) + " mm the drawing spans, and every scaled coordinate depends on the ratio " +
+        "between the two — but the drawing's extent is not the pitch length whenever there is groove " +
+        "after the last block, and the tool cannot see how much."
+      );
+    const mode = spec.scaling;
+    if (varies && PITCH_SCALING.indexOf(mode) < 0)
+      throw new Error(
+        "this sequence stretches the drawn pitch, so the scaling convention has to be stated: " +
+        "'uniform' (the whole pitch scales, blocks and grooves together) or 'groove_only' (blocks keep " +
+        "their circumferential length and the grooves absorb the difference). They give different order " +
+        "content, so the tool will not choose for you."
+      );
+
+    const warnings = [];
+    const closure = pitchClosure(chains, L0, weldTol);
+    if (!stated && !closure.reaches_far)
+      throw new Error(
+        "the pitch length has to be given for this drawing. Nothing in it reaches the far circumferential " +
+        "boundary, so the groove between one pitch and the next is not drawn and the pitch length cannot be " +
+        "measured from the geometry — it spans " + drawn.toFixed(2) + " mm, but the pitch is longer than " +
+        "that by however much groove follows it."
+      );
+    if (stated && L0 > drawn + weldTol)
+      warnings.push("the drawn geometry spans " + drawn.toFixed(2) + " mm of the " + L0.toFixed(2) +
+        " mm pitch; the remaining " + (L0 - drawn).toFixed(2) + " mm becomes groove at the trailing end of " +
+        "every pitch. The drawing is taken to start at the pitch boundary.");
+    const work = chains.map((ch) => ch.map((p) => [p[0], p[1]]));
+    let snapped = null;
+    const snapTol = spec.snap_tolerance == null ? 0 : Number(spec.snap_tolerance);
+
+    if (!closure.reaches_far) {
+      warnings.push("nothing in the drawing reaches the far pitch boundary, so the " +
+        (L0 - drawn).toFixed(2) + " mm after it is groove and the pitch tiles with a clean lateral " +
+        "groove at every join — nothing has to meet.");
+    } else if (closure.ambiguous) {
+      warnings.push("the two pitch boundaries carry different numbers of outline points (" +
+        closure.n_left + " on the left, " + closure.n_right + " on the right), so the tool cannot tell " +
+        "whether they are meant to join. If the pattern is blocked and has a groove at the pitch boundary " +
+        "that is correct. If a rib should run through, the drawing is missing geometry at one end and the " +
+        "rib will be cut at every pitch.");
+    } else if (!closure.closes) {
+      if (snapTol > 0 && closure.max_gap_mm <= snapTol) {
+        snapped = snapPitchBoundary(work, L0, closure, snapTol);
+        warnings.push("the pitch boundaries were " + closure.max_gap_mm.toFixed(4) + " mm out of line and were " +
+          "snapped closed (" + snapped.moved + " point(s) moved, within the " + snapTol + " mm limit you set). " +
+          "The tread below is therefore not exactly the drawing.");
+      } else {
+        const worst = closure.pairs.slice().sort((a, b) => b.gap - a.gap).slice(0, 5);
+        throw new Error(
+          "this pitch does not close: the geometry on the right boundary is up to " +
+          closure.max_gap_mm.toFixed(4) + " mm out of line with the left, so repeating it would leave gaps " +
+          "in the tread. Worst mismatches (y on the left edge -> y on the right): " +
+          worst.map((p) => p.left.y.toFixed(3) + " -> " + p.right.y.toFixed(3) +
+                    " (" + p.gap.toFixed(4) + " mm)").join(", ") +
+          ". Either fix the drawing, or set a snap tolerance of at least " +
+          (Math.ceil(closure.max_gap_mm * 1000) / 1000) + " mm to close it automatically."
+        );
+      }
+    }
+
+    const cut = stripCutLines(work, L0, weldTol);
+    const tiles = cut.chains;
+    if (cut.removed)
+      warnings.push(cut.removed + " pitch cut line(s) were removed before repeating. They are where the drawing " +
+        "was cut out of the tread, not tread edges — left in, they would sit inside a continuous rib at every " +
+        "pitch join and split it into one block per pitch.");
+    if (cut.unpaired)
+      warnings.push(cut.unpaired + " outline(s) lie along a pitch boundary with no matching outline at the other " +
+        "end, so they were kept as real tread edges. If they are cut lines, the drawing is missing the one at " +
+        "the opposite boundary.");
+
+    const spans = mode === "groove_only" ? landSpansX(tiles, L0, weldTol) : null;
+    if (spans && !spans.length)
+      throw new Error("groove-only scaling found no closed block outlines in the drawn pitch, so it cannot " +
+        "tell a block from a groove. Use uniform scaling.");
+
+    const out = [];
+    const instances = [];
+    let x0 = 0;
+    for (let i = 0; i < lengths.length; i++) {
+      const L1 = lengths[i];
+      const map = Math.abs(L1 - L0) < 1e-12 ? null : pitchStretchMap(L0, L1, spans);
+      for (const ch of tiles) {
+        const moved = new Array(ch.length);
+        for (let v = 0; v < ch.length; v++) {
+          const p = ch[v];
+          moved[v] = [x0 + (map ? map(p[0]) : p[0]), p[1]];
+        }
+        out.push(moved);
+      }
+      instances.push({ index: i, start: x0, length: L1,
+                       scale: L1 / L0, id: "P" + String(i).padStart(3, "0") });
+      x0 += L1;
+    }
+
+    // Cap the two ends. Anything that ran continuously through every pitch now
+    // needs closing at x = 0 and x = circumference, or it stays an open chain
+    // and is discarded.
+    for (const cap of cut.caps) {
+      out.push(cap.map((p) => [0, p[1]]));
+      out.push(cap.map((p) => [x0, p[1]]));
+    }
+
+    return {
+      chains: out, circumference: x0, base_length: L0, instances: instances,
+      scaling: varies ? mode : "none (every pitch is the drawn length)",
+      land_spans: spans, closure: closure, snapped: snapped,
+      cut_lines_removed: cut.removed, warnings: warnings,
+    };
+  }
+
   function validateImportOptions(o) {
     if (!o) return;
     for (const k of ["circumference", "tread_width"]) {
@@ -71477,8 +71924,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
     let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
     for (const s of segments) for (const p of s) { xMin = Math.min(xMin, p[0]); xMax = Math.max(xMax, p[0]); yMin = Math.min(yMin, p[1]); yMax = Math.max(yMax, p[1]); }
-    const circ = opts.circumference || xMax - xMin;
-    const width = opts.tread_width || yMax - yMin;
+    let circ = opts.circumference || xMax - xMin;
+    let width = opts.tread_width || yMax - yMin;
     if (!Number.isFinite(circ) || circ <= 0 || !Number.isFinite(width) || width <= 0)
       throw new Error(
         "DXF extents are degenerate: " + circ + " x " + width + " mm. The drawing must " +
@@ -71491,10 +71938,32 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     // drawing. Only look for one when the drawing is big enough to have block
     // detail as well -- on a 4-segment drawing every edge spans the extents,
     // and the old 0.5x rule deleted the only block in the file.
-    const canHaveConstructionLines = segments.length >= 8;
+    //
+    // Two things narrow it further, both found by the single-pitch importer:
+    //
+    //   * a construction line runs AROUND the tyre, so it must span the drawing
+    //     in x. Length alone is not enough: a pitch drawing can be 40 mm long
+    //     and 200 mm wide, and there the ordinary lateral edge of a rib is
+    //     longer than the whole circumferential span and was being deleted.
+    //   * in a one-pitch drawing a line that does span the pitch in x is a
+    //     continuous rib -- exactly the geometry that has to survive for the
+    //     pitch to tile -- so the rule is switched off entirely.
+    // A real rolled-out tread is many times longer than it is wide -- 6x on a
+    // truck tyre, 14x on a motorcycle one. A drawing that is not tells us it is
+    // a single pitch that has been loaded without a pitch sequence, where the
+    // 0.9-of-the-circumference rule below would delete the ordinary long edge of
+    // every block. Say so, and switch the rule off rather than shred the import.
+    const looksLikeOnePitch = !opts.pitch && circ < 1.5 * width;
+    if (looksLikeOnePitch)
+      warnings.push("this drawing is " + circ.toFixed(1) + " mm around and " + width.toFixed(1) +
+        " mm wide, which is the shape of ONE PITCH rather than a whole tread. It has been imported as a " +
+        (circ.toFixed(1)) + " mm tyre. If it is a single pitch, give the pitch length and count (or the pitch " +
+        "sequence) in 1 · Tread plan and the tool will build the whole tread from it.");
+    const canHaveConstructionLines = segments.length >= 8 && !opts.pitch && !looksLikeOnePitch;
     const kept = [];
     for (const s of segments) {
-      if (canHaveConstructionLines && s.length === 2 && dist(s[0], s[1]) > 0.9 * circ) continue;
+      if (canHaveConstructionLines && s.length === 2 &&
+          dist(s[0], s[1]) > 0.9 * circ && Math.abs(s[1][0] - s[0][0]) > 0.9 * circ) continue;
       kept.push(s.map((p) => [p[0] - xMin, p[1] - yMin]));
     }
     if (kept.length !== segments.length) warnings.push("ignored " + (segments.length - kept.length) + " full-span construction line(s)");
@@ -71508,6 +71977,30 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     const weldTol = opts.weld_tolerance == null ? 0.01 : opts.weld_tolerance;
     if (!Number.isFinite(weldTol) || weldTol <= 0 || weldTol > 1.0)
       throw new Error("weld tolerance must be a positive number of mm no greater than 1.0, got " + weldTol);
+
+    // One drawn pitch -> the whole tread. Done here, on the chains, so that
+    // everything below runs on the rolled-out tread and cannot tell that the
+    // drawing was a single repeat. `circ` was measured off the drawing above,
+    // which for a pitch DXF is the pitch length, so it is replaced.
+    let pitchRep = null;
+    if (opts.pitch) {
+      pitchRep = replicatePitch(segments, opts.pitch, weldTol);
+      segments = pitchRep.chains;
+      for (const w of pitchRep.warnings) warnings.push(w);
+      if (opts.circumference && Math.abs(opts.circumference - pitchRep.circumference) > 1e-6)
+        warnings.push("the pitch sequence adds up to " + pitchRep.circumference.toFixed(2) +
+          " mm, which is not the " + opts.circumference + " mm circumference override; the sequence wins " +
+          "(a circumference the pitches do not add up to would leave a gap at the seam)");
+      circ = pitchRep.circumference;
+      // Re-measure the lateral extent: a boundary snap moves points in y, so
+      // the width taken off the drawing above can be a few tenths out.
+      let wy0 = Infinity, wy1 = -Infinity;
+      for (const ch of segments) for (const p of ch) { if (p[1] < wy0) wy0 = p[1]; if (p[1] > wy1) wy1 = p[1]; }
+      if (!opts.tread_width && wy1 > wy0) width = wy1 - wy0;
+      warnings.push(pitchRep.instances.length + " pitch(es) built from one drawn repeat of " +
+        pitchRep.base_length.toFixed(2) + " mm, giving a " + circ.toFixed(2) + " mm circumference" +
+        (pitchRep.scaling.indexOf("none") === 0 ? "" : "; length scaling: " + pitchRep.scaling));
+    }
 
     const arr = planarArrangement(segments, weldTol);
     const seam = closeAcrossSeam(arr.openChains, circ);
@@ -71567,15 +72060,37 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       });
     }
 
-    const nPitches = opts.n_pitches && opts.n_pitches > 0 ? opts.n_pitches
-      : opts.pitch_length && opts.pitch_length > 0 ? Math.max(1, Math.round(circ / opts.pitch_length))
-      : estimatePitchCount(blocks, circ);
-    const pitchLen = circ / nPitches;
-    const pitches = [];
-    for (let i = 0; i < nPitches; i++) pitches.push({ id: "P" + String(i).padStart(3, "0"), circumferential_start: i * pitchLen, circumferential_length: pitchLen });
+    // When the tread was built from a pitch sequence the pitches are KNOWN --
+    // their starts and lengths are what built it -- so they are used verbatim
+    // rather than re-inferred, and they need not be equal. Only a drawing
+    // supplied whole has to have its pitching guessed.
+    let pitches, nPitches, pitchLen;
+    if (pitchRep) {
+      pitches = pitchRep.instances.map((p) => ({
+        id: p.id, circumferential_start: p.start, circumferential_length: p.length,
+        scale: p.scale,
+      }));
+      nPitches = pitches.length;
+      pitchLen = circ / nPitches;
+      // Blocks are tagged with their pitch a few lines below, by centroid --
+      // that already handles variable-length pitches, so nothing extra is
+      // needed here.
+    } else {
+      nPitches = opts.n_pitches && opts.n_pitches > 0 ? opts.n_pitches
+        : opts.pitch_length && opts.pitch_length > 0 ? Math.max(1, Math.round(circ / opts.pitch_length))
+        : estimatePitchCount(blocks, circ);
+      pitchLen = circ / nPitches;
+      pitches = [];
+      for (let i = 0; i < nPitches; i++) pitches.push({ id: "P" + String(i).padStart(3, "0"), circumferential_start: i * pitchLen, circumferential_length: pitchLen });
+    }
 
     const repeat = geometricRepeat(blocks, circ);
-    if (repeat && Math.abs(repeat - pitchLen) > 0.01)
+    const variablePitch = pitchRep && pitches.some((p) =>
+      Math.abs(p.circumferential_length - pitches[0].circumferential_length) > 1e-9);
+    // Only meaningful when there IS one pitch length to compare against. A
+    // sequence of three lengths repeats over the whole sequence by design, so
+    // the "sub-multiple" reading would be nonsense.
+    if (repeat && !variablePitch && Math.abs(repeat - pitchLen) > 0.01)
       warnings.push("pitch spacing " + pitchLen.toFixed(3) + " mm is a sub-multiple of the " + repeat.toFixed(3) + " mm geometric repeat -- lateral bands are staggered");
 
     for (const b of blocks) {
@@ -71659,6 +72174,21 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       tiebar_reference_area: cls.referenceArea, tiebar_cut_area: cls.cutArea,
       entity_types: entities.__types || {}, unsupported_types: stats.unsupported || {},
       n_inserts: stats.inserts || 0,
+      // What the pitch sequence did, when there was one. Kept out of `pattern`
+      // deliberately: the pattern is the finished tread and must not care how
+      // it was assembled, but the report has to be able to say.
+      pitch: pitchRep ? {
+        base_length_mm: pitchRep.base_length, n_pitches: pitchRep.instances.length,
+        circumference_mm: pitchRep.circumference, scaling: pitchRep.scaling,
+        lengths_mm: pitchRep.instances.map((p) => p.length),
+        closure: {
+          closes: pitchRep.closure.closes, reaches_far: pitchRep.closure.reaches_far,
+          ambiguous: pitchRep.closure.ambiguous,
+          n_left: pitchRep.closure.n_left, n_right: pitchRep.closure.n_right,
+          max_gap_mm: pitchRep.closure.max_gap_mm,
+        },
+        snapped: pitchRep.snapped,
+      } : null,
       warnings: warnings,
     };
     return { pattern: pattern, report: report };
@@ -72787,6 +73317,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     // dxf
     readDxfEntities, entitiesToSegments, buildLoops, closeAcrossSeam, loadPattern, estimatePitchCount, geometricRepeat,
     dxfPairs, planarArrangement, classifyFaces, faceAdjacency, bulgeArc,
+    replicatePitch, pitchInstanceLengths, pitchClosure, pitchStretchMap, landSpansX, PITCH_SCALING,
     crownMultiArc, parseCrownArcs, validateCrownArcs, buildCrown, MAX_CROWN_ARCS,
     compoundProperties, validateCompound, interpShore,
     tiebarEngagementWear, tiebarEngaged, effectiveBlocks, validateWear, patternAtWear,
@@ -73349,6 +73880,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     opts.weld_tolerance = readWeldTol();
     opts.tiebar_area_fraction = readTiebarAreaFrac();
     opts.tiebar_height_fraction = readTiebarFrac();
+    var pitch = readPitchSpec();
+    if (pitch) opts.pitch = pitch;
     var out = E.loadPattern(text, defaults, opts);
     state.pattern = out.pattern;
     state.report = out.report;
@@ -73358,10 +73891,96 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     showResultsChrome(false);
     renderBanner();
     renderTiebars();
+    renderPitchInfo();
     syncCrownArcInfo();
     drawEditor();
     $("emptyHint").style.display = "none";
     refreshValidation();
+  }
+
+  // "A=32.4, B=36.0" -> {A: 32.4, B: 36}. Tolerant of spaces, semicolons and
+  // newlines, because this gets pasted out of a spreadsheet.
+  function parsePitchLengths(txt) {
+    var out = {}, n = 0;
+    String(txt || "").split(/[,;\n]+/).forEach(function (part) {
+      var m = part.match(/^\s*([A-Za-z])\s*[=:]\s*([0-9.]+)\s*$/);
+      if (m) { out[m[1].toUpperCase()] = parseFloat(m[2]); n++; }
+    });
+    return n ? out : null;
+  }
+
+  // The pitch specification, or null when the DXF is a whole tread.
+  // Deliberately returns whatever the user has typed without filling gaps: the
+  // engine refuses an incomplete spec with a message that says what is missing,
+  // and that message is better than any guess made here.
+  function readPitchSpec() {
+    if (!$("pitchOn") || !$("pitchOn").checked) return null;
+    var spec = {};
+    var base = parseFloat($("pitchBase").value);
+    if (isFinite(base) && base > 0) spec.base_length = base;
+    var snap = parseFloat($("pitchSnap").value);
+    if (isFinite(snap) && snap > 0) spec.snap_tolerance = snap;
+    if ($("pitchMode").value === "sequence") {
+      spec.lengths = parsePitchLengths($("pitchLens").value);
+      spec.sequence = $("pitchSeq").value;
+      spec.scaling = $("pitchScale").value || undefined;
+    } else {
+      spec.length = isFinite(base) && base > 0 ? base : undefined;
+      spec.count = parseInt($("pitchCount").value, 10);
+    }
+    return spec;
+  }
+
+  // The pitch settings rebuild the geometry, which only happens on import. Say
+  // so rather than let the page show a tread built from the previous settings.
+  function markPitchStale() {
+    if (!state.pattern) return;
+    var el = $("pitchInfo");
+    if (el) el.innerHTML = "<b style='color:var(--warn)'>Re-load the DXF to apply this.</b> " +
+      "The pitch settings build the tread geometry, so they take effect at import, not at run.";
+  }
+
+  function syncPitchFields() {
+    var on = $("pitchOn") && $("pitchOn").checked;
+    if ($("pitchBox")) $("pitchBox").style.display = on ? "" : "none";
+    var seq = $("pitchMode") && $("pitchMode").value === "sequence";
+    ["rowPitchLens", "rowPitchSeq", "rowPitchScale"].forEach(function (id) {
+      if ($(id)) $(id).style.display = seq ? "" : "none";
+    });
+    if ($("rowPitchCount")) $("rowPitchCount").style.display = seq ? "none" : "";
+    renderPitchInfo();
+  }
+
+  // What the sequence adds up to, before anything is imported -- so a typo in
+  // the sequence shows as a wrong circumference rather than as a strange sweep.
+  function renderPitchInfo() {
+    var el = $("pitchInfo");
+    if (!el) return;
+    var rep = state.report && state.report.pitch;
+    if (rep) {
+      var c = rep.closure;
+      el.innerHTML = "<b>" + rep.n_pitches + " pitches</b> of " +
+        (rep.lengths_mm.length ? Math.min.apply(null, rep.lengths_mm).toFixed(2) + "–" +
+          Math.max.apply(null, rep.lengths_mm).toFixed(2) : "?") + " mm from a " +
+        rep.base_length_mm.toFixed(2) + " mm drawing → <b>" + rep.circumference_mm.toFixed(1) +
+        " mm</b> circumference. Scaling: " + escapeHtml(rep.scaling) + ".<br>Boundary: " +
+        (!c.reaches_far ? "nothing reaches the far edge — a clean groove at every join"
+         : c.ambiguous ? "<b style='color:var(--warn)'>" + c.n_left + " point(s) on one edge, " + c.n_right + " on the other</b>"
+         : c.closes ? "closes to " + c.max_gap_mm.toFixed(4) + " mm"
+         : "<b style='color:var(--warn)'>out by " + c.max_gap_mm.toFixed(4) + " mm</b>") +
+        (rep.snapped ? " — snapped, " + rep.snapped.moved + " point(s) moved" : "");
+      return;
+    }
+    var spec = readPitchSpec();
+    if (!spec) { el.innerHTML = ""; return; }
+    try {
+      var lens = E.pitchInstanceLengths(spec);
+      var tot = 0; for (var i = 0; i < lens.length; i++) tot += lens[i];
+      el.innerHTML = lens.length + " pitch(es) totalling <b>" + tot.toFixed(1) +
+        " mm</b> circumference. Load the DXF to build it.";
+    } catch (err) {
+      el.innerHTML = "<span style='color:var(--warn)'>" + escapeHtml(err.message) + "</span>";
+    }
   }
 
   function loadFile(file) {
@@ -75926,6 +76545,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     editorSetup();
     if ($("pinStrip")) state.pinStrip = $("pinStrip").checked;
     applyStripPin();
+    syncPitchFields();
 
     on($("fileInput"), "change", function (e) { if (e.target.files[0]) loadFile(e.target.files[0]); });
     on($("sampleBtn"), "click", function () {
@@ -75965,6 +76585,16 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       if (chip && chip.dataset.row) toggleStackRow(chip.dataset.row);
     });
     on($("pinStrip"), "change", function () { state.pinStrip = this.checked; applyStripPin(); });
+
+    // Pitch replication. Changing any of these changes the tread itself, so the
+    // DXF has to be read again -- unlike NSD or the compound, which only change
+    // what is computed from an already-imported drawing.
+    on($("pitchOn"), "change", function () { syncPitchFields(); markPitchStale(); });
+    on($("pitchMode"), "change", function () { syncPitchFields(); markPitchStale(); });
+    ["pitchBase", "pitchCount", "pitchLens", "pitchSeq", "pitchScale", "pitchSnap"].forEach(function (id) {
+      on($(id), "input", function () { renderPitchInfo(); markPitchStale(); });
+      on($(id), "change", function () { renderPitchInfo(); markPitchStale(); });
+    });
     on($("compareMetric"), "change", function () { state.compareMetric = this.value; renderCompare(); });
     on($("addCompare"), "click", addCurrentToComparison);
     on($("addCompareSide"), "click", function () {

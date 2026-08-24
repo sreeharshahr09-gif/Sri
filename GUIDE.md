@@ -103,6 +103,78 @@ coarse for the patch and every area on the page is biased.
 
 ---
 
+## Building the tread from one pitch
+
+A design office draws **one pitch**. Tick *the DXF is one pitch* in
+**1 · Tread plan** and the tool repeats it into the whole rolled-out tread —
+after which every other tab behaves exactly as it does for a drawing supplied
+whole. Blocks, tie bars, seam wrapping and the sweep cannot tell the difference.
+
+### What you have to supply
+
+**Pitch length.** Not the drawing's extent. If the blocks stop before the pitch
+boundary — which they usually do, the groove between one pitch and the next is
+part of the pitch — the drawing is shorter than the pitch and the tool cannot
+see by how much. It will only take the extent when you ask for that same length
+throughout; the moment a sequence asks for a different length, the ratio between
+the two decides every scaled coordinate and the pitch length must be stated.
+
+**Pitching**, either as a single length × count, or as **named lengths and a
+sequence** — `A=32.4, B=36.0, C=40.2` with `ABCBACAB…`. The circumference is
+whatever the sequence adds up to. That is the multi-pitch case a PCR or TBR
+actually uses, and the sequence is what spreads the tread noise across orders
+instead of concentrating it at the pitch count.
+
+### The one thing the tool will not decide
+
+When a pitch is stretched to a different length, two conventions are in use:
+
+| | what happens |
+|---|---|
+| **uniform** | the whole pitch scales — a block in a long pitch is longer |
+| **groove only** | blocks keep their circumferential length; the grooves absorb the difference |
+
+**Both are used in industry and they give different answers.** On the bundled
+test pattern the same sequence gives a land ratio of 0.644 one way and 0.664 the
+other, and different order content with it. The tool therefore refuses a
+stretching sequence that does not name a convention, rather than picking one and
+letting it look like a result. Get the answer from your design office.
+
+### Closure: does the drawn pitch actually tile?
+
+Your own designs close exactly. Competitor patterns digitised from a photograph
+often do not — the geometry at one boundary is a few tenths out from the other,
+and repeating it would leave gaps.
+
+Before building anything the tool pairs up the outline points on the two
+circumferential boundaries and measures the mismatch. What it does next depends
+on what it finds:
+
+- **Equal numbers of points on both edges** — they are meant to join, so any
+  difference in y is a defect. The import **stops** and says by how much, at
+  which y positions, and what snap tolerance would close it. Set a
+  **boundary snap limit** to have the two edges pulled together; the run then
+  warns that the tread is no longer exactly the drawing, and says how many
+  points moved.
+- **Different numbers** — the tool cannot tell a missing rib from a legitimate
+  blocked pattern with a groove at the pitch boundary, so it **warns and
+  continues** rather than guessing.
+- **Nothing reaching the far boundary** — the join is a clean lateral groove and
+  nothing has to meet.
+
+### Cut lines
+
+Most pitch drawings carry the two lines where the pitch was cut out of the
+tread. They are **not tread edges**. Left in, they sit inside a continuous rib
+at every join and chop it into one block per pitch, which gets the rib's shape
+factor — and so its vertical stiffness — badly wrong. The tool finds them by
+their twin at the opposite boundary, removes them before repeating, and puts
+them back only at the two ends, where they are what closes a rib that runs the
+whole way round. A boundary outline with **no** twin is kept as a real tread
+edge, and you are told about it.
+
+---
+
 ## Compound: where the modulus comes from
 
 Every stiffness in this tool scales with Young's modulus **E**. There are two ways to set it, and the panel always shows what was used:

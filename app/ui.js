@@ -310,6 +310,8 @@
     opts.weld_tolerance = readWeldTol();
     opts.tiebar_area_fraction = readTiebarAreaFrac();
     opts.tiebar_height_fraction = readTiebarFrac();
+    var pitch = readPitchSpec();
+    if (pitch) opts.pitch = pitch;
     var out = E.loadPattern(text, defaults, opts);
     state.pattern = out.pattern;
     state.report = out.report;
@@ -319,10 +321,96 @@
     showResultsChrome(false);
     renderBanner();
     renderTiebars();
+    renderPitchInfo();
     syncCrownArcInfo();
     drawEditor();
     $("emptyHint").style.display = "none";
     refreshValidation();
+  }
+
+  // "A=32.4, B=36.0" -> {A: 32.4, B: 36}. Tolerant of spaces, semicolons and
+  // newlines, because this gets pasted out of a spreadsheet.
+  function parsePitchLengths(txt) {
+    var out = {}, n = 0;
+    String(txt || "").split(/[,;\n]+/).forEach(function (part) {
+      var m = part.match(/^\s*([A-Za-z])\s*[=:]\s*([0-9.]+)\s*$/);
+      if (m) { out[m[1].toUpperCase()] = parseFloat(m[2]); n++; }
+    });
+    return n ? out : null;
+  }
+
+  // The pitch specification, or null when the DXF is a whole tread.
+  // Deliberately returns whatever the user has typed without filling gaps: the
+  // engine refuses an incomplete spec with a message that says what is missing,
+  // and that message is better than any guess made here.
+  function readPitchSpec() {
+    if (!$("pitchOn") || !$("pitchOn").checked) return null;
+    var spec = {};
+    var base = parseFloat($("pitchBase").value);
+    if (isFinite(base) && base > 0) spec.base_length = base;
+    var snap = parseFloat($("pitchSnap").value);
+    if (isFinite(snap) && snap > 0) spec.snap_tolerance = snap;
+    if ($("pitchMode").value === "sequence") {
+      spec.lengths = parsePitchLengths($("pitchLens").value);
+      spec.sequence = $("pitchSeq").value;
+      spec.scaling = $("pitchScale").value || undefined;
+    } else {
+      spec.length = isFinite(base) && base > 0 ? base : undefined;
+      spec.count = parseInt($("pitchCount").value, 10);
+    }
+    return spec;
+  }
+
+  // The pitch settings rebuild the geometry, which only happens on import. Say
+  // so rather than let the page show a tread built from the previous settings.
+  function markPitchStale() {
+    if (!state.pattern) return;
+    var el = $("pitchInfo");
+    if (el) el.innerHTML = "<b style='color:var(--warn)'>Re-load the DXF to apply this.</b> " +
+      "The pitch settings build the tread geometry, so they take effect at import, not at run.";
+  }
+
+  function syncPitchFields() {
+    var on = $("pitchOn") && $("pitchOn").checked;
+    if ($("pitchBox")) $("pitchBox").style.display = on ? "" : "none";
+    var seq = $("pitchMode") && $("pitchMode").value === "sequence";
+    ["rowPitchLens", "rowPitchSeq", "rowPitchScale"].forEach(function (id) {
+      if ($(id)) $(id).style.display = seq ? "" : "none";
+    });
+    if ($("rowPitchCount")) $("rowPitchCount").style.display = seq ? "none" : "";
+    renderPitchInfo();
+  }
+
+  // What the sequence adds up to, before anything is imported -- so a typo in
+  // the sequence shows as a wrong circumference rather than as a strange sweep.
+  function renderPitchInfo() {
+    var el = $("pitchInfo");
+    if (!el) return;
+    var rep = state.report && state.report.pitch;
+    if (rep) {
+      var c = rep.closure;
+      el.innerHTML = "<b>" + rep.n_pitches + " pitches</b> of " +
+        (rep.lengths_mm.length ? Math.min.apply(null, rep.lengths_mm).toFixed(2) + "–" +
+          Math.max.apply(null, rep.lengths_mm).toFixed(2) : "?") + " mm from a " +
+        rep.base_length_mm.toFixed(2) + " mm drawing → <b>" + rep.circumference_mm.toFixed(1) +
+        " mm</b> circumference. Scaling: " + escapeHtml(rep.scaling) + ".<br>Boundary: " +
+        (!c.reaches_far ? "nothing reaches the far edge — a clean groove at every join"
+         : c.ambiguous ? "<b style='color:var(--warn)'>" + c.n_left + " point(s) on one edge, " + c.n_right + " on the other</b>"
+         : c.closes ? "closes to " + c.max_gap_mm.toFixed(4) + " mm"
+         : "<b style='color:var(--warn)'>out by " + c.max_gap_mm.toFixed(4) + " mm</b>") +
+        (rep.snapped ? " — snapped, " + rep.snapped.moved + " point(s) moved" : "");
+      return;
+    }
+    var spec = readPitchSpec();
+    if (!spec) { el.innerHTML = ""; return; }
+    try {
+      var lens = E.pitchInstanceLengths(spec);
+      var tot = 0; for (var i = 0; i < lens.length; i++) tot += lens[i];
+      el.innerHTML = lens.length + " pitch(es) totalling <b>" + tot.toFixed(1) +
+        " mm</b> circumference. Load the DXF to build it.";
+    } catch (err) {
+      el.innerHTML = "<span style='color:var(--warn)'>" + escapeHtml(err.message) + "</span>";
+    }
   }
 
   function loadFile(file) {
@@ -2887,6 +2975,7 @@
     editorSetup();
     if ($("pinStrip")) state.pinStrip = $("pinStrip").checked;
     applyStripPin();
+    syncPitchFields();
 
     on($("fileInput"), "change", function (e) { if (e.target.files[0]) loadFile(e.target.files[0]); });
     on($("sampleBtn"), "click", function () {
@@ -2926,6 +3015,16 @@
       if (chip && chip.dataset.row) toggleStackRow(chip.dataset.row);
     });
     on($("pinStrip"), "change", function () { state.pinStrip = this.checked; applyStripPin(); });
+
+    // Pitch replication. Changing any of these changes the tread itself, so the
+    // DXF has to be read again -- unlike NSD or the compound, which only change
+    // what is computed from an already-imported drawing.
+    on($("pitchOn"), "change", function () { syncPitchFields(); markPitchStale(); });
+    on($("pitchMode"), "change", function () { syncPitchFields(); markPitchStale(); });
+    ["pitchBase", "pitchCount", "pitchLens", "pitchSeq", "pitchScale", "pitchSnap"].forEach(function (id) {
+      on($(id), "input", function () { renderPitchInfo(); markPitchStale(); });
+      on($(id), "change", function () { renderPitchInfo(); markPitchStale(); });
+    });
     on($("compareMetric"), "change", function () { state.compareMetric = this.value; renderCompare(); });
     on($("addCompare"), "click", addCurrentToComparison);
     on($("addCompareSide"), "click", function () {

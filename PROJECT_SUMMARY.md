@@ -187,6 +187,10 @@ v6.4 reference JS  ──(~1e-9)──  Python engine  ──(<2e-3)──  Brow
 - `app/unitsaudit.js` — 64 checks on dimensional consistency, proved by
   geometric similarity: scale every length by λ and the load by λ², and all 24
   outputs land on the power of λ their units demand, to five decimals.
+- `app/pitchaudit.js` — 52 checks on pitch replication: the replicated tread
+  against the same tread laid out by hand in a DXF (two routes sharing nothing
+  but the importer), hand-computed land ratios for both scaling conventions,
+  and the closure diagnostics on a pattern that deliberately does not tile.
 - `app/browsertest.js` — a real Chromium run: load, compute, crown
   reconciliation, all three exports, drag interaction, zero page errors.
 - `app/casecheck.js` — two complete tyres (2W blocked tread with a 40° lean
@@ -266,6 +270,7 @@ app/
   couplingaudit.js       tie-bar network audit
   slipaudit.js           brush-model slip response audit
   unitsaudit.js          dimensional consistency audit
+  pitchaudit.js          pitch replication and closure audit
   browsertest.js         Playwright smoke test
   casecheck.js           two complete tyres end to end through the built page
   parity.js              JS↔Python parity harness

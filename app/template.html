@@ -42,6 +42,29 @@
         <div class="hint">ASCII DXF: LINE, ARC, CIRCLE, ELLIPSE, LWPOLYLINE (with bulges), old-style POLYLINE, SPLINE, and INSERT references into BLOCKS. Depth, draft and sipes are supplied below — a 2D plan has none.</div>
         <div class="field" title="How far apart two endpoints may be and still be treated as the same corner. CAD exports routinely leave corners a few microns apart after a trim, and an unwelded corner loses the whole block. 0.01 mm is two orders below the finest tread feature and two above the usual export round-off. Raise it if outlines are reported as not closing; lower it if separate features are being merged."><label>Weld tolerance (mm)</label><input id="weldTol" type="number" value="0.01" step="0.005" min="0.0001" max="1" /></div>
         <div class="field" title="A region between blocks counts as a tie bar if its area is below this fraction of the typical block area. Only affects the initial guess — every candidate is listed in 6 · Wear &amp; tie bars for you to confirm or reject."><label>Tie-bar area limit</label><input id="tiebarFrac" type="number" value="0.5" step="0.05" min="0.02" max="1" /></div>
+
+        <div class="field" title="Tick this when the DXF is ONE pitch rather than the whole tread. The tool repeats it to build the complete rolled-out pattern, at the lengths and in the order you give below."><label><input id="pitchOn" type="checkbox" /> <b>the DXF is one pitch — build the tread from it</b></label></div>
+        <div id="pitchBox" style="display:none">
+          <div class="field" title="The circumferential length of ONE pitch, including the groove that follows the blocks. This is NOT the same as the drawing's extent: if the blocks stop before the pitch boundary — which they usually do — the drawing is shorter than the pitch, and the tool cannot tell by how much."><label>Pitch length (mm)</label><input id="pitchBase" type="number" step="0.1" min="0.1" placeholder="one repeat" /></div>
+          <div class="field" title="How the tread is pitched. 'Single length' repeats the drawn pitch unchanged. 'Sequence' takes named pitch lengths and the production order, which is what a PCR or TBR actually uses."><label>Pitching</label>
+            <select id="pitchMode">
+              <option value="count">single length × count</option>
+              <option value="sequence">named lengths + sequence</option>
+            </select>
+          </div>
+          <div class="field" id="rowPitchCount" title="How many pitches go round the tyre. Circumference = pitch length × count."><label>Number of pitches</label><input id="pitchCount" type="number" step="1" min="1" placeholder="e.g. 62" /></div>
+          <div class="field" id="rowPitchLens" style="display:none" title="One length per pitch letter, in mm. Format: A=32.4, B=36.0, C=40.2 — as many as the design uses."><label>Pitch lengths (mm)</label><input id="pitchLens" type="text" placeholder="A=32.4, B=36.0, C=40.2" /></div>
+          <div class="field" id="rowPitchSeq" style="display:none" title="The production pitch sequence, as the letters defined above, in order around the tyre. Spaces and punctuation are ignored. The circumference is whatever these add up to."><label>Sequence</label><input id="pitchSeq" type="text" placeholder="ABCBACAB…" /></div>
+          <div class="field" id="rowPitchScale" style="display:none" title="THE TOOL WILL NOT GUESS THIS. When a pitch is stretched to a different length, either the whole pitch scales (blocks get longer with the pitch) or the blocks keep their circumferential length and the grooves absorb the difference. Both are used in industry and they give different order content, so the convention has to come from your design office."><label>Length scaling</label>
+            <select id="pitchScale">
+              <option value="">— choose —</option>
+              <option value="uniform">uniform: whole pitch scales</option>
+              <option value="groove_only">groove only: blocks keep their length</option>
+            </select>
+          </div>
+          <div class="field" title="Competitor patterns digitised from a photograph often do not quite tile: the geometry at one pitch boundary is a few tenths out from the other. Leave at 0 to be told about it and stop. Set a limit to have the tool pull the two edges together — the tread is then not exactly the drawing, and it says so."><label>Boundary snap limit (mm)</label><input id="pitchSnap" type="number" value="0" step="0.05" min="0" /></div>
+          <div id="pitchInfo" class="hint" style="margin:2px 0 6px;padding:6px 9px;background:var(--panel-2);border:1px solid var(--edge);border-radius:6px;line-height:1.55"></div>
+        </div>
       </div>
 
       <div class="group" id="grp-compound">

@@ -1870,3 +1870,83 @@ def test_the_theta_stack_stays_readable_at_ten_rows():
     # the last row on is not switchable
     toggle = ui[ui.index("function toggleStackRow("):ui.index("function applyStripPin(")]
     assert "if (!others) return;" in toggle
+
+
+# ---------------------------------------------------------------------------
+# pitch replication, multi-pitch sequences and closure diagnostics
+# ---------------------------------------------------------------------------
+
+
+def test_pitch_audit_passes():
+    """The full audit of pitch replication.
+
+    One drawn pitch becomes the whole rolled-out tread, which puts a geometry
+    transform in front of every number the tool produces.  The audit checks it
+    against the same tread laid out by hand in a DXF -- two routes sharing
+    nothing but the importer -- against hand-computed land ratios for both
+    scaling conventions, and against the closure diagnostics on a pattern that
+    deliberately does not tile.
+    """
+    node = _node()
+    proc = subprocess.run([node, os.path.join(APP, "pitchaudit.js")],
+                          capture_output=True, text=True, cwd=REPO, timeout=900)
+    assert proc.returncode == 0, proc.stdout[-8000:] + proc.stderr[-2000:]
+    assert "checks passed" in proc.stdout
+
+
+def test_the_pitch_scaling_convention_is_never_chosen_for_the_user():
+    """Whether a stretched pitch scales as a whole, or keeps its blocks and
+    grows only its grooves, is a design-office convention rather than a fact.
+    Both are used and they give different order content, so the engine must
+    refuse a stretching sequence that does not name one -- and the refusal has
+    to name both options, because a message that only says "invalid" leaves the
+    user guessing at exactly the thing being asked for.
+    """
+    eng = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert 'const PITCH_SCALING = ["uniform", "groove_only"]' in eng
+    rep = eng[eng.index("function replicatePitch("):eng.index("function validateImportOptions(")]
+    assert "PITCH_SCALING.indexOf(mode) < 0" in rep
+    assert "will not choose for you" in rep
+    # no default anywhere: the option list in the UI starts empty
+    assert '<option value="">— choose —</option>' in tpl
+    assert 'id="pitchScale"' in tpl
+    # and both conventions are actually implemented, not just named
+    assert "function pitchStretchMap(" in eng
+    assert "groove_only" in eng and "function landSpansX(" in eng
+
+
+def test_a_pattern_that_does_not_close_is_refused_with_a_measured_gap():
+    """The competitor case the design office asked for: a digitised pitch whose
+    two boundaries are a few tenths out of line.  Repeating it would leave gaps
+    in the tread, so it must not be built silently -- and the message has to
+    carry the measured gap, where it is, and the snap tolerance that would close
+    it, or the user has no way to act on it."""
+    eng = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    rep = eng[eng.index("function replicatePitch("):eng.index("function validateImportOptions(")]
+    assert "does not close" in rep
+    assert "max_gap_mm.toFixed(4)" in rep
+    assert "snap tolerance of at least" in rep
+    # snapping is opt-in and bounded, never automatic
+    assert "snapTol > 0 && closure.max_gap_mm <= snapTol" in rep
+    assert "not exactly the drawing" in rep
+    # and the fixtures the audit drives it with are in the repo
+    for f in ("pitch_base_tbr.dxf", "pitch_open_tbr.dxf",
+              "pitch_broken_tbr.dxf", "pitch_blocks_tbr.dxf", "pitch_whole_x6.dxf"):
+        assert os.path.exists(os.path.join(REPO, "data", f)), f
+
+
+def test_pitch_replication_reaches_the_page():
+    """A feature that only exists in the engine is not a feature.  The controls
+    have to be on the page, feed loadPattern, and be marked as import-time --
+    they rebuild the geometry, so unlike NSD or the compound they cannot take
+    effect on the next run of an already-imported drawing."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    for el in ("pitchOn", "pitchBase", "pitchMode", "pitchCount",
+               "pitchLens", "pitchSeq", "pitchScale", "pitchSnap", "pitchInfo"):
+        assert f'id="{el}"' in tpl, el
+    assert "function readPitchSpec(" in ui
+    assert "if (pitch) opts.pitch = pitch;" in ui
+    assert "function markPitchStale(" in ui
+    assert "take effect at import, not at run" in ui
