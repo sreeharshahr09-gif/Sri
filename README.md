@@ -92,11 +92,18 @@ modern browser and drop a DXF in.
   from.
 
 ### Tie-bar hatch
-- **Hatch** tool (`H`) — click inside a closed region to mark it with a
+- **Hatch** tool (`H`) — click inside *any* enclosed region to mark it with a
   **real DXF HATCH** entity on a dedicated **TIEBAR** layer, so downstream
   tools (e.g. TLPT) recognise the hatched region as a tie bar automatically.
   Click a hatch again to remove it; **Hatch selected regions** hatches every
   closed loop in the selection at once.
+- **Automatic region detection** — a tie bar is naturally bounded by pieces
+  of several entities (block edges + groove boundaries) and is *never* a
+  single closed loop. The tool builds a planar arrangement of every visible
+  geometry segment (splitting them at all intersections and T-junctions) and
+  extracts the minimal enclosing face around the click, so you can hatch the
+  region directly without first joining anything. The boundary only needs to
+  close within the snap tolerance.
 - Pattern is selectable (**Solid** or **ANSI31** diagonal). The hatch stays
   in sync through move/rotate/undo and is saved in JSON projects.
 - Because a real HATCH needs DXF 2000, an export that contains a hatch is
