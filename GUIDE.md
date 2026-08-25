@@ -540,16 +540,36 @@ circumferential extent runs up through every sweep row above it. That turns
 into one picture instead of two.
 
 **Drag the band** to slide the patch around the tyre, or type an exact angle in
-the box. It moves along **θ only**: where the patch sits laterally is decided by
-the crown profile and the lean angle (or by the y-centre field in
-*3 · Contact patch*), so being able to shove it sideways on this chart would
-contradict the physics that put it there.
+the box above the tabs. It moves along **θ only**: where the patch sits
+laterally is decided by the crown profile and the lean angle (or by the y-centre
+field in *3 · Contact patch*), so being able to shove it sideways on this chart
+would contradict the physics that put it there.
 
 Drag anywhere *outside* the band to zoom — every chart and the pattern zoom
 together. Double-click resets, including a double-click on the band itself.
 
 A patch parked across θ = 0 is drawn in both halves, at the left and right ends
 of the strip, because that is what the tyre does at the seam.
+
+### The same band on three tabs
+
+The band appears wherever a tread is drawn against θ — the **θ sweep**, the
+**tie-bar coupling** tab and the **Compare** tab — and it is **one angle**. Drag
+it on the coupling tab and the sweep tab is looking at the same place on the
+tyre; the box above the tabs always reads it. Each tab keeps its own *zoom*,
+though, so framing one never silently re-frames another.
+
+On the **Compare** tab the band is drawn on every design's row, and each row's
+band is **as wide as that tyre's patch is at that angle**. A contact patch is a
+fixed arc *length*, so on a normalised θ axis it subtends a different *angle* on
+a different circumference — the same 90 mm patch is a narrow band on a 2193 mm
+motorcycle tread and a wide one on a 474 mm test pattern. One width across all
+the rows would be right for the first design and wrong for every other.
+
+The patch **outline** is drawn only where the tread on screen is the one the
+patch belongs to — the sweep and coupling strips. A held comparison design was
+run with its own patch on its own tyre, so drawing this one over it would be a
+picture of something that never happened.
 
 ---
 

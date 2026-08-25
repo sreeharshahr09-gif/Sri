@@ -1038,7 +1038,10 @@ def test_the_contact_patch_band_is_drawn_and_is_x_only():
     # the band spans the whole stack, not one row: the overlay is sized from the
     # figure's plot area, which covers every subplot
     draw = ui[ui.index("function drawPatchBand("):ui.index("function updatePatchLabel(")]
-    assert "g.height" in draw and "thetaStack" in draw and "patternStrip" in draw
+    assert "g.height" in draw
+    # the figures it draws on are chosen by the open tab, not hard-coded here
+    figs = ui[ui.index("function bandFigures("):ui.index("function subplotRowGeom(")]
+    assert "thetaStack" in figs and "patternStrip" in figs
     # and it is redrawn whenever Plotly re-lays the figure out
     assert "plotly_afterplot" in ui
 
@@ -2648,7 +2651,7 @@ def test_the_compare_patterns_are_drawn_by_the_one_strip_builder():
     in step.  The compare stack goes through the same builder as the sweep tab
     and the coupling tab, told which pattern and which subplot row to use."""
     ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
-    rp = ui[ui.index("function renderComparePatterns("):ui.index("  var cmpLink = {")]
+    rp = ui[ui.index("function renderComparePatterns("):ui.index("function linkComparePatterns(")]
     assert "patternStripShapes({" in rp
     assert "pattern: g" in rp and "xref:" in rp and "yref:" in rp
     assert "E.splitAtSeam(" not in rp, "the compare stack builds geometry of its own"
@@ -2676,3 +2679,62 @@ def test_linking_two_figures_cannot_loop():
     xr = ui[ui.index("function xaxisRangeUpdate("):]
     xr = xr[:xr.index("\n  }")]
     assert "xaxis" in xr and "_fullLayout" in xr
+
+
+def test_the_patch_band_follows_the_open_tab():
+    """The band answers "where is the patch sitting" -- the same question on the
+    sweep tab, the coupling tab and the comparison, each of which pairs a
+    different curve with a different tread.  So the figure list follows the open
+    tab rather than being nailed to the sweep, and a tab that draws no tread
+    against theta carries no band and no control for one.
+    """
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert "var BAND_TABS = { stack: 1, coupling: 1, compare: 1 }" in ui
+    bf = ui[ui.index("function bandFigures("):ui.index("function subplotRowGeom(")]
+    assert "if (!BAND_TABS[state.tab]) return []" in bf
+    for gd in ("cplPlot", "cplStrip", "comparePlot", "comparePatterns", "thetaStack", "patternStrip"):
+        assert gd in bf, f"{gd} is not in the band's figure list"
+    # the outline is only drawn where the tread on screen is the patch's own
+    assert bf.count("outline: true") == 2, "the outline belongs to the live tread only"
+
+    # a stale band from another tab is cleared, not left to redraw at zero size
+    db = ui[ui.index("function drawPatchBand("):ui.index("function addBandRect(")]
+    assert 'querySelectorAll("svg.cpov")' in db and "live.indexOf(svg.__gd) < 0" in db
+    # and the outline rides the band's own in-range test
+    assert "drew && f.outline" in db
+
+    # the control is shared, not nested inside one tab's panel
+    head = tpl[tpl.index('<div id="resultsArea"'):tpl.index('<section id="panel-stack"')]
+    assert 'id="patchThetaRow"' in head, "the patch-theta control belongs above the tabs it serves"
+    ul = ui[ui.index("function updatePatchLabel("):ui.index("function setPatchTheta(")]
+    assert "!BAND_TABS[state.tab]" in ul
+
+
+def test_each_compared_design_gets_its_own_band_width():
+    """A contact patch is a fixed arc LENGTH.  On a normalised theta axis that is
+    a different ANGLE on every circumference, so one band width across a stack of
+    designs would be right for the first and wrong for all the rest."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    bf = ui[ui.index("function bandFigures("):ui.index("function subplotRowGeom(")]
+    assert "rows: drawable.map(" in bf
+    assert "outlineSpanDeg(r.patch.outline, e.geometry.tyre_circumference)" in bf, \
+        "each row's width must come from that design's own patch and circumference"
+    # and the rows are placed by the subplot domains, not guessed
+    rg = ui[ui.index("function subplotRowGeom("):ui.index("  // Draw the band on every figure")]
+    assert "domain" in rg and "1 - d[1]" in rg, "Plotly domains run bottom-up and must be flipped"
+
+
+def test_two_plots_never_share_one_overlay():
+    """The band overlay is appended to the plot's parent, so two plots in one
+    parent share -- and overwrite -- a single overlay.  That is what put the
+    comparison's per-design bands on top of its curve chart.  Every figure that
+    carries a band has its own positioned host."""
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    import re
+    for gd in ("thetaStack", "patternStrip", "cplPlot", "cplStrip",
+               "comparePlot", "comparePatterns"):
+        m = re.search(r'<div class="plot-host"[^>]*>\s*<div id="%s"' % gd, tpl)
+        assert m, f"{gd} has no host of its own"
+    css = open(os.path.join(APP, "style.css"), encoding="utf-8").read()
+    assert re.search(r"\.plot-host\s*{[^}]*position: relative", css)

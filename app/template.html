@@ -354,15 +354,15 @@
         <label class="hint">Lean γ shown: <select id="gammaSel" class="field"></select></label>
         <span id="progress" class="hint"></span>
       </div>
+      <div id="patchThetaRow" class="banner" style="margin-bottom:8px;display:none">
+        <label title="Where the contact patch sits around the tyre. Drag the shaded band on any chart, or type an exact angle here. It is the same angle on the θ sweep, the tie-bar coupling and the comparison tabs. Lateral position is not set here — the crown and lean angle decide it (or the y-centre field in 3 · Contact patch).">Patch at θ
+          <input id="patchTheta" type="number" value="180" step="1" min="0" max="360" style="width:90px" /> °</label>
+        <span id="patchThetaLabel"></span>
+      </div>
 
       <section id="panel-stack" class="panel">
         <div id="cards" class="cards"></div>
         <div id="cursorReadout"></div>
-        <div id="patchThetaRow" class="banner" style="margin-bottom:8px;display:none">
-          <label title="Where the contact patch sits around the tyre. Drag the shaded band on any chart below, or type an exact angle here. Lateral position is not set here — the crown and lean angle decide it (or the y-centre field in 3 · Contact patch).">Patch at θ
-            <input id="patchTheta" type="number" value="180" step="1" min="0" max="360" style="width:90px" /> °</label>
-          <span id="patchThetaLabel"></span>
-        </div>
         <div class="hint" style="margin-bottom:6px">Move the cursor over any chart below: a line follows it through every row and down onto the pattern, and the values at that angle appear above. <b>Drag the shaded band</b> to slide the contact patch around the tyre — it moves along θ only, since the crown and lean angle fix where it sits laterally. Drag anywhere else to zoom; all the charts and the pattern zoom together, and double-click resets.</div>
         <div class="rowbar">
           <span class="rowbar-lead">Rows</span>
@@ -457,8 +457,8 @@
         </div>
         <div id="cplBody" style="display:none">
           <div id="cplCards" class="cards"></div>
-          <div id="cplPlot" class="plot"></div>
-          <div id="cplStrip" class="plot"></div>
+          <div class="plot-host"><div id="cplPlot" class="plot"></div></div>
+          <div class="plot-host"><div id="cplStrip" class="plot"></div></div>
           <div class="hint" style="margin:-4px 0 10px">The same rolled-out tread, on the same θ axis as the curve above — zooming either moves both. Violet outlines are the tie bars; the thin violet lines are the bonded links the network above is actually solving — one per shared wall, joining a bar to the block it is tied to. A bar with no line touches nothing along a shared edge and contributes no coupling stiffness, however solid it looks. A bar still below the tread surface is drawn dotted: it adds no contact area yet, but it <b>is</b> already coupling the blocks either side of it, which is why the gain is there from new.</div>
           <div id="cplTable"></div>
           <div class="explain">
@@ -497,13 +497,13 @@
         <div class="field wide" id="compareMetricRow" style="display:none"><label>Metric</label>
           <select id="compareMetric"><option value="kz">Kz — vertical (N/mm)</option><option value="kx">Kx — longitudinal (N/mm)</option><option value="ky">Ky — lateral (N/mm)</option><option value="kxy">Kxy — cross term (N/mm)</option><option value="contact_area">contact area (mm²)</option><option value="land_ratio">land ratio</option><option value="block_count">blocks in patch</option><option value="c_alpha">Cα — cornering stiffness (N/rad)</option><option value="c_kappa">Cκ — longitudinal slip stiffness (N)</option><option value="pneumatic_trail">pneumatic trail (mm)</option></select>
         </div>
-        <div id="comparePlot" class="plot"></div>
+        <div class="plot-host"><div id="comparePlot" class="plot"></div></div>
         <div id="compareTable"></div>
         <div id="comparePatternNote" class="banner warn" style="display:none;margin-top:12px"></div>
         <div class="hint" style="margin-top:12px">The rolled-out tread of every design below, on the same θ axis — so a
           difference in the curves above can be traced to a difference in the pattern. Drag to zoom; the curves and every
           pattern zoom together, and double-click resets.</div>
-        <div id="comparePatterns" class="plot"></div>
+        <div class="plot-host"><div id="comparePatterns" class="plot"></div></div>
         <div class="explain" style="margin-top:12px">
           <h4>Comparing on Kx, Ky and Kxy</h4>
           <p><b>Kx</b> and <b>Ky</b> are the in-contact stiffness of everything under the patch, along the direction of travel and across it. They rise with block depth, compound and land, and their <b>ripple over θ</b> is what a pitch sequence is designed to keep small.</p>

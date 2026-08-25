@@ -1567,12 +1567,13 @@
         state.cplRange = reset ? [0, 360] : [lo, hi];
         cplLink.syncing = true;
         Plotly.relayout(dst, { "xaxis.range": state.cplRange.slice() })
-          .then(function () { cplLink.syncing = false; })
+          .then(function () { cplLink.syncing = false; drawPatchBand(); })
           .catch(function () { cplLink.syncing = false; });
       });
     }
     syncFrom(plot, strip);
     syncFrom(strip, plot);
+    drawPatchBand();
   }
 
   // One place for the units of every sweep quantity, so a curve, a colour bar,
@@ -1831,8 +1832,12 @@
   // The line is a positioned div rather than a Plotly shape on purpose: at
   // mousemove rates, relayouting a figure that carries ~170 block polygons is
   // far too slow to track a cursor, and a div costs nothing.
+  // One zoom-link guard per tab. Each tab keeps its own theta range -- zooming
+  // one must not silently re-frame another -- and each guard stops the two
+  // figures on that tab relayouting each other in a loop.
   var linkState = { hooked: false, syncing: false };
   var cplLink = { hooked: false, syncing: false };
+  var cmpLink = { hooked: false, syncing: false };
 
   function plotGeom(gd) {
     if (!gd || !gd._fullLayout || !gd._fullLayout._size) return null;
@@ -1949,10 +1954,14 @@
   function patchThetaSpanDeg() {
     var r = currentResult();
     if (!r || !r.patch || !r.patch.outline || !r.patch.outline.length) return null;
-    var C = state.pattern.tyre_circumference;
+    return outlineSpanDeg(r.patch.outline, state.pattern.tyre_circumference);
+  }
+
+  function outlineSpanDeg(outline, C) {
+    if (!outline || !outline.length || !(C > 0)) return null;
     var lo = Infinity, hi = -Infinity;
-    for (var i = 0; i < r.patch.outline.length; i++) {
-      var x = r.patch.outline[i][0];
+    for (var i = 0; i < outline.length; i++) {
+      var x = outline[i][0];
       if (x < lo) lo = x;
       if (x > hi) hi = x;
     }
@@ -1964,19 +1973,83 @@
     return t;
   }
 
-  // Draw the band (both figures) and the outline (pattern strip only).
+  // The band is only meaningful where a tread is drawn against theta: the sweep
+  // tab, the coupling tab and the comparison. Elsewhere there is nothing for it
+  // to sit on, so neither the band nor its control appears.
+  var BAND_TABS = { stack: 1, coupling: 1, compare: 1 };
+
+  // Which figures carry the band right now.
+  //
+  // The band is the same idea on all three tabs -- "this is where the patch is
+  // sitting" -- but each tab pairs a different curve with a different tread, so
+  // the list follows the open tab rather than being fixed to the sweep.
+  //
+  //   gd       the figure
+  //   outline  draw the patch's own outline on it, not just the band. Only on a
+  //            figure showing the LIVE tread: the patch belongs to that tyre.
+  //   rows     one band per subplot row, each with its own angular width. On
+  //            the compare stack a fixed arc length is a different ANGLE on a
+  //            different circumference, so one width across all rows would be a
+  //            lie about every design but the first.
+  function bandFigures() {
+    // A tab that draws no tread against theta carries no band, and says so with
+    // an empty list -- which also clears whatever the last tab left behind.
+    if (!BAND_TABS[state.tab]) return [];
+    if (state.tab === "coupling")
+      return [{ gd: $("cplPlot") }, { gd: $("cplStrip"), outline: true }];
+    if (state.tab === "compare") {
+      var pats = $("comparePatterns");
+      var drawable = (state.compare || []).filter(function (e) { return e.geometry && e.geometry.blocks.length; });
+      return [{ gd: $("comparePlot") }, {
+        gd: pats && pats.style.display !== "none" ? pats : null,
+        rows: drawable.map(function (e) {
+          var r = e.results && e.results[0];
+          return r && r.patch ? outlineSpanDeg(r.patch.outline, e.geometry.tyre_circumference) : null;
+        }),
+      }];
+    }
+    return [{ gd: $("thetaStack") }, { gd: $("patternStrip"), outline: true }];
+  }
+
+  // Each y-axis of a subplot figure, as a pixel band inside the plot area.
+  // Plotly gives the domain as a 0..1 fraction measured from the BOTTOM, so it
+  // is flipped here to the top-down pixels the overlay works in.
+  function subplotRowGeom(gd) {
+    var g = plotGeom(gd);
+    if (!g) return [];
+    return Object.keys(gd._fullLayout)
+      .filter(function (k) { return /^yaxis\d*$/.test(k); })
+      .sort(function (a, b) {
+        return (gd._fullLayout[b].domain || [0, 1])[1] - (gd._fullLayout[a].domain || [0, 1])[1];
+      })
+      .map(function (k) {
+        var d = gd._fullLayout[k].domain || [0, 1];
+        return { top: (1 - d[1]) * g.height, height: Math.max(0, (d[1] - d[0]) * g.height) };
+      });
+  }
+
+  // Draw the band on every figure the open tab carries, and the outline where
+  // the tread on screen is the one the patch belongs to.
   function drawPatchBand() {
+    var figs = bandFigures();
+    // Any overlay left over from another tab is cleared: a hidden panel has no
+    // size to measure, so a band redrawn there comes back the wrong shape and
+    // is waiting when the tab is opened again.
+    var live = figs.map(function (f) { return f.gd; }).filter(Boolean);
+    document.querySelectorAll("svg.cpov").forEach(function (svg) {
+      if (live.indexOf(svg.__gd) < 0) svg.innerHTML = "";
+    });
     var span = patchThetaSpanDeg();
-    var figs = [$("thetaStack"), $("patternStrip")];
     if (!span) {
-      figs.forEach(function (gd) { if (gd && gd._fullLayout) patchOverlay(gd).innerHTML = ""; });
+      figs.forEach(function (f) { if (f.gd && f.gd._fullLayout) patchOverlay(f.gd).innerHTML = ""; });
       return;
     }
     if (state.patchTheta == null) state.patchTheta = 180;
     var centre = clampPatchTheta(state.patchTheta);
     var r = currentResult(), C = state.pattern.tyre_circumference;
 
-    figs.forEach(function (gd) {
+    figs.forEach(function (f) {
+      var gd = f.gd;
       if (!gd || !gd._fullLayout) return;
       var svg = patchOverlay(gd), g = plotGeom(gd);
       svg.innerHTML = "";
@@ -1985,28 +2058,25 @@
       svg.setAttribute("height", g.height);
       svg.style.left = g.left + "px";
       svg.style.top = g.top + "px";
-      var isStrip = gd === $("patternStrip");
+      var rowGeom = f.rows ? subplotRowGeom(gd) : null;
 
       // The patch can straddle the seam, so draw it at theta and at theta +- 360
       // and let the overlay's own bounds clip. That is also what the tyre does.
       for (var k = -1; k <= 1; k++) {
         var c = centre + k * 360;
-        var xa = xToPixel(gd, c + span[0]), xb = xToPixel(gd, c + span[1]);
-        if (xa == null || xb == null) continue;
-        var left = Math.min(xa, xb) - g.left, w = Math.abs(xb - xa);
-        if (left + w < -2 || left > g.width + 2) continue;
-
-        var rect = document.createElementNS(SVGNS, "rect");
-        rect.setAttribute("class", "cpband");
-        rect.setAttribute("x", left);
-        rect.setAttribute("y", 0);
-        rect.setAttribute("width", w);
-        rect.setAttribute("height", g.height);
-        rect.style.pointerEvents = "all";
-        rect.style.cursor = patchDrag.active ? "grabbing" : "ew-resize";
-        svg.appendChild(rect);
-
-        if (isStrip && g.y0 != null && r.patch.outline.length > 2) {
+        if (f.rows) {
+          for (var ri = 0; ri < f.rows.length; ri++) {
+            var rs = f.rows[ri], rg = rowGeom[ri];
+            if (!rs || !rg) continue;
+            addBandRect(svg, gd, g, c, rs, rg.top, rg.height);
+          }
+          continue;
+        }
+        // The outline rides the band's own in-range test: drawn for every k the
+        // band was drawn for, and no others. Without that it appeared three
+        // times -- once per seam repeat -- however far off-screen it was.
+        var drew = addBandRect(svg, gd, g, c, span, 0, g.height);
+        if (drew && f.outline && g.y0 != null && r.patch.outline.length > 2) {
           var path = document.createElementNS(SVGNS, "path");
           var d = "";
           for (var i = 0; i < r.patch.outline.length; i++) {
@@ -2024,15 +2094,42 @@
     updatePatchLabel(centre);
   }
 
+  // Returns whether it drew: the patch outline is drawn only where its band is.
+  function addBandRect(svg, gd, g, centreDeg, span, top, height) {
+    var xa = xToPixel(gd, centreDeg + span[0]), xb = xToPixel(gd, centreDeg + span[1]);
+    if (xa == null || xb == null) return false;
+    var left = Math.min(xa, xb) - g.left, w = Math.abs(xb - xa);
+    if (left + w < -2 || left > g.width + 2) return false;
+    var rect = document.createElementNS(SVGNS, "rect");
+    rect.setAttribute("class", "cpband");
+    rect.setAttribute("x", left);
+    rect.setAttribute("y", top);
+    rect.setAttribute("width", w);
+    rect.setAttribute("height", height);
+    rect.style.pointerEvents = "all";
+    rect.style.cursor = patchDrag.active ? "grabbing" : "ew-resize";
+    svg.appendChild(rect);
+    return true;
+  }
+
   function updatePatchLabel(centre) {
     var row = $("patchThetaRow"), el = $("patchThetaLabel"), box = $("patchTheta");
     if (!row || !el) return;
     var r = currentResult();
-    if (!r) { row.style.display = "none"; return; }
+    if (!r || !BAND_TABS[state.tab]) { row.style.display = "none"; return; }
     row.style.display = "block";
     if (box && box !== document.activeElement) box.value = centre.toFixed(1);
     var n = r.theta_deg.length;
     var i = Math.max(0, Math.min(n - 1, Math.round((centre / 360) * n) % n));
+    // On the comparison tab the numbers below belong to the design on screen,
+    // which is not necessarily one of the designs being compared -- so it says
+    // what the band is for there rather than quoting figures against it.
+    if (state.tab === "compare") {
+      el.innerHTML = " — the same angle on every design below, each band as wide as " +
+        "<b>that</b> tyre's patch is at this θ" +
+        " · <span class='hint'>drag any band, or type an angle</span>";
+      return;
+    }
     el.innerHTML = " — contact <b>" + r.contact_area[i].toFixed(0) + "</b> mm² (<b>" +
       (r.land_ratio[i] * 100).toFixed(1) + "%</b> land), Kz <b>" +
       r.kz[i].toFixed(0) + "</b>, Kx <b>" + r.kx[i].toFixed(0) + "</b>, Ky <b>" +
@@ -2047,14 +2144,21 @@
     drawPatchBand();
   }
 
+  // Double-clicking the band resets the zoom on whichever tab it was clicked on,
+  // and only that tab: each keeps its own range so zooming one never silently
+  // re-frames another.
   function resetThetaZoom(ev) {
     if (ev) { ev.preventDefault(); ev.stopPropagation(); }
-    state.thetaRange = [0, 360];
-    linkState.syncing = true;
-    Promise.all([$("thetaStack"), $("patternStrip")].map(function (gd) {
-      return gd && gd._fullLayout ? Plotly.relayout(gd, { "xaxis.range": [0, 360] }) : null;
-    })).then(function () { linkState.syncing = false; drawPatchBand(); })
-      .catch(function () { linkState.syncing = false; });
+    var guard = state.tab === "coupling" ? cplLink : state.tab === "compare" ? cmpLink : linkState;
+    if (state.tab === "coupling") state.cplRange = [0, 360];
+    else if (state.tab === "compare") state.compareRange = [0, 360];
+    else state.thetaRange = [0, 360];
+    guard.syncing = true;
+    Promise.all(bandFigures().map(function (f) {
+      if (!f.gd || !f.gd._fullLayout) return null;
+      return Plotly.relayout(f.gd, f.rows ? xaxisRangeUpdate(f.gd, [0, 360]) : { "xaxis.range": [0, 360] });
+    })).then(function () { guard.syncing = false; drawPatchBand(); })
+      .catch(function () { guard.syncing = false; });
   }
 
   function onPatchGrab(ev) {
@@ -2917,8 +3021,6 @@
   // The guard is not optional. Relayouting one figure fires the other's
   // relayout handler, which relayouts the first, and the page locks up -- which
   // is exactly what happened before it was here.
-  var cmpLink = { hooked: false, syncing: false };
-
   function linkComparePatterns() {
     var plot = $("comparePlot"), pats = $("comparePatterns");
     if (!plot || !pats || !plot.on || !pats.on) return;
@@ -2938,12 +3040,13 @@
         cmpLink.syncing = true;
         Plotly.relayout(dst, dstIsStack ? xaxisRangeUpdate(dst, state.compareRange)
                                         : { "xaxis.range": state.compareRange.slice() })
-          .then(function () { cmpLink.syncing = false; })
+          .then(function () { cmpLink.syncing = false; drawPatchBand(); })
           .catch(function () { cmpLink.syncing = false; });
       });
     }
     syncFrom(plot, pats, true);
     syncFrom(pats, plot, false);
+    drawPatchBand();
   }
 
   // Every row of a subplot figure has its own x-axis. `matches` keeps them in
@@ -3939,6 +4042,9 @@
       try { Plotly.Plots.resize(gd); } catch (e) { /* not plotted yet */ }
     });
     if (tab === "cpatch" || tab === "wear") drawEditor();
+    // The band belongs to whichever tab is open; it has to be laid out against
+    // the figures that are actually on screen.
+    if (state.results) setTimeout(drawPatchBand, 30);
   }
 
   // Result tabs stay visible with nothing behind them -- so the run's output can

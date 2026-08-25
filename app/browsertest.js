@@ -907,6 +907,79 @@ const fs = require("fs");
     await page.evaluate(() => Plotly.relayout(document.getElementById("comparePlot"), { "xaxis.autorange": true }));
     await page.waitForTimeout(400);
     await page.screenshot({ path: path.join(outDir, "tab-compare.png"), fullPage: false });
+
+    // ---- the patch band, on every tab that draws a tread against theta ------
+    // It is one angle, shared: drag it on the coupling tab and the sweep tab is
+    // looking at the same place on the tyre.
+    const bandsOn = () => page.evaluate(() => {
+      const out = {};
+      document.querySelectorAll("svg.cpov").forEach((s) => {
+        const host = s.parentNode.querySelector(".js-plotly-plot");
+        const n = s.querySelectorAll(".cpband").length;
+        if (n) out[host ? host.id : "?"] = n;
+      });
+      return out;
+    });
+    const theta = () => page.evaluate(() => window.__ttState().patchTheta);
+    const dragBand = async (fig, dx) => {
+      const box = await page.evaluate((w) => {
+        const r = document.getElementById(w).parentNode.querySelector("svg.cpov .cpband");
+        if (!r) return null;
+        const bb = r.getBoundingClientRect();
+        const floor = document.querySelector(".tabbar").getBoundingClientRect().bottom + 20;
+        return { x: bb.x + bb.width / 2, y: Math.max(bb.y + bb.height / 2, floor) };
+      }, fig);
+      if (!box) return false;
+      await page.mouse.move(box.x, box.y);
+      await page.mouse.down();
+      await page.mouse.move(box.x + dx, box.y + 40, { steps: 10 });
+      await page.mouse.up();
+      await page.waitForTimeout(350);
+      return true;
+    };
+
+    for (const [tab, figs] of [["coupling", ["cplPlot", "cplStrip"]],
+                               ["compare", ["comparePlot", "comparePatterns"]]]) {
+      await openTab(tab);
+      await page.evaluate(() => document.querySelector(".panel.on").scrollIntoView({ block: "start" }));
+      await page.waitForTimeout(500);
+      const on = await bandsOn();
+      console.log(`patch band on ${tab}:`, JSON.stringify(on));
+      for (const f of figs) if (!on[f]) errors.push(`no patch band on ${f}`);
+      // nothing from another tab is left lying around
+      for (const k of Object.keys(on)) if (figs.indexOf(k) < 0)
+        errors.push(`a stale band from another tab survives on ${k}`);
+      const t0 = await theta();
+      if (!(await dragBand(figs[0], 150))) { errors.push(`could not grab the band on ${figs[0]}`); continue; }
+      const t1 = await theta();
+      if (!(t1 > t0 + 5)) errors.push(`dragging the band on ${tab} did not move theta: ${t0} -> ${t1}`);
+      // it is ONE angle: the sweep tab is looking at the same place
+      await openTab("stack");
+      const ts = await theta();
+      if (Math.abs(ts - t1) > 1e-6) errors.push(`theta differs between tabs: ${t1} vs ${ts}`);
+      if ((await page.inputValue("#patchTheta")) !== t1.toFixed(1))
+        errors.push("the theta box did not follow a drag on another tab");
+      console.log(`  dragged on ${tab}: ${t0.toFixed(1)} -> ${t1.toFixed(1)}, same on the sweep tab`);
+    }
+    // On the compare stack each row's band is as wide as THAT tyre's patch is
+    // at this theta -- a fixed arc length is a different angle on a different
+    // circumference, so one width for all would be wrong for every design but
+    // the first.
+    await openTab("compare");
+    await page.waitForTimeout(500);
+    const widths = await page.evaluate(() => [...document.getElementById("comparePatterns")
+      .parentNode.querySelectorAll("svg.cpov .cpband")].map((r) => +(+r.getAttribute("width")).toFixed(1)));
+    console.log("compare band widths:", widths.join(" / "));
+    if (new Set(widths).size < 2)
+      errors.push(`every design got the same band width on different circumferences: ${widths}`);
+    // and a tab with no tread against theta carries no band at all
+    await openTab("lean");
+    await page.waitForTimeout(400);
+    const none = await bandsOn();
+    if (Object.keys(none).length) errors.push("the band survives onto a tab with no tread: " + JSON.stringify(none));
+    if (await page.isVisible("#patchThetaRow")) errors.push("the patch-theta control is shown where there is no band");
+
+    await openTab("compare");
     await click("#clearCompare");
   }
 
