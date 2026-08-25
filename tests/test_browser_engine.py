@@ -192,7 +192,7 @@ def test_no_dead_data_in_the_worker_to_ui_pipeline():
     worker = open(os.path.join(APP, "worker.js"), encoding="utf-8").read()
     ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
 
-    shipped = ["contact_area", "land_ratio", "kx", "ky", "kz", "block_count",
+    shipped = ["contact_area", "land_ratio", "kx", "ky", "kz", "kxy", "block_count",
                "centroid_y", "zone_area", "block_count_discrete", "theta_discrete",
                "theta_deg", "patch_area", "shape"]
     for field in shipped:
@@ -2567,3 +2567,52 @@ def test_pressing_run_opens_the_results():
     assert 'showTab("stack")' in done
     assert 'classList.contains("setup")' in done, \
         "a result tab must not be replaced when the run is repeated"
+
+
+def test_the_cross_stiffness_is_carried_end_to_end_and_never_clamped():
+    """Kxy is the off-diagonal of the same 2x2 in-contact stiffness as Kx and Ky,
+    and it is the one map that can be negative: an angled lug couples a
+    longitudinal deflection into a lateral force, and its mirror couples it the
+    other way.  Clamping it at zero -- as every other map is clamped, because
+    an area or a stiffness cannot be negative -- would invent an asymmetry in
+    every symmetric pattern.
+    """
+    eng = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    ras = eng[eng.index("function rasterise("):eng.index("const SHAPES =")]
+    assert "kxyPer[i] = stiff[i].kxy / n" in ras, "the per-block cross term never reaches the map"
+    assert "kxy[i] = kxyPer[l]" in ras
+    sw = eng[eng.index("function sweepLean("):eng.index("function sweep(")]
+    assert 'cache.get("kxy", pack.kxy)' in sw
+    # the whole point: no maxClamp on this one
+    line = [l for l in sw.splitlines() if "pack.kxy" in l and "correlate(" in l]
+    assert line, "kxy is not correlated in the sweep"
+    for l in line:
+        assert "maxClamp" not in l, f"the signed cross term is being clamped: {l.strip()}"
+    # and it reaches the page and the exports
+    worker = open(os.path.join(APP, "worker.js"), encoding="utf-8").read()
+    assert "kxy: sub(r.kxy)" in worker
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert 'kxy: "Kxy (N/mm)"' in ui
+    assert "kxy_N_per_mm" in ui, "the CSV does not carry the cross term"
+    cmp_sel = tpl[tpl.index('<select id="compareMetric">'):]
+    cmp_sel = cmp_sel[:cmp_sel.index("</select>")]
+    for m in ("kx", "ky", "kxy", "kz"):
+        assert f'value="{m}"' in cmp_sel, f"{m} is not offered in the comparison"
+
+
+def test_a_signed_metric_is_not_summarised_as_a_percentage_of_nothing():
+    """A symmetric pattern's Kxy averages to essentially zero however large its
+    swing -- the left-leaning lugs cancel the right-leaning ones.  A CoV against
+    that mean came out at 47 000%, and a percentage difference from it was a
+    division by noise.  Both fall back to absolute terms when the mean is small
+    next to the swing, which is the only reading that means anything there."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    rc = ui[ui.index("function renderCompare("):ui.index("// ---- export ---")]
+    assert "meanIsNoise" in rc and "baseIsNoise" in rc
+    assert "0.05 * swing" in rc, "the test must be against the swing, not an absolute size"
+    # the base row's own swing decides whether the base is usable, not this row's
+    assert "0.05 * baseSwing" in rc
+    assert '"±" + fmtMetric' in rc
+    # and the numbers span six orders of magnitude, so the decimals follow suit
+    assert "function fmtMetric(" in ui

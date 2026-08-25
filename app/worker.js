@@ -177,7 +177,7 @@
       theta_deg: sub(r.theta_deg),
       contact_area: sub(r.contact_area),
       land_ratio: sub(r.land_ratio),
-      kx: sub(r.kx), ky: sub(r.ky), kz: sub(r.kz),
+      kx: sub(r.kx), ky: sub(r.ky), kz: sub(r.kz), kxy: sub(r.kxy),
       block_count: sub(r.block_count),
       centroid_y: sub(r.centroid_y),
       // slip response: N, N/rad, N.mm/rad, mm
@@ -187,7 +187,7 @@
       bands: r.bands ? r.bands.map(function (b) {
         return { index: b.index, y_lo: b.y_lo, y_hi: b.y_hi, width_mm: b.width_mm,
                  contact_area: sub(b.contact_area), kx: sub(b.kx), ky: sub(b.ky),
-                 kz: sub(b.kz), block_count: sub(b.block_count),
+                 kz: sub(b.kz), kxy: sub(b.kxy), block_count: sub(b.block_count),
                  c_kappa: sub(b.c_kappa), c_alpha: sub(b.c_alpha) };
       }) : null,
       block_count_discrete: Array.prototype.slice.call(r.block_count_discrete),

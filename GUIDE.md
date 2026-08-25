@@ -974,6 +974,30 @@ inconsistency, and which shows up as uneven wear.
 
 Ky mattering most at high lean, Kx most upright, is a reasonable rule of thumb.
 
+### Kxy — the cross term
+
+**What it is.** The off-diagonal of the same 2×2 stiffness. It says how much a
+deflection along the tyre produces a force *across* it — which is exactly what an
+angled lug does. It is the only stiffness on the page that can be **negative**.
+
+**How to read it — two ways, and both matter.**
+
+- **The swing** is how strongly the pattern couples the two directions. A
+  straight rib has no cross term at all: Kxy is exactly zero, everywhere. An
+  angled or directional block pattern swings as each lug enters and leaves the
+  patch.
+- **The mean** says whether that coupling is *balanced*. On a symmetric pattern
+  the left-leaning lugs cancel the right-leaning ones and the mean sits at
+  essentially zero however large the swing. A mean that is a real fraction of
+  the swing is a pattern with a built-in pull.
+
+Because a balanced pattern's mean is near zero, a CoV against it would be
+arithmetic rather than a reading — so wherever Kxy is summarised the tool shows
+**± the half-swing** instead, and absolute rather than percentage differences.
+
+It is offered on the **Compare** tab, and it is in the CSV export as
+`kxy_N_per_mm`.
+
 ### Anisotropy Kx/Ky
 
 **What it is.** The ratio of the two. **1.0 means the tyre is equally stiff in

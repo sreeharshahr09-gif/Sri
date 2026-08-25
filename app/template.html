@@ -495,10 +495,20 @@
         </div>
         <div id="compareList"></div>
         <div class="field wide" id="compareMetricRow" style="display:none"><label>Metric</label>
-          <select id="compareMetric"><option value="kz">Kz (N/mm)</option><option value="contact_area">contact area (mm²)</option><option value="kx">Kx (N/mm)</option><option value="ky">Ky (N/mm)</option><option value="block_count">blocks in patch</option><option value="c_alpha">Cα (N/rad)</option><option value="c_kappa">Cκ (N)</option><option value="pneumatic_trail">pneumatic trail (mm)</option></select>
+          <select id="compareMetric"><option value="kz">Kz — vertical (N/mm)</option><option value="kx">Kx — longitudinal (N/mm)</option><option value="ky">Ky — lateral (N/mm)</option><option value="kxy">Kxy — cross term (N/mm)</option><option value="contact_area">contact area (mm²)</option><option value="land_ratio">land ratio</option><option value="block_count">blocks in patch</option><option value="c_alpha">Cα — cornering stiffness (N/rad)</option><option value="c_kappa">Cκ — longitudinal slip stiffness (N)</option><option value="pneumatic_trail">pneumatic trail (mm)</option></select>
         </div>
         <div id="comparePlot" class="plot"></div>
         <div id="compareTable"></div>
+        <div class="explain" style="margin-top:12px">
+          <h4>Comparing on Kx, Ky and Kxy</h4>
+          <p><b>Kx</b> and <b>Ky</b> are the in-contact stiffness of everything under the patch, along the direction of travel and across it. They rise with block depth, compound and land, and their <b>ripple over θ</b> is what a pitch sequence is designed to keep small.</p>
+          <p><b>Kxy</b> is the off-diagonal of the same 2×2 matrix, and it is the only one that can be <b>negative</b>. It says how much a longitudinal deflection produces a <em>lateral</em> force — which is what an angled lug does. Read it two ways:</p>
+          <ul>
+            <li><b>The swing</b> is how strongly the pattern couples the two directions. A straight rib has none: Kxy is exactly zero. An angled or directional block pattern swings as each lug enters and leaves.</li>
+            <li><b>The mean</b> says whether that coupling is <em>balanced</em>. A symmetric pattern's left- and right-leaning lugs cancel, so the mean sits at essentially zero however large the swing. A mean that is a real fraction of the swing is a pattern with a built-in steering pull.</li>
+          </ul>
+          <p style="margin-bottom:0">Because a balanced pattern's mean is near zero, a CoV against it would be meaningless — the table shows <b>± the half-swing</b> instead whenever the mean is small next to it, and an absolute difference rather than a percentage.</p>
+        </div>
       </section>
 
       <section id="panel-diag" class="panel">

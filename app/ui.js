@@ -1570,7 +1570,7 @@
   // One place for the units of every sweep quantity, so a curve, a colour bar,
   // a band chart and an export can never disagree about what a number is.
   var METRIC_LABEL = {
-    kz: "Kz (N/mm)", kx: "Kx (N/mm)", ky: "Ky (N/mm)",
+    kz: "Kz (N/mm)", kx: "Kx (N/mm)", ky: "Ky (N/mm)", kxy: "Kxy (N/mm)",
     contact_area: "Contact area (mm²)", block_count: "Blocks", land_ratio: "Land ratio",
     c_alpha: "Cα (N/rad)", c_kappa: "Cκ (N)", c_mz: "Cmz (N·mm/rad)",
     pneumatic_trail: "Pneumatic trail (mm)",
@@ -2668,6 +2668,17 @@
     if (side) side.disabled = !state.results;
   }
 
+  // The compare table shows one column of numbers spanning six orders of
+  // magnitude -- Cα in the tens of thousands, a land ratio under one, Kxy in
+  // hundredths. A fixed one decimal place turns three of those into "0.7" and
+  // "-0.0", so the places follow the magnitude.
+  function fmtMetric(v) {
+    if (!isFinite(v)) return "—";
+    var a = Math.abs(v);
+    return v.toFixed(a >= 1000 ? 0 : a >= 100 ? 1 : a >= 1 ? 2 : a >= 0.01 ? 3 : 4);
+  }
+  function signed(v) { return (v >= 0 ? "+" : "") + fmtMetric(v); }
+
   function renderCompare() {
     var list = state.compare || [];
     refreshCompareButtons();
@@ -2724,7 +2735,7 @@
       yaxis: { title: { text: METRIC_LABEL[metric], font: { size: 11 } }, gridcolor: th.grid },
     }, { responsive: true, displayModeBar: false });
 
-    var base = null;
+    var base = null, baseSwing = 0, isBase = true;
     var rows = "<table class='metrics'><tr><th>Design</th><th>mean</th><th>CoV</th><th>min</th>" +
       "<th>max</th><th>vs first</th></tr>";
     list.forEach(function (e) {
@@ -2735,12 +2746,31 @@
         return;
       }
       var st = E.fluctuationStats(r[metric]);
-      if (base === null) base = st.mean;
-      var d = base ? (100 * (st.mean - base) / base) : 0;
-      rows += "<tr><td>" + escapeHtml(e.label) + "</td><td class='num'>" + st.mean.toFixed(1) +
-        "</td><td class='num'>" + (st.cov * 100).toFixed(2) + "%</td><td class='num'>" +
-        st.min.toFixed(1) + "</td><td class='num'>" + st.max.toFixed(1) + "</td><td class='num'>" +
-        (d === 0 ? "—" : (d > 0 ? "+" : "") + d.toFixed(1) + "%") + "</td></tr>";
+      if (base === null) { base = st.mean; baseSwing = Math.max(Math.abs(st.max), Math.abs(st.min)); }
+      // A signed metric can average out to nearly nothing. Kxy does exactly
+      // that on a symmetric pattern -- the left-leaning lugs cancel the
+      // right-leaning ones -- and against a mean of -0.003 a CoV is 47 000% and
+      // a percentage difference is a division by noise. Both fall back to
+      // absolute terms whenever the mean is small next to the swing, which is
+      // the only reading that means anything there.
+      // "Small next to its own swing" is the test, not "small in absolute
+      // terms": a mean under a twentieth of the peak is not a centre the
+      // numbers scatter about, so a CoV against it is arithmetic rather than a
+      // reading, and so is a percentage difference from it.
+      var swing = Math.max(Math.abs(st.max), Math.abs(st.min));
+      var meanIsNoise = Math.abs(st.mean) <= 0.05 * swing;
+      var baseIsNoise = Math.abs(base) < 0.05 * baseSwing;
+      var diff = st.mean - base;
+      var vs = isBase ? "—"
+             : baseIsNoise ? signed(diff)
+             : (diff >= 0 ? "+" : "") + (100 * diff / base).toFixed(2) + "%";
+      isBase = false;
+      var spread = meanIsNoise ? "±" + fmtMetric((st.max - st.min) / 2)
+                               : (st.cov * 100).toFixed(2) + "%";
+      rows += "<tr><td>" + escapeHtml(e.label) + "</td><td class='num'>" + fmtMetric(st.mean) +
+        "</td><td class='num'>" + spread + "</td><td class='num'>" +
+        fmtMetric(st.min) + "</td><td class='num'>" + fmtMetric(st.max) + "</td><td class='num'>" +
+        vs + "</td></tr>";
     });
     $("compareTable").innerHTML = rows + "</table>";
   }
@@ -2873,7 +2903,7 @@
     (s.physics_notes || []).forEach(function (n) { lines.push("# note: " + n.replace(/\s+/g, " ")); });
     lines.push([
       "gamma_deg", "theta_deg", "contact_area_mm2", "land_ratio",
-      "kx_N_per_mm", "ky_N_per_mm", "kz_N_per_mm",
+      "kx_N_per_mm", "ky_N_per_mm", "kz_N_per_mm", "kxy_N_per_mm",
       "block_count_effective", "centroid_y_mm",
       "zone_center_mm2", "zone_intermediate_mm2", "zone_shoulder_mm2",
       "c_kappa_N", "c_alpha_N_per_rad", "c_mz_Nmm_per_rad", "pneumatic_trail_mm",
@@ -2884,6 +2914,7 @@
         lines.push([
           r.gamma_deg, r.theta_deg[j].toFixed(4), r.contact_area[j].toFixed(4),
           r.land_ratio[j].toFixed(6), r.kx[j].toFixed(4), r.ky[j].toFixed(4), r.kz[j].toFixed(4),
+          slipAt(r, "kxy", j),
           r.block_count[j].toFixed(4), r.centroid_y[j].toFixed(4),
           r.zone_area.center[j].toFixed(4), r.zone_area.intermediate[j].toFixed(4),
           r.zone_area.shoulder[j].toFixed(4),

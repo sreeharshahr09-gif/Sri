@@ -955,10 +955,20 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
         </div>
         <div id="compareList"></div>
         <div class="field wide" id="compareMetricRow" style="display:none"><label>Metric</label>
-          <select id="compareMetric"><option value="kz">Kz (N/mm)</option><option value="contact_area">contact area (mm²)</option><option value="kx">Kx (N/mm)</option><option value="ky">Ky (N/mm)</option><option value="block_count">blocks in patch</option><option value="c_alpha">Cα (N/rad)</option><option value="c_kappa">Cκ (N)</option><option value="pneumatic_trail">pneumatic trail (mm)</option></select>
+          <select id="compareMetric"><option value="kz">Kz — vertical (N/mm)</option><option value="kx">Kx — longitudinal (N/mm)</option><option value="ky">Ky — lateral (N/mm)</option><option value="kxy">Kxy — cross term (N/mm)</option><option value="contact_area">contact area (mm²)</option><option value="land_ratio">land ratio</option><option value="block_count">blocks in patch</option><option value="c_alpha">Cα — cornering stiffness (N/rad)</option><option value="c_kappa">Cκ — longitudinal slip stiffness (N)</option><option value="pneumatic_trail">pneumatic trail (mm)</option></select>
         </div>
         <div id="comparePlot" class="plot"></div>
         <div id="compareTable"></div>
+        <div class="explain" style="margin-top:12px">
+          <h4>Comparing on Kx, Ky and Kxy</h4>
+          <p><b>Kx</b> and <b>Ky</b> are the in-contact stiffness of everything under the patch, along the direction of travel and across it. They rise with block depth, compound and land, and their <b>ripple over θ</b> is what a pitch sequence is designed to keep small.</p>
+          <p><b>Kxy</b> is the off-diagonal of the same 2×2 matrix, and it is the only one that can be <b>negative</b>. It says how much a longitudinal deflection produces a <em>lateral</em> force — which is what an angled lug does. Read it two ways:</p>
+          <ul>
+            <li><b>The swing</b> is how strongly the pattern couples the two directions. A straight rib has none: Kxy is exactly zero. An angled or directional block pattern swings as each lug enters and leaves.</li>
+            <li><b>The mean</b> says whether that coupling is <em>balanced</em>. A symmetric pattern's left- and right-leaning lugs cancel, so the mean sits at essentially zero however large the swing. A mean that is a real fraction of the swing is a pattern with a built-in steering pull.</li>
+          </ul>
+          <p style="margin-bottom:0">Because a balanced pattern's mean is near zero, a CoV against it would be meaningless — the table shows <b>± the half-swing</b> instead whenever the mean is small next to it, and an absolute difference rather than a percentage.</p>
+        </div>
       </section>
 
       <section id="panel-diag" class="panel">
@@ -1222,6 +1232,12 @@ python build_report.py --config my_tyre.json</code></pre>
 <p><strong>What it is.</strong> Add up the stiffness of every block currently in the patch. Kx is the fore–aft direction (braking, accelerating), Ky is sideways (cornering). Blocks only partly inside count in proportion.</p>
 <p><strong>How to read it.</strong> Same as area: the <em>ripple</em> matters more than the level. If Kx swings a lot through a revolution, the tyre's response to a brake input depends on where the wheel happens to be — which the rider feels as a slight inconsistency, and which shows up as uneven wear.</p>
 <p>Ky mattering most at high lean, Kx most upright, is a reasonable rule of thumb.</p>
+<h3>Kxy — the cross term</h3>
+<p><strong>What it is.</strong> The off-diagonal of the same 2×2 stiffness. It says how much a deflection along the tyre produces a force <em>across</em> it — which is exactly what an angled lug does. It is the only stiffness on the page that can be <strong>negative</strong>.</p>
+<p><strong>How to read it — two ways, and both matter.</strong></p>
+<ul><li><strong>The swing</strong> is how strongly the pattern couples the two directions. A straight rib has no cross term at all: Kxy is exactly zero, everywhere. An angled or directional block pattern swings as each lug enters and leaves the patch.</li><li><strong>The mean</strong> says whether that coupling is <em>balanced</em>. On a symmetric pattern the left-leaning lugs cancel the right-leaning ones and the mean sits at essentially zero however large the swing. A mean that is a real fraction of the swing is a pattern with a built-in pull.</li></ul>
+<p>Because a balanced pattern's mean is near zero, a CoV against it would be arithmetic rather than a reading — so wherever Kxy is summarised the tool shows <strong>± the half-swing</strong> instead, and absolute rather than percentage differences.</p>
+<p>It is offered on the <strong>Compare</strong> tab, and it is in the CSV export as <code>kxy_N_per_mm</code>.</p>
 <h3>Anisotropy Kx/Ky</h3>
 <p><strong>What it is.</strong> The ratio of the two. <strong>1.0 means the tyre is equally stiff in both directions.</strong></p>
 <p><strong>How to read it.</strong> Above 1, the pattern resists braking better than cornering; below 1, the reverse. What matters is less the value than <strong>how much it moves</strong> through a revolution — a ratio that swings means the tyre's character changes depending on wheel position.</p>
@@ -73649,14 +73665,20 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     const blockPixelCount = new Int32Array(nBlocks);
     for (let i = 0; i < N; i++) { const l = labels[i]; if (l >= 0) blockPixelCount[l]++; }
 
-    const kxPer = new Float64Array(nBlocks), kyPer = new Float64Array(nBlocks), kzPer = new Float64Array(nBlocks), fracPer = new Float64Array(nBlocks);
+    const kxPer = new Float64Array(nBlocks), kyPer = new Float64Array(nBlocks), kzPer = new Float64Array(nBlocks);
+    // Kxy is the off-diagonal of the same 2x2 in-contact stiffness. It is the
+    // one map that can be NEGATIVE -- an angled lug leans one way, its mirror
+    // the other -- so nothing downstream may clamp it to zero.
+    const kxyPer = new Float64Array(nBlocks), fracPer = new Float64Array(nBlocks);
     for (let i = 0; i < nBlocks; i++) {
       const n = blockPixelCount[i];
       if (n <= 0) continue;
-      kxPer[i] = stiff[i].kx / n; kyPer[i] = stiff[i].ky / n; kzPer[i] = stiff[i].kz / n; fracPer[i] = 1 / n;
+      kxPer[i] = stiff[i].kx / n; kyPer[i] = stiff[i].ky / n; kzPer[i] = stiff[i].kz / n;
+      kxyPer[i] = stiff[i].kxy / n; fracPer[i] = 1 / n;
     }
 
-    const area = new Float32Array(N), kx = new Float32Array(N), ky = new Float32Array(N), kz = new Float32Array(N), blockFrac = new Float32Array(N), yMoment = new Float32Array(N);
+    const area = new Float32Array(N), kx = new Float32Array(N), ky = new Float32Array(N), kz = new Float32Array(N),
+          kxy = new Float32Array(N), blockFrac = new Float32Array(N), yMoment = new Float32Array(N);
     zoneFracs = zoneFracs || {};
     const bounds = zoneBounds(pattern.tread_width, zoneFracs.center, zoneFracs.intermediate);
     const zoneArea = { center: new Float32Array(N), intermediate: new Float32Array(N), shoulder: new Float32Array(N) };
@@ -73670,13 +73692,13 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         if (land[i] > 0) {
           area[i] = ra; yMoment[i] = ra * yy;
           if (zoneMap) zoneMap[i] = ra;
-          if (l >= 0) { kx[i] = kxPer[l]; ky[i] = kyPer[l]; kz[i] = kzPer[l]; blockFrac[i] = fracPer[l]; }
+          if (l >= 0) { kx[i] = kxPer[l]; ky[i] = kyPer[l]; kz[i] = kzPer[l]; kxy[i] = kxyPer[l]; blockFrac[i] = fracPer[l]; }
         }
       }
     }
 
     return {
-      grid: grid, land: land, area: area, kx: kx, ky: ky, kz: kz, blockFrac: blockFrac,
+      grid: grid, land: land, area: area, kx: kx, ky: ky, kz: kz, kxy: kxy, blockFrac: blockFrac,
       zoneArea: zoneArea, yMoment: yMoment, labels: labels, blockPixelCount: blockPixelCount,
       rowArea: rowArea, stiffness: stiff, curvatureCorrection: !!curvatureCorrection,
     };
@@ -74398,6 +74420,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     const kx = maxClamp(correlate(cache.get("kx", pack.kx), kb.re, kb.im, nx));
     const ky = maxClamp(correlate(cache.get("ky", pack.ky), kb.re, kb.im, nx));
     const kz = maxClamp(correlate(cache.get("kz", pack.kz), kb.re, kb.im, nx));
+    // NOT clamped: the cross term is signed. A lug angled one way couples a
+    // longitudinal deflection into a lateral force; its mirror couples it the
+    // other way, and on a symmetric pattern the two cancel to about zero. That
+    // cancellation is the reading, so a clamp here would invent an asymmetry.
+    const kxy = correlate(cache.get("kxy", pack.kxy), kb.re, kb.im, nx);
     const blockCount = maxClamp(correlate(cache.get("block_frac", pack.blockFrac), kb.re, kb.im, nx));
     const yMoment = correlate(cache.get("y_moment", pack.yMoment), kb.re, kb.im, nx);
     const zoneArea = {};
@@ -74432,6 +74459,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
             bKy = by("ky", pack.ky), bKz = by("kz", pack.kz),
             bCount = by("block_frac", pack.blockFrac),
             bCk = bys("kx", pack.kx), bCa = bys("ky", pack.ky);
+      const bKxy = correlateByBand(cache.get("kxy", pack.kxy), kb.re, kb.im, nx, rowIdx, nB);
       // Geometric width of each band, so a per-mm comparison is possible.
       bands = [];
       for (let b = 0; b < nB; b++) {
@@ -74439,8 +74467,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
           index: b,
           y_lo: bandEdges[b], y_hi: bandEdges[b + 1],
           width_mm: bandEdges[b + 1] - bandEdges[b],
-          contact_area: bArea[b], kx: bKx[b], ky: bKy[b], kz: bKz[b], block_count: bCount[b],
-          c_kappa: bCk[b], c_alpha: bCa[b],
+          contact_area: bArea[b], kx: bKx[b], ky: bKy[b], kz: bKz[b], kxy: bKxy[b],
+          block_count: bCount[b], c_kappa: bCk[b], c_alpha: bCa[b],
         });
       }
     }
@@ -74459,7 +74487,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     return {
       gamma_deg: gammaDeg, patch: { source: patch.source, provenance: patch.provenance, y_center: patch.y_center, a: patch.a, b: patch.b, clipped: patch.clipped, outline: patch.outline, normal_load: patch.normal_load, peak_pressure: patch.peak_pressure },
       theta_deg: gridThetaDeg(grid), contact_area: contactArea, land_ratio: landRatio,
-      kx: kx, ky: ky, kz: kz, block_count: blockCount, centroid_y: centroidY,
+      kx: kx, ky: ky, kz: kz, kxy: kxy, block_count: blockCount, centroid_y: centroidY,
       // Slip response (brush model). Units: C_kappa N per unit slip ratio,
       // C_alpha N/rad, C_mz N.mm/rad, trail mm. These are the TREAD's share --
       // the carcass is a second spring in series and usually the larger one --
@@ -74822,7 +74850,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       theta_deg: sub(r.theta_deg),
       contact_area: sub(r.contact_area),
       land_ratio: sub(r.land_ratio),
-      kx: sub(r.kx), ky: sub(r.ky), kz: sub(r.kz),
+      kx: sub(r.kx), ky: sub(r.ky), kz: sub(r.kz), kxy: sub(r.kxy),
       block_count: sub(r.block_count),
       centroid_y: sub(r.centroid_y),
       // slip response: N, N/rad, N.mm/rad, mm
@@ -74832,7 +74860,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       bands: r.bands ? r.bands.map(function (b) {
         return { index: b.index, y_lo: b.y_lo, y_hi: b.y_hi, width_mm: b.width_mm,
                  contact_area: sub(b.contact_area), kx: sub(b.kx), ky: sub(b.ky),
-                 kz: sub(b.kz), block_count: sub(b.block_count),
+                 kz: sub(b.kz), kxy: sub(b.kxy), block_count: sub(b.block_count),
                  c_kappa: sub(b.c_kappa), c_alpha: sub(b.c_alpha) };
       }) : null,
       block_count_discrete: Array.prototype.slice.call(r.block_count_discrete),
@@ -76445,7 +76473,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   // One place for the units of every sweep quantity, so a curve, a colour bar,
   // a band chart and an export can never disagree about what a number is.
   var METRIC_LABEL = {
-    kz: "Kz (N/mm)", kx: "Kx (N/mm)", ky: "Ky (N/mm)",
+    kz: "Kz (N/mm)", kx: "Kx (N/mm)", ky: "Ky (N/mm)", kxy: "Kxy (N/mm)",
     contact_area: "Contact area (mm²)", block_count: "Blocks", land_ratio: "Land ratio",
     c_alpha: "Cα (N/rad)", c_kappa: "Cκ (N)", c_mz: "Cmz (N·mm/rad)",
     pneumatic_trail: "Pneumatic trail (mm)",
@@ -77543,6 +77571,17 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     if (side) side.disabled = !state.results;
   }
 
+  // The compare table shows one column of numbers spanning six orders of
+  // magnitude -- Cα in the tens of thousands, a land ratio under one, Kxy in
+  // hundredths. A fixed one decimal place turns three of those into "0.7" and
+  // "-0.0", so the places follow the magnitude.
+  function fmtMetric(v) {
+    if (!isFinite(v)) return "—";
+    var a = Math.abs(v);
+    return v.toFixed(a >= 1000 ? 0 : a >= 100 ? 1 : a >= 1 ? 2 : a >= 0.01 ? 3 : 4);
+  }
+  function signed(v) { return (v >= 0 ? "+" : "") + fmtMetric(v); }
+
   function renderCompare() {
     var list = state.compare || [];
     refreshCompareButtons();
@@ -77599,7 +77638,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       yaxis: { title: { text: METRIC_LABEL[metric], font: { size: 11 } }, gridcolor: th.grid },
     }, { responsive: true, displayModeBar: false });
 
-    var base = null;
+    var base = null, baseSwing = 0, isBase = true;
     var rows = "<table class='metrics'><tr><th>Design</th><th>mean</th><th>CoV</th><th>min</th>" +
       "<th>max</th><th>vs first</th></tr>";
     list.forEach(function (e) {
@@ -77610,12 +77649,31 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         return;
       }
       var st = E.fluctuationStats(r[metric]);
-      if (base === null) base = st.mean;
-      var d = base ? (100 * (st.mean - base) / base) : 0;
-      rows += "<tr><td>" + escapeHtml(e.label) + "</td><td class='num'>" + st.mean.toFixed(1) +
-        "</td><td class='num'>" + (st.cov * 100).toFixed(2) + "%</td><td class='num'>" +
-        st.min.toFixed(1) + "</td><td class='num'>" + st.max.toFixed(1) + "</td><td class='num'>" +
-        (d === 0 ? "—" : (d > 0 ? "+" : "") + d.toFixed(1) + "%") + "</td></tr>";
+      if (base === null) { base = st.mean; baseSwing = Math.max(Math.abs(st.max), Math.abs(st.min)); }
+      // A signed metric can average out to nearly nothing. Kxy does exactly
+      // that on a symmetric pattern -- the left-leaning lugs cancel the
+      // right-leaning ones -- and against a mean of -0.003 a CoV is 47 000% and
+      // a percentage difference is a division by noise. Both fall back to
+      // absolute terms whenever the mean is small next to the swing, which is
+      // the only reading that means anything there.
+      // "Small next to its own swing" is the test, not "small in absolute
+      // terms": a mean under a twentieth of the peak is not a centre the
+      // numbers scatter about, so a CoV against it is arithmetic rather than a
+      // reading, and so is a percentage difference from it.
+      var swing = Math.max(Math.abs(st.max), Math.abs(st.min));
+      var meanIsNoise = Math.abs(st.mean) <= 0.05 * swing;
+      var baseIsNoise = Math.abs(base) < 0.05 * baseSwing;
+      var diff = st.mean - base;
+      var vs = isBase ? "—"
+             : baseIsNoise ? signed(diff)
+             : (diff >= 0 ? "+" : "") + (100 * diff / base).toFixed(2) + "%";
+      isBase = false;
+      var spread = meanIsNoise ? "±" + fmtMetric((st.max - st.min) / 2)
+                               : (st.cov * 100).toFixed(2) + "%";
+      rows += "<tr><td>" + escapeHtml(e.label) + "</td><td class='num'>" + fmtMetric(st.mean) +
+        "</td><td class='num'>" + spread + "</td><td class='num'>" +
+        fmtMetric(st.min) + "</td><td class='num'>" + fmtMetric(st.max) + "</td><td class='num'>" +
+        vs + "</td></tr>";
     });
     $("compareTable").innerHTML = rows + "</table>";
   }
@@ -77748,7 +77806,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     (s.physics_notes || []).forEach(function (n) { lines.push("# note: " + n.replace(/\s+/g, " ")); });
     lines.push([
       "gamma_deg", "theta_deg", "contact_area_mm2", "land_ratio",
-      "kx_N_per_mm", "ky_N_per_mm", "kz_N_per_mm",
+      "kx_N_per_mm", "ky_N_per_mm", "kz_N_per_mm", "kxy_N_per_mm",
       "block_count_effective", "centroid_y_mm",
       "zone_center_mm2", "zone_intermediate_mm2", "zone_shoulder_mm2",
       "c_kappa_N", "c_alpha_N_per_rad", "c_mz_Nmm_per_rad", "pneumatic_trail_mm",
@@ -77759,6 +77817,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         lines.push([
           r.gamma_deg, r.theta_deg[j].toFixed(4), r.contact_area[j].toFixed(4),
           r.land_ratio[j].toFixed(6), r.kx[j].toFixed(4), r.ky[j].toFixed(4), r.kz[j].toFixed(4),
+          slipAt(r, "kxy", j),
           r.block_count[j].toFixed(4), r.centroid_y[j].toFixed(4),
           r.zone_area.center[j].toFixed(4), r.zone_area.intermediate[j].toFixed(4),
           r.zone_area.shoulder[j].toFixed(4),

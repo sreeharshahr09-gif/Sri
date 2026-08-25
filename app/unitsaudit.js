@@ -365,5 +365,62 @@ section("7. inputs are rejected when they are in the wrong unit");
      E.maxSupportedLean(crown).toFixed(2) + " deg");
 }
 
+// ---------------------------------------------------------------------------
+section("9. the cross stiffness Kxy");
+// ---------------------------------------------------------------------------
+{
+  // The similarity pattern above is rectangular, and a rectangle has no cross
+  // term at all -- which is itself the first thing worth asserting. A sheared
+  // block does have one, so the scaling check uses that.
+  const rect = (s) => [[0, 0], [40 * s, 0], [40 * s, 25 * s], [0, 25 * s]];
+  const shear = (s) => [[0, 0], [40 * s, 0], [55 * s, 25 * s], [15 * s, 25 * s]];
+  const blk = (poly, s) => ({ polygon: poly, height: 9 * s, draft_angle: 0,
+                              shore_a: 60, sipes: [], n_lateral_sipes: 0 });
+  const kxyOf = (poly, s) => E.blockStiffness(blk(poly, s), SP).kxy;
+
+  ck("a rectangular block has no cross term at all", kxyOf(rect(1), 1) === 0,
+     "Kxy = " + kxyOf(rect(1), 1));
+  const k1 = kxyOf(shear(1), 1);
+  ck("a sheared block does", Math.abs(k1) > 1, "Kxy = " + k1.toFixed(2) + " N/mm");
+  ck("Kxy scales as a stiffness  [N/mm], one power of length",
+     rel(kxyOf(shear(LAM), LAM) / LAM, k1) < 1e-9,
+     k1.toFixed(3) + " -> " + kxyOf(shear(LAM), LAM).toFixed(3) + " N/mm at " + LAM + ":1");
+  // Mirroring the shear reverses the coupling and nothing else: this is the
+  // antisymmetry that makes a symmetric pattern's Kxy average to zero.
+  const mirror = shear(1).map((q) => [-q[0], q[1]]);
+  ck("mirroring a block flips the sign of Kxy and keeps its size",
+     rel(Math.abs(kxyOf(mirror, 1)), Math.abs(k1)) < 1e-9 && kxyOf(mirror, 1) * k1 < 0,
+     k1.toFixed(3) + " vs " + kxyOf(mirror, 1).toFixed(3) + " N/mm");
+  ck("and Kx and Ky are unchanged by that mirror",
+     rel(E.blockStiffness(blk(mirror, 1), SP).kx, E.blockStiffness(blk(shear(1), 1), SP).kx) < 1e-9 &&
+     rel(E.blockStiffness(blk(mirror, 1), SP).ky, E.blockStiffness(blk(shear(1), 1), SP).ky) < 1e-9);
+
+  // And through the sweep: a patch over a symmetric pair averages to zero,
+  // while the swing is real.
+  const patSym = {
+    tyre_circumference: 400, tread_width: 120, pitches: [100], tiebars: [],
+    crown: E.buildCrown(120, { crown_r_center: 700, crown_r_shoulder: 90 }), meta: {},
+    blocks: [
+      Object.assign({ id: "L", zone: "center" }, blk(shear(1).map((q) => [q[0] + 20, q[1] - 60]), 1)),
+      Object.assign({ id: "R", zone: "center" }, blk(mirror.map((q) => [q[0] + 220, q[1] - 60]), 1)),
+    ],
+  };
+  const packS = E.rasterise(patSym, E.makeGrid(patSym, 2048, 128), SP, false, {});
+  const resS = E.sweepLean(patSym, packS, 0,
+    { shape: "rectangle", length: 60, width: 100, gamma_deg: 0, scale_with_lean: false, y_center: 0 },
+    { vertical_load: 2000, wheel_radius: 320, load_rises_with_lean: false }, null, 90, null);
+  const sw = Math.max.apply(null, Array.prototype.map.call(resS.kxy, Math.abs));
+  ck("the swept Kxy swings on a sheared pattern", sw > 1, "peak |Kxy| = " + sw.toFixed(2) + " N/mm");
+  ck("and averages to nothing over a mirror-symmetric pair",
+     Math.abs(mean(resS.kxy)) < 0.02 * sw,
+     "mean " + mean(resS.kxy).toExponential(2) + " against a peak of " + sw.toFixed(2));
+  ck("Kx and Ky, by contrast, are strictly positive everywhere",
+     Array.prototype.every.call(resS.kx, (v) => v >= 0) &&
+     Array.prototype.every.call(resS.ky, (v) => v >= 0));
+  ck("but Kxy takes both signs, so it cannot be clamped",
+     Array.prototype.some.call(resS.kxy, (v) => v < -1e-9) &&
+     Array.prototype.some.call(resS.kxy, (v) => v > 1e-9));
+}
+
 console.log("\n" + (fails ? fails + " of " + checks + " checks FAILED" : checks + " checks passed"));
 process.exitCode = fails ? 1 : 0;

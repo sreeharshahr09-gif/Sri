@@ -4042,14 +4042,20 @@
     const blockPixelCount = new Int32Array(nBlocks);
     for (let i = 0; i < N; i++) { const l = labels[i]; if (l >= 0) blockPixelCount[l]++; }
 
-    const kxPer = new Float64Array(nBlocks), kyPer = new Float64Array(nBlocks), kzPer = new Float64Array(nBlocks), fracPer = new Float64Array(nBlocks);
+    const kxPer = new Float64Array(nBlocks), kyPer = new Float64Array(nBlocks), kzPer = new Float64Array(nBlocks);
+    // Kxy is the off-diagonal of the same 2x2 in-contact stiffness. It is the
+    // one map that can be NEGATIVE -- an angled lug leans one way, its mirror
+    // the other -- so nothing downstream may clamp it to zero.
+    const kxyPer = new Float64Array(nBlocks), fracPer = new Float64Array(nBlocks);
     for (let i = 0; i < nBlocks; i++) {
       const n = blockPixelCount[i];
       if (n <= 0) continue;
-      kxPer[i] = stiff[i].kx / n; kyPer[i] = stiff[i].ky / n; kzPer[i] = stiff[i].kz / n; fracPer[i] = 1 / n;
+      kxPer[i] = stiff[i].kx / n; kyPer[i] = stiff[i].ky / n; kzPer[i] = stiff[i].kz / n;
+      kxyPer[i] = stiff[i].kxy / n; fracPer[i] = 1 / n;
     }
 
-    const area = new Float32Array(N), kx = new Float32Array(N), ky = new Float32Array(N), kz = new Float32Array(N), blockFrac = new Float32Array(N), yMoment = new Float32Array(N);
+    const area = new Float32Array(N), kx = new Float32Array(N), ky = new Float32Array(N), kz = new Float32Array(N),
+          kxy = new Float32Array(N), blockFrac = new Float32Array(N), yMoment = new Float32Array(N);
     zoneFracs = zoneFracs || {};
     const bounds = zoneBounds(pattern.tread_width, zoneFracs.center, zoneFracs.intermediate);
     const zoneArea = { center: new Float32Array(N), intermediate: new Float32Array(N), shoulder: new Float32Array(N) };
@@ -4063,13 +4069,13 @@
         if (land[i] > 0) {
           area[i] = ra; yMoment[i] = ra * yy;
           if (zoneMap) zoneMap[i] = ra;
-          if (l >= 0) { kx[i] = kxPer[l]; ky[i] = kyPer[l]; kz[i] = kzPer[l]; blockFrac[i] = fracPer[l]; }
+          if (l >= 0) { kx[i] = kxPer[l]; ky[i] = kyPer[l]; kz[i] = kzPer[l]; kxy[i] = kxyPer[l]; blockFrac[i] = fracPer[l]; }
         }
       }
     }
 
     return {
-      grid: grid, land: land, area: area, kx: kx, ky: ky, kz: kz, blockFrac: blockFrac,
+      grid: grid, land: land, area: area, kx: kx, ky: ky, kz: kz, kxy: kxy, blockFrac: blockFrac,
       zoneArea: zoneArea, yMoment: yMoment, labels: labels, blockPixelCount: blockPixelCount,
       rowArea: rowArea, stiffness: stiff, curvatureCorrection: !!curvatureCorrection,
     };
@@ -4791,6 +4797,11 @@
     const kx = maxClamp(correlate(cache.get("kx", pack.kx), kb.re, kb.im, nx));
     const ky = maxClamp(correlate(cache.get("ky", pack.ky), kb.re, kb.im, nx));
     const kz = maxClamp(correlate(cache.get("kz", pack.kz), kb.re, kb.im, nx));
+    // NOT clamped: the cross term is signed. A lug angled one way couples a
+    // longitudinal deflection into a lateral force; its mirror couples it the
+    // other way, and on a symmetric pattern the two cancel to about zero. That
+    // cancellation is the reading, so a clamp here would invent an asymmetry.
+    const kxy = correlate(cache.get("kxy", pack.kxy), kb.re, kb.im, nx);
     const blockCount = maxClamp(correlate(cache.get("block_frac", pack.blockFrac), kb.re, kb.im, nx));
     const yMoment = correlate(cache.get("y_moment", pack.yMoment), kb.re, kb.im, nx);
     const zoneArea = {};
@@ -4825,6 +4836,7 @@
             bKy = by("ky", pack.ky), bKz = by("kz", pack.kz),
             bCount = by("block_frac", pack.blockFrac),
             bCk = bys("kx", pack.kx), bCa = bys("ky", pack.ky);
+      const bKxy = correlateByBand(cache.get("kxy", pack.kxy), kb.re, kb.im, nx, rowIdx, nB);
       // Geometric width of each band, so a per-mm comparison is possible.
       bands = [];
       for (let b = 0; b < nB; b++) {
@@ -4832,8 +4844,8 @@
           index: b,
           y_lo: bandEdges[b], y_hi: bandEdges[b + 1],
           width_mm: bandEdges[b + 1] - bandEdges[b],
-          contact_area: bArea[b], kx: bKx[b], ky: bKy[b], kz: bKz[b], block_count: bCount[b],
-          c_kappa: bCk[b], c_alpha: bCa[b],
+          contact_area: bArea[b], kx: bKx[b], ky: bKy[b], kz: bKz[b], kxy: bKxy[b],
+          block_count: bCount[b], c_kappa: bCk[b], c_alpha: bCa[b],
         });
       }
     }
@@ -4852,7 +4864,7 @@
     return {
       gamma_deg: gammaDeg, patch: { source: patch.source, provenance: patch.provenance, y_center: patch.y_center, a: patch.a, b: patch.b, clipped: patch.clipped, outline: patch.outline, normal_load: patch.normal_load, peak_pressure: patch.peak_pressure },
       theta_deg: gridThetaDeg(grid), contact_area: contactArea, land_ratio: landRatio,
-      kx: kx, ky: ky, kz: kz, block_count: blockCount, centroid_y: centroidY,
+      kx: kx, ky: ky, kz: kz, kxy: kxy, block_count: blockCount, centroid_y: centroidY,
       // Slip response (brush model). Units: C_kappa N per unit slip ratio,
       // C_alpha N/rad, C_mz N.mm/rad, trail mm. These are the TREAD's share --
       // the carcass is a second spring in series and usually the larger one --
