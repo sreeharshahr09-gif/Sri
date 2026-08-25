@@ -172,7 +172,27 @@
     </div>
 
     <div class="card">
-      <h2>6 · Export</h2>
+      <h2>6 · Tie-bar hatch <span class="badge" id="hatchCount">0</span></h2>
+      <div class="hint" style="margin-bottom:8px">Mark an enclosed region as a tie bar. It is exported as a <b>real DXF HATCH</b> on layer <b>TIEBAR</b> so tools like TLPT recognise it automatically. Including a hatch upgrades the clean export to DXF 2000 (AC1015).</div>
+      <div class="row">
+        <span class="mini">Pattern</span>
+        <select id="hatchPattern">
+          <option value="SOLID">Solid fill</option>
+          <option value="ANSI31">ANSI31 (diagonal)</option>
+        </select>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="hatchTool2" title="Click inside closed regions to hatch (H)">▩ Hatch tool</button>
+        <button class="secondary" id="hatchSel" title="Hatch every closed loop in the selected drawings">Hatch selected regions</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button class="secondary red" id="hatchClear">Remove all hatches</button>
+      </div>
+      <div class="hint" style="margin-top:8px">Tip: if a region is bounded by separate lines, run <b>Join &amp; close chains</b> first (or draw its outline with the Polyline tool), then hatch it.</div>
+    </div>
+
+    <div class="card">
+      <h2>7 · Export</h2>
       <div class="row" style="margin-bottom:2px">
         <span class="mini">Format</span>
         <select id="expFormat" style="flex:1">
@@ -218,6 +238,7 @@
       <button class="secondary tgl" id="toolLine" title="Draw a straight line: click start, click end (L). Points snap to nearby vertices.">╱ Line</button>
       <button class="secondary tgl" id="toolPoly" title="Draw a polyline: click each vertex, Enter/double-click to finish, C to close, Esc to cancel (P)">⭗ Polyline</button>
       <button class="secondary tgl" id="toolTrim" title="Trim: click the part of a line to cut away at its intersections with other geometry (X)">✂ Trim</button>
+      <button class="secondary tgl" id="toolHatch" title="Hatch: click inside a closed region to mark it as a tie-bar (real DXF HATCH on layer TIEBAR). Click a hatch to remove it. (H)">▩ Hatch</button>
       <span style="width:8px"></span>
       <button class="secondary" id="undoBtn" title="Undo (Ctrl+Z)">↶ Undo</button>
       <button class="secondary" id="redoBtn" title="Redo (Ctrl+Y or Ctrl+Shift+Z)">↷ Redo</button>
@@ -228,7 +249,7 @@
       <span id="viewInfo">No file loaded.</span>
     </div>
     <div class="toolbar" style="border-top:none;padding-top:0">
-      <span class="mini">Drag = box-select · <span class="kbd">Shift</span> add · <span class="kbd">Alt</span> remove · Right-drag/<span class="kbd">Space</span> = pan · Scroll = zoom · <span class="kbd">Del</span> delete · <span class="kbd">Ctrl+Z</span>/<span class="kbd">Ctrl+Y</span> undo/redo · <span class="kbd">R</span> rotate · <span class="kbd">B</span> bridge · <span class="kbd">L</span> line · <span class="kbd">P</span> polyline · <span class="kbd">X</span> trim · <span class="kbd">T</span> theme · <span class="kbd">F</span> fit · <span class="kbd">Esc</span> cancel · ▫ = snap</span>
+      <span class="mini">Drag = box-select · <span class="kbd">Shift</span> add · <span class="kbd">Alt</span> remove · Right-drag/<span class="kbd">Space</span> = pan · Scroll = zoom · <span class="kbd">Del</span> delete · <span class="kbd">Ctrl+Z</span>/<span class="kbd">Ctrl+Y</span> undo/redo · <span class="kbd">R</span> rotate · <span class="kbd">B</span> bridge · <span class="kbd">L</span> line · <span class="kbd">P</span> polyline · <span class="kbd">X</span> trim · <span class="kbd">H</span> hatch · <span class="kbd">T</span> theme · <span class="kbd">F</span> fit · <span class="kbd">Esc</span> cancel · ▫ = snap</span>
     </div>
     <canvas id="cv"></canvas>
     <div class="toast" id="toast"></div>
@@ -1203,6 +1224,26 @@ function rotateRecord(rec, angleDeg, cx, cy){
 }
 function recomputeGeom(i){
   const e=ENTITIES[i];
+  if(e.type==='HATCH'){
+    // boundary polygon = the 10/20 pairs between the 93 (vertex count) and 97
+    const rec=e.raw[0]; const pts=[]; let inPath=false;
+    for(let k=0;k<rec.length;k++){
+      const [c,v]=rec[k];
+      if(c===93){ inPath=true; continue; }
+      if(c===97){ inPath=false; }
+      if(inPath && c===10 && rec[k+1] && rec[k+1][0]===20){
+        const x=parseFloat(v), y=parseFloat(rec[k+1][1]);
+        if(isFinite(x)&&isFinite(y)) pts.push([x,y]);
+      }
+    }
+    e._boundary=pts;
+    if(pts.length){
+      let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+      for(const [x,y] of pts){minx=Math.min(minx,x);miny=Math.min(miny,y);maxx=Math.max(maxx,x);maxy=Math.max(maxy,y);}
+      e.geom={min:[minx,miny],max:[maxx,maxy],draw:[{type:'poly',pts:pts.slice(),closed:true,hatch:true}],type:'HATCH'};
+    } else e.geom=null;
+    return;
+  }
   if(e.type==='POLYLINE' && e.raw.length>1){
     const verts=[];
     for(const rec of e.raw){
@@ -1505,6 +1546,8 @@ function renderDrawings(){
     box.appendChild(el);
   });
   updateAreaReadout();
+  const hc=$('#hatchCount');
+  if(hc) hc.textContent=ENTITIES.filter(e=>!e.del&&e.type==='HATCH').length;
 }
 
 function classCounts(){
@@ -1577,6 +1620,34 @@ function fitView(){
 function W2S(x,y){ return [x*view.scale+view.ox, -y*view.scale+view.oy]; }
 function S2W(px,py){ return [(px-view.ox)/view.scale, -(py-view.oy)/view.scale]; }
 
+function drawHatch(e, color){
+  const pts=e._boundary; if(!pts||pts.length<3) return;
+  ctx.save();
+  ctx.beginPath();
+  pts.forEach((p,k)=>{const [sx,sy]=W2S(p[0],p[1]); k?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy);});
+  ctx.closePath();
+  // translucent fill
+  ctx.globalAlpha=0.18; ctx.fillStyle=color; ctx.fill();
+  // diagonal pattern lines clipped to the region (visual only)
+  ctx.globalAlpha=0.5; ctx.clip();
+  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+  for(const p of pts){const [sx,sy]=W2S(p[0],p[1]);minx=Math.min(minx,sx);miny=Math.min(miny,sy);maxx=Math.max(maxx,sx);maxy=Math.max(maxy,sy);}
+  ctx.strokeStyle=color; ctx.lineWidth=1;
+  const step=8;
+  ctx.beginPath();
+  for(let x=minx-(maxy-miny); x<maxx; x+=step){
+    ctx.moveTo(x, maxy); ctx.lineTo(x+(maxy-miny), miny);
+  }
+  ctx.stroke();
+  ctx.restore();
+  // boundary outline
+  ctx.save();
+  ctx.strokeStyle=color; ctx.globalAlpha=0.9; ctx.lineWidth=1.4;
+  ctx.beginPath();
+  pts.forEach((p,k)=>{const [sx,sy]=W2S(p[0],p[1]); k?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy);});
+  ctx.closePath(); ctx.stroke();
+  ctx.restore();
+}
 function drawPrim(pr, color){
   ctx.strokeStyle=color; ctx.fillStyle=color;
   if(pr.type==='poly'){
@@ -1659,7 +1730,8 @@ function draw(){
       let col=dim;
       if(e.cls!=='geometry') col = d.selected ? CLS_META[e.cls].dot : TH.clsUnsel;
       if(entSel){ col=TH.entSel; ctx.lineWidth=2; }
-      for(const pr of g.draw) drawPrim(pr, col);
+      if(e.type==='HATCH' && e._boundary){ drawHatch(e, entSel?TH.entSel:CLS_META.hatch.dot); }
+      else { for(const pr of g.draw) drawPrim(pr, col); }
       ctx.lineWidth=1;
       ctx.restore();
     }
@@ -1808,6 +1880,7 @@ window.addEventListener('keydown',e=>{
   if(e.key.toLowerCase()==='l'){ setTool('line'); toast('Line tool: click start then end. Esc cancels.'); }
   if(e.key.toLowerCase()==='p'){ setTool('poly'); toast('Polyline: click vertices · Enter finish · C close · Esc cancel.'); }
   if(e.key.toLowerCase()==='x'){ setTool('trim'); toast('Trim: click the part of a LINE to cut away.'); }
+  if(e.key.toLowerCase()==='h'){ setTool('hatch'); toast('Hatch: click inside a closed region to mark it as a tie bar.'); }
   if(e.key.toLowerCase()==='t'){ toggleTheme(); }
   if(e.key.toLowerCase()==='f'){ fitView(); draw(); }
 });
@@ -1942,6 +2015,137 @@ function finishPolyline(close){
   if(drawPts.length<2){ drawPts=[]; snapPt=null; draw(); toast('Need at least 2 points.'); return; }
   commitPolyline(drawPts.slice(), !!close);
   snapPt=null;
+}
+
+/* ==================== HATCH (tie-bar marking) =========================== */
+const HATCH_LAYER='TIEBAR';
+function hatchPattern(){ const s=$('#hatchPattern'); return s?s.value:'SOLID'; }
+function patternSpacing(boundary){
+  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+  for(const p of boundary){ minx=Math.min(minx,p[0]);miny=Math.min(miny,p[1]);maxx=Math.max(maxx,p[0]);maxy=Math.max(maxy,p[1]); }
+  const span=Math.min(maxx-minx,maxy-miny)||1;
+  return Math.max(span/12, 1e-6);
+}
+/* HATCH body pairs (everything after the AcDbHatch subclass marker) — shared
+   by the in-memory record (faithful export) and the AC1015 clean export. */
+function hatchBodyPairs(boundary, pattern, dx, dy){
+  const solid = (pattern==='SOLID');
+  const p=[[100,'AcDbHatch'],
+    [10,'0.0'],[20,'0.0'],[30,'0.0'],
+    [210,'0.0'],[220,'0.0'],[230,'1.0'],
+    [2, solid?'SOLID':pattern],
+    [70, solid?1:0],
+    [71,0],          // non-associative
+    [91,1],          // one boundary path
+    [92,3],          // external + polyline
+    [72,0],          // no bulges
+    [73,1],          // closed
+    [93, boundary.length]];
+  for(const pt of boundary) p.push([10,fmt(pt[0]+dx)],[20,fmt(pt[1]+dy)]);
+  p.push([97,0]);    // no source boundary objects (non-associative)
+  p.push([75,1]);    // outer style
+  p.push([76,1]);    // predefined pattern type
+  if(!solid){
+    const s=patternSpacing(boundary);
+    p.push([52,'0.0'],[41,'1.0'],[77,0],[78,1]);
+    p.push([53,'45.0'],[43,'0.0'],[44,'0.0'],
+           [45,fmt(-s*Math.SQRT1_2)],[46,fmt(s*Math.SQRT1_2)],[79,0]);
+  }
+  p.push([98,0]);    // no seed points
+  return p;
+}
+function makeHatchEntity(boundary, pattern, layer){
+  const L=layer||HATCH_LAYER;
+  const rec=[[0,'HATCH'],[5,nextHandle()],[100,'AcDbEntity'],[8,L],
+    ...hatchBodyPairs(boundary, pattern, 0, 0)];
+  const e={raw:[rec], type:'HATCH', layer:L, ltype:'', geom:null, block:null,
+    del:false, cls:'hatch', _tiebar:true, _boundary:boundary.map(p=>[p[0],p[1]]), _pattern:pattern};
+  return e;
+}
+
+/* collect closed single-entity loops (visible geometry) as polygons */
+function collectClosedLoops(){
+  const loops=[];
+  for(let i=0;i<ENTITIES.length;i++){
+    if(!entVisible(i)) continue;
+    const e=ENTITIES[i];
+    if(e.type==='HATCH') continue;
+    const ee=entityEnds(e);
+    if(!ee || !ee.closed) continue;
+    const poly=closedPolygonOf(e);
+    if(poly && poly.length>=3) loops.push({idx:i, poly, area:polyArea(poly)});
+  }
+  return loops;
+}
+function hatchIndexAt(wx,wy){
+  // topmost existing tie-bar hatch whose boundary contains the point
+  for(let i=ENTITIES.length-1;i>=0;i--){
+    const e=ENTITIES[i];
+    if(e.del || e.type!=='HATCH' || !e._boundary) continue;
+    if(!entVisible(i)) continue;
+    if(pointInPoly(wx,wy,e._boundary)) return i;
+  }
+  return -1;
+}
+function hatchRegionAt(px,py){
+  const [wx,wy]=S2W(px,py);
+  // toggle: click on existing hatch removes it
+  const existing=hatchIndexAt(wx,wy);
+  if(existing>=0){
+    ENTITIES[existing].del=true;
+    pushUndo({type:'delete', idxs:[existing]});
+    refreshAfterEdit(); renderDrawings();
+    toast('Tie-bar hatch removed. Ctrl+Z to undo.');
+    return;
+  }
+  // find the smallest closed loop containing the click
+  const loops=collectClosedLoops().filter(L=>pointInPoly(wx,wy,L.poly));
+  if(!loops.length){
+    toast('Click inside a closed region. If it is bounded by separate lines, run “Join & close chains” (or draw its outline) first.');
+    return;
+  }
+  loops.sort((a,b)=>a.area-b.area);
+  const src=loops[0];
+  const d=DRAWINGS.find(x=>x.entityIdx.includes(src.idx)) || targetDrawingForNew();
+  const he=makeHatchEntity(src.poly, hatchPattern(), HATCH_LAYER);
+  const idx=ENTITIES.length; ENTITIES.push(he); recomputeGeom(idx);
+  d.entityIdx.push(idx);
+  if(!LAYERS.has(HATCH_LAYER)) LAYERS.set(HATCH_LAYER,{visible:true});
+  pushUndo({type:'join', added:[idx], removed:[]});
+  refreshAfterEdit(); renderDrawings();
+  toast('Tie-bar hatch added on layer '+HATCH_LAYER+' (area '+src.area.toFixed(2)+'). Exports as a real DXF HATCH.');
+}
+function hatchSelectedRegions(){
+  if(!DRAWINGS.length){ toast('Load a DXF first.'); return; }
+  const sel=DRAWINGS.filter(d=>d.selected);
+  const targets=sel.length?sel:DRAWINGS;
+  const wanted=new Set();
+  for(const d of targets) for(const i of d.entityIdx) wanted.add(i);
+  const loops=collectClosedLoops().filter(L=>wanted.has(L.idx));
+  if(!loops.length){ toast('No closed single-entity loops in the selection to hatch. Join & close (or draw a boundary) first.'); return; }
+  const added=[];
+  for(const L of loops){
+    // skip loops already hatched (a hatch centroid inside)
+    const c=L.poly[0];
+    if(hatchIndexAt(c[0],c[1])>=0) continue;
+    const d=DRAWINGS.find(x=>x.entityIdx.includes(L.idx))||targets[0];
+    const he=makeHatchEntity(L.poly, hatchPattern(), HATCH_LAYER);
+    const idx=ENTITIES.length; ENTITIES.push(he); recomputeGeom(idx);
+    d.entityIdx.push(idx); added.push(idx);
+  }
+  if(!added.length){ toast('Those regions are already hatched.'); return; }
+  if(!LAYERS.has(HATCH_LAYER)) LAYERS.set(HATCH_LAYER,{visible:true});
+  pushUndo({type:'join', added, removed:[]});
+  refreshAfterEdit(); renderDrawings();
+  toast('Hatched '+added.length+' region(s) on layer '+HATCH_LAYER+'.');
+}
+function removeAllHatches(){
+  const idxs=ENTITIES.map((e,i)=>(!e.del&&e.type==='HATCH')?i:-1).filter(i=>i>=0);
+  if(!idxs.length){ toast('No hatches to remove.'); return; }
+  for(const i of idxs) ENTITIES[i].del=true;
+  pushUndo({type:'delete', idxs});
+  refreshAfterEdit(); renderDrawings();
+  toast('Removed '+idxs.length+' hatch(es).');
 }
 
 /* ============================ TRIM ====================================== */
@@ -2107,6 +2311,8 @@ cv.addEventListener('mousedown',e=>{
       drawPts.push(p); draw();
     } else if(tool==='trim'){
       trimAt(px,py);
+    } else if(tool==='hatch'){
+      hatchRegionAt(px,py);
     } else if(tool==='move'){
       const set=currentMoveSet();
       if(!set.size){ toast(uiMode==='entities'?'Select entities first (switch to Select tool).':'Select drawing(s) first.'); return; }
@@ -2262,6 +2468,7 @@ function sectionVerbatim(name){
 function exportFilter(i){
   const e=ENTITIES[i];
   if(!entVisible(i)) return false;
+  if(e.type==='HATCH') return true;   // intentional tie-bar hatches always export when visible
   if($('#expGeomOnly').checked && e.cls!=='geometry') return false;
   if($('#expClosedOnly').checked){
     const ee=entityEnds(e);
@@ -2473,9 +2680,192 @@ function buildCleanDXF(selectedDrawings){
   return out;
 }
 function buildDXF(selectedDrawings){
-  return $('#expFormat').value==='faithful'
-    ? buildExportDXF(selectedDrawings)
-    : buildCleanDXF(selectedDrawings);
+  if($('#expFormat').value==='faithful') return buildExportDXF(selectedDrawings);
+  const idx=collectExport(selectedDrawings);
+  if(!idx.length) return null;
+  // real HATCH entities require DXF 2000 (AC1015); R12 can't carry them
+  if(idx.some(i=>ENTITIES[i].type==='HATCH')) return buildClean2000(selectedDrawings);
+  return buildCleanDXF(selectedDrawings);
+}
+
+/* ---------- Clean export (DXF 2000 / AC1015) — supports real HATCH -------
+   A minimal but complete AC1015 file: full symbol tables, block records,
+   Model/Paper space blocks, and handled/owned entities. Used automatically
+   when the export includes tie-bar HATCH entities.                         */
+function buildClean2000(selectedDrawings){
+  const idxSorted=collectExport(selectedDrawings);
+  if(!idxSorted.length) return null;
+  const [dx,dy]=exportOffset(idxSorted);
+
+  const usedLayers=new Set(['0']);
+  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+  for(const i of idxSorted){
+    const e=ENTITIES[i]; usedLayers.add(e.layer||'0');
+    const g=e.geom; if(!g) continue;
+    minx=Math.min(minx,g.min[0]+dx); miny=Math.min(miny,g.min[1]+dy);
+    maxx=Math.max(maxx,g.max[0]+dx); maxy=Math.max(maxy,g.max[1]+dy);
+  }
+  if(!isFinite(minx)){ minx=miny=0; maxx=maxy=1; }
+  const layers=[...usedLayers];
+
+  // ---- handle allocator ----
+  let h=0x100; const H=()=>(++h).toString(16).toUpperCase();
+  const tblH={}; // table handles
+  const L=(c,v)=>c+'\r\n'+v+'\r\n';
+  const modelBRH=H(), paperBRH=H();
+
+  // ---- ENTITIES text (allocates entity handles) ----
+  let entsText='';
+  for(const i of idxSorted) entsText += entTo2000(ENTITIES[i], dx, dy, H, modelBRH);
+
+  // ---- TABLES text (allocates table + record handles) ----
+  let tbl='';
+  tbl += L(0,'SECTION')+L(2,'TABLES');
+  // VPORT
+  tblH.VPORT=H();
+  tbl += L(0,'TABLE')+L(2,'VPORT')+L(5,tblH.VPORT)+L(100,'AcDbSymbolTable')+L(70,1);
+  tbl += L(0,'VPORT')+L(5,H())+L(330,tblH.VPORT)+L(100,'AcDbSymbolTableRecord')+L(100,'AcDbViewportTableRecord')
+       +L(2,'*Active')+L(70,0)+L(10,'0.0')+L(20,'0.0')+L(11,'1.0')+L(21,'1.0')
+       +L(12,fmt((minx+maxx)/2))+L(22,fmt((miny+maxy)/2))+L(40,fmt(Math.max(maxy-miny,1)*1.2))+L(41,'1.5');
+  tbl += L(0,'ENDTAB');
+  // LTYPE
+  tblH.LTYPE=H();
+  tbl += L(0,'TABLE')+L(2,'LTYPE')+L(5,tblH.LTYPE)+L(100,'AcDbSymbolTable')+L(70,3);
+  for(const nm of ['ByBlock','ByLayer','Continuous']){
+    tbl += L(0,'LTYPE')+L(5,H())+L(330,tblH.LTYPE)+L(100,'AcDbSymbolTableRecord')+L(100,'AcDbLinetypeTableRecord')
+         +L(2,nm)+L(70,0)+L(3, nm==='Continuous'?'Solid line':'')+L(72,65)+L(73,0)+L(40,'0.0');
+  }
+  tbl += L(0,'ENDTAB');
+  // LAYER
+  tblH.LAYER=H();
+  tbl += L(0,'TABLE')+L(2,'LAYER')+L(5,tblH.LAYER)+L(100,'AcDbSymbolTable')+L(70,layers.length);
+  for(const nm of layers){
+    tbl += L(0,'LAYER')+L(5,H())+L(330,tblH.LAYER)+L(100,'AcDbSymbolTableRecord')+L(100,'AcDbLayerTableRecord')
+         +L(2,nm)+L(70,0)+L(62,7)+L(6,'Continuous')+L(370,'-3')+L(390,'F');
+  }
+  tbl += L(0,'ENDTAB');
+  // STYLE
+  tblH.STYLE=H();
+  tbl += L(0,'TABLE')+L(2,'STYLE')+L(5,tblH.STYLE)+L(100,'AcDbSymbolTable')+L(70,1);
+  tbl += L(0,'STYLE')+L(5,H())+L(330,tblH.STYLE)+L(100,'AcDbSymbolTableRecord')+L(100,'AcDbTextStyleTableRecord')
+       +L(2,'Standard')+L(70,0)+L(40,'0.0')+L(41,'1.0')+L(50,'0.0')+L(71,0)+L(42,'2.5')+L(3,'txt')+L(4,'');
+  tbl += L(0,'ENDTAB');
+  // VIEW / UCS (empty)
+  tblH.VIEW=H();
+  tbl += L(0,'TABLE')+L(2,'VIEW')+L(5,tblH.VIEW)+L(100,'AcDbSymbolTable')+L(70,0)+L(0,'ENDTAB');
+  tblH.UCS=H();
+  tbl += L(0,'TABLE')+L(2,'UCS')+L(5,tblH.UCS)+L(100,'AcDbSymbolTable')+L(70,0)+L(0,'ENDTAB');
+  // APPID
+  tblH.APPID=H();
+  tbl += L(0,'TABLE')+L(2,'APPID')+L(5,tblH.APPID)+L(100,'AcDbSymbolTable')+L(70,1);
+  tbl += L(0,'APPID')+L(5,H())+L(330,tblH.APPID)+L(100,'AcDbSymbolTableRecord')+L(100,'AcDbRegAppTableRecord')+L(2,'ACAD')+L(70,0);
+  tbl += L(0,'ENDTAB');
+  // DIMSTYLE
+  tblH.DIMSTYLE=H();
+  tbl += L(0,'TABLE')+L(2,'DIMSTYLE')+L(5,tblH.DIMSTYLE)+L(100,'AcDbSymbolTable')+L(70,1)+L(100,'AcDbDimStyleTable')+L(71,0);
+  tbl += L(0,'DIMSTYLE')+L(105,H())+L(330,tblH.DIMSTYLE)+L(100,'AcDbSymbolTableRecord')+L(100,'AcDbDimStyleTableRecord')+L(2,'Standard')+L(70,0);
+  tbl += L(0,'ENDTAB');
+  // BLOCK_RECORD
+  tblH.BLOCK_RECORD=H();
+  tbl += L(0,'TABLE')+L(2,'BLOCK_RECORD')+L(5,tblH.BLOCK_RECORD)+L(100,'AcDbSymbolTable')+L(70,2);
+  tbl += L(0,'BLOCK_RECORD')+L(5,modelBRH)+L(330,tblH.BLOCK_RECORD)+L(100,'AcDbSymbolTableRecord')+L(100,'AcDbBlockTableRecord')+L(2,'*Model_Space')+L(70,0)+L(280,1)+L(281,0);
+  tbl += L(0,'BLOCK_RECORD')+L(5,paperBRH)+L(330,tblH.BLOCK_RECORD)+L(100,'AcDbSymbolTableRecord')+L(100,'AcDbBlockTableRecord')+L(2,'*Paper_Space')+L(70,0)+L(280,1)+L(281,0);
+  tbl += L(0,'ENDTAB');
+  tbl += L(0,'ENDSEC');
+
+  // ---- BLOCKS text ----
+  let blk = L(0,'SECTION')+L(2,'BLOCKS');
+  const blockPair=(name, brh)=>{
+    let s='';
+    s += L(0,'BLOCK')+L(5,H())+L(330,brh)+L(100,'AcDbEntity')+L(8,'0')+L(100,'AcDbBlockBegin')+L(2,name)+L(70,0)+L(10,'0.0')+L(20,'0.0')+L(30,'0.0')+L(3,name)+L(1,'');
+    s += L(0,'ENDBLK')+L(5,H())+L(330,brh)+L(100,'AcDbEntity')+L(8,'0')+L(100,'AcDbBlockEnd');
+    return s;
+  };
+  blk += blockPair('*Model_Space', modelBRH);
+  blk += blockPair('*Paper_Space', paperBRH);
+  blk += L(0,'ENDSEC');
+
+  // ---- HEADER (now that all handles are allocated → correct $HANDSEED) ----
+  let head='';
+  head += L(0,'SECTION')+L(2,'HEADER');
+  head += L(9,'$ACADVER')+L(1,'AC1015');
+  head += L(9,'$INSBASE')+L(10,'0.0')+L(20,'0.0')+L(30,'0.0');
+  head += L(9,'$EXTMIN')+L(10,fmt(minx))+L(20,fmt(miny))+L(30,'0.0');
+  head += L(9,'$EXTMAX')+L(10,fmt(maxx))+L(20,fmt(maxy))+L(30,'0.0');
+  head += L(9,'$INSUNITS')+L(70,4);
+  head += L(9,'$HANDSEED')+L(5,(h+0x10).toString(16).toUpperCase());
+  head += L(0,'ENDSEC');
+
+  return head + tbl + blk
+    + L(0,'SECTION')+L(2,'ENTITIES') + entsText + L(0,'ENDSEC')
+    + L(0,'EOF');
+}
+
+/* one AC1015 entity (with handle + owner + subclass markers). `H` is the
+   handle allocator so multi-part fallbacks get unique handles.             */
+function entTo2000(e, dx, dy, H, owner){
+  const L=(c,v)=>c+'\r\n'+v+'\r\n';
+  const lay=e.layer||'0';
+  const head=(type,sub)=>L(0,type)+L(5,H())+L(330,owner)+L(100,'AcDbEntity')+L(8,lay)+L(100,sub);
+  const t=e.type;
+  const ent=e.raw[0];
+  const n=(c)=>gnum(ent,c);
+  if(t==='HATCH'){
+    let s=L(0,'HATCH')+L(5,H())+L(330,owner)+L(100,'AcDbEntity')+L(8,lay);
+    for(const [c,v] of hatchBodyPairs(e._boundary, e._pattern||'SOLID', dx, dy)) s+=L(c,v);
+    return s;
+  }
+  if(t==='LINE'){
+    return head('LINE','AcDbLine')+L(10,fmt(n(10)+dx))+L(20,fmt(n(20)+dy))+L(30,'0.0')
+      +L(11,fmt(n(11)+dx))+L(21,fmt(n(21)+dy))+L(31,'0.0');
+  }
+  if(t==='CIRCLE'){
+    return head('CIRCLE','AcDbCircle')+L(10,fmt(n(10)+dx))+L(20,fmt(n(20)+dy))+L(30,'0.0')+L(40,fmt(n(40)));
+  }
+  if(t==='ARC'){
+    return head('ARC','AcDbCircle')+L(10,fmt(n(10)+dx))+L(20,fmt(n(20)+dy))+L(30,'0.0')+L(40,fmt(n(40)))
+      +L(100,'AcDbArc')+L(50,fmt(n(50)))+L(51,fmt(n(51)));
+  }
+  if(t==='POINT'){
+    return head('POINT','AcDbPoint')+L(10,fmt(n(10)+dx))+L(20,fmt(n(20)+dy))+L(30,'0.0');
+  }
+  if(t==='TEXT'||t==='ATTRIB'||t==='ATTDEF'){
+    const hgt=n(40)||1, rot=n(50)||0, txt=gval(ent,1)||'';
+    return head('TEXT','AcDbText')+L(10,fmt(n(10)+dx))+L(20,fmt(n(20)+dy))+L(30,'0.0')+L(40,fmt(hgt))+L(1,txt)+L(50,fmt(rot));
+  }
+  if(t==='SOLID'||t==='TRACE'||t==='3DFACE'){
+    let s=head(t, t==='3DFACE'?'AcDbFace':'AcDbTrace');
+    for(const [px,py] of [[10,20],[11,21],[12,22],[13,23]]){
+      const x=n(px),y=n(py);
+      if(x!==undefined&&y!==undefined&&isFinite(x)&&isFinite(y)) s+=L(px,fmt(x+dx))+L(py,fmt(y+dy))+L(px+20,'0.0');
+    }
+    return s;
+  }
+  if(t==='LWPOLYLINE'||t==='POLYLINE'){
+    const pd=polyExportData(e);
+    let s=head('LWPOLYLINE','AcDbPolyline')+L(90,pd.pts.length)+L(70,pd.closed?1:0);
+    for(let k=0;k<pd.pts.length;k++){
+      s+=L(10,fmt(pd.pts[k][0]+dx))+L(20,fmt(pd.pts[k][1]+dy));
+      if(Math.abs(pd.bulges[k]||0)>1e-12) s+=L(42,fmt(pd.bulges[k]));
+    }
+    return s;
+  }
+  // fallback: flatten computed primitives into LWPOLYLINEs / circles / arcs
+  if(e.geom && e.geom.draw){
+    let s='';
+    for(const pr of e.geom.draw){
+      if(pr.type==='poly' && pr.pts.length>1){
+        s+=head('LWPOLYLINE','AcDbPolyline')+L(90,pr.pts.length)+L(70,pr.closed?1:0);
+        for(const p of pr.pts) s+=L(10,fmt(p[0]+dx))+L(20,fmt(p[1]+dy));
+      } else if(pr.type==='circle'){
+        s+=head('CIRCLE','AcDbCircle')+L(10,fmt(pr.x+dx))+L(20,fmt(pr.y+dy))+L(30,'0.0')+L(40,fmt(pr.r));
+      } else if(pr.type==='arc'){
+        s+=head('ARC','AcDbCircle')+L(10,fmt(pr.x+dx))+L(20,fmt(pr.y+dy))+L(30,'0.0')+L(40,fmt(pr.r))+L(100,'AcDbArc')+L(50,fmt(pr.a1))+L(51,fmt(pr.a2));
+      }
+    }
+    return s;
+  }
+  return '';
 }
 function download(filename, text, mime){
   const blob=new Blob([text],{type:mime||'application/dxf'});
@@ -2521,7 +2911,7 @@ function serializeProject(){
     entities:ENTITIES.map(e=>({
       raw:e.raw, type:e.type, layer:e.layer, ltype:e.ltype||'',
       del:!!e.del, cls:e.cls, block:e.block||null,
-      closed:!!e._closed, verts:e._verts||null,
+      closed:!!e._closed, verts:e._verts||null, pattern:e._pattern||null, tiebar:!!e._tiebar,
     })),
     drawings:DRAWINGS.map(d=>({
       id:d.id, name:d.name, color:d.color,
@@ -2561,7 +2951,7 @@ function loadProject(obj){
   ENTITIES = (obj.entities||[]).map(se=>({
     raw:se.raw, type:se.type, layer:se.layer, ltype:se.ltype||'',
     geom:null, block:se.block||null, del:!!se.del, cls:se.cls,
-    _verts:se.verts||undefined, _closed:!!se.closed,
+    _verts:se.verts||undefined, _closed:!!se.closed, _pattern:se.pattern||undefined, _tiebar:!!se.tiebar,
   }));
   for(let i=0;i<ENTITIES.length;i++) recomputeGeom(i);
 
@@ -2795,6 +3185,7 @@ function setTool(t){
   $('#toolLine').classList.toggle('on',t==='line');
   $('#toolPoly').classList.toggle('on',t==='poly');
   $('#toolTrim').classList.toggle('on',t==='trim');
+  $('#toolHatch').classList.toggle('on',t==='hatch');
   if(t!=='bridge'){ bridgeFirst=null; bridgeHover=null; }
   if(t!=='line' && t!=='poly'){ drawPts=[]; }         // discard in-progress sketch
   if(t==='line'||t==='poly'||t==='trim') buildSnapIndex();
@@ -2810,6 +3201,10 @@ $('#toolMove').addEventListener('click',()=>setTool('move'));
 $('#toolLine').addEventListener('click',()=>{ setTool('line'); toast('Line tool: click start then end. Points snap to nearby vertices (▫). Esc cancels.'); });
 $('#toolPoly').addEventListener('click',()=>{ setTool('poly'); toast('Polyline tool: click each vertex · Enter/double-click = finish · C = close · Esc = cancel.'); });
 $('#toolTrim').addEventListener('click',()=>{ setTool('trim'); toast('Trim tool: click the part of a LINE you want to cut away (removed between its intersections with other geometry).'); });
+$('#toolHatch').addEventListener('click',()=>{ setTool('hatch'); toast('Hatch tool: click inside a closed region to mark it as a tie bar. Click a hatch to remove it.'); });
+$('#hatchTool2').addEventListener('click',()=>{ setTool('hatch'); toast('Hatch tool active: click inside a closed region.'); });
+$('#hatchSel').addEventListener('click',hatchSelectedRegions);
+$('#hatchClear').addEventListener('click',removeAllHatches);
 $('#rotCCW').addEventListener('click',()=>rotateCurrentSelection(1));
 $('#rotCW').addEventListener('click',()=>rotateCurrentSelection(-1));
 $('#rotAngle').addEventListener('keydown',e=>{

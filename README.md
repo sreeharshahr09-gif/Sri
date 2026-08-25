@@ -91,6 +91,22 @@ modern browser and drop a DXF in.
   drawings' closed profiles — the numbers a stiffness/section tool works
   from.
 
+### Tie-bar hatch
+- **Hatch** tool (`H`) — click inside a closed region to mark it with a
+  **real DXF HATCH** entity on a dedicated **TIEBAR** layer, so downstream
+  tools (e.g. TLPT) recognise the hatched region as a tie bar automatically.
+  Click a hatch again to remove it; **Hatch selected regions** hatches every
+  closed loop in the selection at once.
+- Pattern is selectable (**Solid** or **ANSI31** diagonal). The hatch stays
+  in sync through move/rotate/undo and is saved in JSON projects.
+- Because a real HATCH needs DXF 2000, an export that contains a hatch is
+  written as **AC1015** automatically (a full, valid file with symbol
+  tables and block records); exports with no hatch stay R12. Tie-bar
+  hatches are always included in the export, regardless of the
+  geometry-only / closed-only filters.
+- Regions bounded by separate lines: run **Join & close chains** (or draw
+  the outline with the Polyline tool) first, then hatch.
+
 ### Export
 - Export selected drawings into one DXF, or each into its own file.
 - Two formats:
