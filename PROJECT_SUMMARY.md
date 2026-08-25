@@ -242,6 +242,38 @@ tabulated; and hatched regions are now included in the groove-only land spans,
 without which a bar drawn where no block reaches would have been stretched as
 though it were an open groove.
 
+### The layout, and four requests from the design office
+
+- **One tab bar, two rows.** Setup was a full-width dashboard with the result
+  tabs beneath it, so reaching a chart meant scrolling past every input and
+  changing one number meant scrolling back. Everything is now behind one pinned
+  bar under the header: **Set up** on top, **Results** below, each setup tab
+  tinted with its own section's hue. Run sits at the right-hand end of the setup
+  row and opens the sweep when it finishes — unless a result tab is already
+  open, in which case it leaves you there. Result tabs are listed from the start
+  so the run's output can be seen in advance, but cannot be opened until there
+  is something behind them.
+- **Kxy in the comparison.** The cross stiffness was computed per block and
+  thrown away at the rasteriser. It is the off-diagonal of the same 2×2 as Kx
+  and Ky and the only map that can be **negative**, so nothing on its path may
+  clamp it: an angled lug couples one way, its mirror the other, and on a
+  symmetric pattern they cancel — which is the reading. The comparison table
+  needed two fixes to state that honestly: a CoV against a mean of −0.003 came
+  out at 47 000%, and the decimal places now follow the magnitude rather than
+  being fixed at one.
+- **Every compared design's tread, stacked.** Two curves that differ tell you
+  there *is* a difference; the patterns beneath them tell you what it is. A
+  comparison entry now carries the tread as well as the numbers, and so does the
+  JSON run export — 119 KB against a 3.4 MB run — so a run loaded from a file
+  months later is not a curve with no pattern under it. A held design is frozen
+  in the wear state its run had.
+- **One patch band, three tabs.** The band follows the open tab: the sweep, the
+  coupling tab, and the comparison. It is one angle everywhere — drag it on one
+  tab and the others are looking at the same place — while each tab keeps its
+  own zoom. On the comparison stack each row's band is as wide as *that* tyre's
+  patch is at that angle, because a fixed arc length subtends a different angle
+  on a different circumference.
+
 ---
 
 ## 5. How the numbers are kept honest
@@ -254,7 +286,7 @@ v6.4 reference JS  ──(~1e-9)──  Python engine  ──(<2e-3)──  Brow
   verify/tool_v64_reference.js   tread_eval/*.py              app/engine.js
 ```
 
-- **331 tests** (from 153 at the start of the audit).
+- **342 tests** (from 153 at the start of the audit).
 - `tests/test_physics.py` checks every equation against a **closed form worked
   out by hand**, not against a previous run — a golden-value test would have
   blessed the bugs above.
@@ -272,7 +304,7 @@ v6.4 reference JS  ──(~1e-9)──  Python engine  ──(<2e-3)──  Brow
   closed forms for a rectangular patch (Cα = Ky·a, t = a/3) and an elliptical
   one (Cα/Ky = 8a/3π, t = 3πa/32), the FFT against a direct summation to 1e-15,
   and the direction sensitivity that no other quantity on the page has.
-- `app/unitsaudit.js` — 64 checks on dimensional consistency, proved by
+- `app/unitsaudit.js` — 73 checks on dimensional consistency, proved by
   geometric similarity: scale every length by λ and the load by λ², and all 24
   outputs land on the power of λ their units demand, to five decimals.
 - `app/pitchaudit.js` — 52 checks on pitch replication: the replicated tread
@@ -366,7 +398,11 @@ source of truth.
 | `9bd0123` | **Drop-first crown, with the radii solved** |
 | `410cca5` | **Report fixes and the interactive review pack** |
 | `814d5ee` | **Import a measured contact patch** |
-| `—` | **Read tie bars from a coloured HATCH** |
+| `d3810c3` | **Read tie bars from a coloured HATCH** |
+| `834bfc8` | **One tab bar, inputs above results** |
+| `6c1f195` | Compare designs on Kxy, the cross stiffness |
+| `e44e00e` | Stack every compared design's tread |
+| `9a7c52c` | The patch band on the coupling and compare tabs |
 
 ---
 
@@ -398,7 +434,7 @@ app/
 tread_eval/              the Python pipeline (schema, stiffness, dxf, raster,
                          sweep, metrics, contact_patch, cp_shapes, report, config)
 verify/                  v6.4 functions extracted verbatim, the reference oracle
-tests/                   331 tests
+tests/                   342 tests
 data/                    the Tramplr sample DXF, tie-bar and pitch fixtures,
                          hatch fixtures and their generators, footprints
 GUIDE.md                 plain-language guide, embedded in the app as a tab
