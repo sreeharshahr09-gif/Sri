@@ -1402,19 +1402,26 @@
       (on < tb.length ? " (dotted outline = still below the surface)" : "");
   }
 
-  // The rolled-out tread as Plotly shapes. Shared by the sweep tab's strip and
-  // the coupling tab's, so the two can never drift apart: same geometry, same
-  // theta axis, same tie-bar state -- only the emphasis differs.
+  // The rolled-out tread as Plotly shapes. Shared by the sweep tab's strip, the
+  // coupling tab's, and one row per design on the compare tab, so they can
+  // never drift apart: same geometry, same theta axis, same tie-bar state --
+  // only the emphasis differs.
   //   dimBlocks  blocks drawn faint, so the bars and their links read first
   //   links      draw the bonded links the network solver actually assembled
+  //   pattern    a tread other than the one on screen (a held comparison run)
+  //   xref/yref  which subplot row to draw into, when the caller has several
+  //   engaged    how to decide a bar is in contact, for a pattern that is not
+  //              the live one and so has no live wear state
   function patternStripShapes(opts) {
     opts = opts || {};
-    var p = state.pattern, th = plotTheme(), C = p.tyre_circumference;
+    var p = opts.pattern || state.pattern, th = plotTheme(), C = p.tyre_circumference;
+    var xref = opts.xref || "x", yref = opts.yref || "y";
+    var isEngaged = opts.engaged || ranEngaged;
     var shapes = [], zoneColor = { center: th.accent, intermediate: th.good, shoulder: th.accent2 };
     var blockAlpha = opts.dimBlocks ? 0.20 : 0.55;
     for (var bi = 0; bi < p.blocks.length; bi++) {
       var blk = p.blocks[bi];
-      shapes.push({ type: "path", path: regionPlotPath(blk, C, true), xref: "x", yref: "y",
+      shapes.push({ type: "path", path: regionPlotPath(blk, C, true), xref: xref, yref: yref,
         fillcolor: hexA(zoneColor[blk.zone] || th.accent, blockAlpha), line: { width: 0 } });
     }
     // Tie bars, on the same strip as the blocks. The sweep already counts the
@@ -1426,9 +1433,9 @@
     for (var ti = 0; ti < (p.tiebars || []).length; ti++) {
       var tb = p.tiebars[ti];
       if (tb.enabled === false) continue;
-      var engaged = ranEngaged(tb);
+      var engaged = isEngaged(tb);
       var tc = tiebarDisplayColor(tb);
-      shapes.push({ type: "path", path: regionPlotPath(tb, C, true), xref: "x", yref: "y",
+      shapes.push({ type: "path", path: regionPlotPath(tb, C, true), xref: xref, yref: yref,
         fillcolor: engaged ? hexA(tc, 0.85) : "rgba(0,0,0,0)",
         line: { width: 1.1, color: tc, dash: engaged ? undefined : "dot" } });
     }
@@ -1437,9 +1444,10 @@
     // links too -- that is the whole point of the tab.
     if (opts.links) shapes = shapes.concat(couplingLinkShapes(C));
     // The designer's rib cuts, drawn where they actually fall on the tread.
-    if (state.bandEdges) {
+    // Only for the live pattern: a held comparison run had its own cuts.
+    if (state.bandEdges && !opts.pattern) {
       for (var be = 0; be < state.bandEdges.length; be++) {
-        shapes.push({ type: "line", xref: "paper", x0: 0, x1: 1, yref: "y",
+        shapes.push({ type: "line", xref: "paper", x0: 0, x1: 1, yref: yref,
           y0: state.bandEdges[be], y1: state.bandEdges[be],
           line: { color: th.ink || cssVar("--ink"), width: 1.5 } });
       }
@@ -2619,9 +2627,31 @@
   }
 
   // ---- design comparison ----------------------------------------------
-  // Entries are whole runs: {label, settings, results}. A run added from this
-  // session and a run loaded from an exported JSON file are the same shape, so
-  // they compare on equal terms and survive across sessions.
+  // Entries are whole runs: {label, settings, results, geometry}. A run added
+  // from this session and a run loaded from an exported JSON file are the same
+  // shape, so they compare on equal terms and survive across sessions.
+  //
+  // `geometry` is the rolled-out tread itself, kept so the patterns can be
+  // stacked beside the curves: a difference between two curves is only useful
+  // if you can see which part of which pattern caused it. It is the drawing,
+  // not the run -- no crown arrays, no results -- so it costs a few tens of KB
+  // against a multi-megabyte run.
+  function comparisonGeometry(p) {
+    if (!p) return null;
+    return JSON.parse(JSON.stringify({
+      tyre_circumference: p.tyre_circumference, tread_width: p.tread_width,
+      blocks: (p.blocks || []).map(function (b) {
+        return { polygon: b.polygon, holes: b.holes || [], zone: b.zone };
+      }),
+      tiebars: (p.tiebars || []).map(function (tb) {
+        return { id: tb.id, polygon: tb.polygon, holes: tb.holes || [], zone: tb.zone,
+                 enabled: tb.enabled, color: tb.color || null, source: tb.source || "automatic",
+                 nsd: tb.nsd, height: tb.height };
+      }),
+      n_pitches: (p.pitches || []).length, name: p.name,
+    }));
+  }
+
   function compareLabel(settings) {
     var p = settings.project || {};
     return [p.tread, p.project, p.size].filter(Boolean).join(" · ") ||
@@ -2634,6 +2664,10 @@
       label: compareLabel(settingsSnapshot()) + "  (" + new Date().toLocaleTimeString() + ")",
       settings: settingsSnapshot(),
       results: state.results,
+      geometry: comparisonGeometry(state.pattern),
+      // Which bars the RUN had in contact, frozen with it -- a held design must
+      // not repaint itself when the live wear box is edited afterwards.
+      engaged_ids: state.wear && state.wear.engaged_ids ? state.wear.engaged_ids.slice() : [],
     });
     renderCompare();
   }
@@ -2649,7 +2683,12 @@
             if (j.format !== "tread_eval.sweep" || !j.results)
               throw new Error("not a tread_eval run export");
             state.compare.push({ label: compareLabel(j.settings || {}) + "  [" + file.name + "]",
-                                 settings: j.settings || {}, results: j.results });
+                                 settings: j.settings || {}, results: j.results,
+                                 // Runs exported before the pattern travelled
+                                 // with them simply have none; the stack says so
+                                 // for that row rather than leaving a gap.
+                                 geometry: j.pattern_geometry || null,
+                                 engaged_ids: j.engaged_tiebar_ids || [] });
           } catch (err) {
             alert("Could not read " + file.name + ": " + err.message);
           }
@@ -2761,9 +2800,12 @@
       var meanIsNoise = Math.abs(st.mean) <= 0.05 * swing;
       var baseIsNoise = Math.abs(base) < 0.05 * baseSwing;
       var diff = st.mean - base;
+      // The sign has to come from the percentage, not from the difference: with
+      // a negative base the two disagree, and "+-100%" was what came out.
+      var pct = 100 * diff / base;
       var vs = isBase ? "—"
              : baseIsNoise ? signed(diff)
-             : (diff >= 0 ? "+" : "") + (100 * diff / base).toFixed(2) + "%";
+             : (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%";
       isBase = false;
       var spread = meanIsNoise ? "±" + fmtMetric((st.max - st.min) / 2)
                                : (st.cov * 100).toFixed(2) + "%";
@@ -2773,6 +2815,145 @@
         vs + "</td></tr>";
     });
     $("compareTable").innerHTML = rows + "</table>";
+    renderComparePatterns(list);
+  }
+
+  // Every held design's rolled-out tread, one above another on the same θ axis.
+  //
+  // A difference between two curves is only half an answer: the other half is
+  // which part of which pattern caused it. Stacked on a shared axis and zoomed
+  // together with the curve above, "design B dips at 140°" and "design B has a
+  // groove there and design A does not" become one picture.
+  //
+  // The θ axis is what makes designs of different circumference comparable at
+  // all -- 0-360° is one revolution whatever the tyre is -- and the row label
+  // gives the circumference so the scaling is never hidden.
+  // Row labels sit in a 150 px gutter, so a design name has to be cut somewhere.
+  // The timestamp goes first -- it is the same for every row of one session and
+  // tells you nothing about the design -- and what is left is cut on a word.
+  function shortLabel(s) {
+    var name = String(s).replace(/\s*[([].*$/, "").trim() || String(s);
+    if (name.length <= 24) return name;
+    var cut = name.slice(0, 24);
+    var sp = cut.lastIndexOf(" ");
+    return (sp > 12 ? cut.slice(0, sp) : cut) + "…";
+  }
+
+  function renderComparePatterns(list) {
+    var host = $("comparePatterns");
+    if (!host) return;
+    var drawable = list.filter(function (e) { return e.geometry && e.geometry.blocks.length; });
+    var note = $("comparePatternNote");
+    if (!drawable.length) {
+      Plotly.purge(host); host.style.display = "none";
+      if (note) note.innerHTML = list.length
+        ? "<b>No patterns to stack.</b> These runs were exported before the tread travelled with them, " +
+          "so there is no geometry to draw. Re-export them, or add the designs from this session."
+        : "";
+      if (note) note.style.display = list.length ? "" : "none";
+      return;
+    }
+    host.style.display = "";
+    var missing = list.length - drawable.length;
+    if (note) {
+      note.style.display = missing ? "" : "none";
+      if (missing) note.innerHTML = "<b>" + missing + " design(s) are not drawn.</b> They were exported " +
+        "before the tread travelled with the run, so there is no geometry to stack.";
+    }
+
+    var th = plotTheme(), shapes = [], data = [];
+    var palette = [th.accent, th.good, th.accent2, th.bad, th.inkDim, "#9b6bff", "#00b3a4", "#e2679a"];
+    // Which row belongs to which curve: the row is labelled in that design's own
+    // curve colour, so the two figures are matched by eye and not by counting.
+    var colourOf = {};
+    list.forEach(function (e, i) { colourOf[e.label] = palette[i % palette.length]; });
+    var layout = {
+      paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+      showlegend: false, margin: { l: 150, r: 16, t: 34, b: 46 },
+      height: 130 * drawable.length + 56,
+      grid: { rows: drawable.length, columns: 1, pattern: "independent", roworder: "top to bottom" },
+      title: { text: "Rolled-out tread of each design, on the same θ axis", font: { size: 13 } },
+    };
+    drawable.forEach(function (e, i) {
+      var g = e.geometry, ax = i === 0 ? "" : String(i + 1);
+      var ids = e.engaged_ids || [];
+      shapes = shapes.concat(patternStripShapes({
+        pattern: g, xref: "x" + (i + 1), yref: "y" + (i + 1),
+        // The wear state the RUN had, frozen with it. Reading the live wear box
+        // here would repaint a held design as though it had been run at a wear
+        // it never saw.
+        engaged: function (tb) { return ids.indexOf(tb.id) >= 0; },
+      }));
+      // An invisible trace per row: Plotly needs one to create the subplot, and
+      // shapes alone do not.
+      data.push({ x: [0, 360], y: [0, 0], xaxis: "x" + (i + 1), yaxis: "y" + (i + 1),
+                  type: "scatter", mode: "lines", line: { width: 0 }, hoverinfo: "skip" });
+      layout["xaxis" + (i + 1)] = {
+        gridcolor: th.grid, zeroline: false, matches: i === 0 ? undefined : "x",
+        range: (state.compareRange || [0, 360]).slice(),
+        showticklabels: i === drawable.length - 1,
+        title: i === drawable.length - 1 ? { text: "rotation angle θ (deg)", font: { size: 11 } } : undefined,
+        tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360],
+      };
+      layout["yaxis" + (i + 1)] = {
+        gridcolor: th.grid, zeroline: false,
+        range: [-g.tread_width / 2, g.tread_width / 2],
+        title: { text: shortLabel(e.label) + "<br>" + g.tyre_circumference.toFixed(0) + " × " +
+                       g.tread_width.toFixed(0) + " mm",
+                 font: { size: 9, color: colourOf[e.label] || th.ink }, standoff: 4 },
+        tickfont: { size: 8 },
+      };
+      void ax;
+    });
+    layout.shapes = shapes;
+    Plotly.react(host, data, layout, { responsive: true, displayModeBar: false });
+    linkComparePatterns();
+  }
+
+  // The curve chart and the pattern stack are two figures, so Plotly will not
+  // link them itself; zooming either re-frames both, exactly as the sweep tab's
+  // strip follows its rows.
+  //
+  // The guard is not optional. Relayouting one figure fires the other's
+  // relayout handler, which relayouts the first, and the page locks up -- which
+  // is exactly what happened before it was here.
+  var cmpLink = { hooked: false, syncing: false };
+
+  function linkComparePatterns() {
+    var plot = $("comparePlot"), pats = $("comparePatterns");
+    if (!plot || !pats || !plot.on || !pats.on) return;
+    if (cmpLink.hooked) return;
+    cmpLink.hooked = true;
+
+    function syncFrom(src, dst, dstIsStack) {
+      src.on("plotly_relayout", function (ev) {
+        if (cmpLink.syncing || !ev) return;
+        // An interactive zoom emits the indexed keys; a programmatic relayout
+        // emits the whole array; a double-click emits autorange.
+        var lo = ev["xaxis.range[0]"], hi = ev["xaxis.range[1]"];
+        if (lo == null && Array.isArray(ev["xaxis.range"])) { lo = ev["xaxis.range"][0]; hi = ev["xaxis.range"][1]; }
+        var reset = ev["xaxis.autorange"] === true;
+        if (lo == null && !reset) return;
+        state.compareRange = reset ? [0, 360] : [lo, hi];
+        cmpLink.syncing = true;
+        Plotly.relayout(dst, dstIsStack ? xaxisRangeUpdate(dst, state.compareRange)
+                                        : { "xaxis.range": state.compareRange.slice() })
+          .then(function () { cmpLink.syncing = false; })
+          .catch(function () { cmpLink.syncing = false; });
+      });
+    }
+    syncFrom(plot, pats, true);
+    syncFrom(pats, plot, false);
+  }
+
+  // Every row of a subplot figure has its own x-axis. `matches` keeps them in
+  // step when the user drags, but a programmatic relayout has to name them all.
+  function xaxisRangeUpdate(gd, range) {
+    var up = {};
+    Object.keys(gd._fullLayout || {}).forEach(function (k) {
+      if (/^xaxis\d*$/.test(k)) up[k + ".range"] = range.slice();
+    });
+    return up;
   }
 
   // ---- export ----------------------------------------------------------
@@ -3069,6 +3250,11 @@
       generated: new Date().toISOString(),
       settings: settingsSnapshot(),
       block_stiffness_summary: state.stiffness,
+      // The tread itself, so a run loaded into the comparison months later can
+      // still be drawn beside the others rather than being a curve with no
+      // pattern under it.
+      pattern_geometry: comparisonGeometry(state.pattern),
+      engaged_tiebar_ids: state.wear && state.wear.engaged_ids ? state.wear.engaged_ids : [],
       results: state.results,
     };
     download(safeName() + "_run.json", JSON.stringify(payload, null, 1), "application/json");

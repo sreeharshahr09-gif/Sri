@@ -40,7 +40,14 @@ const fs = require("fs");
   const check = async (sel) => { await reveal(sel); return page.check(sel); };
   const uncheck = async (sel) => { await reveal(sel); return page.uncheck(sel); };
   const selectOption = async (sel, v) => { await reveal(sel); return page.selectOption(sel, v); };
-  const setInputFiles = async (sel, v) => { await reveal(sel); return page.setInputFiles(sel, v); };
+  // Setting the same path twice fires no change event, and this test loads the
+  // same DXF more than once -- the second load silently did nothing, and the
+  // comparison ended up holding the first design twice.
+  const setInputFiles = async (sel, v) => {
+    await reveal(sel);
+    await page.setInputFiles(sel, []);
+    return page.setInputFiles(sel, v);
+  };
   const dispatchEvent = async (sel, ev) => { await reveal(sel); return page.dispatchEvent(sel, ev); };
   const isVisible = async (sel) => { await reveal(sel); return page.isVisible(sel); };
   const openTab = async (tab) => {
@@ -814,6 +821,94 @@ const fs = require("fs");
   await page.mouse.up();
   const after = await page.inputValue("#cpY");
   console.log("drag y_center:", before, "->", after, "(auto unchecked:", !(await page.isChecked("#cpAutoY")), ")");
+
+  // ---- comparing designs: the curves, and the patterns under them ---------
+  // Two curves that differ tell you there is a difference; the patterns stacked
+  // beneath them tell you what it is. Both have to be there, on the same axis,
+  // and they have to zoom together.
+  {
+    await openTab("compare");
+    await click("#clearCompare");
+    await page.waitForTimeout(200);
+
+    const add = async () => {
+      await click("#runBtn");
+      await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 90000 });
+      await click("#addCompareSide");
+      await page.waitForTimeout(250);
+    };
+    await click("#sampleBtn"); await page.waitForTimeout(400);
+    await fill("#nsd", "8.5"); await fill("#wear", "0");
+    await add();
+    await setInputFiles("#fileInput", path.join(__dirname, "..", "data", "hatch_only.dxf"));
+    await page.waitForTimeout(700);
+    await fill("#nsd", "12"); await fill("#wear", "7");
+    await add();
+
+    await openTab("compare");
+    await page.waitForTimeout(700);
+    const stack = await page.evaluate(() => {
+      const gd = document.getElementById("comparePatterns");
+      if (!gd || !gd._fullLayout) return null;
+      const ys = Object.keys(gd._fullLayout).filter((k) => /^yaxis\d*$/.test(k));
+      const s = gd._fullLayout.shapes || [];
+      return { rows: ys.length, shapes: s.length,
+               perRow: ys.map((k) => s.filter((x) => x.yref === k.replace("axis", "")).length),
+               titles: ys.map((k) => (gd._fullLayout[k].title || {}).text || "") };
+    });
+    if (!stack) errors.push("the compare tab has no stacked patterns");
+    else {
+      console.log(`compare patterns: ${stack.rows} rows, ${stack.perRow.join(" + ")} outlines`);
+      if (stack.rows !== 2) errors.push(`expected one pattern row per design, got ${stack.rows}`);
+      if (stack.perRow.some((n) => n < 10)) errors.push(`a pattern row is empty: ${stack.perRow}`);
+      // each row is labelled with its own tyre, or two designs of different
+      // circumference are indistinguishable on a normalised theta axis
+      if (!stack.titles.every((s) => /\d+ × \d+ mm/.test(s)))
+        errors.push(`pattern rows are not labelled with their size: ${stack.titles}`);
+    }
+
+    // Every metric must draw, including the signed one.
+    for (const m of ["kx", "ky", "kxy", "kz", "c_alpha"]) {
+      await selectOption("#compareMetric", m);
+      await page.waitForTimeout(350);
+      const ok = await page.evaluate(() => {
+        const gd = document.getElementById("comparePlot");
+        return gd && gd.data && gd.data.length > 0 && gd.data.every((d) => d.y && d.y.length);
+      });
+      if (!ok) errors.push(`the comparison chart is empty for ${m}`);
+    }
+    // Kxy is the one metric that can be negative, which is what distinguishes
+    // it from Kx and Ky rather than making it a third copy of them.
+    await selectOption("#compareMetric", "kxy");
+    await page.waitForTimeout(400);
+    const kxyRow = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll("#compareTable tr")].slice(1);
+      return rows.map((r) => [...r.children].map((c) => c.textContent.trim()));
+    });
+    console.log("compare Kxy:", kxyRow.map((r) => r.slice(1).join(" ")).join("  |  "));
+    if (kxyRow.length !== 2) errors.push(`the comparison table lost a design on Kxy: ${kxyRow.length} rows`);
+    const kxySigned = await page.evaluate(() => {
+      const gd = document.getElementById("comparePlot");
+      return gd.data.some((d) => d.y.some((v) => v < 0)) || gd.data.every((d) => d.y.every((v) => v === 0));
+    });
+    if (!kxySigned) errors.push("Kxy came out non-negative everywhere — it is being clamped like Kx and Ky");
+
+    // Zooming the curve chart re-frames every pattern, and back again.
+    await page.evaluate(() => Plotly.relayout(document.getElementById("comparePlot"), { "xaxis.range": [90, 150] }));
+    await page.waitForTimeout(600);
+    const ranges = await page.evaluate(() => ({
+      curve: document.getElementById("comparePlot")._fullLayout.xaxis.range.map((v) => +v.toFixed(1)),
+      pat: document.getElementById("comparePatterns")._fullLayout.xaxis.range.map((v) => +v.toFixed(1)),
+      pat2: document.getElementById("comparePatterns")._fullLayout.xaxis2.range.map((v) => +v.toFixed(1)),
+    }));
+    console.log("compare zoom:", JSON.stringify(ranges));
+    if (String(ranges.curve) !== String(ranges.pat) || String(ranges.pat) !== String(ranges.pat2))
+      errors.push(`the pattern stack did not follow the curve's zoom: ${JSON.stringify(ranges)}`);
+    await page.evaluate(() => Plotly.relayout(document.getElementById("comparePlot"), { "xaxis.autorange": true }));
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(outDir, "tab-compare.png"), fullPage: false });
+    await click("#clearCompare");
+  }
 
   console.log(errors.length ? "ERRORS:\n" + errors.join("\n") : "no page errors");
   await browser.close();

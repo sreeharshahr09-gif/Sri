@@ -678,6 +678,41 @@ the real footprint does not have were smoothing the ripple.
 
 ---
 
+## Comparing designs
+
+*+ Compare* beside Run keeps the current results. Load the next DXF, change
+anything you like, run it, and add that too — then open the **Compare** tab.
+Everything stays in this browser session; no files are needed. (Loading
+previously exported JSON runs also works, for designs from another day or
+machine.)
+
+**Pick a metric** and every held design is drawn on one θ axis at the lowest
+lean they all share, with a table of means, ripple and the difference from the
+first. Kx, Ky, Kz and Kxy are all offered, along with contact area, land ratio,
+block count and the slip response.
+
+**Below the curves, every design's rolled-out tread is stacked** — one row each,
+on the same θ axis, zooming together with the curves above. That is the half of
+the answer a curve cannot give: *"design B dips at 140°"* and *"design B has a
+groove there and design A does not"* become one picture. Each row is labelled
+with its own circumference and width, and in the colour of its curve.
+
+Two things worth knowing:
+
+- **The θ axis is what makes different tyres comparable.** 0–360° is one
+  revolution whatever the circumference, so a 2193 mm motorcycle tread and a
+  474 mm test pattern line up. The row label gives the real size so the
+  normalisation is never hidden.
+- **A held design is frozen.** Its tie bars are drawn in the wear state *that
+  run* had, so editing the live wear box afterwards cannot repaint a held
+  design as something it never was.
+
+A run exported before the tread travelled with it has no geometry to draw. Those
+designs still appear in the curves and the table; the stack says how many it
+could not draw rather than leaving a silent gap.
+
+---
+
 ## Tie-bar coupling: the tread as a network
 
 Everywhere else this tool treats a block as an **independent spring**. Its stiffness comes from its own outline and nothing else, and the patch total is the sum of the springs it covers. That assumption is what makes the θ sweep a single FFT — and it is exactly wrong for a tie bar, whose whole purpose is to make neighbouring blocks *not* independent.

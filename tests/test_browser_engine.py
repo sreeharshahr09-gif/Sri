@@ -2616,3 +2616,63 @@ def test_a_signed_metric_is_not_summarised_as_a_percentage_of_nothing():
     assert '"±" + fmtMetric' in rc
     # and the numbers span six orders of magnitude, so the decimals follow suit
     assert "function fmtMetric(" in ui
+
+
+def test_every_compared_design_carries_its_own_tread():
+    """Two curves that differ tell you there IS a difference; the patterns
+    stacked beneath them tell you what it is.  So a comparison entry holds the
+    rolled-out tread as well as the numbers, and the JSON run export carries it
+    too -- otherwise a run loaded from a file months later is a curve with no
+    pattern under it.  The geometry is the drawing only: no crown arrays, no
+    results, so it costs a few tens of KB against a multi-megabyte run.
+    """
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert "function comparisonGeometry(" in ui
+    geo = ui[ui.index("function comparisonGeometry("):ui.index("function compareLabel(")]
+    assert "polygon" in geo and "holes" in geo and "tiebars" in geo
+    assert "crown" not in geo, "the crown is derived and must not be copied into a comparison entry"
+    assert "results" not in geo
+    # both routes in carry it
+    assert "geometry: comparisonGeometry(state.pattern)" in ui
+    assert "geometry: j.pattern_geometry || null" in ui
+    assert "pattern_geometry: comparisonGeometry(state.pattern)" in ui
+    # and the wear state travels frozen, or a held design repaints itself when
+    # the live wear box is edited
+    assert "engaged_ids:" in ui and "engaged_tiebar_ids" in ui
+    assert 'id="comparePatterns"' in tpl and 'id="comparePatternNote"' in tpl
+
+
+def test_the_compare_patterns_are_drawn_by_the_one_strip_builder():
+    """A third way of drawing the rolled-out tread would be a third thing to keep
+    in step.  The compare stack goes through the same builder as the sweep tab
+    and the coupling tab, told which pattern and which subplot row to use."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    rp = ui[ui.index("function renderComparePatterns("):ui.index("  var cmpLink = {")]
+    assert "patternStripShapes({" in rp
+    assert "pattern: g" in rp and "xref:" in rp and "yref:" in rp
+    assert "E.splitAtSeam(" not in rp, "the compare stack builds geometry of its own"
+    # the builder takes a pattern rather than always reading the live one
+    b = ui[ui.index("function patternStripShapes("):ui.index("  // Block centroids")]
+    assert "opts.pattern || state.pattern" in b
+    assert "opts.xref" in b and "opts.yref" in b
+    # a held design's tie bars use the wear the RUN had, not the live box
+    assert "opts.engaged || ranEngaged" in b
+    # rib cuts belong to the live pattern only
+    assert "!opts.pattern" in b
+
+
+def test_linking_two_figures_cannot_loop():
+    """Relayouting one figure fires the other's relayout handler, which
+    relayouts the first.  Without a guard the page locks up -- which is exactly
+    what happened the first time the compare stack was wired to its curve."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    assert "var cmpLink = { hooked: false, syncing: false }" in ui
+    lk = ui[ui.index("function linkComparePatterns("):ui.index("function xaxisRangeUpdate(")]
+    assert "cmpLink.syncing" in lk and "cmpLink.hooked" in lk
+    assert "syncFrom(plot, pats" in lk and "syncFrom(pats, plot" in lk
+    # a subplot figure has one x-axis per row, and a programmatic relayout has
+    # to name them all -- `matches` only covers a user drag
+    xr = ui[ui.index("function xaxisRangeUpdate("):]
+    xr = xr[:xr.index("\n  }")]
+    assert "xaxis" in xr and "_fullLayout" in xr
