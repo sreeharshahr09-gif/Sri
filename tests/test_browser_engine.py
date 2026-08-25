@@ -31,6 +31,18 @@ APP = os.path.join(REPO, "app")
 DXF = os.path.join(REPO, "data", "130_80R17_Tramplr_XR_tread_plan.dxf")
 
 
+def _setup_markup(tpl: str) -> str:
+    """Everything the user fills in, as one string.
+
+    The setup sections used to live in a single ``<aside>``; they are now one
+    panel per tab, so the tests take the run from the first setup panel to the
+    last rather than a single element.
+    """
+    a = tpl.index('<section id="panel-project"')
+    b = tpl.index('<div id="resultsArea"')
+    return tpl[a:b]
+
+
 def _node() -> str:
     for cand in ("/opt/node22/bin/node", "node"):
         if shutil.which(cand) or os.path.exists(cand):
@@ -273,7 +285,7 @@ def test_every_input_carries_an_explanation():
     import re
 
     tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
-    sidebar = tpl[tpl.index('<aside class="sidebar">'):tpl.index("</aside>")]
+    sidebar = _setup_markup(tpl)
     fields = re.findall(r'<div class="field"([^>]*)>(.*?)(?=<div class="field"|</div>\s*</div>)',
                         sidebar, re.S)
     missing = []
@@ -848,13 +860,15 @@ def test_the_tie_bar_editor_is_an_input_not_a_result():
     throwaway sweep to see what was detected, then setting the values that
     sweep depended on, then running again."""
     tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
-    assert 'data-tab="tiebars"' not in tpl, "tie bars must not be a results tab"
     assert 'id="panel-tiebars"' not in tpl
-    setup = tpl[tpl.index('<aside class="sidebar">'):tpl.index("</aside>")]
+    setup = _setup_markup(tpl)
     for control in ("wear", "tiebarHeight", "tbTable", "tbPlot", "tbApplyAll"):
         assert f'id="{control}"' in setup, f"{control} belongs in the setup panel"
-    # and it must come before Run, which is what it gates
-    assert setup.index('id="grp-wear"') < setup.index('id="runBtn"')
+    # and it is reached from the SET UP row of the tab bar, not the results row
+    bar = tpl[tpl.index('<nav class="tabbar"'):tpl.index("</nav>")]
+    up, res = bar.split('<div class="tabrow results">')
+    assert 'data-tab="wear"' in up, "the tie-bar editor is not a setup tab"
+    assert 'data-tab="wear"' not in res, "the tie-bar editor must not be a results tab"
 
 
 def test_tie_bars_are_drawn_on_the_rolled_out_pattern():
@@ -1729,7 +1743,7 @@ def test_every_setup_section_has_a_heading_a_purpose_and_its_own_colour():
     css = open(os.path.join(APP, "style.css"), encoding="utf-8").read()
     import re
 
-    setup = tpl[tpl.index('<aside class="sidebar">'):tpl.index("</aside>")]
+    setup = _setup_markup(tpl)
     heads = re.findall(
         r'<div class="ghead"><span class="gnum">(\d+)</span>'
         r'<span class="gtext"><span class="gtitle">(.*?)</span>'
@@ -1751,14 +1765,15 @@ def test_every_setup_section_has_a_heading_a_purpose_and_its_own_colour():
     hues = re.findall(r"#grp-[a-z]+\s*{ --g: (#[0-9a-f]{6}); }", css)
     assert len(hues) == 8 and len(set(hues)) == 8, hues
 
-    # the grid must lay them out in numbered order: row, then column
-    place = {}
+    # Each section is opened by exactly one tab, in the same order and in the
+    # same hue, so the tab and the card it opens read as the same thing.
+    bar = tpl[tpl.index('<nav class="tabbar"'):tpl.index("</nav>")]
+    tabbed = re.findall(r'data-grp="(grp-[a-z]+)"', bar)
+    assert tabbed == ids, f"the setup tabs do not follow the section order: {tabbed} vs {ids}"
     for gid in ids:
-        m = re.search(r"#" + gid + r"\s*{ grid-column: (\d+) / span \d+;\s*grid-row: (\d+);", css)
-        if m:
-            place[gid] = (int(m.group(2)), int(m.group(1)))
-    order = [g for g, _ in sorted(place.items(), key=lambda kv: kv[1])]
-    assert order == [g for g in ids if g in place], f"visual order does not follow the numbering: {order}"
+        assert re.search(r'\[data-grp="' + gid + r'"\]\s*{ --g:', css), f"the {gid} tab has no colour"
+        assert f':root[data-theme="light"] [data-grp="{gid}"]' in css, \
+            f"the {gid} tab has no light-theme colour"
 
 
 # ---------------------------------------------------------------------------
@@ -2481,3 +2496,74 @@ def test_the_tread_can_be_written_back_out_and_reloaded():
     rb = ui[ui.index("function refreshExportButtons("):]
     rb = rb[:rb.index("\n  }")]
     assert "hasPattern" in rb and '["saveProject", "exportDxf"]' in rb
+
+
+# ---------------------------------------------------------------------------
+# one tab bar, two rows
+# ---------------------------------------------------------------------------
+
+
+def test_the_whole_tool_is_reachable_from_one_tab_bar():
+    """Setup used to be a full-width dashboard with the result tabs beneath it,
+    so reaching a chart meant scrolling past every input and changing one number
+    meant scrolling back.  Everything is now behind one bar under the header,
+    split into what you supply and what came out -- and Run stays in that bar,
+    because it is the one control needed from every tab.
+    """
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    css = open(os.path.join(APP, "style.css"), encoding="utf-8").read()
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+
+    assert '<aside class="sidebar">' not in tpl, "the setup sidebar is gone"
+    bar = tpl[tpl.index('<nav class="tabbar"'):tpl.index("</nav>")]
+    up, res = bar.split('<div class="tabrow results">')
+    # the two rows are labelled, or the split conveys nothing
+    assert ">Set up<" in up and ">Results<" in res
+    # every tab opens a panel that exists, and every panel has a tab
+    tabs = re.findall(r'data-tab="([a-z]+)"', bar)
+    panels = re.findall(r'<section id="panel-([a-z]+)"', tpl)
+    assert sorted(tabs) == sorted(panels), f"tabs and panels disagree: {tabs} vs {panels}"
+    assert len(tabs) == len(set(tabs)), "two tabs share a name"
+    # Run is in the bar, reachable from every tab
+    assert 'id="runBtn"' in bar
+    # and the bar is pinned, or it scrolls away and the point is lost
+    assert re.search(r"\.tabbar\s*{[^}]*position: sticky", css)
+
+    # A result tab with nothing behind it cannot be opened, but is still shown --
+    # so what the run will produce can be seen before pressing Run.
+    assert "function refreshTabAvailability(" in ui
+    av = ui[ui.index("function refreshTabAvailability("):ui.index("function initTabs(")]
+    assert "#resultTabs button" in av and "state.results" in av
+    assert 'b.dataset.tab !== "guide"' in av, "the guide is worth reading before the first run"
+    assert re.search(r"\.tabbar \.tabs button:disabled\s*{", css), "a blocked tab must look blocked"
+
+
+def test_a_chart_drawn_on_a_hidden_tab_is_resized_when_it_is_opened():
+    """Plotly measures its container when it draws.  On a display:none panel that
+    is zero, and it stays zero: the SVG comes out the right size inside a div
+    with no height, so the chart lies on top of whatever follows it -- which is
+    how the tie-bar table ended up underneath its own plot.  Showing a panel
+    therefore resizes every plot on it, and redraws the canvas editor, which has
+    the same problem and cannot be resized.
+    """
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    st = ui[ui.index("function showTab("):ui.index("function refreshTabAvailability(")]
+    assert "Plotly.Plots.resize" in st
+    assert 'panel.querySelectorAll(".js-plotly-plot")' in st, \
+        "only the plots on the panel being opened should be touched"
+    assert "drawEditor()" in st
+    # and the failure it guards against is a try/catch, not a crash on a div
+    # that has never been plotted
+    assert "catch" in st
+
+
+def test_pressing_run_opens_the_results():
+    """Run is a request to see the answer.  Sitting on a setup tab afterwards
+    means the user has to find the results themselves -- but a tab already
+    showing results is left alone, or re-running to compare two settings throws
+    you back to the top every time."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    done = ui[ui.index('else if (m.type === "done")'):ui.index('else if (m.type === "error")')]
+    assert 'showTab("stack")' in done
+    assert 'classList.contains("setup")' in done, \
+        "a result tab must not be replaced when the run is repeated"

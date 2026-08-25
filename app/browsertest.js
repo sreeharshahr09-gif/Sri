@@ -18,13 +18,43 @@ const fs = require("fs");
   await page.goto(url, { waitUntil: "load" });
   console.log("loaded page");
 
+  // Every control now lives behind a tab, so touching one means opening its tab
+  // first -- exactly what a user does. `reveal` finds the panel a selector sits
+  // in and opens it; the wrappers below use it so no test has to know the
+  // layout. A control that is not inside any panel needs nothing.
+  const reveal = async (sel) => {
+    const tab = await page.evaluate((s) => {
+      const el = document.querySelector(s);
+      if (!el) return null;
+      const panel = el.closest(".panel");
+      if (!panel || panel.classList.contains("on")) return null;
+      return panel.id.replace(/^panel-/, "");
+    }, sel).catch(() => null);
+    if (tab) {
+      await page.click(`.tabbar .tabs button[data-tab="${tab}"]`);
+      await page.waitForTimeout(120);
+    }
+  };
+  const click = async (sel, ...rest) => { await reveal(sel); return page.click(sel, ...rest); };
+  const fill = async (sel, v) => { await reveal(sel); return page.fill(sel, v); };
+  const check = async (sel) => { await reveal(sel); return page.check(sel); };
+  const uncheck = async (sel) => { await reveal(sel); return page.uncheck(sel); };
+  const selectOption = async (sel, v) => { await reveal(sel); return page.selectOption(sel, v); };
+  const setInputFiles = async (sel, v) => { await reveal(sel); return page.setInputFiles(sel, v); };
+  const dispatchEvent = async (sel, ev) => { await reveal(sel); return page.dispatchEvent(sel, ev); };
+  const isVisible = async (sel) => { await reveal(sel); return page.isVisible(sel); };
+  const openTab = async (tab) => {
+    await page.click(`.tabbar .tabs button[data-tab="${tab}"]`);
+    await page.waitForTimeout(150);
+  };
+
   // load sample + run
-  await page.click("#sampleBtn");
+  await click("#sampleBtn");
   await page.waitForTimeout(300);
   const banner = await page.textContent("#banner");
   console.log("banner:", banner.replace(/\s+/g, " ").slice(0, 160));
 
-  await page.click("#runBtn");
+  await click("#runBtn");
   // wait for the overlay to appear then disappear (compute done)
   await page.waitForSelector("#overlay.on", { timeout: 5000 }).catch(() => {});
   await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 60000 });
@@ -47,7 +77,7 @@ const fs = require("fs");
     const atShore60 = await readout();
     if (!/E\s*6\.89/.test(atShore60.replace(/\s+/g, " ")))
       errors.push("compound readout does not show E at Shore 60: " + atShore60.slice(0, 120));
-    await page.fill("#shore", "65");
+    await fill("#shore", "65");
     await page.waitForTimeout(120);
     const at65 = await readout();
     const e65 = parseFloat((at65.match(/E\s*([\d.]+)/) || [])[1]);
@@ -55,23 +85,23 @@ const fs = require("fs");
       errors.push(`Shore 65 should interpolate E between 6.89 and 12.0, got ${e65}`);
     console.log("compound readout at Shore 65:", at65.replace(/\s+/g, " ").slice(0, 90));
     // Direct entry: the fields appear, seeded from the hardness, and drive E.
-    await page.selectOption("#modulusMode", "direct");
+    await selectOption("#modulusMode", "direct");
     await page.waitForTimeout(120);
-    if (await page.isVisible("#rowShore")) errors.push("Shore field still shown in direct-modulus mode");
-    if (!(await page.isVisible("#rowE"))) errors.push("E field not shown in direct-modulus mode");
-    await page.fill("#eModulus", "9.5");
+    if (await isVisible("#rowShore")) errors.push("Shore field still shown in direct-modulus mode");
+    if (!(await isVisible("#rowE"))) errors.push("E field not shown in direct-modulus mode");
+    await fill("#eModulus", "9.5");
     await page.waitForTimeout(120);
     const direct = await readout();
     if (!/E\s*9\.500/.test(direct.replace(/\s+/g, " ")))
       errors.push("direct E entry not reflected in the readout: " + direct.slice(0, 120));
     // A nonsense modulus must block the run with a message, not compute.
-    await page.fill("#eModulus", "6890");
+    await fill("#eModulus", "6890");
     await page.waitForTimeout(150);
     if (!(await page.isDisabled("#runBtn"))) errors.push("E = 6890 N/mm^2 did not block the run");
     const msg = await page.textContent("#specError");
     if (!/N\/mm/.test(msg)) errors.push("no units guidance when E is out of range: " + msg.slice(0, 120));
-    await page.selectOption("#modulusMode", "shore");
-    await page.fill("#shore", "60");
+    await selectOption("#modulusMode", "shore");
+    await fill("#shore", "60");
     await page.waitForTimeout(150);
   }
 
@@ -130,6 +160,7 @@ const fs = require("fs");
     // screen. Both are checked here because both are geometry, and geometry
     // breaks silently.
     {
+      await openTab("stack");
       await page.evaluate(() => {
         const gd = document.getElementById("thetaStack");
         window.scrollTo(0, gd.getBoundingClientRect().top + window.scrollY - 40);
@@ -146,11 +177,11 @@ const fs = require("fs");
       if (Math.abs(pinned.bottom - pinned.vh) > 2)
         errors.push(`the pattern is not pinned to the foot of the window: bottom ${pinned.bottom} of ${pinned.vh}`);
       // Unpinning must let it fall back below the fold.
-      await page.uncheck("#pinStrip");
+      await uncheck("#pinStrip");
       await page.waitForTimeout(400);
       const loose = await page.$eval("#stripHost", (e) => Math.round(e.getBoundingClientRect().bottom));
       if (!(loose > pinned.vh)) errors.push("unpinning did not release the pattern strip");
-      await page.check("#pinStrip");
+      await check("#pinStrip");
       await page.waitForTimeout(400);
 
       // Row chips: one per row, and switching some off rebuilds a shorter stack
@@ -163,7 +194,7 @@ const fs = require("fs");
         errors.push(`${chips.length} chips for ${rowsBefore} rows — the two lists have drifted apart`);
       const hBefore = await page.$eval("#thetaStack", (e) => e.getBoundingClientRect().height);
       for (const k of ["land", "blocks", "centroid", "c_kappa", "trail", "kx"]) {
-        await page.click(`#rowToggles .rowchip[data-row="${k}"]`);
+        await click(`#rowToggles .rowchip[data-row="${k}"]`);
         await page.waitForTimeout(150);
       }
       const after = await page.evaluate(() => {
@@ -181,7 +212,7 @@ const fs = require("fs");
       // reading "on" -- a control that says one thing while the chart shows
       // another is worse than the scrolling it was meant to fix.
       for (const k of ["area", "kz", "ky", "c_alpha"]) {
-        await page.click(`#rowToggles .rowchip[data-row="${k}"]`);
+        await click(`#rowToggles .rowchip[data-row="${k}"]`);
         await page.waitForTimeout(150);
       }
       const floor = await page.evaluate(() => {
@@ -196,7 +227,7 @@ const fs = require("fs");
       // above means the sequence is no longer a pure toggle.
       const off = await page.$$eval("#rowToggles .rowchip:not(.on)", (n) => n.map((c) => c.dataset.row));
       for (const k of off) {
-        await page.click(`#rowToggles .rowchip[data-row="${k}"]`);
+        await click(`#rowToggles .rowchip[data-row="${k}"]`);
         await page.waitForTimeout(120);
       }
       const restored = await page.$eval("#thetaStack", (e) =>
@@ -211,15 +242,15 @@ const fs = require("fs");
     }
     // The selector lives on the lean tab, so the tab has to be open first --
     // Playwright will not drive a control that is not visible.
-    await page.click('.tabs button[data-tab="lean"]');
+    await click('.tabbar .tabs button[data-tab="lean"]');
     await page.waitForTimeout(400);
-    await page.selectOption("#heatMetric", "c_alpha");
+    await selectOption("#heatMetric", "c_alpha");
     await page.waitForTimeout(500);
     const heatTitle = await page.$eval("#leanHeat", (e) => e._fullLayout.title.text);
     console.log("lean map metric:", heatTitle);
     if (!/N\/rad/.test(heatTitle)) errors.push("the lean map does not label Cα in N/rad: " + heatTitle);
-    await page.selectOption("#heatMetric", "kz");
-    await page.click('.tabs button[data-tab="stack"]');
+    await selectOption("#heatMetric", "kz");
+    await click('.tabbar .tabs button[data-tab="stack"]');
     await page.waitForTimeout(300);
   }
 
@@ -231,7 +262,7 @@ const fs = require("fs");
   {
     const info = () => page.$eval("#cpMeasuredInfo", (e) => e.textContent.replace(/\s+/g, " ").trim());
     const runAndRead = async () => {
-      await page.click("#runBtn");
+      await click("#runBtn");
       await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 120000 });
       return page.evaluate(() => {
         const r = window.__ttResult();
@@ -244,7 +275,7 @@ const fs = require("fs");
     };
     const ideal = await runAndRead();
 
-    await page.selectOption("#shape", "measured");
+    await selectOption("#shape", "measured");
     await page.waitForTimeout(250);
     if (!(await page.isDisabled("#runBtn")))
       errors.push("'measured' with no footprint loaded did not block the run");
@@ -255,7 +286,7 @@ const fs = require("fs");
       document.getElementById("cpLength").disabled && document.getElementById("cpWidth").disabled);
     if (!greyed) errors.push("length and width stay live while the size comes from a file");
 
-    await page.setInputFiles("#cpFile", path.join(__dirname, "..", "data", "footprints", "upright_00deg.dxf"));
+    await setInputFiles("#cpFile", path.join(__dirname, "..", "data", "footprints", "upright_00deg.dxf"));
     await page.waitForTimeout(500);
     console.log("footprint:", (await info()).slice(0, 150));
     if (await page.isChecked("#cpScaleLean"))
@@ -278,33 +309,33 @@ const fs = require("fs");
       errors.push(`pressure x measured area != load: ${(meas.press * 4158.4).toFixed(1)} vs ${meas.load}`);
 
     // wrong units must be caught, not silently rescale every area on the page
-    await page.selectOption("#cpUnits", "in");
+    await selectOption("#cpUnits", "in");
     await page.waitForTimeout(300);
     if (!(await page.isDisabled("#runBtn"))) errors.push("a footprint read as inches did not block the run");
     if (!/Check the units/.test(await info())) errors.push("no units guidance on an implausible footprint");
-    await page.selectOption("#cpUnits", "mm");
+    await selectOption("#cpUnits", "mm");
     await page.waitForTimeout(300);
 
     // 'as drawn' keeps the file's own y, and says when that is off the tread
-    await page.selectOption("#cpLateral", "absolute");
+    await selectOption("#cpLateral", "absolute");
     await page.waitForTimeout(300);
     if (!/outside the/.test(await info())) errors.push("'as drawn' did not warn that the outline is off the tread");
     if (!(await page.isDisabled("#runBtn")))
       errors.push("a patch entirely off the tread did not block the run");
     console.log("as-drawn off the tread:", (await page.textContent("#specError")).replace(/\s+/g, " ").slice(0, 100));
 
-    await page.selectOption("#cpLateral", "auto");
-    await page.click("#cpClear");
-    await page.selectOption("#shape", "rounded");
+    await selectOption("#cpLateral", "auto");
+    await click("#cpClear");
+    await selectOption("#shape", "rounded");
     await page.waitForTimeout(250);
     if (await page.isDisabled("#runBtn")) errors.push("clearing the footprint left the run blocked");
-    await page.click("#runBtn");
+    await click("#runBtn");
     await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 120000 });
   }
 
   const tabs = ["lean", "orders", "zones", "patch", "diag", "guide"];
   for (const t of tabs) {
-    await page.click(`.tabs button[data-tab="${t}"]`);
+    await click(`.tabbar .tabs button[data-tab="${t}"]`);
     await page.waitForTimeout(500);
     await page.screenshot({ path: path.join(outDir, `tab-${t}.png`), fullPage: false });
   }
@@ -316,18 +347,18 @@ const fs = require("fs");
     const leansOf = async () => page.evaluate(() =>
       Array.from(document.getElementById("gammaSel").options).map((o) => o.textContent).join(","));
     const rerun = async () => {
-      await page.click("#runBtn");
+      await click("#runBtn");
       await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 60000 });
       return leansOf();
     };
     const before = await leansOf();
-    await page.fill("#crownCenter", "300"); await page.fill("#crownShoulder", "300");
+    await fill("#crownCenter", "300"); await fill("#crownShoulder", "300");
     await page.waitForTimeout(150);
     const tightened = await rerun();
     if (tightened === before) errors.push("crown radius change had no effect without re-importing the DXF");
     if (tightened.split(",").length >= before.split(",").length)
       errors.push(`a 300/300 crown should reduce the reachable leans: ${before} -> ${tightened}`);
-    await page.fill("#crownCenter", ""); await page.fill("#crownShoulder", "");
+    await fill("#crownCenter", ""); await fill("#crownShoulder", "");
     await page.waitForTimeout(150);
     const restored = await rerun();
     if (restored !== before) errors.push(`clearing the crown override should restore the default: ${before} -> ${restored}`);
@@ -336,17 +367,22 @@ const fs = require("fs");
 
   // ---- the draggable contact-patch band -----------------------------------
   {
-    await page.click('.tabs button[data-tab="stack"]');
+    await click('.tabbar .tabs button[data-tab="stack"]');
     await page.evaluate(() => document.getElementById("thetaStack").scrollIntoView({ block: "start" }));
     await page.waitForTimeout(500);
     const theta = () => page.evaluate(() => window.__ttState().patchTheta);
     const xrange = () => page.evaluate(() =>
       document.getElementById("thetaStack")._fullLayout.xaxis.range.map((v) => +v.toFixed(1)));
+    // The header and the tab bar are sticky, so a point 80 px into the band can
+    // be underneath them; the grab point is pushed clear of whatever is pinned
+    // to the top before it is used.
     const bandBox = () => page.$eval("#thetaStack", (e) => {
       const n = e.parentNode.querySelector("svg.cpov .cpband");
       if (!n) return null;
       const r = n.getBoundingClientRect();
-      return { x: r.x + r.width / 2, y: r.y + 80, w: r.width };
+      const bar = document.querySelector(".tabbar");
+      const floor = (bar ? bar.getBoundingClientRect().bottom : 0) + 24;
+      return { x: r.x + r.width / 2, y: Math.max(r.y + 80, floor), w: r.width };
     });
     const outlineY = () => page.$eval("#patternStrip", (e) => {
       const n = e.parentNode.querySelector("svg.cpov .cpoutline");
@@ -381,7 +417,7 @@ const fs = require("fs");
 
     // Typing an angle moves it too, and straddling the seam draws two pieces
     // on each figure rather than one that runs off the end.
-    await page.fill("#patchTheta", "1");
+    await fill("#patchTheta", "1");
     await page.waitForTimeout(300);
     const seamBands = await page.$$eval("svg.cpov .cpband", (n) => n.length);
     const seamOutlines = await page.$$eval("svg.cpov .cpoutline", (n) => n.length);
@@ -391,7 +427,7 @@ const fs = require("fs");
 
     // Zoom: the band is pixel geometry, so it has to be recomputed, and both
     // figures must agree.
-    await page.fill("#patchTheta", "180");
+    await fill("#patchTheta", "180");
     await page.evaluate(() => document.getElementById("thetaStack").scrollIntoView({ block: "start" }));
     await page.waitForTimeout(400);
     const wFull = (await bandBox()).w;
@@ -403,7 +439,8 @@ const fs = require("fs");
     });
     // Well inside the first row's data area. Between rows sits Plotly's
     // axis-pan strip, and a drag there pans instead of zooming.
-    const zy = plot.y + 80;
+    const zy = Math.max(plot.y + 80, await page.evaluate(
+      () => document.querySelector(".tabbar").getBoundingClientRect().bottom + 24));
     await page.mouse.move(plot.x + plot.w * 0.4, zy);
     await page.mouse.down();
     await page.mouse.move(plot.x + plot.w * 0.65, zy, { steps: 12 });
@@ -430,13 +467,13 @@ const fs = require("fs");
   // Driven on a purpose-built rib pattern, because the bundled 2W sample has no
   // tie bars -- and the fact that it reports none is itself part of the check.
   {
-    if (await page.isVisible("#tbBody"))
+    if (await isVisible("#tbBody"))
       errors.push("the 2W sample has no tie bars but the editor is showing rows");
 
     const tbDxf = path.join(__dirname, "..", "data", "tbr_ribs_tiebars.dxf");
-    await page.setInputFiles("#fileInput", tbDxf);
+    await setInputFiles("#fileInput", tbDxf);
     await page.waitForTimeout(600);
-    await page.fill("#nsd", "16");
+    await fill("#nsd", "16");
     await page.waitForTimeout(200);
     const banner2 = (await page.textContent("#banner")).replace(/\s+/g, " ");
     console.log("tie-bar drawing:", banner2.slice(0, 130));
@@ -447,7 +484,7 @@ const fs = require("fs");
     const groupRows = await page.$$eval("#tbGroupTable tr", (r) => Math.max(0, r.length - 1));
     console.log("tie-bar groups:", groupRows);
     if (groupRows !== 1) errors.push(`38 identical bars should be one group, got ${groupRows}`);
-    await page.click("#tbIndividual summary");
+    await click("#tbIndividual summary");
     await page.waitForTimeout(300);
     const rows = await page.$$eval("#tbTable tr", (r) => r.length - 1);
     console.log("tie bars listed:", rows);
@@ -456,8 +493,8 @@ const fs = require("fs");
     // Height edits must stick and move the engagement point.
     const firstAt = () => page.$eval("#tbTable tr:nth-child(2) td:nth-child(8)", (e) => e.textContent.trim());
     const before = await firstAt();
-    await page.fill("#tbTable tr:nth-child(2) input[data-tbfield='height']", "12");
-    await page.dispatchEvent("#tbTable tr:nth-child(2) input[data-tbfield='height']", "change");
+    await fill("#tbTable tr:nth-child(2) input[data-tbfield='height']", "12");
+    await dispatchEvent("#tbTable tr:nth-child(2) input[data-tbfield='height']", "change");
     await page.waitForTimeout(200);
     const after = await firstAt();
     if (before === after) errors.push(`editing a tie-bar height did not move its engagement wear (${before})`);
@@ -467,9 +504,9 @@ const fs = require("fs");
     const engaged = async () => (await page.textContent("#tbSummary")).replace(/\s+/g, " ");
     const atZero = await engaged();
     if (!/\b0\b in contact/.test(atZero)) errors.push("tie bars reported in contact at zero wear: " + atZero);
-    await page.fill("#tbAllFrac", "0.55");
-    await page.click("#tbApplyAll");
-    await page.fill("#wear", "9");
+    await fill("#tbAllFrac", "0.55");
+    await click("#tbApplyAll");
+    await fill("#wear", "9");
     await page.waitForTimeout(250);
     const atNine = await engaged();
     console.log("wear 0:", atZero, "| wear 9:", atNine);
@@ -478,9 +515,9 @@ const fs = require("fs");
     // And the sweep must actually see them: engaging 38 bars adds contact area
     // and damps the circumferential fluctuation, which is what tie bars do.
     const sweepAt = async (wear) => {
-      await page.fill("#wear", String(wear));
+      await fill("#wear", String(wear));
       await page.waitForTimeout(150);
-      await page.click("#runBtn");
+      await click("#runBtn");
       await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 90000 });
       return page.evaluate(() => {
         const r = window.__ttState ? window.__ttState() : null;
@@ -503,7 +540,7 @@ const fs = require("fs");
     // the bars, and one line per bonded link. Without it the network plot is a
     // pair of curves with no way to see which part of the pattern they belong
     // to. Its x axis is tied to the curve above but NOT to the sweep tab's.
-    await page.click('.tabs button[data-tab="coupling"]');
+    await click('.tabbar .tabs button[data-tab="coupling"]');
     await page.waitForTimeout(800);
     const cpl = await page.evaluate(() => {
       const e = document.getElementById("cplStrip");
@@ -536,13 +573,13 @@ const fs = require("fs");
       await page.waitForTimeout(300);
     }
 
-    await page.click("#sampleBtn");
-    await page.fill("#wear", "0");
-    await page.fill("#nsd", "8.5");
+    await click("#sampleBtn");
+    await fill("#wear", "0");
+    await fill("#nsd", "8.5");
     await page.waitForTimeout(200);
-    await page.click("#runBtn");
+    await click("#runBtn");
     await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 60000 });
-    await page.click('.tabs button[data-tab="stack"]');
+    await click('.tabbar .tabs button[data-tab="stack"]');
   }
 
   // ---- tie bars the designer coloured in ---------------------------------
@@ -551,16 +588,16 @@ const fs = require("fs");
   // all, so if the hatches are not read there are no bars to find.
   {
     const hatchDxf = path.join(__dirname, "..", "data", "hatch_only.dxf");
-    await page.setInputFiles("#fileInput", hatchDxf);
+    await setInputFiles("#fileInput", hatchDxf);
     await page.waitForTimeout(700);
-    await page.fill("#nsd", "12");
+    await fill("#nsd", "12");
     await page.waitForTimeout(250);
     const hb = (await page.textContent("#banner")).replace(/\s+/g, " ");
     console.log("hatch drawing:", hb.slice(0, 150));
     if (!/12 tie bars \(12 from TIEBAR HATCH/.test(hb))
       errors.push("hatched tie bars not reported in the import banner: " + hb.slice(0, 200));
 
-    await page.click("#tbIndividual summary");
+    await click("#tbIndividual summary");
     await page.waitForTimeout(300);
     const hatchRows = await page.$$eval("#tbTable tr", (r) => r.length - 1);
     if (hatchRows !== 12) errors.push(`expected 12 hatched bars, listed ${hatchRows}`);
@@ -598,9 +635,9 @@ const fs = require("fs");
     const prjBtn = await page.$eval("#saveProject", (e) => e.disabled);
     if (dxfBtn || prjBtn) errors.push("the DXF and project exports are disabled with a pattern loaded");
 
-    await page.fill("#wear", "6");
+    await fill("#wear", "6");
     await page.waitForTimeout(150);
-    await page.click("#runBtn");
+    await click("#runBtn");
     await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 90000 });
     const hs = await page.evaluate(() => (window.__ttState ? window.__ttState() : null));
     if (hs) console.log(`hatch tread swept: area ${hs.area.toFixed(0)} mm2, CoV ${(hs.cov * 100).toFixed(2)}%, ${hs.engaged} bars engaged`);
@@ -615,6 +652,7 @@ const fs = require("fs");
         area: +p.tiebars.reduce((s, x) => s + x.area, 0).toFixed(6),
         cols: [...new Set(p.tiebars.map((x) => x.color && x.color.css))].sort().join(",") });
     });
+    await reveal("#saveProject");
     const [prj] = await Promise.all([
       page.waitForEvent("download"),
       page.click("#saveProject"),
@@ -624,6 +662,7 @@ const fs = require("fs");
     console.log("project file:", prj.suggestedFilename(),
       `(${Math.round(require("fs").statSync(prjPath).size / 1024)} KB)`);
 
+    await reveal("#exportDxf");
     const [dxfOut] = await Promise.all([
       page.waitForEvent("download"),
       page.click("#exportDxf"),
@@ -636,9 +675,9 @@ const fs = require("fs");
     if ((dxfText.match(/\nHATCH\n/g) || []).length !== 12)
       errors.push("the exported DXF does not carry one HATCH per tie bar");
 
-    await page.click("#sampleBtn");
+    await click("#sampleBtn");
     await page.waitForTimeout(400);
-    await page.setInputFiles("#loadProject", prjPath);
+    await setInputFiles("#loadProject", prjPath);
     await page.waitForTimeout(900);
     const after = await page.evaluate(() => {
       const p = window.__ttPattern();
@@ -650,13 +689,13 @@ const fs = require("fs");
     console.log("project round trip:", before === after ? "identical" : before + "  ->  " + after);
     if (before !== after) errors.push("reloading the project did not restore the tread");
 
-    await page.click("#sampleBtn");
-    await page.fill("#wear", "0");
-    await page.fill("#nsd", "8.5");
+    await click("#sampleBtn");
+    await fill("#wear", "0");
+    await fill("#nsd", "8.5");
     await page.waitForTimeout(200);
-    await page.click("#runBtn");
+    await click("#runBtn");
     await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 60000 });
-    await page.click('.tabs button[data-tab="stack"]');
+    await click('.tabbar .tabs button[data-tab="stack"]');
   }
 
   // ---- the report: what goes in it, and does it come out undistorted -------
@@ -674,6 +713,7 @@ const fs = require("fs");
 
     const dl2 = require("fs").mkdtempSync(require("path").join(require("os").tmpdir(), "tt-rep-"));
     const grab = async (id, tag) => {
+      await reveal(id);
       const [d] = await Promise.all([page.waitForEvent("download"), page.click(id)]);
       const f = require("path").join(dl2, tag + "-" + d.suggestedFilename());
       await d.saveAs(f);
@@ -690,7 +730,7 @@ const fs = require("fs");
     // Switching sections off must actually shorten it.
     for (const k of ["perlean", "notes", "lean", "orders", "zones", "patch", "cover"]) {
       const sel = `#reportSections .rowchip[data-sec="${k}"]`;
-      if (await page.$(sel)) { await page.click(sel); await page.waitForTimeout(60); }
+      if (await page.$(sel)) { await click(sel); await page.waitForTimeout(60); }
     }
     const pdfCut = await grab("#exportPdf", "cut");
     const packCut = await grab("#exportPack", "cut");
@@ -741,7 +781,7 @@ const fs = require("fs");
     // put every section back so later checks see the normal page
     for (const k of ["perlean", "notes", "lean", "orders", "zones", "patch", "cover"]) {
       const sel = `#reportSections .rowchip[data-sec="${k}"]:not(.on)`;
-      if (await page.$(sel)) { await page.click(sel); await page.waitForTimeout(60); }
+      if (await page.$(sel)) { await click(sel); await page.waitForTimeout(60); }
     }
   }
 
@@ -749,6 +789,7 @@ const fs = require("fs");
   const dlDir = require("fs").mkdtempSync(require("path").join(require("os").tmpdir(), "tt-"));
   for (const [id, label] of [["exportCsv", "CSV"], ["exportJson", "JSON"], ["exportTxt", "Summary"]]) {
     if (await page.isDisabled("#" + id)) { errors.push(`${label} export still disabled after a run`); continue; }
+    await reveal("#" + id);
     const [dl] = await Promise.all([page.waitForEvent("download"), page.click("#" + id)]);
     const f = require("path").join(dlDir, dl.suggestedFilename());
     await dl.saveAs(f);
@@ -759,9 +800,10 @@ const fs = require("fs");
     console.log(`export ${label}: ${dl.suggestedFilename()} (${(txt.length / 1024).toFixed(0)} KB)`);
   }
 
-  // drag the editor centre handle to move y_center, verify input updates
-  // (scroll it into view first -- the mouse works in viewport coordinates, and
-  // the setup sections are tall enough to push it below the fold)
+  // drag the editor centre handle to move y_center, verify input updates.
+  // The editor is on the contact-patch SETUP tab, so that has to be open, and
+  // scrolled into view -- the mouse works in viewport coordinates.
+  await openTab("cpatch");
   await page.evaluate(() => document.getElementById("editor").scrollIntoView({ block: "center" }));
   await page.waitForTimeout(300);
   const before = await page.inputValue("#cpY");

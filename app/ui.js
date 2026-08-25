@@ -26,6 +26,7 @@
     cplRange: null,      // and the coupling tab's own, kept apart from it
     reportSections: {},  // report sections the user has switched off
     measured: null,      // imported footprint outline, when there is one
+    tab: "plan",         // which tab is open, setup or result — the drawing comes first
     stackRows: {},       // sweep rows switched off by the user (key -> false)
     pinStrip: true,      // keep the rolled-out pattern at the foot of the window
     compareMetric: "kz",
@@ -1046,6 +1047,10 @@
         $("timing").textContent = "computed in " + (m.timing.total / 1000).toFixed(1) + " s (raster " + m.timing.raster + " ms), grid " + m.grid.nx + "×" + m.grid.ny;
         populateGammaSelect();
         renderAll();
+        // Pressing Run is a request to see the answer, so the first result tab
+        // opens itself. A tab already showing results is left where it is --
+        // re-running to compare two settings must not throw you back to the top.
+        if (!state.tab || $("panel-" + state.tab).classList.contains("setup")) showTab("stack");
       } else if (m.type === "error") {
         failRun(m.message);
       }
@@ -1123,6 +1128,7 @@
   function showResultsChrome(on) {
     var el = $("resultsArea");
     if (el) el.style.display = on ? "" : "none";
+    refreshTabAvailability();
   }
 
   function renderAll() {
@@ -3691,20 +3697,55 @@
   }
 
   // ---- tabs ------------------------------------------------------------
+  //
+  // One bar, two rows: what you supply and what came out. They are one tab set
+  // -- opening a result closes the setup panel and vice versa -- because the
+  // point of the split is to say which kind of thing you are looking at, not to
+  // show two things at once on half a screen each.
+  function showTab(tab) {
+    var panel = $("panel-" + tab);
+    if (!panel) return;
+    document.querySelectorAll(".tabbar .tabs button").forEach(function (b) {
+      b.classList.toggle("on", b.dataset.tab === tab);
+    });
+    document.querySelectorAll(".panel").forEach(function (p) { p.classList.remove("on"); });
+    panel.classList.add("on");
+    state.tab = tab;
+    // A Plotly chart drawn while its panel was display:none measured a zero-
+    // sized container and kept it: the SVG is the right size but the div it
+    // sits in has no height, so the chart lies on top of whatever follows it.
+    // A synthetic window resize is not enough -- every plot on the panel now on
+    // screen is resized directly. The canvas editor has the same problem and is
+    // simply redrawn.
+    window.dispatchEvent(new Event("resize"));
+    panel.querySelectorAll(".js-plotly-plot").forEach(function (gd) {
+      try { Plotly.Plots.resize(gd); } catch (e) { /* not plotted yet */ }
+    });
+    if (tab === "cpatch" || tab === "wear") drawEditor();
+  }
+
+  // Result tabs stay visible with nothing behind them -- so the run's output can
+  // be seen in advance -- but cannot be opened until there is something to open.
+  // The guide is the exception: it is worth reading before the first run.
+  function refreshTabAvailability() {
+    var ready = !!state.results;
+    document.querySelectorAll("#resultTabs button").forEach(function (b) {
+      b.disabled = !ready && b.dataset.tab !== "guide";
+    });
+    if (!ready && state.tab && $("panel-" + state.tab) &&
+        $("panel-" + state.tab).classList.contains("panel") &&
+        !$("panel-" + state.tab).classList.contains("setup") && state.tab !== "guide")
+      showTab("plan");
+  }
+
   function initTabs() {
-    var btns = document.querySelectorAll(".tabs button");
+    var btns = document.querySelectorAll(".tabbar .tabs button");
     for (var i = 0; i < btns.length; i++) {
       (function (btn) {
-        on(btn, "click", function () {
-          document.querySelectorAll(".tabs button").forEach(function (b) { b.classList.remove("on"); });
-          document.querySelectorAll(".panel").forEach(function (p) { p.classList.remove("on"); });
-          btn.classList.add("on");
-          $("panel-" + btn.dataset.tab).classList.add("on");
-          // Plotly needs a resize nudge when a hidden plot becomes visible
-          if (state.results || btn.dataset.tab === "tiebars") window.dispatchEvent(new Event("resize"));
-        });
+        on(btn, "click", function () { if (!btn.disabled) showTab(btn.dataset.tab); });
       })(btns[i]);
     }
+    refreshTabAvailability();
   }
 
   // ---- wire up ---------------------------------------------------------

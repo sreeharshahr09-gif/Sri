@@ -67,30 +67,48 @@ header .spacer { flex: 1; }
 }
 .theme-toggle:hover { border-color: var(--accent); }
 
-/* Setup is a full-width dashboard across the top; results run full width below.
-   The grid is keyed on the groups' ids rather than :nth-of-type, so adding a
-   panel later moves one rule instead of renumbering all of them. */
+/* The whole tool is tabbed from one bar under the header, in two rows: what you
+   supply, and what came out. Before this it was one long scroll -- a full-width
+   setup dashboard with the result tabs beneath it -- so reaching a chart meant
+   scrolling past every input, and changing one number meant scrolling back. */
 .layout { display: block; min-height: calc(100vh - 53px); }
-.sidebar {
-  width: 100%; max-height: none; position: relative; top: auto; overflow: visible;
-  padding: 16px 18px 18px; background: var(--bg);
-  border-right: 0; border-bottom: 1px solid var(--edge);
-  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 12px; align-items: stretch;
+
+.tabbar {
+  position: sticky; top: 43px; z-index: 19;
+  background: var(--panel); border-bottom: 1px solid var(--edge);
+  padding: 0 12px;
 }
-/* Each setup section gets its own colour, a numbered badge and a line saying
-   what it is for. Eight near-identical grey cards were hard to navigate and
-   gave no clue which one a given input lived in. --g is the section's hue;
-   everything below derives from it, so a new section needs one line. */
-.sidebar > .group {
+.tabrow { display: flex; align-items: center; gap: 10px; min-height: 40px; }
+.tabrow.setup { border-bottom: 1px dashed var(--edge); }
+.tabrow > .spacer { flex: 1; }
+/* The row label is what separates inputs from results at a glance. */
+.tabrow-lead {
+  flex: 0 0 auto; font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--ink-dim);
+  width: 52px; text-align: right; cursor: help;
+}
+.tabbar .tabs { border-bottom: 0; margin: 0; gap: 2px; flex: 0 1 auto; }
+.tabbar .tabs button { padding: 9px 11px; white-space: nowrap; }
+.tabrow .btn { padding: 5px 12px; font-size: 13px; }
+/* Each setup tab is tinted with its own section's hue, so the tab and the card
+   it opens are recognisably the same thing. */
+.tabbar .tabs button[data-grp].on { border-bottom-color: var(--g); }
+/* A result tab with nothing behind it yet stays visible rather than hidden, so
+   what the run is going to produce can be seen before pressing Run. */
+.tabbar .tabs button:disabled { opacity: 0.36; cursor: default; }
+
+/* A setup panel is one card, full width -- the same card the old dashboard
+   showed, with its number and its hue. */
+.panel.setup { max-width: 1480px; }
+.panel.setup > .group {
   --g: var(--accent);
-  min-width: 0; margin: 0 !important; padding: 0 0 14px;
+  margin: 0; padding: 0 0 16px;
   background: var(--panel); border: 1px solid var(--edge); border-radius: 10px;
   border-top: 3px solid var(--g); overflow: hidden;
 }
-.sidebar > .group > .ghead {
+.panel.setup > .group > .ghead {
   display: flex; align-items: flex-start; gap: 11px;
-  padding: 12px 14px 11px; margin-bottom: 12px;
+  padding: 12px 16px 11px; margin-bottom: 14px;
   background: color-mix(in srgb, var(--g) 11%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--g) 28%, var(--edge));
 }
@@ -103,8 +121,12 @@ header .spacer { flex: 1; }
 .ghead .gtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .ghead .gtitle { font-size: 15px; font-weight: 650; color: var(--ink); letter-spacing: 0.1px; }
 .ghead .gsub { font-size: 12px; color: var(--ink-dim); line-height: 1.4; }
-.sidebar > .group > *:not(.ghead) { margin-left: 14px; margin-right: 14px; }
-.sidebar > .group > .plot, .sidebar > .group > .tb-setup { margin-left: 14px; margin-right: 14px; }
+.panel.setup > .group > *:not(.ghead) { margin-left: 16px; margin-right: 16px; }
+/* A field is a label and a value, and on a 1400 px card those end up a hand's
+   width apart with nothing between them. Fields are held to a readable column;
+   anything that draws, explains or lists keeps the full width. */
+.panel.setup .field { max-width: 620px; }
+.panel.setup .filerow { max-width: 900px; }
 
 /* Section hues. Bright enough for the dark default; deepened for light below. */
 #grp-project   { --g: #8b7bff; }
@@ -115,6 +137,17 @@ header .spacer { flex: 1; }
 #grp-load      { --g: #f0913f; }
 #grp-wear      { --g: #ef7aa8; }
 #grp-export    { --g: #93a4b8; }
+/* The same hue on the tab that opens each section. The tab is not inside the
+   card, so it cannot inherit --g and has to be given it. Kept in step with the
+   list above by sharing the light-theme variables below. */
+[data-grp="grp-project"]   { --g: #8b7bff; }
+[data-grp="grp-plan"]      { --g: #4ea1ff; }
+[data-grp="grp-compound"]  { --g: #21c2b8; }
+[data-grp="grp-patch"]     { --g: #4fc47a; }
+[data-grp="grp-divisions"] { --g: #e0b13c; }
+[data-grp="grp-load"]      { --g: #f0913f; }
+[data-grp="grp-wear"]      { --g: #ef7aa8; }
+[data-grp="grp-export"]    { --g: #93a4b8; }
 :root[data-theme="light"] {
   --g-project: #6247d6; --g-plan: #1f6feb; --g-compound: #0a8f88;
   --g-patch: #2f8f52; --g-divisions: #a97c06; --g-load: #c26516;
@@ -127,22 +160,38 @@ header .spacer { flex: 1; }
     --g-wear: #c2437a; --g-export: #5b6b7b;
   }
   :root:not([data-theme="dark"]) #grp-project   { --g: var(--g-project); }
+:root:not([data-theme="dark"]) [data-grp="grp-project"]   { --g: var(--g-project); }
   :root:not([data-theme="dark"]) #grp-plan      { --g: var(--g-plan); }
+:root:not([data-theme="dark"]) [data-grp="grp-plan"]      { --g: var(--g-plan); }
   :root:not([data-theme="dark"]) #grp-compound  { --g: var(--g-compound); }
+:root:not([data-theme="dark"]) [data-grp="grp-compound"]  { --g: var(--g-compound); }
   :root:not([data-theme="dark"]) #grp-patch     { --g: var(--g-patch); }
+:root:not([data-theme="dark"]) [data-grp="grp-patch"]     { --g: var(--g-patch); }
   :root:not([data-theme="dark"]) #grp-divisions { --g: var(--g-divisions); }
+:root:not([data-theme="dark"]) [data-grp="grp-divisions"] { --g: var(--g-divisions); }
   :root:not([data-theme="dark"]) #grp-load      { --g: var(--g-load); }
+:root:not([data-theme="dark"]) [data-grp="grp-load"]      { --g: var(--g-load); }
   :root:not([data-theme="dark"]) #grp-wear      { --g: var(--g-wear); }
+:root:not([data-theme="dark"]) [data-grp="grp-wear"]      { --g: var(--g-wear); }
   :root:not([data-theme="dark"]) #grp-export    { --g: var(--g-export); }
+:root:not([data-theme="dark"]) [data-grp="grp-export"]    { --g: var(--g-export); }
 }
 :root[data-theme="light"] #grp-project   { --g: var(--g-project); }
+:root[data-theme="light"] [data-grp="grp-project"]   { --g: var(--g-project); }
 :root[data-theme="light"] #grp-plan      { --g: var(--g-plan); }
+:root[data-theme="light"] [data-grp="grp-plan"]      { --g: var(--g-plan); }
 :root[data-theme="light"] #grp-compound  { --g: var(--g-compound); }
+:root[data-theme="light"] [data-grp="grp-compound"]  { --g: var(--g-compound); }
 :root[data-theme="light"] #grp-patch     { --g: var(--g-patch); }
+:root[data-theme="light"] [data-grp="grp-patch"]     { --g: var(--g-patch); }
 :root[data-theme="light"] #grp-divisions { --g: var(--g-divisions); }
+:root[data-theme="light"] [data-grp="grp-divisions"] { --g: var(--g-divisions); }
 :root[data-theme="light"] #grp-load      { --g: var(--g-load); }
+:root[data-theme="light"] [data-grp="grp-load"]      { --g: var(--g-load); }
 :root[data-theme="light"] #grp-wear      { --g: var(--g-wear); }
+:root[data-theme="light"] [data-grp="grp-wear"]      { --g: var(--g-wear); }
 :root[data-theme="light"] #grp-export    { --g: var(--g-export); }
+:root[data-theme="light"] [data-grp="grp-export"]    { --g: var(--g-export); }
 
 #grp-project   { grid-column: 1 / span 4;  grid-row: 1; }
 #grp-plan      { grid-column: 5 / span 4;  grid-row: 1; }
@@ -176,36 +225,35 @@ header .spacer { flex: 1; }
 @media (max-width: 1240px) { .tb-setup { grid-template-columns: 1fr; } }
 
 /* Fields have room to breathe now that they are not confined to 340 px. */
-.sidebar .field { gap: 12px; }
-.sidebar .field label { min-width: 0; line-height: 1.3; }
-.sidebar .field input[type="number"],
-.sidebar .field input[type="text"],
-.sidebar .field select { width: min(48%, 200px); min-width: 120px; }
-.sidebar .field.wide input, .sidebar .field.wide select { width: min(55%, 230px); }
+.panel.setup .field { gap: 12px; }
+.panel.setup .field label { min-width: 0; line-height: 1.3; }
+.panel.setup .field input[type="number"],
+.panel.setup .field input[type="text"],
+.panel.setup .field select { width: min(46%, 220px); min-width: 120px; }
+.panel.setup .field.wide input, .panel.setup .field.wide select { width: min(52%, 250px); }
 #grp-patch #editor { height: 240px; }
 
 .main { width: 100%; padding: 16px 18px 26px; }
 #emptyHint { max-width: 1100px; }
 
-/* Tablet / smaller laptop: two-column setup. */
+/* Narrow window: the tab bar scrolls sideways rather than wrapping into four
+   rows, so the two-row structure survives and the labels stay put. */
 @media (max-width: 1240px) {
-  .sidebar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .sidebar > .group, #runBtn, #addCompareSide { grid-column: auto !important; grid-row: auto !important; }
-  #grp-patch, #grp-export, #grp-wear { grid-column: 1 / -1 !important; }
+  .tabbar .tabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: thin; }
+  .tabbar .tabs button { padding: 9px 9px; }
 }
 
-/* Phone / narrow window: a clean single-column workflow. */
 @media (max-width: 760px) {
   header { flex-wrap: wrap; padding: 10px 12px; }
   header .sub { flex-basis: 100%; order: 3; }
-  .sidebar { grid-template-columns: 1fr; padding: 12px; }
-  #grp-patch, #grp-export, #grp-wear { grid-column: auto !important; }
-  .sidebar .field { align-items: flex-start; }
-  .sidebar .field input[type="number"],
-  .sidebar .field input[type="text"],
-  .sidebar .field select,
-  .sidebar .field.wide input,
-  .sidebar .field.wide select { width: 50%; min-width: 128px; }
+  .tabbar { padding: 0 8px; }
+  .tabrow-lead { width: auto; }
+  .panel.setup .field { align-items: flex-start; }
+  .panel.setup .field input[type="number"],
+  .panel.setup .field input[type="text"],
+  .panel.setup .field select,
+  .panel.setup .field.wide input,
+  .panel.setup .field.wide select { width: 50%; min-width: 128px; }
   .main { padding: 12px; }
 }
 
@@ -426,8 +474,59 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
     <button id="themeToggle" class="theme-toggle">☀ Light</button>
   </header>
 
+  <nav class="tabbar" id="tabbar">
+    <div class="tabrow setup">
+      <span class="tabrow-lead" title="Everything you supply: the drawing, what it cannot tell you, and how the run is set up.">Set up</span>
+      <div class="tabs" id="setupTabs">
+        <button data-tab="project" data-grp="grp-project">Project</button>
+        <button class="on" data-tab="plan" data-grp="grp-plan">Tread plan</button>
+        <button data-tab="compound" data-grp="grp-compound">Depth &amp; compound</button>
+        <button data-tab="cpatch" data-grp="grp-patch">Contact patch</button>
+        <button data-tab="ribs" data-grp="grp-divisions">Ribs</button>
+        <button data-tab="load" data-grp="grp-load">Load &amp; advanced</button>
+        <button data-tab="wear" data-grp="grp-wear">Wear &amp; tie bars</button>
+        <button data-tab="export" data-grp="grp-export">Export</button>
+      </div>
+      <span class="spacer"></span>
+      <button id="runBtn" class="btn" disabled title="Run the sweep. Takes a couple of seconds in a background worker; every result tab then updates in place.">▶ Run</button>
+      <button id="addCompareSide" class="btn secondary" disabled
+              title="Keep this run so you can compare it with the next design. Load another DXF, change anything you like, Run again, and add that too — then open the Compare tab. Everything stays in this browser session; no files needed.">
+        + Compare <span id="cmpCount"></span>
+      </button>
+    </div>
+    <div class="tabrow results">
+      <span class="tabrow-lead" title="Everything the run produced. These open once there are results.">Results</span>
+      <div class="tabs" id="resultTabs">
+        <button data-tab="stack">θ sweep + pattern</button>
+        <button data-tab="lean">Lean map</button>
+        <button data-tab="orders">Order content</button>
+        <button data-tab="zones">Zones</button>
+        <button data-tab="patch">Contact patch</button>
+        <button data-tab="bands">Bands</button>
+        <button data-tab="coupling">Tie-bar coupling</button>
+        <button data-tab="compare">Compare</button>
+        <button data-tab="diag">Diagnostics</button>
+        <button data-tab="guide">How to read this</button>
+      </div>
+    </div>
+  </nav>
+
   <div class="layout">
-    <aside class="sidebar">
+    <main class="main">
+      <div id="emptyHint" class="banner">
+        <b>Start here.</b> Everything runs locally in your browser — nothing is uploaded.
+        <ol style="margin:8px 0 0;padding-left:20px;line-height:1.7">
+          <li><b>Load a tread plan.</b> <em>Load DXF…</em> for your own drawing, or <em>Load sample</em> to try the bundled 130/80R17 plan.</li>
+          <li><b>Set what the drawing cannot tell you</b> — non-skid depth, draft angle, sipes, compound hardness. A 2D plan carries no depth.</li>
+          <li><b>Describe the contact patch</b> — pick a shape and type its size, or drag the handles on the preview.</li>
+          <li><b>Press Run.</b> The sweep takes a couple of seconds in a background worker; every chart then updates in place.</li>
+        </ol>
+        <div class="hint" style="margin-top:8px">Hover any input for an explanation of what it is and what it affects. The <b>How to read this</b> tab explains every chart once you have results.</div>
+      </div>
+      <div id="banner" class="banner" style="display:none"></div>
+      <div id="notes" class="banner warn" style="display:none"></div>
+
+      <section id="panel-project" class="panel setup">
       <div class="group" id="grp-project">
         <div class="ghead"><span class="gnum">0</span><span class="gtext"><span class="gtitle">Project</span><span class="gsub">Who and what this run is for. Everything here appears on the PDF report.</span></span></div>
         <div class="field" title="Programme or project this design belongs to. Appears on the PDF report and in every export."><label>Project</label><input id="projName" type="text" placeholder="e.g. TBR-2026-LH" /></div>
@@ -444,6 +543,9 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
         <button id="applyPreset" class="btn secondary" style="width:100%;margin-top:4px" title="Overwrite the crown, load, wheel radius and contact patch with values typical of the selected tyre type.">Apply tyre-type defaults</button>
       </div>
 
+      </section>
+
+      <section id="panel-plan" class="panel setup on">
       <div class="group" id="grp-plan">
         <div class="ghead"><span class="gnum">1</span><span class="gtext"><span class="gtitle">Tread plan</span><span class="gsub">The DXF geometry, and how strictly its outlines are stitched together.</span></span></div>
         <div class="filerow">
@@ -479,6 +581,9 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
         </div>
       </div>
 
+      </section>
+
+      <section id="panel-compound" class="panel setup">
       <div class="group" id="grp-compound">
         <div class="ghead"><span class="gnum">2</span><span class="gtext"><span class="gtitle">Block depth &amp; compound</span><span class="gsub">What the 2D drawing cannot tell you: how deep the tread is and what it is made of.</span></span></div>
         <div class="field" title="Non-skid depth — the block height above the groove base. A 2D tread plan does not carry it, so you must supply it. It sets both the bending length of each block and the Gent shape factor, which makes it the single most influential number on this panel. Typical 2W: 6–10 mm."><label>NSD / block height (mm)</label><input id="nsd" type="number" value="8.5" step="0.5" /></div>
@@ -509,6 +614,9 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
         </div>
       </div>
 
+      </section>
+
+      <section id="panel-cpatch" class="panel setup">
       <div class="group" id="grp-patch">
         <div class="ghead"><span class="gnum">3</span><span class="gtext"><span class="gtitle">Contact patch</span><span class="gsub">The footprint that sweeps the pattern. Drag the handles or type its size.</span></span></div>
         <div class="field" title="Standard contact-patch outlines. Pick the one closest to your measured footprint, then set its dimensions below. Every shape feeds the same sweep, so a stated rectangle is treated exactly like a pressure-film scan."><label>Shape</label>
@@ -567,6 +675,9 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
       </div>
 
 
+      </section>
+
+      <section id="panel-ribs" class="panel setup">
       <div class="group" id="grp-divisions">
         <div class="ghead"><span class="gnum">4</span><span class="gtext"><span class="gtitle">Divisions (ribs)</span><span class="gsub">Optional. Split the tread into lateral bands and report each one separately.</span></span></div>
         <div class="field" title="Split the rolled-out tread into lateral bands (ribs) by lines running along the circumference, and report contact area, Kx, Ky, Kz and block count separately for each. Set 0 to switch the feature off.">
@@ -576,6 +687,9 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
         <div class="hint">Bands are drawn on the rolled-out pattern and get their own tab. Every band's numbers sum exactly to the whole-tread total.</div>
       </div>
 
+      </section>
+
+      <section id="panel-load" class="panel setup">
       <div class="group" id="grp-load">
         <div class="ghead"><span class="gnum">5</span><span class="gtext"><span class="gtitle">Load &amp; advanced</span><span class="gsub">Vertical load, wheel and crown geometry — these set the whole lean axis.</span></span></div>
         <div class="field" title="Static vertical load carried by this tyre when upright. Sets the patch pressure, and with the box below, how that load grows as the bike leans."><label>Vertical load Fz (N)</label><input id="cpLoad" type="number" value="1500" step="50" /></div>
@@ -617,6 +731,9 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
         </div>
       </div>
 
+      </section>
+
+      <section id="panel-wear" class="panel setup">
       <div class="group" id="grp-wear">
         <div class="ghead"><span class="gnum">6</span><span class="gtext"><span class="gtitle">Wear &amp; tie bars</span><span class="gsub">How worn the tread is, and which bars bridge its grooves.</span></span></div>
         <div class="tb-setup">
@@ -663,13 +780,9 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
           </div>
         </div>
       </div>
+      </section>
 
-      <button id="runBtn" class="btn block" disabled>▶ Run</button>
-      <button id="addCompareSide" class="btn secondary block" style="margin-top:6px" disabled
-              title="Keep this run so you can compare it with the next design. Load another DXF, change anything you like, Run again, and add that too — then open the Compare tab. Everything stays in this browser session; no files needed.">
-        + Add this design to comparison <span id="cmpCount"></span>
-      </button>
-
+      <section id="panel-export" class="panel setup">
       <div class="group" id="grp-export" style="margin-top:14px">
         <div class="ghead"><span class="gnum">7</span><span class="gtext"><span class="gtitle">Export</span><span class="gsub">Everything downloads locally. Nothing is uploaded.</span></span></div>
         <div class="filerow">
@@ -695,42 +808,14 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
         </div>
         <div class="hint">Both the PDF and the review pack carry exactly what is ticked here. Files download locally; nothing is uploaded.</div>
       </div>
-    </aside>
-
-    <main class="main">
-      <div id="emptyHint" class="banner">
-        <b>Start here.</b> Everything runs locally in your browser — nothing is uploaded.
-        <ol style="margin:8px 0 0;padding-left:20px;line-height:1.7">
-          <li><b>Load a tread plan.</b> <em>Load DXF…</em> for your own drawing, or <em>Load sample</em> to try the bundled 130/80R17 plan.</li>
-          <li><b>Set what the drawing cannot tell you</b> — non-skid depth, draft angle, sipes, compound hardness. A 2D plan carries no depth.</li>
-          <li><b>Describe the contact patch</b> — pick a shape and type its size, or drag the handles on the preview.</li>
-          <li><b>Press Run.</b> The sweep takes a couple of seconds in a background worker; every chart then updates in place.</li>
-        </ol>
-        <div class="hint" style="margin-top:8px">Hover any input for an explanation of what it is and what it affects. The <b>How to read this</b> tab explains every chart once you have results.</div>
-      </div>
-      <div id="banner" class="banner" style="display:none"></div>
-      <div id="notes" class="banner warn" style="display:none"></div>
-
+      </section>
       <div id="resultsArea" style="display:none">
       <div style="display:flex;gap:14px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
         <label class="hint">Lean γ shown: <select id="gammaSel" class="field"></select></label>
         <span id="progress" class="hint"></span>
       </div>
 
-      <div class="tabs">
-        <button class="on" data-tab="stack">θ sweep + pattern</button>
-        <button data-tab="lean">Lean map</button>
-        <button data-tab="orders">Order content</button>
-        <button data-tab="zones">Zones</button>
-        <button data-tab="patch">Contact patch</button>
-        <button data-tab="bands">Bands</button>
-        <button data-tab="coupling">Tie-bar coupling</button>
-        <button data-tab="compare">Compare</button>
-        <button data-tab="diag">Diagnostics</button>
-        <button data-tab="guide">How to read this</button>
-      </div>
-
-      <section id="panel-stack" class="panel on">
+      <section id="panel-stack" class="panel">
         <div id="cards" class="cards"></div>
         <div id="cursorReadout"></div>
         <div id="patchThetaRow" class="banner" style="margin-bottom:8px;display:none">
@@ -1093,6 +1178,13 @@ python build_report.py --config my_tyre.json</code></pre>
 <p><strong>The chips</strong> across the top are the run's facts: circumference, tread width, how many blocks and pitches, the raster resolution the maths ran at, the steepest lean the crown profile can reach, and whether curvature correction is on.</p>
 <p><strong>The coloured banner</strong> below them is the honesty statement. It lists what came from real data ("tread geometry (from DXF)") and what is modelled or assumed ("crown profile (guessed)"). <strong>If a number surprises you, check the banner first</strong> — the surprise may be an assumption, not a finding.</p>
 <p><strong>The theme buttons</strong> (Auto / Light / Dark) at the right change the colour scheme. Auto follows your operating system.</p>
+<hr>
+<h2>Getting around: one tab bar, two rows</h2>
+<p>Everything is behind one bar under the title, and it stays there while you scroll.</p>
+<p><strong>Set up</strong> — the top row — is everything you supply: the drawing, the things a 2D drawing cannot tell you (depth, compound, sipes), the contact patch, the ribs, the load, the tie bars, and the exports. Each tab is tinted with its section's own colour, so the tab and the card it opens are recognisably the same thing.</p>
+<p><strong>Results</strong> — the bottom row — is everything the run produced. Those tabs are listed from the start, so you can see what the run is going to give you, but they stay greyed until there are results. <em>How to read this</em> is the exception: it is worth reading before the first run.</p>
+<p><strong>Run</strong> sits at the right-hand end of the setup row and is reachable from every tab. Pressing it opens the θ sweep — but if you are already on a result tab it leaves you there, so re-running to compare two settings does not throw you back to the top.</p>
+<p>The import summary and the physics notes sit above the panels rather than inside one, because they qualify every number on every tab.</p>
 <hr>
 <h2>Controls bar</h2>
 <ul><li><strong>Lean angle γ</strong> — pick which lean angle is <em>highlighted</em>. On most charts all lean angles are drawn together; the selected one is bold and opaque, the rest are faded. This lets you follow one condition through without losing context.</li><li><strong>Rotation θ</strong> — slide the wheel round. The ▶ button animates it.</li><li><strong>Overlay</strong> — toggles for the pressure contours, travel-direction arrows and centroid markers on the pattern map.</li></ul>
@@ -74809,6 +74901,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     cplRange: null,      // and the coupling tab's own, kept apart from it
     reportSections: {},  // report sections the user has switched off
     measured: null,      // imported footprint outline, when there is one
+    tab: "plan",         // which tab is open, setup or result — the drawing comes first
     stackRows: {},       // sweep rows switched off by the user (key -> false)
     pinStrip: true,      // keep the rolled-out pattern at the foot of the window
     compareMetric: "kz",
@@ -75829,6 +75922,10 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         $("timing").textContent = "computed in " + (m.timing.total / 1000).toFixed(1) + " s (raster " + m.timing.raster + " ms), grid " + m.grid.nx + "×" + m.grid.ny;
         populateGammaSelect();
         renderAll();
+        // Pressing Run is a request to see the answer, so the first result tab
+        // opens itself. A tab already showing results is left where it is --
+        // re-running to compare two settings must not throw you back to the top.
+        if (!state.tab || $("panel-" + state.tab).classList.contains("setup")) showTab("stack");
       } else if (m.type === "error") {
         failRun(m.message);
       }
@@ -75906,6 +76003,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   function showResultsChrome(on) {
     var el = $("resultsArea");
     if (el) el.style.display = on ? "" : "none";
+    refreshTabAvailability();
   }
 
   function renderAll() {
@@ -78474,20 +78572,55 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   }
 
   // ---- tabs ------------------------------------------------------------
+  //
+  // One bar, two rows: what you supply and what came out. They are one tab set
+  // -- opening a result closes the setup panel and vice versa -- because the
+  // point of the split is to say which kind of thing you are looking at, not to
+  // show two things at once on half a screen each.
+  function showTab(tab) {
+    var panel = $("panel-" + tab);
+    if (!panel) return;
+    document.querySelectorAll(".tabbar .tabs button").forEach(function (b) {
+      b.classList.toggle("on", b.dataset.tab === tab);
+    });
+    document.querySelectorAll(".panel").forEach(function (p) { p.classList.remove("on"); });
+    panel.classList.add("on");
+    state.tab = tab;
+    // A Plotly chart drawn while its panel was display:none measured a zero-
+    // sized container and kept it: the SVG is the right size but the div it
+    // sits in has no height, so the chart lies on top of whatever follows it.
+    // A synthetic window resize is not enough -- every plot on the panel now on
+    // screen is resized directly. The canvas editor has the same problem and is
+    // simply redrawn.
+    window.dispatchEvent(new Event("resize"));
+    panel.querySelectorAll(".js-plotly-plot").forEach(function (gd) {
+      try { Plotly.Plots.resize(gd); } catch (e) { /* not plotted yet */ }
+    });
+    if (tab === "cpatch" || tab === "wear") drawEditor();
+  }
+
+  // Result tabs stay visible with nothing behind them -- so the run's output can
+  // be seen in advance -- but cannot be opened until there is something to open.
+  // The guide is the exception: it is worth reading before the first run.
+  function refreshTabAvailability() {
+    var ready = !!state.results;
+    document.querySelectorAll("#resultTabs button").forEach(function (b) {
+      b.disabled = !ready && b.dataset.tab !== "guide";
+    });
+    if (!ready && state.tab && $("panel-" + state.tab) &&
+        $("panel-" + state.tab).classList.contains("panel") &&
+        !$("panel-" + state.tab).classList.contains("setup") && state.tab !== "guide")
+      showTab("plan");
+  }
+
   function initTabs() {
-    var btns = document.querySelectorAll(".tabs button");
+    var btns = document.querySelectorAll(".tabbar .tabs button");
     for (var i = 0; i < btns.length; i++) {
       (function (btn) {
-        on(btn, "click", function () {
-          document.querySelectorAll(".tabs button").forEach(function (b) { b.classList.remove("on"); });
-          document.querySelectorAll(".panel").forEach(function (p) { p.classList.remove("on"); });
-          btn.classList.add("on");
-          $("panel-" + btn.dataset.tab).classList.add("on");
-          // Plotly needs a resize nudge when a hidden plot becomes visible
-          if (state.results || btn.dataset.tab === "tiebars") window.dispatchEvent(new Event("resize"));
-        });
+        on(btn, "click", function () { if (!btn.disabled) showTab(btn.dataset.tab); });
       })(btns[i]);
     }
+    refreshTabAvailability();
   }
 
   // ---- wire up ---------------------------------------------------------

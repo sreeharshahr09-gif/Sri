@@ -814,8 +814,32 @@ scheme. Auto follows your operating system.
 
 ---
 
-## Controls bar
+## Getting around: one tab bar, two rows
 
+Everything is behind one bar under the title, and it stays there while you
+scroll.
+
+**Set up** — the top row — is everything you supply: the drawing, the things a
+2D drawing cannot tell you (depth, compound, sipes), the contact patch, the ribs,
+the load, the tie bars, and the exports. Each tab is tinted with its section's
+own colour, so the tab and the card it opens are recognisably the same thing.
+
+**Results** — the bottom row — is everything the run produced. Those tabs are
+listed from the start, so you can see what the run is going to give you, but
+they stay greyed until there are results. *How to read this* is the exception:
+it is worth reading before the first run.
+
+**Run** sits at the right-hand end of the setup row and is reachable from every
+tab. Pressing it opens the θ sweep — but if you are already on a result tab it
+leaves you there, so re-running to compare two settings does not throw you back
+to the top.
+
+The import summary and the physics notes sit above the panels rather than
+inside one, because they qualify every number on every tab.
+
+---
+
+## Controls bar
 - **Lean angle γ** — pick which lean angle is *highlighted*. On most charts all
   lean angles are drawn together; the selected one is bold and opaque, the rest
   are faded. This lets you follow one condition through without losing context.

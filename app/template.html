@@ -14,8 +14,59 @@
     <button id="themeToggle" class="theme-toggle">☀ Light</button>
   </header>
 
+  <nav class="tabbar" id="tabbar">
+    <div class="tabrow setup">
+      <span class="tabrow-lead" title="Everything you supply: the drawing, what it cannot tell you, and how the run is set up.">Set up</span>
+      <div class="tabs" id="setupTabs">
+        <button data-tab="project" data-grp="grp-project">Project</button>
+        <button class="on" data-tab="plan" data-grp="grp-plan">Tread plan</button>
+        <button data-tab="compound" data-grp="grp-compound">Depth &amp; compound</button>
+        <button data-tab="cpatch" data-grp="grp-patch">Contact patch</button>
+        <button data-tab="ribs" data-grp="grp-divisions">Ribs</button>
+        <button data-tab="load" data-grp="grp-load">Load &amp; advanced</button>
+        <button data-tab="wear" data-grp="grp-wear">Wear &amp; tie bars</button>
+        <button data-tab="export" data-grp="grp-export">Export</button>
+      </div>
+      <span class="spacer"></span>
+      <button id="runBtn" class="btn" disabled title="Run the sweep. Takes a couple of seconds in a background worker; every result tab then updates in place.">▶ Run</button>
+      <button id="addCompareSide" class="btn secondary" disabled
+              title="Keep this run so you can compare it with the next design. Load another DXF, change anything you like, Run again, and add that too — then open the Compare tab. Everything stays in this browser session; no files needed.">
+        + Compare <span id="cmpCount"></span>
+      </button>
+    </div>
+    <div class="tabrow results">
+      <span class="tabrow-lead" title="Everything the run produced. These open once there are results.">Results</span>
+      <div class="tabs" id="resultTabs">
+        <button data-tab="stack">θ sweep + pattern</button>
+        <button data-tab="lean">Lean map</button>
+        <button data-tab="orders">Order content</button>
+        <button data-tab="zones">Zones</button>
+        <button data-tab="patch">Contact patch</button>
+        <button data-tab="bands">Bands</button>
+        <button data-tab="coupling">Tie-bar coupling</button>
+        <button data-tab="compare">Compare</button>
+        <button data-tab="diag">Diagnostics</button>
+        <button data-tab="guide">How to read this</button>
+      </div>
+    </div>
+  </nav>
+
   <div class="layout">
-    <aside class="sidebar">
+    <main class="main">
+      <div id="emptyHint" class="banner">
+        <b>Start here.</b> Everything runs locally in your browser — nothing is uploaded.
+        <ol style="margin:8px 0 0;padding-left:20px;line-height:1.7">
+          <li><b>Load a tread plan.</b> <em>Load DXF…</em> for your own drawing, or <em>Load sample</em> to try the bundled 130/80R17 plan.</li>
+          <li><b>Set what the drawing cannot tell you</b> — non-skid depth, draft angle, sipes, compound hardness. A 2D plan carries no depth.</li>
+          <li><b>Describe the contact patch</b> — pick a shape and type its size, or drag the handles on the preview.</li>
+          <li><b>Press Run.</b> The sweep takes a couple of seconds in a background worker; every chart then updates in place.</li>
+        </ol>
+        <div class="hint" style="margin-top:8px">Hover any input for an explanation of what it is and what it affects. The <b>How to read this</b> tab explains every chart once you have results.</div>
+      </div>
+      <div id="banner" class="banner" style="display:none"></div>
+      <div id="notes" class="banner warn" style="display:none"></div>
+
+      <section id="panel-project" class="panel setup">
       <div class="group" id="grp-project">
         <div class="ghead"><span class="gnum">0</span><span class="gtext"><span class="gtitle">Project</span><span class="gsub">Who and what this run is for. Everything here appears on the PDF report.</span></span></div>
         <div class="field" title="Programme or project this design belongs to. Appears on the PDF report and in every export."><label>Project</label><input id="projName" type="text" placeholder="e.g. TBR-2026-LH" /></div>
@@ -32,6 +83,9 @@
         <button id="applyPreset" class="btn secondary" style="width:100%;margin-top:4px" title="Overwrite the crown, load, wheel radius and contact patch with values typical of the selected tyre type.">Apply tyre-type defaults</button>
       </div>
 
+      </section>
+
+      <section id="panel-plan" class="panel setup on">
       <div class="group" id="grp-plan">
         <div class="ghead"><span class="gnum">1</span><span class="gtext"><span class="gtitle">Tread plan</span><span class="gsub">The DXF geometry, and how strictly its outlines are stitched together.</span></span></div>
         <div class="filerow">
@@ -67,6 +121,9 @@
         </div>
       </div>
 
+      </section>
+
+      <section id="panel-compound" class="panel setup">
       <div class="group" id="grp-compound">
         <div class="ghead"><span class="gnum">2</span><span class="gtext"><span class="gtitle">Block depth &amp; compound</span><span class="gsub">What the 2D drawing cannot tell you: how deep the tread is and what it is made of.</span></span></div>
         <div class="field" title="Non-skid depth — the block height above the groove base. A 2D tread plan does not carry it, so you must supply it. It sets both the bending length of each block and the Gent shape factor, which makes it the single most influential number on this panel. Typical 2W: 6–10 mm."><label>NSD / block height (mm)</label><input id="nsd" type="number" value="8.5" step="0.5" /></div>
@@ -97,6 +154,9 @@
         </div>
       </div>
 
+      </section>
+
+      <section id="panel-cpatch" class="panel setup">
       <div class="group" id="grp-patch">
         <div class="ghead"><span class="gnum">3</span><span class="gtext"><span class="gtitle">Contact patch</span><span class="gsub">The footprint that sweeps the pattern. Drag the handles or type its size.</span></span></div>
         <div class="field" title="Standard contact-patch outlines. Pick the one closest to your measured footprint, then set its dimensions below. Every shape feeds the same sweep, so a stated rectangle is treated exactly like a pressure-film scan."><label>Shape</label>
@@ -155,6 +215,9 @@
       </div>
 
 
+      </section>
+
+      <section id="panel-ribs" class="panel setup">
       <div class="group" id="grp-divisions">
         <div class="ghead"><span class="gnum">4</span><span class="gtext"><span class="gtitle">Divisions (ribs)</span><span class="gsub">Optional. Split the tread into lateral bands and report each one separately.</span></span></div>
         <div class="field" title="Split the rolled-out tread into lateral bands (ribs) by lines running along the circumference, and report contact area, Kx, Ky, Kz and block count separately for each. Set 0 to switch the feature off.">
@@ -164,6 +227,9 @@
         <div class="hint">Bands are drawn on the rolled-out pattern and get their own tab. Every band's numbers sum exactly to the whole-tread total.</div>
       </div>
 
+      </section>
+
+      <section id="panel-load" class="panel setup">
       <div class="group" id="grp-load">
         <div class="ghead"><span class="gnum">5</span><span class="gtext"><span class="gtitle">Load &amp; advanced</span><span class="gsub">Vertical load, wheel and crown geometry — these set the whole lean axis.</span></span></div>
         <div class="field" title="Static vertical load carried by this tyre when upright. Sets the patch pressure, and with the box below, how that load grows as the bike leans."><label>Vertical load Fz (N)</label><input id="cpLoad" type="number" value="1500" step="50" /></div>
@@ -205,6 +271,9 @@
         </div>
       </div>
 
+      </section>
+
+      <section id="panel-wear" class="panel setup">
       <div class="group" id="grp-wear">
         <div class="ghead"><span class="gnum">6</span><span class="gtext"><span class="gtitle">Wear &amp; tie bars</span><span class="gsub">How worn the tread is, and which bars bridge its grooves.</span></span></div>
         <div class="tb-setup">
@@ -251,13 +320,9 @@
           </div>
         </div>
       </div>
+      </section>
 
-      <button id="runBtn" class="btn block" disabled>▶ Run</button>
-      <button id="addCompareSide" class="btn secondary block" style="margin-top:6px" disabled
-              title="Keep this run so you can compare it with the next design. Load another DXF, change anything you like, Run again, and add that too — then open the Compare tab. Everything stays in this browser session; no files needed.">
-        + Add this design to comparison <span id="cmpCount"></span>
-      </button>
-
+      <section id="panel-export" class="panel setup">
       <div class="group" id="grp-export" style="margin-top:14px">
         <div class="ghead"><span class="gnum">7</span><span class="gtext"><span class="gtitle">Export</span><span class="gsub">Everything downloads locally. Nothing is uploaded.</span></span></div>
         <div class="filerow">
@@ -283,42 +348,14 @@
         </div>
         <div class="hint">Both the PDF and the review pack carry exactly what is ticked here. Files download locally; nothing is uploaded.</div>
       </div>
-    </aside>
-
-    <main class="main">
-      <div id="emptyHint" class="banner">
-        <b>Start here.</b> Everything runs locally in your browser — nothing is uploaded.
-        <ol style="margin:8px 0 0;padding-left:20px;line-height:1.7">
-          <li><b>Load a tread plan.</b> <em>Load DXF…</em> for your own drawing, or <em>Load sample</em> to try the bundled 130/80R17 plan.</li>
-          <li><b>Set what the drawing cannot tell you</b> — non-skid depth, draft angle, sipes, compound hardness. A 2D plan carries no depth.</li>
-          <li><b>Describe the contact patch</b> — pick a shape and type its size, or drag the handles on the preview.</li>
-          <li><b>Press Run.</b> The sweep takes a couple of seconds in a background worker; every chart then updates in place.</li>
-        </ol>
-        <div class="hint" style="margin-top:8px">Hover any input for an explanation of what it is and what it affects. The <b>How to read this</b> tab explains every chart once you have results.</div>
-      </div>
-      <div id="banner" class="banner" style="display:none"></div>
-      <div id="notes" class="banner warn" style="display:none"></div>
-
+      </section>
       <div id="resultsArea" style="display:none">
       <div style="display:flex;gap:14px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
         <label class="hint">Lean γ shown: <select id="gammaSel" class="field"></select></label>
         <span id="progress" class="hint"></span>
       </div>
 
-      <div class="tabs">
-        <button class="on" data-tab="stack">θ sweep + pattern</button>
-        <button data-tab="lean">Lean map</button>
-        <button data-tab="orders">Order content</button>
-        <button data-tab="zones">Zones</button>
-        <button data-tab="patch">Contact patch</button>
-        <button data-tab="bands">Bands</button>
-        <button data-tab="coupling">Tie-bar coupling</button>
-        <button data-tab="compare">Compare</button>
-        <button data-tab="diag">Diagnostics</button>
-        <button data-tab="guide">How to read this</button>
-      </div>
-
-      <section id="panel-stack" class="panel on">
+      <section id="panel-stack" class="panel">
         <div id="cards" class="cards"></div>
         <div id="cursorReadout"></div>
         <div id="patchThetaRow" class="banner" style="margin-bottom:8px;display:none">

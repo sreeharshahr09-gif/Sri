@@ -61,30 +61,48 @@ header .spacer { flex: 1; }
 }
 .theme-toggle:hover { border-color: var(--accent); }
 
-/* Setup is a full-width dashboard across the top; results run full width below.
-   The grid is keyed on the groups' ids rather than :nth-of-type, so adding a
-   panel later moves one rule instead of renumbering all of them. */
+/* The whole tool is tabbed from one bar under the header, in two rows: what you
+   supply, and what came out. Before this it was one long scroll -- a full-width
+   setup dashboard with the result tabs beneath it -- so reaching a chart meant
+   scrolling past every input, and changing one number meant scrolling back. */
 .layout { display: block; min-height: calc(100vh - 53px); }
-.sidebar {
-  width: 100%; max-height: none; position: relative; top: auto; overflow: visible;
-  padding: 16px 18px 18px; background: var(--bg);
-  border-right: 0; border-bottom: 1px solid var(--edge);
-  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 12px; align-items: stretch;
+
+.tabbar {
+  position: sticky; top: 43px; z-index: 19;
+  background: var(--panel); border-bottom: 1px solid var(--edge);
+  padding: 0 12px;
 }
-/* Each setup section gets its own colour, a numbered badge and a line saying
-   what it is for. Eight near-identical grey cards were hard to navigate and
-   gave no clue which one a given input lived in. --g is the section's hue;
-   everything below derives from it, so a new section needs one line. */
-.sidebar > .group {
+.tabrow { display: flex; align-items: center; gap: 10px; min-height: 40px; }
+.tabrow.setup { border-bottom: 1px dashed var(--edge); }
+.tabrow > .spacer { flex: 1; }
+/* The row label is what separates inputs from results at a glance. */
+.tabrow-lead {
+  flex: 0 0 auto; font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--ink-dim);
+  width: 52px; text-align: right; cursor: help;
+}
+.tabbar .tabs { border-bottom: 0; margin: 0; gap: 2px; flex: 0 1 auto; }
+.tabbar .tabs button { padding: 9px 11px; white-space: nowrap; }
+.tabrow .btn { padding: 5px 12px; font-size: 13px; }
+/* Each setup tab is tinted with its own section's hue, so the tab and the card
+   it opens are recognisably the same thing. */
+.tabbar .tabs button[data-grp].on { border-bottom-color: var(--g); }
+/* A result tab with nothing behind it yet stays visible rather than hidden, so
+   what the run is going to produce can be seen before pressing Run. */
+.tabbar .tabs button:disabled { opacity: 0.36; cursor: default; }
+
+/* A setup panel is one card, full width -- the same card the old dashboard
+   showed, with its number and its hue. */
+.panel.setup { max-width: 1480px; }
+.panel.setup > .group {
   --g: var(--accent);
-  min-width: 0; margin: 0 !important; padding: 0 0 14px;
+  margin: 0; padding: 0 0 16px;
   background: var(--panel); border: 1px solid var(--edge); border-radius: 10px;
   border-top: 3px solid var(--g); overflow: hidden;
 }
-.sidebar > .group > .ghead {
+.panel.setup > .group > .ghead {
   display: flex; align-items: flex-start; gap: 11px;
-  padding: 12px 14px 11px; margin-bottom: 12px;
+  padding: 12px 16px 11px; margin-bottom: 14px;
   background: color-mix(in srgb, var(--g) 11%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--g) 28%, var(--edge));
 }
@@ -97,8 +115,12 @@ header .spacer { flex: 1; }
 .ghead .gtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .ghead .gtitle { font-size: 15px; font-weight: 650; color: var(--ink); letter-spacing: 0.1px; }
 .ghead .gsub { font-size: 12px; color: var(--ink-dim); line-height: 1.4; }
-.sidebar > .group > *:not(.ghead) { margin-left: 14px; margin-right: 14px; }
-.sidebar > .group > .plot, .sidebar > .group > .tb-setup { margin-left: 14px; margin-right: 14px; }
+.panel.setup > .group > *:not(.ghead) { margin-left: 16px; margin-right: 16px; }
+/* A field is a label and a value, and on a 1400 px card those end up a hand's
+   width apart with nothing between them. Fields are held to a readable column;
+   anything that draws, explains or lists keeps the full width. */
+.panel.setup .field { max-width: 620px; }
+.panel.setup .filerow { max-width: 900px; }
 
 /* Section hues. Bright enough for the dark default; deepened for light below. */
 #grp-project   { --g: #8b7bff; }
@@ -109,6 +131,17 @@ header .spacer { flex: 1; }
 #grp-load      { --g: #f0913f; }
 #grp-wear      { --g: #ef7aa8; }
 #grp-export    { --g: #93a4b8; }
+/* The same hue on the tab that opens each section. The tab is not inside the
+   card, so it cannot inherit --g and has to be given it. Kept in step with the
+   list above by sharing the light-theme variables below. */
+[data-grp="grp-project"]   { --g: #8b7bff; }
+[data-grp="grp-plan"]      { --g: #4ea1ff; }
+[data-grp="grp-compound"]  { --g: #21c2b8; }
+[data-grp="grp-patch"]     { --g: #4fc47a; }
+[data-grp="grp-divisions"] { --g: #e0b13c; }
+[data-grp="grp-load"]      { --g: #f0913f; }
+[data-grp="grp-wear"]      { --g: #ef7aa8; }
+[data-grp="grp-export"]    { --g: #93a4b8; }
 :root[data-theme="light"] {
   --g-project: #6247d6; --g-plan: #1f6feb; --g-compound: #0a8f88;
   --g-patch: #2f8f52; --g-divisions: #a97c06; --g-load: #c26516;
@@ -121,22 +154,38 @@ header .spacer { flex: 1; }
     --g-wear: #c2437a; --g-export: #5b6b7b;
   }
   :root:not([data-theme="dark"]) #grp-project   { --g: var(--g-project); }
+:root:not([data-theme="dark"]) [data-grp="grp-project"]   { --g: var(--g-project); }
   :root:not([data-theme="dark"]) #grp-plan      { --g: var(--g-plan); }
+:root:not([data-theme="dark"]) [data-grp="grp-plan"]      { --g: var(--g-plan); }
   :root:not([data-theme="dark"]) #grp-compound  { --g: var(--g-compound); }
+:root:not([data-theme="dark"]) [data-grp="grp-compound"]  { --g: var(--g-compound); }
   :root:not([data-theme="dark"]) #grp-patch     { --g: var(--g-patch); }
+:root:not([data-theme="dark"]) [data-grp="grp-patch"]     { --g: var(--g-patch); }
   :root:not([data-theme="dark"]) #grp-divisions { --g: var(--g-divisions); }
+:root:not([data-theme="dark"]) [data-grp="grp-divisions"] { --g: var(--g-divisions); }
   :root:not([data-theme="dark"]) #grp-load      { --g: var(--g-load); }
+:root:not([data-theme="dark"]) [data-grp="grp-load"]      { --g: var(--g-load); }
   :root:not([data-theme="dark"]) #grp-wear      { --g: var(--g-wear); }
+:root:not([data-theme="dark"]) [data-grp="grp-wear"]      { --g: var(--g-wear); }
   :root:not([data-theme="dark"]) #grp-export    { --g: var(--g-export); }
+:root:not([data-theme="dark"]) [data-grp="grp-export"]    { --g: var(--g-export); }
 }
 :root[data-theme="light"] #grp-project   { --g: var(--g-project); }
+:root[data-theme="light"] [data-grp="grp-project"]   { --g: var(--g-project); }
 :root[data-theme="light"] #grp-plan      { --g: var(--g-plan); }
+:root[data-theme="light"] [data-grp="grp-plan"]      { --g: var(--g-plan); }
 :root[data-theme="light"] #grp-compound  { --g: var(--g-compound); }
+:root[data-theme="light"] [data-grp="grp-compound"]  { --g: var(--g-compound); }
 :root[data-theme="light"] #grp-patch     { --g: var(--g-patch); }
+:root[data-theme="light"] [data-grp="grp-patch"]     { --g: var(--g-patch); }
 :root[data-theme="light"] #grp-divisions { --g: var(--g-divisions); }
+:root[data-theme="light"] [data-grp="grp-divisions"] { --g: var(--g-divisions); }
 :root[data-theme="light"] #grp-load      { --g: var(--g-load); }
+:root[data-theme="light"] [data-grp="grp-load"]      { --g: var(--g-load); }
 :root[data-theme="light"] #grp-wear      { --g: var(--g-wear); }
+:root[data-theme="light"] [data-grp="grp-wear"]      { --g: var(--g-wear); }
 :root[data-theme="light"] #grp-export    { --g: var(--g-export); }
+:root[data-theme="light"] [data-grp="grp-export"]    { --g: var(--g-export); }
 
 #grp-project   { grid-column: 1 / span 4;  grid-row: 1; }
 #grp-plan      { grid-column: 5 / span 4;  grid-row: 1; }
@@ -170,36 +219,35 @@ header .spacer { flex: 1; }
 @media (max-width: 1240px) { .tb-setup { grid-template-columns: 1fr; } }
 
 /* Fields have room to breathe now that they are not confined to 340 px. */
-.sidebar .field { gap: 12px; }
-.sidebar .field label { min-width: 0; line-height: 1.3; }
-.sidebar .field input[type="number"],
-.sidebar .field input[type="text"],
-.sidebar .field select { width: min(48%, 200px); min-width: 120px; }
-.sidebar .field.wide input, .sidebar .field.wide select { width: min(55%, 230px); }
+.panel.setup .field { gap: 12px; }
+.panel.setup .field label { min-width: 0; line-height: 1.3; }
+.panel.setup .field input[type="number"],
+.panel.setup .field input[type="text"],
+.panel.setup .field select { width: min(46%, 220px); min-width: 120px; }
+.panel.setup .field.wide input, .panel.setup .field.wide select { width: min(52%, 250px); }
 #grp-patch #editor { height: 240px; }
 
 .main { width: 100%; padding: 16px 18px 26px; }
 #emptyHint { max-width: 1100px; }
 
-/* Tablet / smaller laptop: two-column setup. */
+/* Narrow window: the tab bar scrolls sideways rather than wrapping into four
+   rows, so the two-row structure survives and the labels stay put. */
 @media (max-width: 1240px) {
-  .sidebar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .sidebar > .group, #runBtn, #addCompareSide { grid-column: auto !important; grid-row: auto !important; }
-  #grp-patch, #grp-export, #grp-wear { grid-column: 1 / -1 !important; }
+  .tabbar .tabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: thin; }
+  .tabbar .tabs button { padding: 9px 9px; }
 }
 
-/* Phone / narrow window: a clean single-column workflow. */
 @media (max-width: 760px) {
   header { flex-wrap: wrap; padding: 10px 12px; }
   header .sub { flex-basis: 100%; order: 3; }
-  .sidebar { grid-template-columns: 1fr; padding: 12px; }
-  #grp-patch, #grp-export, #grp-wear { grid-column: auto !important; }
-  .sidebar .field { align-items: flex-start; }
-  .sidebar .field input[type="number"],
-  .sidebar .field input[type="text"],
-  .sidebar .field select,
-  .sidebar .field.wide input,
-  .sidebar .field.wide select { width: 50%; min-width: 128px; }
+  .tabbar { padding: 0 8px; }
+  .tabrow-lead { width: auto; }
+  .panel.setup .field { align-items: flex-start; }
+  .panel.setup .field input[type="number"],
+  .panel.setup .field input[type="text"],
+  .panel.setup .field select,
+  .panel.setup .field.wide input,
+  .panel.setup .field.wide select { width: 50%; min-width: 128px; }
   .main { padding: 12px; }
 }
 

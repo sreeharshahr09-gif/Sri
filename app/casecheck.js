@@ -19,6 +19,28 @@ function ck(name, cond, extra) {
   if (!cond) fails++;
   console.log((cond ? "  ok   " : "  FAIL ") + name + (extra ? "   " + extra : ""));
 }
+// Every control lives behind a tab now, so touching one means opening its tab
+// first -- which is what a user does. `reveal` finds the panel a selector is in
+// and opens it; the wrappers below use it so no case has to know the layout.
+async function reveal(page, sel) {
+  const tab = await page.evaluate((s) => {
+    const el = document.querySelector(s);
+    if (!el) return null;
+    const panel = el.closest(".panel");
+    if (!panel || panel.classList.contains("on")) return null;
+    return panel.id.replace(/^panel-/, "");
+  }, sel).catch(() => null);
+  if (tab) {
+    await page.click(`.tabbar .tabs button[data-tab="${tab}"]`);
+    await page.waitForTimeout(120);
+  }
+}
+const uiClick = async (page, sel) => { await reveal(page, sel); return page.click(sel); };
+const uiFill = async (page, sel, v) => { await reveal(page, sel); return page.fill(sel, v); };
+const uiSelect = async (page, sel, v) => { await reveal(page, sel); return page.selectOption(sel, v); };
+const uiFiles = async (page, sel, v) => { await reveal(page, sel); return page.setInputFiles(sel, v); };
+const uiChecked = async (page, sel) => { await reveal(page, sel); return page.isChecked(sel); };
+
 const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
 const cov = (a) => { const m = mean(a); return Math.sqrt(mean(a.map((v) => (v - m) * (v - m)))) / Math.abs(m); };
 
@@ -26,26 +48,26 @@ async function runCase(page, errors, cfg) {
   console.log("\n" + cfg.title);
   console.log("-".repeat(cfg.title.length));
 
-  await page.selectOption("#tyreType", cfg.tyreType);
-  await page.click("#applyPreset");
+  await uiSelect(page, "#tyreType", cfg.tyreType);
+  await uiClick(page, "#applyPreset");
   await page.waitForTimeout(200);
   if (cfg.dxf) {
-    await page.setInputFiles("#fileInput", cfg.dxf);
+    await uiFiles(page, "#fileInput", cfg.dxf);
   } else {
-    await page.click("#sampleBtn");
+    await uiClick(page, "#sampleBtn");
   }
   await page.waitForTimeout(700);
-  for (const [sel, val] of Object.entries(cfg.fields || {})) await page.fill(sel, String(val));
-  for (const [sel, val] of Object.entries(cfg.selects || {})) await page.selectOption(sel, String(val));
+  for (const [sel, val] of Object.entries(cfg.fields || {})) await uiFill(page, sel, String(val));
+  for (const [sel, val] of Object.entries(cfg.selects || {})) await uiSelect(page, sel, String(val));
   for (const sel of cfg.checks || []) {
-    if (!(await page.isChecked(sel))) await page.click(sel);
+    if (!(await uiChecked(page, sel))) await uiClick(page, sel);
   }
   await page.waitForTimeout(300);
 
   const banner = (await page.textContent("#banner")).replace(/\s+/g, " ");
   console.log("  import: " + banner.slice(0, 120));
 
-  await page.click("#runBtn");
+  await uiClick(page, "#runBtn");
   await page.waitForSelector("#overlay.on", { timeout: 8000 }).catch(() => {});
   await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 120000 });
   console.log("  " + (await page.textContent("#timing")));
@@ -200,6 +222,7 @@ function checkCase(tag, out, opts) {
   // ---- exports on the second case ----
   const dl = fs.mkdtempSync(path.join(os.tmpdir(), "case-"));
   for (const [id, label] of [["exportCsv", "CSV"], ["exportJson", "JSON"], ["exportTxt", "summary"]]) {
+    await reveal(page, "#" + id);
     const [d] = await Promise.all([page.waitForEvent("download"), page.click("#" + id)]);
     const f = path.join(dl, d.suggestedFilename());
     await d.saveAs(f);
