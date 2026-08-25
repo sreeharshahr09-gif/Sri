@@ -547,6 +547,59 @@ of the strip, because that is what the tyre does at the seam.
 
 ---
 
+## Importing a measured footprint
+
+Every shape in *3 · Contact patch* down to the superellipse is an idealisation.
+The last entry in the list, **measured — import a footprint**, is not: it takes
+the outline of a real footprint and sweeps that instead.
+
+**What it accepts.** A traced ink footprint, a digitised photograph, or a CAD
+outline, as either:
+
+- **DXF** — the **largest closed loop** in the file is taken as the boundary.
+  Everything else in the drawing is ignored, so a scan with dimension lines,
+  a border and a title block still imports cleanly.
+- **CSV** — two numeric columns, **x then y**. Header rows are skipped.
+
+Both routes are the same code the Python pipeline uses, checked file-for-file
+against it, so a footprint gives the same outline whichever way it goes in.
+
+**Three things it makes you say out loud**, because each of them is silent and
+expensive if wrong:
+
+- **File units.** mm, cm, m or inches. Getting this wrong rescales every area,
+  pressure and stiffness on the page without any of them looking odd. The tool
+  prints the imported size in mm the moment the file loads — check it against
+  the tyre before you read anything else.
+- **Lateral placement.** *Auto* keeps the file's own y coordinates when they
+  already land on this tread, and otherwise re-centres and tells you it did —
+  which is what makes a CAD export that happens to be drawn at y = 95…145 just
+  work. *Centre* always moves it to the lateral centre. *As drawn* trusts the
+  file exactly; if that puts the outline off the tread, the run stops rather
+  than reporting a patch that was clipped to nothing.
+- **Measured at lean.** The lean the footprint was actually taken at. It is
+  recorded on the report and in every export, so an upright footprint is never
+  later mistaken for one taken at full lean.
+
+**What changes downstream: only the shape.** The imported outline replaces the
+generated one and then goes through the identical pipeline — placed on the
+tread, clipped at the edges, given a pressure from the load over *its own*
+area, and swept by the same FFT. Length, width and corner radius grey out,
+because the file decides them. The patch's own centroid decides where it sits
+laterally, not the crown's estimate.
+
+**Lean scaling switches itself off on import**, with a line saying so. The
+Winkler trend narrows a *generated* patch as lean increases; applying it to a
+shape you measured would be modelling on top of a measurement. If you have a
+footprint per lean, import them one at a time and read each run on its own.
+
+It is worth doing. On the sample tyre the measured outline gives 4147 mm² of
+patch against 4335 mm² for the idealised rounded rectangle of the same stated
+size, and a contact-area fluctuation of **1.88% against 1.55%** — the corners
+the real footprint does not have were smoothing the ripple.
+
+---
+
 ## Tie-bar coupling: the tread as a network
 
 Everywhere else this tool treats a block as an **independent spring**. Its stiffness comes from its own outline and nothing else, and the patch total is the sum of the springs it covers. That assumption is what makes the θ sweep a single FFT — and it is exactly wrong for a tie bar, whose whole purpose is to make neighbouring blocks *not* independent.

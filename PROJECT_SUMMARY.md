@@ -154,6 +154,51 @@ cornering load comes from weight transfer, which this model does not carry.
   amplitude means, what the marked bars are, and how to read the shape.
 - **Mean Kx and Ky** on the dashboard cards.
 
+### From the design-review minutes
+
+Four items, taken in order, each finished and verified before the next started.
+
+- **One pitch → the whole tread.** A drawing of a single pitch is replicated
+  around the circumference, with an explicit pitch count or a full length
+  sequence for a modulated array. Replication happens at the *chain* stage,
+  before the planar arrangement, so welding, face traversal, seam wrapping and
+  tie-bar detection all run on the finished tread and need no special cases.
+  Pitch-boundary cut lines are stripped at interior joins — they are drawing
+  artefacts there — and re-added as caps at the global seam, where a ring rib
+  genuinely needs closing.
+  **The whole-pitch vs groove-only scaling decision is not made by the tool.**
+  Both conventions are implemented and the choice is a required input, because
+  which one a modulated pitch uses is a design-office convention, not a fact
+  the geometry can supply.
+  A **closure diagnostic** reports whether the drawn pitch actually tiles:
+  the boundary mismatch in mm, which features fail to meet, and whether the
+  sequence adds up to the circumference. A pattern that does not close is
+  reported, not silently welded shut.
+- **Drop-first crown.** The crown can now be given the way it is actually
+  dimensioned on a drawing — a lateral position and a drop — instead of as
+  radii. The radii are solved from the drops (`z(L) = z₀ + R[cos φ₀ −
+  cos(φ₀ + L/R)]`, strictly decreasing in R, bisected on log R), and the
+  multi-arc profile itself is now integrated in **closed form** with the arc
+  breakpoints as grid nodes, which removed a 35 µm edge-drop error the old
+  trapezoidal integration carried. Arcs and drops round-trip to fourteen
+  digits. Giving both at once is refused rather than silently ranked.
+- **Report fixes and an interactive review pack.** Section chips choose what
+  goes into the PDF; the aspect ratio of every captured figure is preserved in
+  both axes instead of only in height; the crown survives the settings snapshot
+  (it did not, so every export said "no crown resolved"); and there is now an
+  **interactive review pack** — a self-contained HTML file with live, zoomable
+  charts, for the reviewers who wanted something better than a flat PDF.
+- **A measured contact patch.** *Shape → measured* imports a real footprint from
+  DXF (largest closed loop) or CSV (two numeric columns), sharing its conventions
+  with the Python pipeline and checked file-for-file against it. File units,
+  lateral placement and the lean the footprint was taken at are all explicit
+  inputs, because each is silent and expensive if wrong. The outline then goes
+  through the identical pipeline — the only thing that changes is the shape.
+  Lean scaling switches itself off on import, with a reason: applying the
+  Winkler narrowing trend to a shape you measured is modelling on top of a
+  measurement. On the sample tyre the measured outline gives 4147 mm² against
+  4335 mm² for the idealised shape, and 1.88% area fluctuation against 1.55%.
+
 ---
 
 ## 5. How the numbers are kept honest
@@ -166,7 +211,7 @@ v6.4 reference JS  ──(~1e-9)──  Python engine  ──(<2e-3)──  Brow
   verify/tool_v64_reference.js   tread_eval/*.py              app/engine.js
 ```
 
-- **254 tests** (from 153 at the start of the audit).
+- **323 tests** (from 153 at the start of the audit).
 - `tests/test_physics.py` checks every equation against a **closed form worked
   out by hand**, not against a previous run — a golden-value test would have
   blessed the bugs above.
@@ -224,6 +269,14 @@ features delivered and verified in a real browser.
    order content is a single clean tone. The banner says so on load.
 5. **Depth is always an assumption.** A 2D tread plan carries no NSD, draft or
    sipes; those are your inputs and are recorded as assumed.
+6. **Pitch replication is validated against a synthetic tiling**, not yet
+   against a production pitch drawing with its real length sequence. Two open
+   dependencies on the design office: which scaling convention a modulated
+   pitch uses (whole-pitch or groove-only), and a real pitch DXF to check
+   against.
+7. **A footprint imported at one lean is only valid at that lean.** The tool
+   records the lean it was measured at and refuses to scale it; carrying it to
+   another lean is an extrapolation you would be making, not one it makes.
 
 ### One process note
 
@@ -254,6 +307,15 @@ source of truth.
 | `df8875f` | Confirming passes; freeze exported settings |
 | `be6aa0c` | **Multi-class, rib divisions, in-session comparison, PDF** |
 | `d2023e1` | **Crosshair, linked zoom, order-chart explanation** |
+| `f101bf7` | Real tread arc profiles: single and multi-arc crowns |
+| `6f7ecf8` | Group repeated tie bars so a family is one edit |
+| `fecbabc` | Rolled-out tread under the coupling curve |
+| `d7fcf71` | **Slip response: Cα, Cκ and the pneumatic trail** |
+| `cb83b52` | Pin the tread to the foot of the window; row chips |
+| `5897d50` | **Build the whole tread from one drawn pitch** |
+| `9bd0123` | **Drop-first crown, with the radii solved** |
+| `410cca5` | **Report fixes and the interactive review pack** |
+| `—` | **Import a measured contact patch** |
 
 ---
 

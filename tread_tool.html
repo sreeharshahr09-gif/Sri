@@ -520,7 +520,33 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
             <option value="superellipse">superellipse</option>
             <option value="trapezoid">trapezoid</option>
             <option value="diamond">diamond</option>
+            <option value="measured">measured — import a footprint</option>
           </select>
+        </div>
+        <div id="cpMeasuredBox" style="display:none">
+          <div class="filerow">
+            <label class="btn secondary" for="cpFile">Load footprint…</label>
+            <input id="cpFile" type="file" accept=".dxf,.csv" style="display:none" />
+            <button id="cpClear" class="btn secondary" title="Forget the imported footprint and go back to an idealised shape.">Clear</button>
+          </div>
+          <div class="hint">A traced ink footprint, a digitised photograph or a CAD outline. <b>DXF</b> — the largest closed loop is taken as the boundary. <b>CSV</b> — two numeric columns, x then y; header rows are skipped.</div>
+          <div class="field" title="Units the file is drawn in. A units mistake here silently rescales every area on the page, so the imported size is shown below — check it against the tyre."><label>File units</label>
+            <select id="cpUnits">
+              <option value="mm">mm</option>
+              <option value="cm">cm</option>
+              <option value="m">m</option>
+              <option value="in">inches</option>
+            </select>
+          </div>
+          <div class="field" title="Where the footprint sits across the tread. 'Auto' keeps the file's own y coordinates when they are already a position on this tread, and otherwise re-centres and says so — which is what makes a CAD export just work. 'Centre' always moves it to the lateral centre. 'As drawn' trusts the file exactly. For a LEANED footprint the lateral position is the measurement, so use 'as drawn' or set the lateral centre by hand."><label>Lateral placement</label>
+            <select id="cpLateral">
+              <option value="auto">auto — keep if it fits, else centre</option>
+              <option value="centre">centre on the lateral centre</option>
+              <option value="absolute">as drawn — trust the file</option>
+            </select>
+          </div>
+          <div class="field" title="The lean angle this footprint was actually measured at. Recorded on the report and in every export, so a patch measured upright is never mistaken for one measured at full lean."><label>Measured at lean (deg)</label><input id="cpMeasuredAt" type="number" value="0" step="1" /></div>
+          <div id="cpMeasuredInfo" class="hint" style="margin:2px 0 6px;padding:6px 9px;background:var(--panel-2);border:1px solid var(--edge);border-radius:6px;line-height:1.55"></div>
         </div>
         <div class="field" title="Contact patch length along the direction of travel. With 'scale patch with lean' ticked, this describes the patch when UPRIGHT; it is scaled from there at each lean angle."><label>Length — circumf. (mm)</label><input id="cpLength" type="number" value="90" step="1" /></div>
         <div class="field" title="Contact patch width across the tread. With 'scale patch with lean' ticked, this describes the patch when UPRIGHT; it is scaled from there at each lean angle."><label>Width — lateral (mm)</label><input id="cpWidth" type="number" value="50" step="1" /></div>
@@ -987,6 +1013,17 @@ lateral        u = tan α · s      α = slip angle</code></pre>
 <p><strong>Drag the band</strong> to slide the patch around the tyre, or type an exact angle in the box. It moves along <strong>θ only</strong>: where the patch sits laterally is decided by the crown profile and the lean angle (or by the y-centre field in <em>3 · Contact patch</em>), so being able to shove it sideways on this chart would contradict the physics that put it there.</p>
 <p>Drag anywhere <em>outside</em> the band to zoom — every chart and the pattern zoom together. Double-click resets, including a double-click on the band itself.</p>
 <p>A patch parked across θ = 0 is drawn in both halves, at the left and right ends of the strip, because that is what the tyre does at the seam.</p>
+<hr>
+<h2>Importing a measured footprint</h2>
+<p>Every shape in <em>3 · Contact patch</em> down to the superellipse is an idealisation. The last entry in the list, <strong>measured — import a footprint</strong>, is not: it takes the outline of a real footprint and sweeps that instead.</p>
+<p><strong>What it accepts.</strong> A traced ink footprint, a digitised photograph, or a CAD outline, as either:</p>
+<ul><li><strong>DXF</strong> — the <strong>largest closed loop</strong> in the file is taken as the boundary. Everything else in the drawing is ignored, so a scan with dimension lines, a border and a title block still imports cleanly.</li><li><strong>CSV</strong> — two numeric columns, <strong>x then y</strong>. Header rows are skipped.</li></ul>
+<p>Both routes are the same code the Python pipeline uses, checked file-for-file against it, so a footprint gives the same outline whichever way it goes in.</p>
+<p><strong>Three things it makes you say out loud</strong>, because each of them is silent and expensive if wrong:</p>
+<ul><li><strong>File units.</strong> mm, cm, m or inches. Getting this wrong rescales every area, pressure and stiffness on the page without any of them looking odd. The tool prints the imported size in mm the moment the file loads — check it against the tyre before you read anything else.</li><li><strong>Lateral placement.</strong> <em>Auto</em> keeps the file's own y coordinates when they already land on this tread, and otherwise re-centres and tells you it did — which is what makes a CAD export that happens to be drawn at y = 95…145 just work. <em>Centre</em> always moves it to the lateral centre. <em>As drawn</em> trusts the file exactly; if that puts the outline off the tread, the run stops rather than reporting a patch that was clipped to nothing.</li><li><strong>Measured at lean.</strong> The lean the footprint was actually taken at. It is recorded on the report and in every export, so an upright footprint is never later mistaken for one taken at full lean.</li></ul>
+<p><strong>What changes downstream: only the shape.</strong> The imported outline replaces the generated one and then goes through the identical pipeline — placed on the tread, clipped at the edges, given a pressure from the load over <em>its own</em> area, and swept by the same FFT. Length, width and corner radius grey out, because the file decides them. The patch's own centroid decides where it sits laterally, not the crown's estimate.</p>
+<p><strong>Lean scaling switches itself off on import</strong>, with a line saying so. The Winkler trend narrows a <em>generated</em> patch as lean increases; applying it to a shape you measured would be modelling on top of a measurement. If you have a footprint per lean, import them one at a time and read each run on its own.</p>
+<p>It is worth doing. On the sample tyre the measured outline gives 4147 mm² of patch against 4335 mm² for the idealised rounded rectangle of the same stated size, and a contact-area fluctuation of <strong>1.88% against 1.55%</strong> — the corners the real footprint does not have were smoothing the ripple.</p>
 <hr>
 <h2>Tie-bar coupling: the tread as a network</h2>
 <p>Everywhere else this tool treats a block as an <strong>independent spring</strong>. Its stiffness comes from its own outline and nothing else, and the patch total is the sum of the springs it covers. That assumption is what makes the θ sweep a single FFT — and it is exactly wrong for a tie bar, whose whole purpose is to make neighbouring blocks <em>not</em> independent.</p>
@@ -72965,6 +73002,12 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   }
 
   function describeSpec(spec) {
+    if (isMeasuredSpec(spec)) {
+      const m = spec.outline ? validatePatchOutline(spec.outline, 0) : null;
+      return "measured footprint" + (m ? " " + fmt(m.length) + " x " + fmt(m.width) + " mm, " +
+        m.area.toFixed(0) + " mm2, " + spec.outline.length + " points" : "") +
+        (spec.measured_at_deg != null ? ", taken at " + fmt(spec.measured_at_deg) + " deg" : "");
+    }
     const s = (spec.shape || "rounded").toLowerCase();
     let extra = "";
     if (s === "rounded") extra = ", corner r=" + fmt(spec.corner_radius) + " mm";
@@ -73006,11 +73049,174 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     return [tgt.a / Math.max(ref.a, 1e-9), tgt.b / Math.max(ref.b, 1e-9)];
   }
 
+  // =====================================================================
+  // a MEASURED contact patch: the real footprint, imported
+  // =====================================================================
+  //
+  // Every patch above is an idealised shape. A traced ink footprint, a
+  // digitised photograph or a CAD outline is the real thing, and it is neither
+  // convex nor symmetric. Nothing downstream assumes it is.
+  //
+  // This is a port of tread_eval/cp_io.py, deliberately: the Python pipeline
+  // already settled these conventions and the two must not drift.
+  //
+  //   x  circumferential. The outline is always re-centred on its own
+  //      centroid, so where the origin sat in the CAD file does not matter --
+  //      the sweep moves the patch around the tyre anyway.
+  //   y  lateral, from the tread centreline. Where the footprint sits across
+  //      the tread IS the measurement at a leaned angle, so it is kept, and how
+  //      it is placed is an explicit choice rather than a guess.
+  const CP_UNIT_SCALE = { mm: 1, cm: 10, m: 1000, in: 25.4 };
+  const CP_LATERAL = ["auto", "centre", "absolute"];
+
+  function cpUnitScale(units) {
+    const f = CP_UNIT_SCALE[String(units || "mm").toLowerCase()];
+    if (!f) throw new Error("unknown footprint unit '" + units + "'; expected one of " +
+      Object.keys(CP_UNIT_SCALE).join(", "));
+    return f;
+  }
+
+  // The largest closed loop in a DXF is the footprint boundary. Smaller ones are
+  // pressure contours, registration marks or the tread edge drawn alongside.
+  function loadPatchOutlineDxf(text, units, tol) {
+    const segs = entitiesToSegments(readDxfEntities(text), 0.02, {});
+    if (!segs.length)
+      throw new Error("no usable geometry in this footprint DXF. It needs the outline as " +
+        "LINE/ARC/POLYLINE entities, exported as ASCII DXF.");
+    const loops = buildLoops(segs, tol == null ? 0.05 : tol);
+    if (!loops.closed.length)
+      throw new Error("no closed loop in this footprint DXF, so there is no outline to use. " +
+        (loops.openChains.length ? loops.openChains.length + " open chain(s) were found — the " +
+          "outline probably has a gap at one corner." : ""));
+    let best = loops.closed[0], bestA = polygonArea(best);
+    for (const c of loops.closed) {
+      const a = polygonArea(c);
+      if (a > bestA) { best = c; bestA = a; }
+    }
+    const f = cpUnitScale(units);
+    return best.map((p) => [p[0] * f, p[1] * f]);
+  }
+
+  // Two numeric columns, x then y. Header and comment rows are skipped rather
+  // than rejected, because these files come out of a dozen different machines.
+  function loadPatchOutlineCsv(text, units) {
+    const pts = [];
+    for (const line of String(text).split(/\r\n|\r|\n/)) {
+      const cells = line.split(/[,;\t]/);
+      if (cells.length < 2) continue;
+      const x = parseFloat(cells[0]), y = parseFloat(cells[1]);
+      if (Number.isFinite(x) && Number.isFinite(y)) pts.push([x, y]);
+    }
+    if (pts.length < 3)
+      throw new Error("a footprint outline needs at least 3 points, found " + pts.length +
+        ". The file should have two numeric columns: x then y, in mm.");
+    // drop a repeated closing vertex
+    if (Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) < 1e-9)
+      pts.pop();
+    const f = cpUnitScale(units);
+    return pts.map((p) => [p[0] * f, p[1] * f]);
+  }
+
+  function loadPatchOutline(text, name, units) {
+    return /\.csv$/i.test(String(name || "")) || !/^\s*0\s*[\r\n]/.test(String(text).slice(0, 40))
+      ? (/\.dxf$/i.test(String(name || "")) ? loadPatchOutlineDxf(text, units) : loadPatchOutlineCsv(text, units))
+      : loadPatchOutlineDxf(text, units);
+  }
+
+  // Where the outline sits across the tread.
+  //
+  // Getting this wrong is silent and destructive: an outline outside the tread
+  // is clipped flat at the edge and reports a patch that is not the one that was
+  // measured. So the decision is explicit and always reported.
+  function placePatchOutline(outline, treadWidth, lateral, yCenter) {
+    lateral = String(lateral || "auto").toLowerCase();
+    if (CP_LATERAL.indexOf(lateral) < 0)
+      throw new Error("unknown lateral placement '" + lateral + "'; expected one of " + CP_LATERAL.join(", "));
+    const half = treadWidth / 2;
+    let lo = Infinity, hi = -Infinity;
+    for (const p of outline) { if (p[1] < lo) lo = p[1]; if (p[1] > hi) hi = p[1]; }
+    const cy = 0.5 * (lo + hi);
+    const fits = lo >= -half - 1e-9 && hi <= half + 1e-9;
+    const warnings = [];
+
+    if (lateral === "absolute") {
+      if (!fits)
+        warnings.push("lateral placement is 'as drawn' but the outline spans y " + lo.toFixed(1) +
+          " to " + hi.toFixed(1) + " mm, outside the ±" + half.toFixed(1) +
+          " mm tread — it will be clipped at the tread edge");
+      return { outline: outline.map((p) => [p[0], p[1]]), warnings: warnings, moved: 0 };
+    }
+    if (lateral === "auto" && fits && yCenter == null)
+      return { outline: outline.map((p) => [p[0], p[1]]), warnings: warnings, moved: 0 };
+
+    const target = yCenter == null ? 0 : +yCenter;
+    const shift = target - cy;
+    if (lateral === "auto")
+      warnings.push("the outline spanned y " + lo.toFixed(1) + " to " + hi.toFixed(1) +
+        " mm, which is not a position on a " + treadWidth.toFixed(1) + " mm tread, so it was " +
+        "re-centred to y = " + target.toFixed(1) + " mm. Give an explicit lateral centre if the " +
+        "footprint is leaned — on a leaned tyre, where it sits across the tread is the measurement.");
+    return { outline: outline.map((p) => [p[0], p[1] + shift]), warnings: warnings, moved: shift };
+  }
+
+  // Re-centre on the circumferential centroid and report the lateral one, which
+  // becomes the patch's y position.
+  function centrePatchOutline(outline) {
+    const c = polygonCentroid(outline);
+    return { outline: outline.map((p) => [p[0] - c[0], p[1] - c[1]]), cx: c[0], cy: c[1] };
+  }
+
+  function validatePatchOutline(outline, treadWidth) {
+    if (!Array.isArray(outline) || outline.length < 3)
+      throw new Error("a contact patch outline needs at least 3 vertices, got " +
+        (Array.isArray(outline) ? outline.length : typeof outline));
+    for (const p of outline)
+      if (!Array.isArray(p) || p.length < 2 || !Number.isFinite(p[0]) || !Number.isFinite(p[1]))
+        throw new Error("the footprint outline contains a non-finite coordinate");
+    const area = polygonArea(outline);
+    if (!(area > 0))
+      throw new Error("the footprint outline encloses no area — it may be self-intersecting, " +
+        "or traced as an open path rather than a closed one");
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const p of outline) {
+      if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0];
+      if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1];
+    }
+    const L = x1 - x0, W = y1 - y0;
+    // A footprint is tens of millimetres. Anything else is a units mistake, and
+    // a units mistake here silently rescales every area on the page.
+    if (L < 5 || W < 5)
+      throw new Error("this footprint is " + L.toFixed(1) + " x " + W.toFixed(1) +
+        " mm, which is too small to be a contact patch. Check the units of the file.");
+    if (treadWidth > 0 && W > 3 * treadWidth)
+      throw new Error("this footprint is " + W.toFixed(1) + " mm wide on a " + treadWidth.toFixed(1) +
+        " mm tread. Check the units of the file.");
+    return { length: L, width: W, area: area };
+  }
+
+  function isMeasuredSpec(spec) {
+    return String(spec && spec.shape || "").toLowerCase() === "measured";
+  }
+
   // Reject geometry that would silently produce a valid-looking but wrong patch
   // (a negative width still has positive shoelace area; a NaN propagates).
   function validateSpec(spec) {
+    if (isMeasuredSpec(spec)) {
+      if (!spec.outline)
+        throw new Error("the contact patch is set to 'measured' but no footprint has been loaded. " +
+          "Load one in 3 - Contact patch, or choose an idealised shape.");
+      validatePatchOutline(spec.outline, spec.tread_width_hint || 0);
+      for (const name of ["rotation", "gamma_deg", "y_center"]) {
+        if (spec[name] != null && !Number.isFinite(Number(spec[name])))
+          throw new Error("contact patch " + name + " must be a finite number, got " + spec[name]);
+      }
+      if (spec.load_N != null && (!Number.isFinite(spec.load_N) || spec.load_N <= 0))
+        throw new Error("contact patch load must be positive, got " + spec.load_N + " N");
+      return;
+    }
     if (SHAPES.indexOf(String(spec.shape || "").toLowerCase()) < 0)
-      throw new Error("unknown contact patch shape '" + spec.shape + "'; expected one of " + SHAPES.join(", "));
+      throw new Error("unknown contact patch shape '" + spec.shape + "'; expected one of " +
+        SHAPES.join(", ") + ", or 'measured' with an imported outline");
     const dims = { length: "circumferential", width: "lateral" };
     for (const name in dims) {
       const v = Number(spec[name]);
@@ -73036,10 +73242,20 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     if (!(params.vertical_load > 0) || !Number.isFinite(params.vertical_load))
       throw new Error("vertical load must be a positive finite number, got " + params.vertical_load + " N");
     const gamma = spec.gamma_deg || 0;
-    const yC = spec.y_center != null ? spec.y_center : crownContactLateral(crown, gamma);
-    let base = shapeOutline(spec);
+    // A measured footprint arrives already placed across the tread, so its own
+    // lateral centre is where it sits -- not the crown's contact point, which is
+    // the model's guess at the same thing. Re-centred circumferentially, because
+    // the sweep moves it around the tyre anyway.
+    const measured = isMeasuredSpec(spec) ? centrePatchOutline(spec.outline) : null;
+    const yC = spec.y_center != null ? spec.y_center
+             : measured ? measured.cy
+             : crownContactLateral(crown, gamma);
+    let base = measured ? measured.outline : shapeOutline(spec);
 
     // Stated dimensions describe the UPRIGHT patch; carry them to this lean.
+    // A measured footprint was taken at ONE load and lean, so scaling it to
+    // another is an extrapolation -- allowed, but never the default, and said
+    // out loud in the provenance when it is done.
     let scaleNote = "";
     if (spec.scale_with_lean !== false && Math.abs(gamma) > 1e-9) {
       const sf = leanScaleFactors(crown, gamma, params, 0);
@@ -73058,8 +73274,14 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     const rEff = Math.max(50, params.wheel_radius - crownDrop(crown, yC));
 
     const patch = {
-      gamma_deg: gamma, outline: out, tread_half_width: half, source: "shape",
-      provenance: "user-specified shape: " + describeSpec(spec) + scaleNote + (spec.label ? " -- " + spec.label : ""),
+      gamma_deg: gamma, outline: out, tread_half_width: half,
+      source: measured ? "measured" : "shape",
+      provenance: (measured
+          ? "measured footprint" + (spec.measured_at_deg != null ? " taken at " + spec.measured_at_deg + " deg" : "") +
+            (spec.source_name ? " (" + spec.source_name + ")" : "") +
+            (measured ? ", " + spec.outline.length + " points" : "")
+          : "user-specified shape: " + describeSpec(spec)) +
+        scaleNote + (spec.label ? " -- " + spec.label : ""),
       y_center: yC, r_eff: rEff, r_lat: crownLocalRadius(crown, yC), normal_load: load,
       path_radius: gamma <= 1e-9 ? Infinity : rEff / Math.tan(g), delta: 0, clipped: clipped,
     };
@@ -73588,6 +73810,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     replicatePitch, pitchInstanceLengths, pitchClosure, pitchStretchMap, landSpansX, PITCH_SCALING,
     crownMultiArc, parseCrownArcs, validateCrownArcs, buildCrown, MAX_CROWN_ARCS,
     crownFromDrops, crownArcsFromDrops, parseCrownDrops, validateCrownDrops, solveArcRadius, arcDropAfter,
+    loadPatchOutline, loadPatchOutlineDxf, loadPatchOutlineCsv, placePatchOutline,
+    centrePatchOutline, validatePatchOutline, isMeasuredSpec, CP_UNIT_SCALE, CP_LATERAL,
     crownFromArcs,
     compoundProperties, validateCompound, interpShore,
     tiebarEngagementWear, tiebarEngaged, effectiveBlocks, validateWear, patternAtWear,
@@ -73871,6 +74095,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     thetaRange: null,    // shared x-range across the sweep rows and the pattern
     cplRange: null,      // and the coupling tab's own, kept apart from it
     reportSections: {},  // report sections the user has switched off
+    measured: null,      // imported footprint outline, when there is one
     stackRows: {},       // sweep rows switched off by the user (key -> false)
     pinStrip: true,      // keep the rolled-out pattern at the foot of the window
     compareMetric: "kz",
@@ -73987,6 +74212,16 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
   // ---- reading controls into spec / params -----------------------------
   function readSpec() {
+    var m = measuredSpec();
+    if (m) {
+      m.rotation = num("cpRot");
+      m.y_center = $("cpAutoY").checked ? null : num("cpY");
+      m.gamma_deg = 0;
+      m.load_N = null;
+      m.label = "";
+      m.scale_with_lean = $("cpScaleLean").checked;
+      return m;
+    }
     return {
       shape: $("shape").value,
       length: num("cpLength"),
@@ -74186,10 +74421,113 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
   // ---- shape parameter visibility --------------------------------------
   function syncShapeFields() {
-    var s = $("shape").value;
+    var s = $("shape").value, measured = s === "measured";
     $("rowCorner").style.display = s === "rounded" ? "" : "none";
     $("rowExp").style.display = s === "superellipse" ? "" : "none";
     $("rowTaper").style.display = s === "trapezoid" ? "" : "none";
+    if ($("cpMeasuredBox")) $("cpMeasuredBox").style.display = measured ? "" : "none";
+    // Length and width describe an idealised shape; an imported footprint has
+    // its own. Greyed rather than hidden, so it stays obvious that the size now
+    // comes from the file.
+    ["cpLength", "cpWidth"].forEach(function (id) {
+      var el = $(id);
+      if (!el) return;
+      el.disabled = measured;
+      var row = el.closest ? el.closest(".field") : null;
+      if (row) row.style.opacity = measured ? 0.45 : "";
+    });
+    renderMeasuredInfo();
+  }
+
+  // ---- measured contact patch ------------------------------------------
+  // A traced footprint is the real thing: not convex, not symmetric, and not
+  // the size the idealised shape guessed. Nothing downstream assumes otherwise
+  // -- the outline goes through the same placement, clipping, pressure and
+  // sweep as any other patch.
+  function measuredSpec() {
+    var m = state.measured;
+    if (!m || $("shape").value !== "measured") return null;
+    return {
+      shape: "measured",
+      outline: m.placed,
+      measured_at_deg: m.measured_at,
+      source_name: m.name,
+      tread_width_hint: state.pattern ? state.pattern.tread_width : 0,
+    };
+  }
+
+  function placeMeasured() {
+    var m = state.measured;
+    if (!m) return;
+    var w = state.pattern ? state.pattern.tread_width : 0;
+    if (!(w > 0)) { m.placed = m.raw; m.warnings = []; return; }
+    var yc = $("cpAutoY").checked ? null : num("cpY");
+    var res = E.placePatchOutline(m.raw, w, $("cpLateral").value, yc);
+    m.placed = res.outline;
+    m.warnings = res.warnings;
+    m.metrics = E.validatePatchOutline(m.placed, w);
+  }
+
+  function renderMeasuredInfo() {
+    var box = $("cpMeasuredInfo");
+    if (!box) return;
+    var m = state.measured;
+    if ($("shape").value !== "measured") { box.innerHTML = ""; return; }
+    if (!m) {
+      box.innerHTML = "<b>No footprint loaded.</b> The run is blocked until you load one, or pick an " +
+        "idealised shape above — a patch set to 'measured' with nothing behind it would silently " +
+        "become whatever the length and width happened to say.";
+      return;
+    }
+    if (!state.pattern) { box.innerHTML = "<i>Load a tread plan first — the tread width decides where the footprint sits.</i>"; return; }
+    try {
+      placeMeasured();
+      var k = m.metrics;
+      var html = "<b>" + escapeHtml(m.name) + "</b> — " + k.length.toFixed(1) + " x " +
+        k.width.toFixed(1) + " mm, <b>" + k.area.toFixed(0) + " mm²</b>, " +
+        m.raw.length + " points, measured at " + m.measured_at + "°";
+      var lo = Infinity, hi = -Infinity;
+      for (var i = 0; i < m.placed.length; i++) { if (m.placed[i][1] < lo) lo = m.placed[i][1]; if (m.placed[i][1] > hi) hi = m.placed[i][1]; }
+      html += "<br>sits at y " + lo.toFixed(1) + " to " + hi.toFixed(1) + " mm on a ±" +
+        (state.pattern.tread_width / 2).toFixed(1) + " mm tread";
+      (m.warnings || []).forEach(function (w) {
+        html += "<br><span style='color:var(--warn)'>" + escapeHtml(w) + "</span>";
+      });
+      box.innerHTML = html;
+    } catch (err) {
+      box.innerHTML = "<b style='color:var(--bad)'>" + escapeHtml(err.message) + "</b>";
+    }
+  }
+
+  function loadFootprint(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var units = $("cpUnits").value;
+        var raw = E.loadPatchOutline(String(reader.result), file.name, units);
+        state.measured = {
+          raw: raw, placed: raw, name: file.name, units: units,
+          measured_at: num("cpMeasuredAt") || 0, warnings: [],
+        };
+        // A footprint was taken at ONE load and lean. Scaling it to another is
+        // an extrapolation, so it is switched off rather than left on by
+        // inheritance from whatever the idealised shape was doing.
+        if ($("cpScaleLean").checked) {
+          $("cpScaleLean").checked = false;
+          state.measured.warnings.push("'scale patch with lean' was switched off: this footprint was " +
+            "measured at one load and lean, so carrying it to another is an extrapolation. Tick it " +
+            "again if that is what you want.");
+        }
+        renderMeasuredInfo(); refreshValidation(); drawEditor(); markStale();
+      } catch (err) {
+        state.measured = null;
+        var box = $("cpMeasuredInfo");
+        if (box) box.innerHTML = "<b style='color:var(--bad)'>Could not read " +
+          escapeHtml(file.name) + ": " + escapeHtml(err.message) + "</b>";
+        refreshValidation(); markStale();
+      }
+    };
+    reader.readAsText(file);
   }
 
   // ---- DXF loading -----------------------------------------------------
@@ -77333,7 +77671,26 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       on($(id), "input", function () { /* metadata only -- no recompute needed */ });
     });
     renderCompare();
-    on($("shape"), "change", function () { syncShapeFields(); drawEditor(); markStale(); });
+    on($("shape"), "change", function () { syncShapeFields(); refreshValidation(); drawEditor(); markStale(); });
+    on($("cpFile"), "change", function (e) { if (e.target.files[0]) loadFootprint(e.target.files[0]); });
+    on($("cpClear"), "click", function () {
+      state.measured = null;
+      if ($("cpFile")) $("cpFile").value = "";
+      renderMeasuredInfo(); refreshValidation(); drawEditor(); markStale();
+    });
+    ["cpUnits", "cpLateral", "cpMeasuredAt"].forEach(function (id) {
+      on($(id), "change", function () {
+        // Units change what the file MEANS, so it has to be re-read.
+        if (id === "cpUnits" && state.measured) {
+          var was = state.measured.units, now = $("cpUnits").value;
+          var k = (E.CP_UNIT_SCALE[now] || 1) / (E.CP_UNIT_SCALE[was] || 1);
+          state.measured.raw = state.measured.raw.map(function (p) { return [p[0] * k, p[1] * k]; });
+          state.measured.units = now;
+        }
+        if (id === "cpMeasuredAt" && state.measured) state.measured.measured_at = num("cpMeasuredAt") || 0;
+        renderMeasuredInfo(); refreshValidation(); drawEditor(); markStale();
+      });
+    });
 
     ["cpLength", "cpWidth", "cpCorner", "cpExp", "cpTaper", "cpRot", "cpY", "cpLoad"].forEach(function (id) {
       on($(id), "input", function () { refreshValidation(); drawEditor(); markStale(); });

@@ -223,6 +223,85 @@ const fs = require("fs");
     await page.waitForTimeout(300);
   }
 
+  // ---- a measured contact patch -------------------------------------------
+  // The idealised shapes are a guess at the footprint. A traced one is the
+  // measurement, and it is neither convex nor symmetric -- so it has to travel
+  // through the same placement, clipping, pressure and sweep as any other patch,
+  // and give a different answer.
+  {
+    const info = () => page.$eval("#cpMeasuredInfo", (e) => e.textContent.replace(/\s+/g, " ").trim());
+    const runAndRead = async () => {
+      await page.click("#runBtn");
+      await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 120000 });
+      return page.evaluate(() => {
+        const r = window.__ttResult();
+        const m = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+        const cov = (a) => { const u = m(a); return Math.sqrt(m(a.map((v) => (v - u) * (v - u)))) / u; };
+        return { src: r.patch.source, prov: r.patch.provenance, area: r.patch_area,
+                 contact: m(r.contact_area), cov: cov(r.contact_area),
+                 a: r.patch.a, b: r.patch.b, press: r.patch.peak_pressure, load: r.patch.normal_load };
+      });
+    };
+    const ideal = await runAndRead();
+
+    await page.selectOption("#shape", "measured");
+    await page.waitForTimeout(250);
+    if (!(await page.isDisabled("#runBtn")))
+      errors.push("'measured' with no footprint loaded did not block the run");
+    const noneMsg = await page.textContent("#specError");
+    if (!/no footprint has been loaded/.test(noneMsg))
+      errors.push("no useful message when 'measured' is selected with nothing loaded: " + noneMsg.slice(0, 90));
+    const greyed = await page.evaluate(() =>
+      document.getElementById("cpLength").disabled && document.getElementById("cpWidth").disabled);
+    if (!greyed) errors.push("length and width stay live while the size comes from a file");
+
+    await page.setInputFiles("#cpFile", path.join(__dirname, "..", "data", "footprints", "upright_00deg.dxf"));
+    await page.waitForTimeout(500);
+    console.log("footprint:", (await info()).slice(0, 150));
+    if (await page.isChecked("#cpScaleLean"))
+      errors.push("importing a footprint left 'scale patch with lean' on — it was measured at one lean");
+    if (!/re-centred to y/.test(await info()))
+      errors.push("the outline was placed without saying so");
+
+    const meas = await runAndRead();
+    console.log(`measured patch: ${meas.area.toFixed(0)} mm² (ideal ${ideal.area.toFixed(0)}),` +
+      ` contact ${meas.contact.toFixed(0)}, CoV ${(100 * meas.cov).toFixed(2)}% vs ${(100 * ideal.cov).toFixed(2)}%`);
+    if (meas.src !== "measured") errors.push("the patch is not marked as measured: " + meas.src);
+    if (!/measured footprint/.test(meas.prov)) errors.push("provenance does not say it was measured: " + meas.prov);
+    if (!/upright_00deg/.test(meas.prov)) errors.push("provenance does not name the file: " + meas.prov);
+    // the real footprint is a different shape, so it must give a different answer
+    if (Math.abs(meas.area - ideal.area) < 1) errors.push("the measured patch has the idealised area");
+    if (Math.abs(meas.cov - ideal.cov) < 1e-4)
+      errors.push("the measured footprint gave the same fluctuation as the idealised shape");
+    // pressure still comes from the load over the real area
+    if (Math.abs(meas.press * 4158.4 - meas.load) / meas.load > 2e-3)
+      errors.push(`pressure x measured area != load: ${(meas.press * 4158.4).toFixed(1)} vs ${meas.load}`);
+
+    // wrong units must be caught, not silently rescale every area on the page
+    await page.selectOption("#cpUnits", "in");
+    await page.waitForTimeout(300);
+    if (!(await page.isDisabled("#runBtn"))) errors.push("a footprint read as inches did not block the run");
+    if (!/Check the units/.test(await info())) errors.push("no units guidance on an implausible footprint");
+    await page.selectOption("#cpUnits", "mm");
+    await page.waitForTimeout(300);
+
+    // 'as drawn' keeps the file's own y, and says when that is off the tread
+    await page.selectOption("#cpLateral", "absolute");
+    await page.waitForTimeout(300);
+    if (!/outside the/.test(await info())) errors.push("'as drawn' did not warn that the outline is off the tread");
+    if (!(await page.isDisabled("#runBtn")))
+      errors.push("a patch entirely off the tread did not block the run");
+    console.log("as-drawn off the tread:", (await page.textContent("#specError")).replace(/\s+/g, " ").slice(0, 100));
+
+    await page.selectOption("#cpLateral", "auto");
+    await page.click("#cpClear");
+    await page.selectOption("#shape", "rounded");
+    await page.waitForTimeout(250);
+    if (await page.isDisabled("#runBtn")) errors.push("clearing the footprint left the run blocked");
+    await page.click("#runBtn");
+    await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 120000 });
+  }
+
   const tabs = ["lean", "orders", "zones", "patch", "diag", "guide"];
   for (const t of tabs) {
     await page.click(`.tabs button[data-tab="${t}"]`);

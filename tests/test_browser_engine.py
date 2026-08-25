@@ -2179,3 +2179,121 @@ def test_the_crown_reaches_every_export():
         if key in ("grid",):
             continue
         assert key in snap, f"captureInputs records {key} but settingsSnapshot drops it"
+
+
+# ---------------------------------------------------------------------------
+# a measured contact patch, imported
+# ---------------------------------------------------------------------------
+
+
+def test_the_browser_footprint_importer_matches_the_python_one():
+    """The Python pipeline already settled the conventions for importing a
+    footprint -- largest closed loop from a DXF, two numeric columns from a CSV,
+    x re-centred on its own centroid, lateral placement an explicit choice.  The
+    browser port must agree with it exactly, or the same file gives two answers
+    depending on which route it went through.
+    """
+    node = _node()
+    fp = os.path.join(REPO, "data", "footprints")
+    if not os.path.isdir(fp):
+        pytest.skip("no footprint fixtures")
+
+    from tread_eval import cp_io
+
+    def area(a):
+        a = np.asarray(a, dtype=float)
+        x, y = a[:, 0], a[:, 1]
+        return 0.5 * abs(float(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))))
+
+    script = """
+const E = require(process.argv[2]);
+const fs = require("fs");
+const dxf = E.loadPatchOutlineDxf(fs.readFileSync(process.argv[3], "utf8"), "mm");
+const csv = E.loadPatchOutlineCsv(fs.readFileSync(process.argv[4], "utf8"), "mm");
+const placed = E.placePatchOutline(dxf, 159.0, "auto", null);
+console.log(JSON.stringify({
+  dxf_n: dxf.length, dxf_area: E.polygonArea(dxf),
+  csv_n: csv.length, csv_area: E.polygonArea(csv),
+  placed_lo: Math.min.apply(null, placed.outline.map((p) => p[1])),
+  placed_hi: Math.max.apply(null, placed.outline.map((p) => p[1])),
+  warnings: placed.warnings.length,
+}));
+"""
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as fh:
+        fh.write(script)
+        js = fh.name
+    try:
+        proc = subprocess.run(
+            [node, js, os.path.join(APP, "engine.js"),
+             os.path.join(fp, "upright_00deg.dxf"), os.path.join(fp, "upright_00deg.csv")],
+            capture_output=True, text=True, cwd=REPO, timeout=120)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        got = json.loads(proc.stdout)
+    finally:
+        os.unlink(js)
+
+    py_dxf = cp_io.load_outline_dxf(os.path.join(fp, "upright_00deg.dxf"))
+    py_csv = cp_io.load_outline_csv(os.path.join(fp, "upright_00deg.csv"))
+    assert got["dxf_n"] == len(py_dxf)
+    assert abs(got["dxf_area"] - area(py_dxf)) < 1e-6, (got["dxf_area"], area(py_dxf))
+    assert got["csv_n"] == len(py_csv)
+    assert abs(got["csv_area"] - area(py_csv)) < 1e-6
+
+    py_placed, py_warn = cp_io.place_outline(py_dxf, 159.0)
+    assert abs(got["placed_lo"] - float(py_placed[:, 1].min())) < 1e-9
+    assert abs(got["placed_hi"] - float(py_placed[:, 1].max())) < 1e-9
+    assert got["warnings"] == len(py_warn), "the two ports must warn about the same things"
+
+
+def test_a_measured_patch_goes_through_the_same_pipeline_as_any_other():
+    """The imported outline is not a special case downstream.  It is placed,
+    clipped to the tread, given a pressure from the load over its own area, and
+    swept exactly like an idealised shape -- so the only thing that changes is
+    the shape, which is the point."""
+    eng = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    assert "function isMeasuredSpec(" in eng
+    sp = eng[eng.index("function shapePatch("):eng.index("function patchArea(")]
+    # the outline replaces shapeOutline, and everything after it is shared
+    assert "measured ? measured.outline : shapeOutline(spec)" in sp
+    assert 'source: measured ? "measured" : "shape"' in sp
+    # its own lateral centre is where it sits, not the crown's guess at it
+    assert ": measured ? measured.cy" in sp
+    # clipping, load, pressure and a/b are NOT duplicated for it
+    assert sp.count("peak_pressure =") == 1
+    assert sp.count("patch.a =") == 1
+
+
+def test_an_imported_footprint_cannot_go_wrong_quietly():
+    """Three ways this feature could mislead, all of them silent if unchecked:
+    the wrong units rescale every area on the page; an outline placed off the
+    tread is clipped flat and reports a patch that was never measured; and a
+    footprint taken at one lean, carried to another, is an extrapolation."""
+    eng = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    assert "function validatePatchOutline(" in eng
+    val = eng[eng.index("function validatePatchOutline("):eng.index("function isMeasuredSpec(")]
+    assert "Check the units of the file" in val
+    assert "too small to be a contact patch" in val
+    # placement is always reported, never guessed at in silence
+    place = eng[eng.index("function placePatchOutline("):eng.index("function centrePatchOutline(")]
+    assert "it will be clipped at the tread edge" in place
+    assert "re-centred to y" in place
+    assert 'CP_LATERAL.indexOf(lateral) < 0' in place
+    # a run set to measured with nothing loaded must stop, not fall back
+    assert "no footprint has been loaded" in eng
+    # and lean scaling is switched off on import, with a reason
+    assert "scale patch with lean' was switched off" in ui
+
+
+def test_measured_is_offered_on_the_page_with_the_choices_it_needs():
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert '<option value="measured">' in tpl
+    for el in ("cpFile", "cpClear", "cpUnits", "cpLateral", "cpMeasuredAt", "cpMeasuredInfo"):
+        assert f'id="{el}"' in tpl, el
+    assert "function loadFootprint(" in ui and "function measuredSpec(" in ui
+    assert "function placeMeasured(" in ui and "function renderMeasuredInfo(" in ui
+    # readSpec must return the measured spec, or the run uses the idealised one
+    rs = ui[ui.index("function readSpec("):]
+    rs = rs[:rs.index("\n  }")]
+    assert "measuredSpec()" in rs

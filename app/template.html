@@ -108,7 +108,33 @@
             <option value="superellipse">superellipse</option>
             <option value="trapezoid">trapezoid</option>
             <option value="diamond">diamond</option>
+            <option value="measured">measured — import a footprint</option>
           </select>
+        </div>
+        <div id="cpMeasuredBox" style="display:none">
+          <div class="filerow">
+            <label class="btn secondary" for="cpFile">Load footprint…</label>
+            <input id="cpFile" type="file" accept=".dxf,.csv" style="display:none" />
+            <button id="cpClear" class="btn secondary" title="Forget the imported footprint and go back to an idealised shape.">Clear</button>
+          </div>
+          <div class="hint">A traced ink footprint, a digitised photograph or a CAD outline. <b>DXF</b> — the largest closed loop is taken as the boundary. <b>CSV</b> — two numeric columns, x then y; header rows are skipped.</div>
+          <div class="field" title="Units the file is drawn in. A units mistake here silently rescales every area on the page, so the imported size is shown below — check it against the tyre."><label>File units</label>
+            <select id="cpUnits">
+              <option value="mm">mm</option>
+              <option value="cm">cm</option>
+              <option value="m">m</option>
+              <option value="in">inches</option>
+            </select>
+          </div>
+          <div class="field" title="Where the footprint sits across the tread. 'Auto' keeps the file's own y coordinates when they are already a position on this tread, and otherwise re-centres and says so — which is what makes a CAD export just work. 'Centre' always moves it to the lateral centre. 'As drawn' trusts the file exactly. For a LEANED footprint the lateral position is the measurement, so use 'as drawn' or set the lateral centre by hand."><label>Lateral placement</label>
+            <select id="cpLateral">
+              <option value="auto">auto — keep if it fits, else centre</option>
+              <option value="centre">centre on the lateral centre</option>
+              <option value="absolute">as drawn — trust the file</option>
+            </select>
+          </div>
+          <div class="field" title="The lean angle this footprint was actually measured at. Recorded on the report and in every export, so a patch measured upright is never mistaken for one measured at full lean."><label>Measured at lean (deg)</label><input id="cpMeasuredAt" type="number" value="0" step="1" /></div>
+          <div id="cpMeasuredInfo" class="hint" style="margin:2px 0 6px;padding:6px 9px;background:var(--panel-2);border:1px solid var(--edge);border-radius:6px;line-height:1.55"></div>
         </div>
         <div class="field" title="Contact patch length along the direction of travel. With 'scale patch with lean' ticked, this describes the patch when UPRIGHT; it is scaled from there at each lean angle."><label>Length — circumf. (mm)</label><input id="cpLength" type="number" value="90" step="1" /></div>
         <div class="field" title="Contact patch width across the tread. With 'scale patch with lean' ticked, this describes the patch when UPRIGHT; it is scaled from there at each lean angle."><label>Width — lateral (mm)</label><input id="cpWidth" type="number" value="50" step="1" /></div>

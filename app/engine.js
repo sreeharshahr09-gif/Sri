@@ -3510,6 +3510,12 @@
   }
 
   function describeSpec(spec) {
+    if (isMeasuredSpec(spec)) {
+      const m = spec.outline ? validatePatchOutline(spec.outline, 0) : null;
+      return "measured footprint" + (m ? " " + fmt(m.length) + " x " + fmt(m.width) + " mm, " +
+        m.area.toFixed(0) + " mm2, " + spec.outline.length + " points" : "") +
+        (spec.measured_at_deg != null ? ", taken at " + fmt(spec.measured_at_deg) + " deg" : "");
+    }
     const s = (spec.shape || "rounded").toLowerCase();
     let extra = "";
     if (s === "rounded") extra = ", corner r=" + fmt(spec.corner_radius) + " mm";
@@ -3551,11 +3557,174 @@
     return [tgt.a / Math.max(ref.a, 1e-9), tgt.b / Math.max(ref.b, 1e-9)];
   }
 
+  // =====================================================================
+  // a MEASURED contact patch: the real footprint, imported
+  // =====================================================================
+  //
+  // Every patch above is an idealised shape. A traced ink footprint, a
+  // digitised photograph or a CAD outline is the real thing, and it is neither
+  // convex nor symmetric. Nothing downstream assumes it is.
+  //
+  // This is a port of tread_eval/cp_io.py, deliberately: the Python pipeline
+  // already settled these conventions and the two must not drift.
+  //
+  //   x  circumferential. The outline is always re-centred on its own
+  //      centroid, so where the origin sat in the CAD file does not matter --
+  //      the sweep moves the patch around the tyre anyway.
+  //   y  lateral, from the tread centreline. Where the footprint sits across
+  //      the tread IS the measurement at a leaned angle, so it is kept, and how
+  //      it is placed is an explicit choice rather than a guess.
+  const CP_UNIT_SCALE = { mm: 1, cm: 10, m: 1000, in: 25.4 };
+  const CP_LATERAL = ["auto", "centre", "absolute"];
+
+  function cpUnitScale(units) {
+    const f = CP_UNIT_SCALE[String(units || "mm").toLowerCase()];
+    if (!f) throw new Error("unknown footprint unit '" + units + "'; expected one of " +
+      Object.keys(CP_UNIT_SCALE).join(", "));
+    return f;
+  }
+
+  // The largest closed loop in a DXF is the footprint boundary. Smaller ones are
+  // pressure contours, registration marks or the tread edge drawn alongside.
+  function loadPatchOutlineDxf(text, units, tol) {
+    const segs = entitiesToSegments(readDxfEntities(text), 0.02, {});
+    if (!segs.length)
+      throw new Error("no usable geometry in this footprint DXF. It needs the outline as " +
+        "LINE/ARC/POLYLINE entities, exported as ASCII DXF.");
+    const loops = buildLoops(segs, tol == null ? 0.05 : tol);
+    if (!loops.closed.length)
+      throw new Error("no closed loop in this footprint DXF, so there is no outline to use. " +
+        (loops.openChains.length ? loops.openChains.length + " open chain(s) were found — the " +
+          "outline probably has a gap at one corner." : ""));
+    let best = loops.closed[0], bestA = polygonArea(best);
+    for (const c of loops.closed) {
+      const a = polygonArea(c);
+      if (a > bestA) { best = c; bestA = a; }
+    }
+    const f = cpUnitScale(units);
+    return best.map((p) => [p[0] * f, p[1] * f]);
+  }
+
+  // Two numeric columns, x then y. Header and comment rows are skipped rather
+  // than rejected, because these files come out of a dozen different machines.
+  function loadPatchOutlineCsv(text, units) {
+    const pts = [];
+    for (const line of String(text).split(/\r\n|\r|\n/)) {
+      const cells = line.split(/[,;\t]/);
+      if (cells.length < 2) continue;
+      const x = parseFloat(cells[0]), y = parseFloat(cells[1]);
+      if (Number.isFinite(x) && Number.isFinite(y)) pts.push([x, y]);
+    }
+    if (pts.length < 3)
+      throw new Error("a footprint outline needs at least 3 points, found " + pts.length +
+        ". The file should have two numeric columns: x then y, in mm.");
+    // drop a repeated closing vertex
+    if (Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) < 1e-9)
+      pts.pop();
+    const f = cpUnitScale(units);
+    return pts.map((p) => [p[0] * f, p[1] * f]);
+  }
+
+  function loadPatchOutline(text, name, units) {
+    return /\.csv$/i.test(String(name || "")) || !/^\s*0\s*[\r\n]/.test(String(text).slice(0, 40))
+      ? (/\.dxf$/i.test(String(name || "")) ? loadPatchOutlineDxf(text, units) : loadPatchOutlineCsv(text, units))
+      : loadPatchOutlineDxf(text, units);
+  }
+
+  // Where the outline sits across the tread.
+  //
+  // Getting this wrong is silent and destructive: an outline outside the tread
+  // is clipped flat at the edge and reports a patch that is not the one that was
+  // measured. So the decision is explicit and always reported.
+  function placePatchOutline(outline, treadWidth, lateral, yCenter) {
+    lateral = String(lateral || "auto").toLowerCase();
+    if (CP_LATERAL.indexOf(lateral) < 0)
+      throw new Error("unknown lateral placement '" + lateral + "'; expected one of " + CP_LATERAL.join(", "));
+    const half = treadWidth / 2;
+    let lo = Infinity, hi = -Infinity;
+    for (const p of outline) { if (p[1] < lo) lo = p[1]; if (p[1] > hi) hi = p[1]; }
+    const cy = 0.5 * (lo + hi);
+    const fits = lo >= -half - 1e-9 && hi <= half + 1e-9;
+    const warnings = [];
+
+    if (lateral === "absolute") {
+      if (!fits)
+        warnings.push("lateral placement is 'as drawn' but the outline spans y " + lo.toFixed(1) +
+          " to " + hi.toFixed(1) + " mm, outside the ±" + half.toFixed(1) +
+          " mm tread — it will be clipped at the tread edge");
+      return { outline: outline.map((p) => [p[0], p[1]]), warnings: warnings, moved: 0 };
+    }
+    if (lateral === "auto" && fits && yCenter == null)
+      return { outline: outline.map((p) => [p[0], p[1]]), warnings: warnings, moved: 0 };
+
+    const target = yCenter == null ? 0 : +yCenter;
+    const shift = target - cy;
+    if (lateral === "auto")
+      warnings.push("the outline spanned y " + lo.toFixed(1) + " to " + hi.toFixed(1) +
+        " mm, which is not a position on a " + treadWidth.toFixed(1) + " mm tread, so it was " +
+        "re-centred to y = " + target.toFixed(1) + " mm. Give an explicit lateral centre if the " +
+        "footprint is leaned — on a leaned tyre, where it sits across the tread is the measurement.");
+    return { outline: outline.map((p) => [p[0], p[1] + shift]), warnings: warnings, moved: shift };
+  }
+
+  // Re-centre on the circumferential centroid and report the lateral one, which
+  // becomes the patch's y position.
+  function centrePatchOutline(outline) {
+    const c = polygonCentroid(outline);
+    return { outline: outline.map((p) => [p[0] - c[0], p[1] - c[1]]), cx: c[0], cy: c[1] };
+  }
+
+  function validatePatchOutline(outline, treadWidth) {
+    if (!Array.isArray(outline) || outline.length < 3)
+      throw new Error("a contact patch outline needs at least 3 vertices, got " +
+        (Array.isArray(outline) ? outline.length : typeof outline));
+    for (const p of outline)
+      if (!Array.isArray(p) || p.length < 2 || !Number.isFinite(p[0]) || !Number.isFinite(p[1]))
+        throw new Error("the footprint outline contains a non-finite coordinate");
+    const area = polygonArea(outline);
+    if (!(area > 0))
+      throw new Error("the footprint outline encloses no area — it may be self-intersecting, " +
+        "or traced as an open path rather than a closed one");
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const p of outline) {
+      if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0];
+      if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1];
+    }
+    const L = x1 - x0, W = y1 - y0;
+    // A footprint is tens of millimetres. Anything else is a units mistake, and
+    // a units mistake here silently rescales every area on the page.
+    if (L < 5 || W < 5)
+      throw new Error("this footprint is " + L.toFixed(1) + " x " + W.toFixed(1) +
+        " mm, which is too small to be a contact patch. Check the units of the file.");
+    if (treadWidth > 0 && W > 3 * treadWidth)
+      throw new Error("this footprint is " + W.toFixed(1) + " mm wide on a " + treadWidth.toFixed(1) +
+        " mm tread. Check the units of the file.");
+    return { length: L, width: W, area: area };
+  }
+
+  function isMeasuredSpec(spec) {
+    return String(spec && spec.shape || "").toLowerCase() === "measured";
+  }
+
   // Reject geometry that would silently produce a valid-looking but wrong patch
   // (a negative width still has positive shoelace area; a NaN propagates).
   function validateSpec(spec) {
+    if (isMeasuredSpec(spec)) {
+      if (!spec.outline)
+        throw new Error("the contact patch is set to 'measured' but no footprint has been loaded. " +
+          "Load one in 3 - Contact patch, or choose an idealised shape.");
+      validatePatchOutline(spec.outline, spec.tread_width_hint || 0);
+      for (const name of ["rotation", "gamma_deg", "y_center"]) {
+        if (spec[name] != null && !Number.isFinite(Number(spec[name])))
+          throw new Error("contact patch " + name + " must be a finite number, got " + spec[name]);
+      }
+      if (spec.load_N != null && (!Number.isFinite(spec.load_N) || spec.load_N <= 0))
+        throw new Error("contact patch load must be positive, got " + spec.load_N + " N");
+      return;
+    }
     if (SHAPES.indexOf(String(spec.shape || "").toLowerCase()) < 0)
-      throw new Error("unknown contact patch shape '" + spec.shape + "'; expected one of " + SHAPES.join(", "));
+      throw new Error("unknown contact patch shape '" + spec.shape + "'; expected one of " +
+        SHAPES.join(", ") + ", or 'measured' with an imported outline");
     const dims = { length: "circumferential", width: "lateral" };
     for (const name in dims) {
       const v = Number(spec[name]);
@@ -3581,10 +3750,20 @@
     if (!(params.vertical_load > 0) || !Number.isFinite(params.vertical_load))
       throw new Error("vertical load must be a positive finite number, got " + params.vertical_load + " N");
     const gamma = spec.gamma_deg || 0;
-    const yC = spec.y_center != null ? spec.y_center : crownContactLateral(crown, gamma);
-    let base = shapeOutline(spec);
+    // A measured footprint arrives already placed across the tread, so its own
+    // lateral centre is where it sits -- not the crown's contact point, which is
+    // the model's guess at the same thing. Re-centred circumferentially, because
+    // the sweep moves it around the tyre anyway.
+    const measured = isMeasuredSpec(spec) ? centrePatchOutline(spec.outline) : null;
+    const yC = spec.y_center != null ? spec.y_center
+             : measured ? measured.cy
+             : crownContactLateral(crown, gamma);
+    let base = measured ? measured.outline : shapeOutline(spec);
 
     // Stated dimensions describe the UPRIGHT patch; carry them to this lean.
+    // A measured footprint was taken at ONE load and lean, so scaling it to
+    // another is an extrapolation -- allowed, but never the default, and said
+    // out loud in the provenance when it is done.
     let scaleNote = "";
     if (spec.scale_with_lean !== false && Math.abs(gamma) > 1e-9) {
       const sf = leanScaleFactors(crown, gamma, params, 0);
@@ -3603,8 +3782,14 @@
     const rEff = Math.max(50, params.wheel_radius - crownDrop(crown, yC));
 
     const patch = {
-      gamma_deg: gamma, outline: out, tread_half_width: half, source: "shape",
-      provenance: "user-specified shape: " + describeSpec(spec) + scaleNote + (spec.label ? " -- " + spec.label : ""),
+      gamma_deg: gamma, outline: out, tread_half_width: half,
+      source: measured ? "measured" : "shape",
+      provenance: (measured
+          ? "measured footprint" + (spec.measured_at_deg != null ? " taken at " + spec.measured_at_deg + " deg" : "") +
+            (spec.source_name ? " (" + spec.source_name + ")" : "") +
+            (measured ? ", " + spec.outline.length + " points" : "")
+          : "user-specified shape: " + describeSpec(spec)) +
+        scaleNote + (spec.label ? " -- " + spec.label : ""),
       y_center: yC, r_eff: rEff, r_lat: crownLocalRadius(crown, yC), normal_load: load,
       path_radius: gamma <= 1e-9 ? Infinity : rEff / Math.tan(g), delta: 0, clipped: clipped,
     };
@@ -4133,6 +4318,8 @@
     replicatePitch, pitchInstanceLengths, pitchClosure, pitchStretchMap, landSpansX, PITCH_SCALING,
     crownMultiArc, parseCrownArcs, validateCrownArcs, buildCrown, MAX_CROWN_ARCS,
     crownFromDrops, crownArcsFromDrops, parseCrownDrops, validateCrownDrops, solveArcRadius, arcDropAfter,
+    loadPatchOutline, loadPatchOutlineDxf, loadPatchOutlineCsv, placePatchOutline,
+    centrePatchOutline, validatePatchOutline, isMeasuredSpec, CP_UNIT_SCALE, CP_LATERAL,
     crownFromArcs,
     compoundProperties, validateCompound, interpShore,
     tiebarEngagementWear, tiebarEngaged, effectiveBlocks, validateWear, patternAtWear,

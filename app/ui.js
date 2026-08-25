@@ -25,6 +25,7 @@
     thetaRange: null,    // shared x-range across the sweep rows and the pattern
     cplRange: null,      // and the coupling tab's own, kept apart from it
     reportSections: {},  // report sections the user has switched off
+    measured: null,      // imported footprint outline, when there is one
     stackRows: {},       // sweep rows switched off by the user (key -> false)
     pinStrip: true,      // keep the rolled-out pattern at the foot of the window
     compareMetric: "kz",
@@ -141,6 +142,16 @@
 
   // ---- reading controls into spec / params -----------------------------
   function readSpec() {
+    var m = measuredSpec();
+    if (m) {
+      m.rotation = num("cpRot");
+      m.y_center = $("cpAutoY").checked ? null : num("cpY");
+      m.gamma_deg = 0;
+      m.load_N = null;
+      m.label = "";
+      m.scale_with_lean = $("cpScaleLean").checked;
+      return m;
+    }
     return {
       shape: $("shape").value,
       length: num("cpLength"),
@@ -340,10 +351,113 @@
 
   // ---- shape parameter visibility --------------------------------------
   function syncShapeFields() {
-    var s = $("shape").value;
+    var s = $("shape").value, measured = s === "measured";
     $("rowCorner").style.display = s === "rounded" ? "" : "none";
     $("rowExp").style.display = s === "superellipse" ? "" : "none";
     $("rowTaper").style.display = s === "trapezoid" ? "" : "none";
+    if ($("cpMeasuredBox")) $("cpMeasuredBox").style.display = measured ? "" : "none";
+    // Length and width describe an idealised shape; an imported footprint has
+    // its own. Greyed rather than hidden, so it stays obvious that the size now
+    // comes from the file.
+    ["cpLength", "cpWidth"].forEach(function (id) {
+      var el = $(id);
+      if (!el) return;
+      el.disabled = measured;
+      var row = el.closest ? el.closest(".field") : null;
+      if (row) row.style.opacity = measured ? 0.45 : "";
+    });
+    renderMeasuredInfo();
+  }
+
+  // ---- measured contact patch ------------------------------------------
+  // A traced footprint is the real thing: not convex, not symmetric, and not
+  // the size the idealised shape guessed. Nothing downstream assumes otherwise
+  // -- the outline goes through the same placement, clipping, pressure and
+  // sweep as any other patch.
+  function measuredSpec() {
+    var m = state.measured;
+    if (!m || $("shape").value !== "measured") return null;
+    return {
+      shape: "measured",
+      outline: m.placed,
+      measured_at_deg: m.measured_at,
+      source_name: m.name,
+      tread_width_hint: state.pattern ? state.pattern.tread_width : 0,
+    };
+  }
+
+  function placeMeasured() {
+    var m = state.measured;
+    if (!m) return;
+    var w = state.pattern ? state.pattern.tread_width : 0;
+    if (!(w > 0)) { m.placed = m.raw; m.warnings = []; return; }
+    var yc = $("cpAutoY").checked ? null : num("cpY");
+    var res = E.placePatchOutline(m.raw, w, $("cpLateral").value, yc);
+    m.placed = res.outline;
+    m.warnings = res.warnings;
+    m.metrics = E.validatePatchOutline(m.placed, w);
+  }
+
+  function renderMeasuredInfo() {
+    var box = $("cpMeasuredInfo");
+    if (!box) return;
+    var m = state.measured;
+    if ($("shape").value !== "measured") { box.innerHTML = ""; return; }
+    if (!m) {
+      box.innerHTML = "<b>No footprint loaded.</b> The run is blocked until you load one, or pick an " +
+        "idealised shape above — a patch set to 'measured' with nothing behind it would silently " +
+        "become whatever the length and width happened to say.";
+      return;
+    }
+    if (!state.pattern) { box.innerHTML = "<i>Load a tread plan first — the tread width decides where the footprint sits.</i>"; return; }
+    try {
+      placeMeasured();
+      var k = m.metrics;
+      var html = "<b>" + escapeHtml(m.name) + "</b> — " + k.length.toFixed(1) + " x " +
+        k.width.toFixed(1) + " mm, <b>" + k.area.toFixed(0) + " mm²</b>, " +
+        m.raw.length + " points, measured at " + m.measured_at + "°";
+      var lo = Infinity, hi = -Infinity;
+      for (var i = 0; i < m.placed.length; i++) { if (m.placed[i][1] < lo) lo = m.placed[i][1]; if (m.placed[i][1] > hi) hi = m.placed[i][1]; }
+      html += "<br>sits at y " + lo.toFixed(1) + " to " + hi.toFixed(1) + " mm on a ±" +
+        (state.pattern.tread_width / 2).toFixed(1) + " mm tread";
+      (m.warnings || []).forEach(function (w) {
+        html += "<br><span style='color:var(--warn)'>" + escapeHtml(w) + "</span>";
+      });
+      box.innerHTML = html;
+    } catch (err) {
+      box.innerHTML = "<b style='color:var(--bad)'>" + escapeHtml(err.message) + "</b>";
+    }
+  }
+
+  function loadFootprint(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var units = $("cpUnits").value;
+        var raw = E.loadPatchOutline(String(reader.result), file.name, units);
+        state.measured = {
+          raw: raw, placed: raw, name: file.name, units: units,
+          measured_at: num("cpMeasuredAt") || 0, warnings: [],
+        };
+        // A footprint was taken at ONE load and lean. Scaling it to another is
+        // an extrapolation, so it is switched off rather than left on by
+        // inheritance from whatever the idealised shape was doing.
+        if ($("cpScaleLean").checked) {
+          $("cpScaleLean").checked = false;
+          state.measured.warnings.push("'scale patch with lean' was switched off: this footprint was " +
+            "measured at one load and lean, so carrying it to another is an extrapolation. Tick it " +
+            "again if that is what you want.");
+        }
+        renderMeasuredInfo(); refreshValidation(); drawEditor(); markStale();
+      } catch (err) {
+        state.measured = null;
+        var box = $("cpMeasuredInfo");
+        if (box) box.innerHTML = "<b style='color:var(--bad)'>Could not read " +
+          escapeHtml(file.name) + ": " + escapeHtml(err.message) + "</b>";
+        refreshValidation(); markStale();
+      }
+    };
+    reader.readAsText(file);
   }
 
   // ---- DXF loading -----------------------------------------------------
@@ -3487,7 +3601,26 @@
       on($(id), "input", function () { /* metadata only -- no recompute needed */ });
     });
     renderCompare();
-    on($("shape"), "change", function () { syncShapeFields(); drawEditor(); markStale(); });
+    on($("shape"), "change", function () { syncShapeFields(); refreshValidation(); drawEditor(); markStale(); });
+    on($("cpFile"), "change", function (e) { if (e.target.files[0]) loadFootprint(e.target.files[0]); });
+    on($("cpClear"), "click", function () {
+      state.measured = null;
+      if ($("cpFile")) $("cpFile").value = "";
+      renderMeasuredInfo(); refreshValidation(); drawEditor(); markStale();
+    });
+    ["cpUnits", "cpLateral", "cpMeasuredAt"].forEach(function (id) {
+      on($(id), "change", function () {
+        // Units change what the file MEANS, so it has to be re-read.
+        if (id === "cpUnits" && state.measured) {
+          var was = state.measured.units, now = $("cpUnits").value;
+          var k = (E.CP_UNIT_SCALE[now] || 1) / (E.CP_UNIT_SCALE[was] || 1);
+          state.measured.raw = state.measured.raw.map(function (p) { return [p[0] * k, p[1] * k]; });
+          state.measured.units = now;
+        }
+        if (id === "cpMeasuredAt" && state.measured) state.measured.measured_at = num("cpMeasuredAt") || 0;
+        renderMeasuredInfo(); refreshValidation(); drawEditor(); markStale();
+      });
+    });
 
     ["cpLength", "cpWidth", "cpCorner", "cpExp", "cpTaper", "cpRot", "cpY", "cpLoad"].forEach(function (id) {
       on($(id), "input", function () { refreshValidation(); drawEditor(); markStale(); });
