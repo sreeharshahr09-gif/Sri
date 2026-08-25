@@ -545,6 +545,120 @@ const fs = require("fs");
     await page.click('.tabs button[data-tab="stack"]');
   }
 
+  // ---- tie bars the designer coloured in ---------------------------------
+  // A HATCH on the TIEBAR layer says "this is a tie bar" outright, which beats
+  // any heuristic. The drawing used here has no linework closing the bars at
+  // all, so if the hatches are not read there are no bars to find.
+  {
+    const hatchDxf = path.join(__dirname, "..", "data", "hatch_only.dxf");
+    await page.setInputFiles("#fileInput", hatchDxf);
+    await page.waitForTimeout(700);
+    await page.fill("#nsd", "12");
+    await page.waitForTimeout(250);
+    const hb = (await page.textContent("#banner")).replace(/\s+/g, " ");
+    console.log("hatch drawing:", hb.slice(0, 150));
+    if (!/12 tie bars \(12 from TIEBAR HATCH/.test(hb))
+      errors.push("hatched tie bars not reported in the import banner: " + hb.slice(0, 200));
+
+    await page.click("#tbIndividual summary");
+    await page.waitForTimeout(300);
+    const hatchRows = await page.$$eval("#tbTable tr", (r) => r.length - 1);
+    if (hatchRows !== 12) errors.push(`expected 12 hatched bars, listed ${hatchRows}`);
+
+    // Each bar carries the colour it was drawn in, on its row and on the plan.
+    const swatches = await page.$$eval("#tbTable tr td:first-child span",
+      (n) => [...new Set(n.map((s) => s.style.background))]);
+    console.log("tie-bar row colours:", swatches.join(" | "));
+    if (swatches.length < 3)
+      errors.push("hatched bars are all one colour on the table: " + swatches.join(","));
+    const planFills = await page.evaluate(() => {
+      const e = document.getElementById("tbPlot");
+      if (!e || !e._fullLayout) return [];
+      return [...new Set((e._fullLayout.shapes || []).map((s) => s.line && s.line.color))];
+    });
+    if (planFills.length < 4)
+      errors.push("the tie-bar plan drew every bar the same colour: " + planFills.join(","));
+
+    // A bar drawn with a hole is a hole, not a solid: its area is the net one.
+    const holeInfo = await page.evaluate(() => {
+      const p = window.__ttPattern ? window.__ttPattern() : null;
+      if (!p) return null;
+      const holed = p.tiebars.filter((t) => (t.holes || []).length);
+      return { n: holed.length, area: holed.length ? holed[0].area : 0,
+               solid: (p.tiebars.find((t) => !(t.holes || []).length) || {}).area };
+    });
+    if (holeInfo) {
+      console.log(`bars with holes: ${holeInfo.n}, net area ${holeInfo.area} vs solid ${holeInfo.solid}`);
+      if (holeInfo.n !== 3) errors.push(`expected 3 bars with holes, got ${holeInfo.n}`);
+      if (!(holeInfo.area < holeInfo.solid)) errors.push("a bar with a hole reports the solid area");
+    }
+
+    // It runs, and the exports that describe the tread are live before any run.
+    const dxfBtn = await page.$eval("#exportDxf", (e) => e.disabled);
+    const prjBtn = await page.$eval("#saveProject", (e) => e.disabled);
+    if (dxfBtn || prjBtn) errors.push("the DXF and project exports are disabled with a pattern loaded");
+
+    await page.fill("#wear", "6");
+    await page.waitForTimeout(150);
+    await page.click("#runBtn");
+    await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 90000 });
+    const hs = await page.evaluate(() => (window.__ttState ? window.__ttState() : null));
+    if (hs) console.log(`hatch tread swept: area ${hs.area.toFixed(0)} mm2, CoV ${(hs.cov * 100).toFixed(2)}%, ${hs.engaged} bars engaged`);
+
+    // Round trip: save the project, reload it, and the tread must come back the
+    // same -- colours, holes and all.
+    const dlDir = require("fs").mkdtempSync(require("path").join(require("os").tmpdir(), "tt-prj-"));
+    const before = await page.evaluate(() => {
+      const p = window.__ttPattern();
+      return JSON.stringify({ b: p.blocks.length, t: p.tiebars.length,
+        holes: p.tiebars.reduce((s, x) => s + (x.holes || []).length, 0),
+        area: +p.tiebars.reduce((s, x) => s + x.area, 0).toFixed(6),
+        cols: [...new Set(p.tiebars.map((x) => x.color && x.color.css))].sort().join(",") });
+    });
+    const [prj] = await Promise.all([
+      page.waitForEvent("download"),
+      page.click("#saveProject"),
+    ]);
+    const prjPath = require("path").join(dlDir, prj.suggestedFilename());
+    await prj.saveAs(prjPath);
+    console.log("project file:", prj.suggestedFilename(),
+      `(${Math.round(require("fs").statSync(prjPath).size / 1024)} KB)`);
+
+    const [dxfOut] = await Promise.all([
+      page.waitForEvent("download"),
+      page.click("#exportDxf"),
+    ]);
+    const dxfPath = require("path").join(dlDir, dxfOut.suggestedFilename());
+    await dxfOut.saveAs(dxfPath);
+    const dxfText = require("fs").readFileSync(dxfPath, "utf8");
+    console.log("DXF export:", dxfOut.suggestedFilename(),
+      `${(dxfText.match(/\nHATCH\n/g) || []).length} HATCH entities on TIEBAR`);
+    if ((dxfText.match(/\nHATCH\n/g) || []).length !== 12)
+      errors.push("the exported DXF does not carry one HATCH per tie bar");
+
+    await page.click("#sampleBtn");
+    await page.waitForTimeout(400);
+    await page.setInputFiles("#loadProject", prjPath);
+    await page.waitForTimeout(900);
+    const after = await page.evaluate(() => {
+      const p = window.__ttPattern();
+      return JSON.stringify({ b: p.blocks.length, t: p.tiebars.length,
+        holes: p.tiebars.reduce((s, x) => s + (x.holes || []).length, 0),
+        area: +p.tiebars.reduce((s, x) => s + x.area, 0).toFixed(6),
+        cols: [...new Set(p.tiebars.map((x) => x.color && x.color.css))].sort().join(",") });
+    });
+    console.log("project round trip:", before === after ? "identical" : before + "  ->  " + after);
+    if (before !== after) errors.push("reloading the project did not restore the tread");
+
+    await page.click("#sampleBtn");
+    await page.fill("#wear", "0");
+    await page.fill("#nsd", "8.5");
+    await page.waitForTimeout(200);
+    await page.click("#runBtn");
+    await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 60000 });
+    await page.click('.tabs button[data-tab="stack"]');
+  }
+
   // ---- the report: what goes in it, and does it come out undistorted -------
   {
     const chips = await page.$$eval("#reportSections .rowchip",

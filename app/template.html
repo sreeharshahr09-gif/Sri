@@ -39,7 +39,7 @@
           <input id="fileInput" type="file" accept=".dxf" style="display:none" />
           <button id="sampleBtn" class="btn secondary">Load sample</button>
         </div>
-        <div class="hint">ASCII DXF: LINE, ARC, CIRCLE, ELLIPSE, LWPOLYLINE (with bulges), old-style POLYLINE, SPLINE, and INSERT references into BLOCKS. Depth, draft and sipes are supplied below — a 2D plan has none.</div>
+        <div class="hint">ASCII DXF: LINE, ARC, CIRCLE, ELLIPSE, LWPOLYLINE (with bulges), old-style POLYLINE, SPLINE, INSERT references into BLOCKS, and filled <b>HATCH</b> regions on a <b>TIEBAR</b> layer, which are read as tie bars in the colour they were drawn. Depth, draft and sipes are supplied below — a 2D plan has none.</div>
         <div class="field" title="How far apart two endpoints may be and still be treated as the same corner. CAD exports routinely leave corners a few microns apart after a trim, and an unwelded corner loses the whole block. 0.01 mm is two orders below the finest tread feature and two above the usual export round-off. Raise it if outlines are reported as not closing; lower it if separate features are being merged."><label>Weld tolerance (mm)</label><input id="weldTol" type="number" value="0.01" step="0.005" min="0.0001" max="1" /></div>
         <div class="field" title="A region between blocks counts as a tie bar if its area is below this fraction of the typical block area. Only affects the initial guess — every candidate is listed in 6 · Wear &amp; tie bars for you to confirm or reject."><label>Tie-bar area limit</label><input id="tiebarFrac" type="number" value="0.5" step="0.05" min="0.02" max="1" /></div>
 
@@ -223,7 +223,7 @@
           <div class="tb-setup-detail">
             <div id="tbEmpty" class="hint">
               <b>No tie bars found in this drawing.</b>
-              A tie bar is picked up as a closed region between two blocks whose long sides are the neighbouring groove walls — it does not need an outline of its own. If your drawing has bars that are not listed, check that the lines closing them across the groove actually meet the walls (raise the <b>weld tolerance</b> in <b>1 · Tread plan</b>), or that the bar is not larger than the <b>tie-bar area limit</b>.
+              A tie bar is picked up two ways: from a filled <b>HATCH on a layer called TIEBAR</b>, which is the reliable one because it says what you meant — or, failing that, as a closed region between two blocks whose long sides are the neighbouring groove walls. If your drawing has bars that are not listed, check the hatch layer is named TIEBAR, or that the lines closing them across the groove actually meet the walls (raise the <b>weld tolerance</b> in <b>1 · Tread plan</b>), and that the bar is not larger than the <b>tie-bar area limit</b>.
             </div>
             <div id="tbBody" style="display:none">
               <div class="filerow">
@@ -268,6 +268,12 @@
         </div>
         <div class="filerow" style="margin-top:6px">
           <button id="exportPack" class="btn" disabled title="A single self-contained HTML file carrying only the sections ticked below, with the charts still live — hover, zoom, read values off them. No inputs, no compute, no DXF. Open it by double-clicking; it needs nothing installed. Meant for a design review, where a PDF is a picture of a chart and this is the chart.">Interactive review pack</button>
+        </div>
+        <div class="filerow" style="margin-top:6px">
+          <button id="saveProject" class="btn secondary" disabled title="Save the imported tread itself — blocks, tie bars with their hatch colours and holes, and every box on this page — so the work can be put down and picked up. This is the only export that loads back in.">Project JSON</button>
+          <label class="btn secondary" for="loadProject" title="Reload a Project JSON saved by this tool. It restores the tread, the tie bars and every input; if the file was saved after a run, the results come back too.">Load project…</label>
+          <input id="loadProject" type="file" accept=".json,application/json" style="display:none" />
+          <button id="exportDxf" class="btn secondary" disabled title="The tread as the tool understood it, for taking back into CAD: blocks as closed polylines on the TREAD layer, every tie bar as a colour-filled HATCH on the TIEBAR layer, holes included. Re-importing it gives the same tread back.">DXF + HATCH</button>
         </div>
         <div class="rowbar" style="margin-top:8px">
           <span class="rowbar-lead">Include</span>

@@ -199,6 +199,49 @@ Four items, taken in order, each finished and verified before the next started.
   measurement. On the sample tyre the measured outline gives 4147 mm² against
   4335 mm² for the idealised shape, and 1.88% area fluctuation against 1.55%.
 
+### Tie bars read from a coloured HATCH
+
+Ported from the designer's own v2.3 build, then extended where the new code
+around it demanded it.
+
+A tie bar has no outline of its own, so the tool has always had to guess from
+area and adjacency which regions were bars. A **filled HATCH on a `TIEBAR`
+layer** is not a guess — it is the designer saying so — and it is now read
+directly, in both DXF boundary styles (polyline paths with bulges, and edge
+lists of line / arc / ellipse / spline edges, arc direction flags honoured),
+through `INSERT` expansion, and with the colour it was drawn in.
+
+- **Regions, not polygons.** A hatch can carry islands, so the geometry core
+  gained hole-aware area, centroid and second moments (holes subtract by the
+  parallel-axis theorem; a hole's wall *adds* perimeter, because it is a free
+  surface the Gent shape factor counts), hole-aware stiffness (draft closes a
+  hole while it opens the outside — a hole is a core pin), and a rasteriser that
+  punches the hole out of the land mask so contact area is the net one. The
+  solid path is untouched and still taken whenever a region has no holes, so no
+  number the tool had already reported moved.
+- **Reconciliation, reported.** Where the detector found the same face, one bar
+  results and the hatched definition wins. Where the detector had called it a
+  *block*, the block is dropped with a warning. Diagnostics gives all four
+  counts — detected, kept, hatched, both — so a merge is never silent.
+- **Bonding.** A hatched bar is drawn independently of the block outlines, so
+  exact corner matching finds nothing along its long side; hatched bars fall
+  back to matching by collinear overlap. Without this the coupling tab would
+  have been silently empty on every hatched drawing.
+- **Through the pitch.** A bar hatched once in a drawn pitch rides the identical
+  per-instance transform the linework rides, so it appears once per pitch.
+  Under uniform scaling it stretches with its pitch; under groove-only it keeps
+  its length, because a tie bar is land, not void.
+- **Back out again.** *DXF + HATCH* writes the tread as the tool understood it —
+  blocks as polylines, bars as colour-filled HATCHes with their holes — and
+  re-importing it reproduces the tread exactly. *Project JSON* saves the tread
+  and every control and loads back in; it is the only export that does.
+
+Two corrections to the version this was ported from: the ACI greyscale ramp
+(250–255) was linearly interpolated and missed white by 34 counts, and is now
+tabulated; and hatched regions are now included in the groove-only land spans,
+without which a bar drawn where no block reaches would have been stretched as
+though it were an open groove.
+
 ---
 
 ## 5. How the numbers are kept honest
@@ -211,7 +254,7 @@ v6.4 reference JS  ──(~1e-9)──  Python engine  ──(<2e-3)──  Brow
   verify/tool_v64_reference.js   tread_eval/*.py              app/engine.js
 ```
 
-- **323 tests** (from 153 at the start of the audit).
+- **331 tests** (from 153 at the start of the audit).
 - `tests/test_physics.py` checks every equation against a **closed form worked
   out by hand**, not against a previous run — a golden-value test would have
   blessed the bugs above.
@@ -240,6 +283,13 @@ v6.4 reference JS  ──(~1e-9)──  Python engine  ──(<2e-3)──  Brow
   form, arcs round-tripped to drops and back to fourteen digits, scale
   invariance, and proof that the two-radius blend and class fallbacks are
   untouched by the drop-first path.
+- `app/hatchaudit.js` — 73 checks on HATCH tie-bar import: hole-aware area,
+  centroid and second moments against closed forms; the no-holes case proved
+  bit-identical to the solid path; both DXF boundary styles, arc edges and every
+  colour route; INSERT expansion; the merge with the automatic detector; the
+  collinear-overlap bonding a hatched bar needs; replication through a pitch
+  sequence under both scaling conventions; and a full round trip out through
+  `patternToDxf` and back.
 - `app/browsertest.js` — a real Chromium run: load, compute, crown
   reconciliation, all three exports, drag interaction, the report's section
   list and page count, the review pack opened as its own page, zero page errors.
@@ -315,7 +365,8 @@ source of truth.
 | `5897d50` | **Build the whole tread from one drawn pitch** |
 | `9bd0123` | **Drop-first crown, with the radii solved** |
 | `410cca5` | **Report fixes and the interactive review pack** |
-| `—` | **Import a measured contact patch** |
+| `814d5ee` | **Import a measured contact patch** |
+| `—` | **Read tie bars from a coloured HATCH** |
 
 ---
 
@@ -339,6 +390,7 @@ app/
   unitsaudit.js          dimensional consistency audit
   pitchaudit.js          pitch replication and closure audit
   crownaudit.js          crown arcs, drops and the solver between them
+  hatchaudit.js          HATCH tie bars, holes and the DXF round trip
   browsertest.js         Playwright smoke test
   casecheck.js           two complete tyres end to end through the built page
   parity.js              JS↔Python parity harness
@@ -346,8 +398,9 @@ app/
 tread_eval/              the Python pipeline (schema, stiffness, dxf, raster,
                          sweep, metrics, contact_patch, cp_shapes, report, config)
 verify/                  v6.4 functions extracted verbatim, the reference oracle
-tests/                   254 tests
-data/                    the Tramplr sample DXF
+tests/                   331 tests
+data/                    the Tramplr sample DXF, tie-bar and pitch fixtures,
+                         hatch fixtures and their generators, footprints
 GUIDE.md                 plain-language guide, embedded in the app as a tab
 README.md                how to run both paths
 ```

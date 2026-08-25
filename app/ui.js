@@ -680,7 +680,9 @@
       r.n_blocks + " blocks (" + r.n_wrapped + " wrapped), " +
       p.tyre_circumference.toFixed(1) + " × " + p.tread_width.toFixed(1) + " mm, land ratio " + r.land_ratio.toFixed(3) +
       ", " + p.pitches.length + " pitches";
-    if (r.n_tiebars) html += ", " + r.n_tiebars + " tie bar" + (r.n_tiebars > 1 ? "s" : "");
+    if (r.n_tiebars) html += ", " + r.n_tiebars + " tie bar" + (r.n_tiebars > 1 ? "s" : "") +
+      (r.n_tiebars_explicit ? " (" + r.n_tiebars_explicit + " from TIEBAR HATCH" +
+        (r.n_tiebar_hatch_holes ? ", " + r.n_tiebar_hatch_holes + " with holes" : "") + ")" : "");
     if (p.meta && p.meta.geometric_repeat_mm) html += ", geometric repeat " + p.meta.geometric_repeat_mm.toFixed(1) + " mm";
     if (warn) {
       html += "<ul>";
@@ -791,6 +793,7 @@
       var tbar = p.tiebars[tbi];
       if (tbar.enabled === false) continue;
       var tbOn = E.tiebarEngaged(tbar, edWear);
+      var tbColor = tiebarDisplayColor(tbar);
       var tpieces = E.splitAtSeam(tbar.polygon, C);
       for (var tpc = 0; tpc < tpieces.length; tpc++) {
         for (var tshift = -C; tshift <= C; tshift += C) {
@@ -802,15 +805,16 @@
           }
           if (txmax < -editor.winX / 2 || txmin > editor.winX / 2) continue;
           ctx.beginPath();
-          for (var tv2 = 0; tv2 < tpoly.length; tv2++) {
-            var TX = mapX(tpoly[tv2][0] + tshift - xref), TY = mapY(tpoly[tv2][1]);
-            if (tv2 === 0) ctx.moveTo(TX, TY); else ctx.lineTo(TX, TY);
-          }
-          ctx.closePath();
+          canvasLoop(ctx, tpoly, tshift - xref, mapX, mapY);
+          // A hole goes into the same path and the fill uses the even-odd rule,
+          // so a bar drawn with a stone ejector through it reads as one.
+          for (var thi = 0; thi < (tbar.holes || []).length; thi++)
+            for (var hp = 0, hpieces = E.splitAtSeam(tbar.holes[thi], C); hp < hpieces.length; hp++)
+              canvasLoop(ctx, hpieces[hp], tshift - xref, mapX, mapY);
           ctx.globalAlpha = tbOn ? 0.7 : 0.85;
-          if (tbOn) { ctx.fillStyle = TIEBAR_COLOR; ctx.fill(); }
+          if (tbOn) { ctx.fillStyle = tbColor; ctx.fill("evenodd"); }
           else ctx.setLineDash([3, 3]);
-          ctx.lineWidth = 1; ctx.strokeStyle = TIEBAR_COLOR; ctx.stroke();
+          ctx.lineWidth = 1; ctx.strokeStyle = tbColor; ctx.stroke();
           ctx.setLineDash([]); ctx.globalAlpha = 0.32;
         }
       }
@@ -1338,14 +1342,56 @@
   }
 
   // Deliberately outside the zone palette (blue / green / amber): a tie bar
-  // sitting inside a green intermediate rib has to stay visible.
+  // sitting inside a green intermediate rib has to stay visible. Used for every
+  // bar the tool found for itself; a bar the designer hatched keeps the colour
+  // they drew it in, which is what makes one family of bars tellable from
+  // another at a glance.
   var TIEBAR_COLOR = "#9b6bff";
+
+  function tiebarDisplayColor(tb) {
+    return tb && tb.color && tb.color.css ? tb.color.css : TIEBAR_COLOR;
+  }
+
+  function anyHatchedBars() {
+    return (state.pattern && state.pattern.tiebars || []).some(function (t) { return t.source === "hatch"; });
+  }
+
+  // One region -- outer boundary plus holes -- as a single Plotly path string,
+  // seam-split and optionally on the theta axis. Holes are wound the other way
+  // so Plotly's even-odd fill leaves them empty.
+  function regionPlotPath(region, C, thetaScale) {
+    var loops = [region.polygon].concat(region.holes || []), path = "";
+    for (var li = 0; li < loops.length; li++) {
+      var loop = li === 0 ? E.ensureCCW(loops[li]) : E.ensureCCW(loops[li]).slice().reverse();
+      var pieces = E.splitAtSeam(loop, C);
+      for (var pi = 0; pi < pieces.length; pi++) {
+        var q = pieces[pi];
+        for (var vi = 0; vi < q.length; vi++) {
+          var xx = thetaScale ? (q[vi][0] / C) * 360 : q[vi][0];
+          path += (vi === 0 ? "M" : "L") + xx.toFixed(3) + "," + q[vi][1].toFixed(3) + " ";
+        }
+        path += "Z ";
+      }
+    }
+    return path.trim();
+  }
+
+  // The canvas counterpart: trace one loop, shifted in x, into the current path.
+  function canvasLoop(ctx, loop, dx, mapX, mapY) {
+    for (var i = 0; i < loop.length; i++) {
+      var X = mapX(loop[i][0] + dx), Y = mapY(loop[i][1]);
+      if (i === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
+    }
+    ctx.closePath();
+  }
 
   function patternStripTitle(wear) {
     var tb = (state.pattern.tiebars || []).filter(function (t) { return t.enabled !== false; });
     if (!tb.length) return "Rolled-out tread pattern (same θ axis)";
     var on = tb.filter(ranEngaged).length;
-    return "Rolled-out tread pattern (same θ axis) — violet = tie bars, " + on + " of " + tb.length +
+    return "Rolled-out tread pattern (same θ axis) — " +
+      (anyHatchedBars() ? "coloured = hatched tie bars, violet = detected, " : "violet = tie bars, ") +
+      on + " of " + tb.length +
       " in contact at " + (+wear).toFixed(1) + " mm wear" +
       (on < tb.length ? " (dotted outline = still below the surface)" : "");
   }
@@ -1362,16 +1408,8 @@
     var blockAlpha = opts.dimBlocks ? 0.20 : 0.55;
     for (var bi = 0; bi < p.blocks.length; bi++) {
       var blk = p.blocks[bi];
-      var pieces = E.splitAtSeam(blk.polygon, C);
-      for (var pc = 0; pc < pieces.length; pc++) {
-        var poly = pieces[pc], path = "";
-        for (var v = 0; v < poly.length; v++) {
-          var TH = (poly[v][0] / C) * 360;
-          path += (v === 0 ? "M" : "L") + TH.toFixed(3) + "," + poly[v][1].toFixed(3) + " ";
-        }
-        path += "Z";
-        shapes.push({ type: "path", path: path, xref: "x", yref: "y", fillcolor: hexA(zoneColor[blk.zone] || th.accent, blockAlpha), line: { width: 0 } });
-      }
+      shapes.push({ type: "path", path: regionPlotPath(blk, C, true), xref: "x", yref: "y",
+        fillcolor: hexA(zoneColor[blk.zone] || th.accent, blockAlpha), line: { width: 0 } });
     }
     // Tie bars, on the same strip as the blocks. The sweep already counts the
     // engaged ones as land -- the worker merges them into the block list before
@@ -1383,18 +1421,10 @@
       var tb = p.tiebars[ti];
       if (tb.enabled === false) continue;
       var engaged = ranEngaged(tb);
-      var tpieces = E.splitAtSeam(tb.polygon, C);
-      for (var tp = 0; tp < tpieces.length; tp++) {
-        var tpoly = tpieces[tp], tpath = "";
-        for (var tv = 0; tv < tpoly.length; tv++) {
-          var TTH = (tpoly[tv][0] / C) * 360;
-          tpath += (tv === 0 ? "M" : "L") + TTH.toFixed(3) + "," + tpoly[tv][1].toFixed(3) + " ";
-        }
-        tpath += "Z";
-        shapes.push({ type: "path", path: tpath, xref: "x", yref: "y",
-          fillcolor: engaged ? hexA(TIEBAR_COLOR, 0.85) : "rgba(0,0,0,0)",
-          line: { width: 1.1, color: TIEBAR_COLOR, dash: engaged ? undefined : "dot" } });
-      }
+      var tc = tiebarDisplayColor(tb);
+      shapes.push({ type: "path", path: regionPlotPath(tb, C, true), xref: "x", yref: "y",
+        fillcolor: engaged ? hexA(tc, 0.85) : "rgba(0,0,0,0)",
+        line: { width: 1.1, color: tc, dash: engaged ? undefined : "dot" } });
     }
     // The bonded links, drawn exactly as the solver assembled them: one line per
     // shared wall, from the bar's centre out to that wall. Submerged bars carry
@@ -1453,7 +1483,7 @@
         if (Math.abs(x1 - x0) > LINK_MAX_SPAN_DEG) continue;
         out.push({ type: "line", xref: "x", yref: "y",
           x0: x0, y0: tb.centroid_y, x1: x1, y1: oc[1],
-          line: { color: hexA(TIEBAR_COLOR, 0.6), width: 1.2 } });
+          line: { color: hexA(tiebarDisplayColor(tb), 0.6), width: 1.2 } });
       }
     }
     return out;
@@ -1757,6 +1787,13 @@
         "<tr><td>enclosed regions found</td><td class='num'>" + (rep.n_faces || 0) + "</td></tr>" +
         "<tr><td>&nbsp;&nbsp;→ blocks / seam-wrapped / tie bars</td><td class='num'>" + rep.n_blocks +
           " / " + rep.n_wrapped + " / " + (rep.n_tiebars || 0) + "</td></tr>" +
+        "<tr><td title='Tie bars found by the geometric detector, kept after the explicit " +
+          "hatches took priority, drawn as a HATCH on the TIEBAR layer, and found both ways.'>" +
+          "&nbsp;&nbsp;→ bars: detected / kept / hatched / both</td><td class='num'>" +
+          (rep.n_tiebars_detected || 0) + " / " + (rep.n_tiebars_detected_retained || 0) + " / " +
+          (rep.n_tiebars_explicit || 0) + " / " + (rep.n_tiebars_merged || 0) + "</td></tr>" +
+        "<tr><td>&nbsp;&nbsp;→ HATCH entities read / holes in them</td><td class='num'>" +
+          (rep.n_tiebar_hatches || 0) + " / " + (rep.n_tiebar_hatch_holes || 0) + "</td></tr>" +
         "<tr><td>discarded: open chains / below min area</td><td class='num'>" + rep.n_discarded_open +
           " / " + rep.n_discarded_small + "</td></tr>" +
         "<tr><td>entity types</td><td>" + escapeHtml(types.map(function (t) { return t + "×" + rep.entity_types[t]; }).join(", ")) + "</td></tr>";
@@ -2177,8 +2214,16 @@
       var engaged = E.tiebarEngaged(t, wear);
       var at = E.tiebarEngagementWear(t);
       var theta = ((t.centroid_x % circ) + circ) % circ / circ * 360;
+      var provenance = (t.source === "hatch"
+        ? "drawn as a HATCH on the " + (t.layer || "TIEBAR") + " layer" +
+          (t.merged_automatic ? ", and found by the detector too" : "")
+        : "found by area and adjacency") +
+        ((t.holes || []).length ? " · " + t.holes.length + " hole(s)" : "");
       rows += "<tr class='" + (t.enabled === false ? "off" : engaged ? "engaged" : "") + "'>" +
-        "<td>" + escapeHtml(t.id) + "</td>" +
+        "<td title='" + escapeHtml(provenance) + "'>" +
+        "<span style='display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;" +
+        "vertical-align:middle;background:" + escapeHtml(tiebarDisplayColor(t)) + "'></span>" +
+        escapeHtml(t.id) + "</td>" +
         "<td>" + escapeHtml(t.zone) + "</td>" +
         "<td class='num'>" + theta.toFixed(1) + "</td>" +
         "<td class='num'>" + t.centroid_y.toFixed(1) + "</td>" +
@@ -2433,34 +2478,40 @@
     var p = state.pattern, th = plotTheme(), tb = tiebarList();
     var wear = readWear();
     var shapes = [];
-    function poly(pts, fill, line, width) {
-      var d = "M " + pts.map(function (q) { return q[0].toFixed(3) + "," + q[1].toFixed(3); }).join(" L ") + " Z";
+    function poly(region, fill, line, width) {
+      var d = regionPlotPath(region, p.tyre_circumference, false);
       shapes.push({ type: "path", path: d, fillcolor: fill, line: { color: line, width: width || 0.5 }, layer: "below" });
     }
-    for (var i = 0; i < p.blocks.length; i++) poly(p.blocks[i].polygon, th.grid, th.inkDim, 0.4);
+    for (var i = 0; i < p.blocks.length; i++) poly(p.blocks[i], th.grid, th.inkDim, 0.4);
     for (var j = 0; j < tb.length; j++) {
       var t = tb[j];
       var on_ = t.enabled !== false;
       var eng = E.tiebarEngaged(t, wear);
-      poly(t.polygon, !on_ ? "rgba(128,128,128,0.25)" : eng ? TIEBAR_COLOR : "rgba(0,0,0,0)",
-           !on_ ? th.inkDim : TIEBAR_COLOR, 1.2);
+      var tc = tiebarDisplayColor(t);
+      poly(t, !on_ ? "rgba(128,128,128,0.25)" : eng ? hexA(tc, 0.85) : "rgba(0,0,0,0)",
+           !on_ ? th.inkDim : tc, 1.2);
     }
     var labels = {
       x: tb.map(function (t) { return t.centroid_x; }),
       y: tb.map(function (t) { return t.centroid_y; }),
       text: tb.map(function (t) { return t.id; }),
       customdata: tb.map(function (t) {
-        return [t.area.toFixed(1), (+t.height).toFixed(2), t.nsd.toFixed(2), E.tiebarEngagementWear(t).toFixed(2)];
+        return [t.area.toFixed(1), (+t.height).toFixed(2), t.nsd.toFixed(2), E.tiebarEngagementWear(t).toFixed(2),
+                t.source === "hatch" ? "drawn on the TIEBAR layer" : "found by area and adjacency",
+                (t.holes || []).length];
       }),
       mode: "markers", type: "scatter", marker: { size: 5, color: th.ink || th.accent },
       hovertemplate: "%{text}<br>area %{customdata[0]} mm²<br>height %{customdata[1]} of %{customdata[2]} mm" +
-                     "<br>engages at %{customdata[3]} mm wear<extra></extra>",
+                     "<br>engages at %{customdata[3]} mm wear" +
+                     "<br>%{customdata[4]} · %{customdata[5]} hole(s)<extra></extra>",
       showlegend: false,
     };
     Plotly.react($("tbPlot"), [labels], {
       paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
       margin: { l: 56, r: 12, t: 30, b: 42 }, height: 240, shapes: shapes,
-      title: { text: "tie bars on the rolled-out plan — filled = in contact at " + wear.toFixed(1) +
+      title: { text: "tie bars on the rolled-out plan — " +
+                     (anyHatchedBars() ? "hatched bars keep their drawn colour; " : "") +
+                     "filled = in contact at " + wear.toFixed(1) +
                      " mm wear, outline only = still below the surface, grey = excluded", font: { size: 11 } },
       xaxis: { title: { text: "circumferential position (mm)", font: { size: 11 } },
                range: [0, p.tyre_circumference], gridcolor: th.grid },
@@ -2751,7 +2802,12 @@
         tiebars: tiebarList().map(function (t) {
           return { id: t.id, zone: t.zone, area_mm2: t.area, nsd_mm: t.nsd, height_mm: t.height,
                    engages_at_wear_mm: E.tiebarEngagementWear(t), enabled: t.enabled !== false,
-                   centroid_x_mm: t.centroid_x, centroid_y_mm: t.centroid_y };
+                   centroid_x_mm: t.centroid_x, centroid_y_mm: t.centroid_y,
+                   // How the bar was identified travels with it: a number read
+                   // off a colour the designer drew is not the same evidence as
+                   // one the area heuristic guessed at.
+                   source: t.source || "automatic", layer: t.layer || null,
+                   color: t.color || null, n_holes: (t.holes || []).length };
         }),
       },
       import_report: state.report,
@@ -2837,6 +2893,135 @@
   // rather than "undefined" or a zero that would read as a measurement.
   function slipAt(r, key, j) {
     return r[key] && r[key][j] != null ? r[key][j].toFixed(4) : "";
+  }
+
+  // ---- saving the work, not just the answer ----------------------------
+  //
+  // Everything above exports a RUN: the numbers and the settings that produced
+  // them, for reading. A project file is the other thing -- the imported tread
+  // itself, its tie bars with their colours and holes, and every box on the
+  // page -- so the work can be put down and picked up. It is the only export
+  // that can be loaded back in.
+  //
+  // The control list is read off the page rather than written out by hand,
+  // because a hand-written list silently stops covering the controls added
+  // after it. Anything with an id inside the setup panel is a setting.
+  function projectControlIds() {
+    var side = document.querySelector("aside.sidebar");
+    if (!side) return [];
+    var els = side.querySelectorAll("input[id], select[id], textarea[id]"), out = [];
+    for (var i = 0; i < els.length; i++) {
+      // A file input holds a file, not a value, and cannot be restored anyway.
+      if (els[i].type === "file" || els[i].disabled && els[i].type === "button") continue;
+      out.push(els[i].id);
+    }
+    return out;
+  }
+
+  function captureProjectControls() {
+    var out = {};
+    projectControlIds().forEach(function (id) {
+      var el = $(id); if (!el) return;
+      out[id] = el.type === "checkbox" ? !!el.checked : el.value;
+    });
+    return out;
+  }
+
+  function restoreProjectControls(values) {
+    values = values || {};
+    projectControlIds().forEach(function (id) {
+      var el = $(id); if (!el || values[id] == null) return;
+      if (el.type === "checkbox") el.checked = !!values[id]; else el.value = values[id];
+    });
+  }
+
+  // The pattern as plain JSON. The crown is left out on purpose: it is a pair
+  // of long derived arrays rebuilt from the crown controls, which are saved
+  // above, so storing it would bloat the file and let it disagree with them.
+  function projectPatternSnapshot() {
+    var p = state.pattern;
+    return JSON.parse(JSON.stringify({
+      tyre_circumference: p.tyre_circumference, tread_width: p.tread_width,
+      pitches: p.pitches || [], blocks: p.blocks || [], tiebars: p.tiebars || [],
+      name: p.name, source: p.source, meta: p.meta || {},
+    }));
+  }
+
+  function exportProject() {
+    if (!state.pattern) return;
+    reconcilePattern();
+    var payload = {
+      format: "tread_eval.project", format_version: 1, generated: new Date().toISOString(),
+      controls: captureProjectControls(),
+      pattern: projectPatternSnapshot(),
+      report: state.report,
+      measured: state.measured ? {
+        raw: state.measured.raw, name: state.measured.name, units: state.measured.units,
+        measured_at: state.measured.measured_at, lateral: state.measured.lateral,
+      } : null,
+      ran_inputs: state.ranInputs || null,
+      runtime: state.results ? {
+        results: state.results, stiffness: state.stiffness, grid: state.grid,
+        notes: state.notes || [], max_lean: state.maxLean, band_edges: state.bandEdges,
+        compound: state.compound || null, wear: state.wear || null, coupling: state.coupling || null,
+      } : null,
+    };
+    download(safeName() + "_project.json", JSON.stringify(payload, null, 1), "application/json");
+  }
+
+  function loadProjectFile(file) {
+    var fr = new FileReader();
+    fr.onload = function () {
+      try {
+        var j = JSON.parse(String(fr.result));
+        if (j.format !== "tread_eval.project" || !j.pattern)
+          throw new Error("not a tread_eval project file");
+        restoreProjectControls(j.controls);
+        var p = JSON.parse(JSON.stringify(j.pattern));
+        p.blocks = p.blocks || []; p.tiebars = p.tiebars || []; p.pitches = p.pitches || [];
+        p.blocks.forEach(function (b) { b.holes = b.holes || []; });
+        // Recompute rather than trust: area and centroid are derived from the
+        // loops, and a file edited by hand must not be able to state one thing
+        // and draw another.
+        p.tiebars.forEach(function (t) {
+          t.holes = t.holes || []; t.source = t.source || "automatic";
+          var c = E.regionCentroid(t.polygon, t.holes);
+          t.centroid_x = c[0]; t.centroid_y = c[1]; t.area = E.regionArea(t.polygon, t.holes);
+        });
+        state.pattern = p;
+        state.report = j.report || { warnings: [], n_blocks: p.blocks.length,
+          n_tiebars: p.tiebars.length, n_wrapped: 0, land_ratio: 0 };
+        state.measured = j.measured ? Object.assign({ placed: j.measured.raw }, j.measured) : null;
+        reconcilePattern();
+        E.linkTiebars(p.blocks, p.tiebars);
+        var rt = j.runtime || null;
+        state.results = rt && rt.results ? rt.results : null;
+        state.stiffness = rt ? rt.stiffness : null; state.grid = rt ? rt.grid : null;
+        state.notes = rt ? rt.notes || [] : []; state.maxLean = rt ? rt.max_lean : null;
+        state.bandEdges = rt ? rt.band_edges : null; state.compound = rt ? rt.compound : null;
+        state.wear = rt ? rt.wear : null; state.coupling = rt ? rt.coupling : null;
+        state.ranInputs = j.ran_inputs || null; state.editorTheta = 0;
+        syncShapeFields(); syncCompoundFields(); syncCrownFields(); syncCrownArcInfo();
+        renderMeasuredInfo(); renderPitchInfo();
+        renderBanner(); renderTiebars(); drawEditor();
+        $("emptyHint").style.display = "none";
+        refreshValidation(); refreshExportButtons();
+        if (state.results) { populateGammaSelect(); renderAll(); } else showResultsChrome(false);
+      } catch (err) {
+        alert("Could not load " + file.name + ": " + err.message);
+      }
+    };
+    fr.readAsText(file);
+  }
+
+  // The tread as the tool understood it, for taking back into CAD: blocks as
+  // closed polylines, every tie bar as a colour-filled HATCH on the TIEBAR
+  // layer -- so a bar the tool inferred comes back as a bar that was drawn.
+  function exportPatternDxf() {
+    if (!state.pattern) return;
+    reconcilePattern();
+    download(safeName() + "_tread_with_tiebars.dxf", E.patternToDxf(state.pattern),
+             "application/dxf;charset=utf-8");
   }
 
   function exportJSON() {
@@ -3495,6 +3680,13 @@
     ["exportCsv", "exportJson", "exportTxt", "exportPdf", "exportPack"].forEach(function (id) {
       var el = $(id); if (el) el.disabled = !on;
     });
+    // The project file and the DXF describe the TREAD, not the run, so they are
+    // available the moment a pattern is loaded -- before anything is computed,
+    // and still there if the run failed.
+    var hasPattern = !!state.pattern;
+    ["saveProject", "exportDxf"].forEach(function (id) {
+      var el = $(id); if (el) el.disabled = !hasPattern;
+    });
     renderReportChips();
   }
 
@@ -3536,6 +3728,12 @@
     on($("exportTxt"), "click", exportSummary);
     on($("exportPdf"), "click", exportPDF);
     on($("exportPack"), "click", exportPack);
+    on($("saveProject"), "click", exportProject);
+    on($("exportDxf"), "click", exportPatternDxf);
+    on($("loadProject"), "change", function (e) {
+      if (e.target.files[0]) loadProjectFile(e.target.files[0]);
+      e.target.value = "";
+    });
     var secChips = $("reportSections");
     if (secChips) on(secChips, "click", function (ev) {
       var chip = ev.target.closest ? ev.target.closest(".rowchip") : null;
@@ -3709,6 +3907,9 @@
   // The whole result for the lean on screen, so a test can check a curve rather
   // than a summary of it. Same object the charts read; nothing is recomputed.
   window.__ttResult = function () { return state.results ? currentResult() : null; };
+  // The imported tread itself -- geometry, tie bars, colours, holes -- so a test
+  // can check what came out of a drawing rather than what the charts made of it.
+  window.__ttPattern = function () { return state.pattern; };
   window.__ttSetPatchTheta = setPatchTheta;
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

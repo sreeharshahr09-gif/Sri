@@ -1115,12 +1115,18 @@ def test_coupling_tab_carries_the_rolled_out_pattern():
         body = ui[ui.index(caller):]
         body = body[:body.index("\n  }")]
         assert "patternStripShapes(" in body, caller
-    # Seam splitting is how a block that wraps theta = 0 gets drawn. Inside the
-    # builder it happens exactly twice -- once for blocks, once for tie bars --
-    # and no strip renderer does it for itself. (The canvas patch editor has its
-    # own copy; it is a different renderer, not a second strip.)
+    # Seam splitting is how a block that wraps theta = 0 gets drawn. Blocks and
+    # tie bars both go through the one region-to-path helper, which is the only
+    # place in the builder that splits, and no strip renderer does it for
+    # itself. (The canvas patch editor has its own copy; it is a different
+    # renderer, not a second strip.)
     builder = ui[ui.index("function patternStripShapes("):ui.index("function couplingLinkShapes(")]
-    assert builder.count("E.splitAtSeam(") == 2
+    assert builder.count("E.splitAtSeam(") == 0
+    assert builder.count("regionPlotPath(") == 2
+    helper = ui[ui.index("function regionPlotPath("):ui.index("function canvasLoop(")]
+    assert helper.count("E.splitAtSeam(") == 1
+    # and holes are drawn, not silently filled in as solid
+    assert "region.holes" in helper and "reverse()" in helper
     for caller in ("function renderPatternStrip(", "function renderCouplingStrip(",
                    "function captureStrip("):
         body = ui[ui.index(caller):]
@@ -2297,3 +2303,181 @@ def test_measured_is_offered_on_the_page_with_the_choices_it_needs():
     rs = ui[ui.index("function readSpec("):]
     rs = rs[:rs.index("\n  }")]
     assert "measuredSpec()" in rs
+
+
+# ---------------------------------------------------------------------------
+# tie bars the designer coloured in
+# ---------------------------------------------------------------------------
+
+
+def test_hatch_audit_passes():
+    """The full audit of HATCH tie-bar import.
+
+    A filled HATCH on the TIEBAR layer is a statement of intent and outranks
+    the area heuristic that used to be the only way a bar was found.  The audit
+    checks the hole-aware geometry against closed forms, both DXF boundary
+    styles and every colour route, the merge with the automatic detector, the
+    collinear-overlap linking a hatched bar needs, replication through a pitch
+    sequence, and a round trip out through patternToDxf and back.
+    """
+    node = _node()
+    proc = subprocess.run([node, os.path.join(APP, "hatchaudit.js")],
+                          capture_output=True, text=True, cwd=REPO, timeout=900)
+    assert proc.returncode == 0, proc.stdout[-8000:] + proc.stderr[-2000:]
+    assert "checks passed" in proc.stdout
+
+
+def test_a_region_with_holes_never_changes_a_region_without_them():
+    """Holes arrive in an engine whose every existing number was computed on
+    solid polygons.  The new path must therefore be a strict addition: taken
+    only when a region actually has holes, and never in the way otherwise.  A
+    single shared code path here would be an invisible re-baselining of every
+    stiffness the tool has ever reported.
+    """
+    eng = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    for fn in ("function regionArea(", "function regionCentroid(", "function regionProps(",
+               "function effectiveKRegion(", "function computeKzRegion("):
+        assert fn in eng, fn
+    # the solid path is still there, untouched, and still the default
+    bs = eng[eng.index("function blockStiffness("):eng.index("function tiebarEngagementWear(")]
+    assert "holes.length ? regionProps(verts, holes) : polygonProps(verts)" in bs
+    assert "holes.length\n      ? effectiveKRegion(" in bs
+    assert "holes.length\n      ? computeKzRegion(" in bs
+    # holes subtract by the parallel-axis theorem, not about their own centroids
+    rp = eng[eng.index("function regionProps("):eng.index("function offsetPoly(")]
+    assert "po.Ixx + po.A * po.cy * po.cy" in rp
+    assert "ph.Ixx + ph.A * ph.cy * ph.cy" in rp
+    # a hole's wall is a free surface, so it ADDS perimeter (the Gent factor)
+    assert "perimeter += ph.perimeter" in rp
+    # and a hole is a core pin: draft closes it while it opens the outside
+    ek = eng[eng.index("function effectiveKRegion("):eng.index("function computeKzRegion(")]
+    assert "offsetPoly(h, -draft, offZ)" in ek
+
+
+def test_the_raster_punches_holes_out_of_the_land_mask():
+    """A block with a hole contributes its NET area to contact -- the same area
+    its stiffness was computed from.  The erase pass only clears pixels the
+    region itself owns, so a hole can never rub out a neighbour that overlaps
+    it on the raster."""
+    eng = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    fp = eng[eng.index("function fillPolygon("):eng.index("function rasterise(")]
+    assert "erase" in fp
+    assert "labels[rowBase + c] === idx" in fp, "an erase must check ownership first"
+    ras = eng[eng.index("function rasterise("):eng.index("const SHAPES =")]
+    assert "pattern.blocks[idx].holes" in ras
+    fill_at = ras.index("fillPolygon(piece, grid, y0, land, labels, idx)")
+    erase_at = ras.index("fillPolygon(piece, grid, y0, land, labels, idx, true)")
+    assert fill_at < erase_at, "holes must be punched after the outline is filled, not before"
+
+
+def test_an_explicit_tiebar_layer_outranks_the_detector():
+    """The geometric detector guesses from area and adjacency.  A designer who
+    hatched the bar has said outright which regions are bars, so where the two
+    disagree the drawing wins -- and where they agree the bar must be counted
+    once, not twice."""
+    eng = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    assert "function sameOuterRegion(" in eng
+    lp = eng[eng.index("function loadPattern("):eng.index("var TYRE_CLASS = {")]
+    # hatches are read separately, so the arrangement never sees them
+    assert "tiebarHatches(entities" in lp
+    assert "explicitHatchesRaw" in lp
+    # same face found both ways -> one bar
+    assert "usedAuto.add(i); hr.merged_automatic = true" in lp
+    # detector called it a block -> the block goes
+    assert "loops.filter((poly) => !explicitHatches.some(" in lp
+    # and the counts are reported, not just the total
+    for key in ("n_tiebars_detected", "n_tiebars_detected_retained", "n_tiebars_explicit",
+                "n_tiebars_merged", "n_tiebar_hatches", "n_tiebar_hatch_holes"):
+        assert key in lp, key
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    assert "n_tiebars_explicit" in ui, "the page never says how a bar was identified"
+
+
+def test_a_hatched_bar_can_still_be_bonded_to_its_blocks():
+    """A hatch is drawn independently of the block outlines, so its long side is
+    ONE edge where the planar arrangement has split the rib wall at several
+    T-junctions.  The exact-endpoint match finds nothing there, and a bar that
+    is bonded to nothing couples nothing -- which would make the whole coupling
+    tab silently empty on a hatched drawing.  The fallback is by collinear
+    overlap, and only for hatched bars, so no automatic bar changes."""
+    eng = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    lt = eng[eng.index("function linkTiebars("):eng.index("function couplingLinkMatrix(")]
+    assert "function edgeOverlap(" in lt
+    assert 'tb.source !== "hatch" || tb.links.length >= 2' in lt, \
+        "the fallback must not touch automatically detected bars"
+
+
+def test_hatched_bars_are_replicated_with_their_pitch():
+    """A bar hatched once in a drawn pitch is a bar in every pitch.  Without
+    this the tread comes out with N pitches of blocks and one lonely tie bar,
+    and nothing on the page says so.  The regions ride the same per-instance
+    transform as the chains rather than a reconstruction of it."""
+    eng = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    rep = eng[eng.index("function replicatePitch("):eng.index("function validateImportOptions(")]
+    assert "regions" in rep and "outRegions.push" in rep
+    assert "const place = (p) =>" in rep, "chains and regions must share one transform"
+    # and a bar is land, so groove-only scaling must not stretch it
+    assert "landSpansX(tiles, L0, weldTol, regions)" in rep
+    ls = eng[eng.index("function landSpansX("):eng.index("function pitchStretchMap(")]
+    assert "(regions || []).map((r) => r.polygon)" in ls
+    lp = eng[eng.index("function loadPattern("):eng.index("var TYRE_CLASS = {")]
+    assert "explicitHatchesRaw = pitchRep.regions" in lp
+
+
+def test_the_page_shows_where_a_bar_came_from_and_what_colour_it_was():
+    """Two bars found different ways are different evidence, and the page has to
+    say which is which -- on the tread, on the plan, in the table and in every
+    export."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert "function tiebarDisplayColor(" in ui
+    # the fallback violet is still there for bars nobody coloured
+    assert 'var TIEBAR_COLOR = "#9b6bff"' in ui
+    # every drawing surface asks for the colour rather than hard-coding it
+    for surface in ("function patternStripShapes(", "function couplingLinkShapes(",
+                    "function drawTiebarPlan("):
+        body = ui[ui.index(surface):]
+        body = body[:body.index("\n  }")]
+        assert "tiebarDisplayColor(" in body, surface
+    # holes are drawn as holes on the canvas too, not filled in solid
+    assert 'ctx.fill("evenodd")' in ui
+    # the table says how the bar was found
+    assert "drawn as a HATCH on the" in ui and "found by area and adjacency" in ui
+    # and the exports carry it
+    assert 'source: t.source || "automatic"' in ui
+    # the DXF hint tells the user the layer name, which is the whole contract
+    assert "TIEBAR" in tpl and "HATCH" in tpl
+
+
+def test_the_tread_can_be_written_back_out_and_reloaded():
+    """Two exports that describe the TREAD rather than the run: a DXF for CAD,
+    and a project file that loads back in.  Both are available the moment a
+    pattern is imported -- before anything is computed, and still there if the
+    run failed."""
+    eng = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert "function patternToDxf(" in eng
+    dx = eng[eng.index("function patternToDxf("):]
+    dx = dx[:dx.index("\n  // ====")]
+    # a true colour must not be quantised back to the nearest indexed colour
+    assert 'put(420, tb.color.true_color)' in dx
+    assert 'lwpoly(h, "TREAD")' in dx, "block holes must be written too"
+    for el in ("saveProject", "loadProject", "exportDxf"):
+        assert f'id="{el}"' in tpl, el
+    assert "function exportProject(" in ui and "function loadProjectFile(" in ui
+    assert "function exportPatternDxf(" in ui
+    # the control list is read off the page, not hand-written -- a hand-written
+    # one silently stops covering the controls added after it
+    assert "function projectControlIds(" in ui
+    pc = ui[ui.index("function projectControlIds("):ui.index("function captureProjectControls(")]
+    assert "querySelectorAll" in pc
+    # area and centroid are recomputed on load, so a hand-edited file cannot
+    # state one thing and draw another
+    lf = ui[ui.index("function loadProjectFile("):ui.index("function exportPatternDxf(")]
+    assert "E.regionCentroid(t.polygon, t.holes)" in lf
+    assert "E.regionArea(t.polygon, t.holes)" in lf
+    # both are enabled by the pattern, not by the results
+    rb = ui[ui.index("function refreshExportButtons("):]
+    rb = rb[:rb.index("\n  }")]
+    assert "hasPattern" in rb and '["saveProject", "exportDxf"]' in rb

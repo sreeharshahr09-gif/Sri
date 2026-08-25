@@ -257,6 +257,12 @@ It engages once **w ≥ NSD − h**. From then on it is flush with the blocks an
 
 So at the default **wear = 0** the bars are listed and drawn but contribute nothing, which is the truth for a new tyre. Raise **Tread worn** in *6 · Wear & tie bars* and watch the contact area step up and the θ-fluctuation drop as they come in — that step is the tie bar doing its job, and its position on the wear axis is a design decision you can now see.
 
+**Where the bars come from.** Two routes. If the drawing marks them with a
+filled HATCH on a `TIEBAR` layer, those are read directly and taken as
+authoritative — see *Tie bars you coloured in* below. Otherwise they are found
+geometrically, as small closed regions bridging two blocks. The table says which
+route found each bar; hover its ID.
+
 ### 150 bars, two edits
 
 A mould repeats the same bar around the circumference, so a drawing with 150
@@ -544,6 +550,78 @@ together. Double-click resets, including a double-click on the band itself.
 
 A patch parked across θ = 0 is drawn in both halves, at the left and right ends
 of the strip, because that is what the tyre does at the seam.
+
+---
+
+## Tie bars you coloured in
+
+A tie bar is hard to find automatically. It has no outline of its own — it is
+the closed region left between two blocks — so the tool has to guess from area
+and adjacency which regions are bars and which are just small blocks. The guess
+is usually right and occasionally not, and either way it is a guess.
+
+**A filled HATCH on a layer called `TIEBAR` is not a guess.** If your drawing
+marks the bars by colouring them in, the tool reads them directly and takes them
+as authoritative.
+
+### What it reads
+
+- **Both boundary styles.** A hatch whose paths are polylines (bulges included)
+  and one whose paths are edge lists of lines, arcs, ellipses and splines. Arc
+  edges carry their own direction flag, which is honoured — get that wrong and
+  the boundary crosses itself.
+- **Holes.** A hatch with an island in it — a stone ejector through the bar —
+  comes in as a region with a hole. Its area, its stiffness and the contact area
+  it adds once worn into are all the **net** ones.
+- **Colour.** Entity true colour (24-bit) first, then entity ACI, then the
+  layer's own colour. Bars keep the colour they were drawn in everywhere they
+  appear: on the rolled-out tread, on the tie-bar plan, on the coupling links,
+  and as a swatch beside the ID in the table. That is what lets you tell one
+  family of bars from another at a glance.
+- **Bars inside blocks.** A hatch in a `BLOCK` definition reached through an
+  `INSERT` is expanded like any other geometry, inheriting the INSERT's layer
+  the way CAD resolves it — so a pattern arrayed from a block still finds its
+  bars.
+
+### How it reconciles with the automatic detector
+
+Both run. The detector is still there and is still what finds bars in every
+drawing that carries no hatches at all. Where they meet:
+
+| Situation | What happens |
+|---|---|
+| Both found the same face | One bar. The hatched definition wins, because it may carry holes and a colour the linework never had. |
+| The detector called it a **block** | The block is dropped and it becomes a bar, with a warning saying so. A drawn `TIEBAR` layer outranks an area heuristic. |
+| Only the hatch found it | The bar stands on the hatch alone — which is the whole point on a drawing where the bars are not closed by linework. |
+
+*8 · Diagnostics* reports all four numbers — detected, kept, hatched, found both
+ways — so a merge is never silent.
+
+**Bonding still comes from geometry.** A hatched bar is drawn independently of
+the block outlines, so its long side is one edge where the tool has split the
+rib wall at several corners. Exact corner matching finds nothing there, so
+hatched bars fall back to matching by **collinear overlap**: same line, same
+stretch of it. Detected bars are untouched by this.
+
+### With a pitch drawing
+
+A bar hatched once in a drawn pitch becomes a bar in **every** pitch, riding the
+identical transform the linework rides. Under **uniform** scaling it stretches
+with its pitch; under **groove-only** it keeps its length, because a tie bar is
+rubber and rubber is land, not void.
+
+### Taking it back out
+
+Two exports in *7 · Export* describe the **tread**, not the run, so both are
+live the moment a drawing is imported:
+
+- **DXF + HATCH** — blocks as closed polylines on `TREAD`, every tie bar as a
+  colour-filled HATCH on `TIEBAR`, holes included. Re-importing that file gives
+  the same tread back, so a bar the tool *inferred* comes back as a bar that was
+  *drawn*. Useful for handing the interpretation back to CAD.
+- **Project JSON** — the imported tread with its bars, colours and holes, plus
+  every box on the page, and the results if there are any. It is the only export
+  that loads back in: **Load project…** restores the session.
 
 ---
 

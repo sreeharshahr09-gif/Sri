@@ -111,6 +111,63 @@
     return [cx / (6 * a), cy / (6 * a)];
   }
 
+  // A DXF HATCH is a region, not merely one polygon: it can have an outer
+  // boundary and any number of holes. Every block and every automatically
+  // detected tie bar still carries only `polygon`, so all three helpers treat a
+  // missing holes array as the old solid-polygon case and return exactly what
+  // the polygon versions return.
+  function regionArea(outer, holes) {
+    let a = polygonArea(outer || []);
+    for (const h of holes || []) a -= polygonArea(h);
+    return Math.max(0, a);
+  }
+
+  function regionCentroid(outer, holes) {
+    const po = polygonProps(outer || []);
+    if (!po) return [0, 0];
+    let a = po.A, mx = po.A * po.cx, my = po.A * po.cy;
+    for (const h of holes || []) {
+      const ph = polygonProps(h);
+      if (!ph) continue;
+      a -= ph.A; mx -= ph.A * ph.cx; my -= ph.A * ph.cy;
+    }
+    return a > 1e-12 ? [mx / a, my / a] : [po.cx, po.cy];
+  }
+
+  // Second moments subtract by the parallel-axis theorem: take each loop's
+  // inertia back to the origin, subtract the holes there, then move the result
+  // to the composite centroid. Doing it about each loop's own centroid instead
+  // would be wrong by A*d^2 per hole.
+  function regionProps(outer, holes) {
+    const po = polygonProps(outer || []);
+    if (!po) return null;
+    let A = po.A, mx = po.A * po.cx, my = po.A * po.cy;
+    let Ixxo = po.Ixx + po.A * po.cy * po.cy;
+    let Iyyo = po.Iyy + po.A * po.cx * po.cx;
+    let Ixyo = (po.Ixy || 0) + po.A * po.cx * po.cy;
+    let perimeter = po.perimeter;
+    for (const h of holes || []) {
+      const ph = polygonProps(h);
+      if (!ph) continue;
+      A -= ph.A; mx -= ph.A * ph.cx; my -= ph.A * ph.cy;
+      Ixxo -= ph.Ixx + ph.A * ph.cy * ph.cy;
+      Iyyo -= ph.Iyy + ph.A * ph.cx * ph.cx;
+      Ixyo -= (ph.Ixy || 0) + ph.A * ph.cx * ph.cy;
+      // A hole adds wall: its edge is a free surface the rubber can bulge into,
+      // which is exactly what the Gent shape factor counts.
+      perimeter += ph.perimeter;
+    }
+    if (A <= 1e-12) return null;
+    const cx = mx / A, cy = my / A;
+    return {
+      A: A, cx: cx, cy: cy,
+      Ixx: Math.max(0, Ixxo - A * cy * cy),
+      Iyy: Math.max(0, Iyyo - A * cx * cx),
+      Ixy: Ixyo - A * cx * cy,
+      perimeter: perimeter,
+    };
+  }
+
   function offsetPoly(vertsIn, draftDeg, z) {
     if (!draftDeg || z < 1e-12) return vertsIn;
     const pts = ensureCCW(vertsIn), n = pts.length;
@@ -508,18 +565,79 @@
     return { Kz: (Eeff * Anet) / nsd, S: S, Eeff: Eeff, Anet: Anet };
   }
 
+  // Hole-aware counterparts, used only when a region actually has holes. The
+  // two functions above are left exactly as they were, so every block and every
+  // automatically detected tie bar goes down the identical code path it always
+  // did and no imported drawing can shift a number that used to be right.
+  //
+  // A positive mould draft grows the outside toward the base and closes the
+  // inside boundaries by the same amount -- a hole is a core pin, and it tapers
+  // the other way.
+  function effectiveKRegion(outer, holes, nsd, E, nu, draft, mode, nSlices) {
+    const G = calcG(E, nu);
+    if (!(nsd > 0) || !(E > 0) || !(G > 0)) return { Kx: 0, Ky: 0, Kxy: 0, nSubs: 1 };
+    const n = nSlices || 40, dz = nsd / n;
+    let CxxB = 0, CyyB = 0, CxyB = 0, Sh = 0, nValid = 0;
+    for (let i = 0; i < n; i++) {
+      const z = (i + 0.5) * dz, offZ = nsd - z;
+      const o = draft ? offsetPoly(outer, draft, offZ) : outer;
+      const hs = (holes || []).map((h) => draft ? offsetPoly(h, -draft, offZ) : h);
+      const p = regionProps(o, hs);
+      if (!p || p.A < 1e-9) continue;
+      const detI = p.Ixx * p.Iyy - p.Ixy * p.Ixy;
+      if (detI <= 1e-15) continue;
+      const w = mode === "parallel" ? (z - nsd / 2) * (z - nsd / 2) : (nsd - z) * (nsd - z);
+      CxxB += (w * p.Ixx) / detI * dz;
+      CyyB += (w * p.Iyy) / detI * dz;
+      CxyB += (w * -p.Ixy) / detI * dz;
+      Sh += dz / p.A;
+      nValid++;
+    }
+    if (!nValid) return { Kx: 0, Ky: 0, Kxy: 0, nSubs: 1 };
+    const shearFactor = mode === "parallel" ? 1 : 6 / 5;
+    const Cxx = CxxB / E + (shearFactor * Sh) / G;
+    const Cyy = CyyB / E + (shearFactor * Sh) / G;
+    const Cxy = CxyB / E;
+    const detC = Cxx * Cyy - Cxy * Cxy;
+    if (detC <= 1e-18) return { Kx: 0, Ky: 0, Kxy: 0, nSubs: 1 };
+    const Kx = Cyy / detC, Ky = Cxx / detC;
+    let Kxy = -Cxy / detC;
+    if (Math.abs(Kxy) < 1e-6 * Math.max(Kx, Ky)) Kxy = 0;
+    return { Kx: Kx, Ky: Ky, Kxy: Kxy, nSubs: 1 };
+  }
+
+  function computeKzRegion(outer, holes, nsd, E, gentK, sipes, bulkModulus) {
+    const props = regionProps(outer, holes);
+    if (!props) return { Kz: 0, S: 0, Eeff: 0, Anet: 0 };
+    nsd = Math.max(nsd, 0.1);
+    E = Math.max(E, 0.01);
+    const Kb = bulkModulus || 1100;
+    let Anet = props.A;
+    for (const s of sipes || []) Anet -= sipeClippedLength(outer, s) * (s.width || 0);
+    Anet = Math.max(0, Anet);
+    const S = Anet / (nsd * Math.max(props.perimeter, 1e-9));
+    const EeffUncorr = E * (1 + 2 * gentK * S * S);
+    const Eeff = EeffUncorr / (1 + EeffUncorr / Kb);
+    return { Kz: (Eeff * Anet) / nsd, S: S, Eeff: Eeff, Anet: Anet };
+  }
+
   // params: {shore_a, poisson, mode, bulk_modulus, n_slices, e_override, k_override}
   function blockStiffness(block, params) {
     const verts = block.polygon;
-    const props = polygonProps(verts);
+    const holes = block.holes || [];
+    const props = holes.length ? regionProps(verts, holes) : polygonProps(verts);
     if (!props || block.height <= 0)
       return { kx: 0, ky: 0, kxy: 0, kz: 0, area: 0, netArea: 0, perimeter: 0, shapeFactor: 0, eEff: 0, slenderness: 0, nSubs: 0 };
     let E, k;
     if (block.shore_a != null) { E = shoreE(block.shore_a); k = shoreK(block.shore_a); }
     else { const cp = compoundProperties(params); E = cp.E; k = cp.k; }
     const sipes = effectiveSipes(block);
-    const sh = effectiveK(verts, block.height, E, params.poisson, block.draft_angle || 0, params.mode, sipes, params.n_slices || 40, params.sipe_model);
-    const kzr = computeKz(verts, block.height, E, k, sipes, params.bulk_modulus || 1100);
+    const sh = holes.length
+      ? effectiveKRegion(verts, holes, block.height, E, params.poisson, block.draft_angle || 0, params.mode, params.n_slices || 40)
+      : effectiveK(verts, block.height, E, params.poisson, block.draft_angle || 0, params.mode, sipes, params.n_slices || 40, params.sipe_model);
+    const kzr = holes.length
+      ? computeKzRegion(verts, holes, block.height, E, k, sipes, params.bulk_modulus || 1100)
+      : computeKz(verts, block.height, E, k, sipes, params.bulk_modulus || 1100);
     // slenderness = height / min plan dimension
     let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
     for (const q of verts) { xmin = Math.min(xmin, q[0]); xmax = Math.max(xmax, q[0]); ymin = Math.min(ymin, q[1]); ymax = Math.max(ymax, q[1]); }
@@ -583,7 +701,7 @@
       // their current height. There is no other way to be in contact.
       const h = Math.max(minH, (tb.nsd || 0) - wear);
       engaged.push({
-        id: tb.id, pitch_id: tb.pitch_id || "", polygon: tb.polygon, zone: tb.zone,
+        id: tb.id, pitch_id: tb.pitch_id || "", polygon: tb.polygon, holes: tb.holes || [], zone: tb.zone,
         height: h, draft_angle: tb.draft_angle || 0,
         n_lateral_sipes: tb.n_lateral_sipes || 0,
         sipe_depth_fraction: tb.sipe_depth_fraction, sipe_width: tb.sipe_width,
@@ -704,6 +822,52 @@
         wall_length: rec.len, span: d, dir: [dx / d, dy / d],
       });
     });
+
+    // An explicitly hatched bar was drawn independently of the block outlines,
+    // so its long side is ONE edge where the planar arrangement has split the
+    // neighbouring rib wall at several T-junctions. Those edges are the same
+    // wall geometrically but have different endpoint keys, and the exact-key
+    // pass above finds nothing. Fall back to collinear overlap, and only for a
+    // hatched bar that did not already acquire two links -- every automatically
+    // detected bar keeps the original path untouched.
+    function edgeOverlap(a, b, c, d, tol) {
+      const vx = b[0] - a[0], vy = b[1] - a[1], L = Math.hypot(vx, vy);
+      if (L <= tol) return null;
+      const nx = -vy / L, ny = vx / L;
+      if (Math.abs((c[0] - a[0]) * nx + (c[1] - a[1]) * ny) > tol ||
+          Math.abs((d[0] - a[0]) * nx + (d[1] - a[1]) * ny) > tol) return null;
+      const ux = vx / L, uy = vy / L;
+      let t0 = (c[0] - a[0]) * ux + (c[1] - a[1]) * uy;
+      let t1 = (d[0] - a[0]) * ux + (d[1] - a[1]) * uy;
+      if (t1 < t0) { const q = t0; t0 = t1; t1 = q; }
+      const lo = Math.max(0, t0), hi = Math.min(L, t1);
+      if (hi - lo <= tol) return null;
+      const m = (lo + hi) / 2;
+      return { len: hi - lo, mid: [a[0] + ux * m, a[1] + uy * m] };
+    }
+    for (let ti = 0; ti < tiebars.length; ti++) {
+      const tb = tiebars[ti];
+      if (tb.source !== "hatch" || tb.links.length >= 2) continue;
+      const have = new Set(tb.links.filter((l) => l.kind === "block").map((l) => l.index));
+      for (let bi = 0; bi < blocks.length; bi++) {
+        if (have.has(bi)) continue;
+        let len = 0, mx = 0, my = 0;
+        const bp = blocks[bi].polygon;
+        for (let i = 0; i < tb.polygon.length; i++) {
+          const a = tb.polygon[i], b = tb.polygon[(i + 1) % tb.polygon.length];
+          for (let j = 0; j < bp.length; j++) {
+            const ov = edgeOverlap(a, b, bp[j], bp[(j + 1) % bp.length], 0.02);
+            if (!ov) continue;
+            len += ov.len; mx += ov.mid[0] * ov.len; my += ov.mid[1] * ov.len;
+          }
+        }
+        if (len <= 1e-6) continue;
+        const wall = [mx / len, my / len];
+        const dx = tb.centroid_x - wall[0], dy = tb.centroid_y - wall[1], span = Math.hypot(dx, dy);
+        if (span <= 1e-9) continue;
+        tb.links.push({ kind: "block", index: bi, wall_length: len, span: span, dir: [dx / span, dy / span] });
+      }
+    }
     for (const tb of tiebars) tb.n_neighbours = tb.links.length;
   }
 
@@ -871,7 +1035,7 @@
     for (const list of [engaged, submerged]) {
       for (const tb of list) {
         const h = Math.max(minH, tiebarCurrentHeight(tb, wear));
-        const el = { polygon: tb.polygon, height: h, draft_angle: tb.draft_angle || 0,
+        const el = { polygon: tb.polygon, holes: tb.holes || [], height: h, draft_angle: tb.draft_angle || 0,
                      n_lateral_sipes: 0, sipes: [], shore_a: tb.shore_a };
         idOf[tb.id] = nodes.length;
         nodes.push({ id: tb.id, kind: "tiebar", ref: tb, K: blockStiffness(el, params), height: h,
@@ -1251,6 +1415,37 @@
     return pairs;
   }
 
+  // Minimal LAYER-table reader, for resolving a BYLAYER hatch colour. Both the
+  // indexed colour and the true colour are kept: exporting the project again
+  // must not quantise a true-colour HATCH back to the nearest ACI.
+  function readDxfLayerColors(pairs) {
+    const out = {};
+    let section = null, table = null, rec = null;
+    function finish() {
+      if (!rec || !rec.name) return;
+      out[String(rec.name).toUpperCase()] = {
+        aci: rec.aci == null ? null : Math.abs(rec.aci),
+        true_color: rec.true_color == null ? null : rec.true_color,
+      };
+    }
+    for (let i = 0; i < pairs.length; i++) {
+      const code = pairs[i][0], value = pairs[i][1];
+      if (code === "0" && value === "SECTION") { section = i + 1 < pairs.length ? pairs[i + 1][1] : null; continue; }
+      if (code === "0" && value === "ENDSEC") { finish(); rec = null; table = null; section = null; continue; }
+      if (section !== "TABLES") continue;
+      if (code === "0" && value === "TABLE") { table = i + 1 < pairs.length ? pairs[i + 1][1] : null; continue; }
+      if (code === "0" && value === "ENDTAB") { finish(); rec = null; table = null; continue; }
+      if (table !== "LAYER") continue;
+      if (code === "0" && value === "LAYER") { finish(); rec = {}; continue; }
+      if (!rec) continue;
+      if (code === "2") rec.name = value;
+      else if (code === "62") rec.aci = +value;
+      else if (code === "420") rec.true_color = +value;
+    }
+    finish();
+    return out;
+  }
+
   // Read the ENTITIES section and, separately, every definition in BLOCKS so
   // that INSERT references can be expanded. A tread plan drawn as one pitch and
   // arrayed with INSERT used to import as nothing at all.
@@ -1305,7 +1500,11 @@
       // An LWPOLYLINE's bulge (42) only appears on the vertices that have one,
       // so it cannot be paired with the 10/20 list positionally. Keep the groups
       // in file order too, and read the vertices off that.
-      if (current.type === "LWPOLYLINE") (current.__seq = current.__seq || []).push([code, value]);
+      // A HATCH is read the same way and for the same reason: its boundary
+      // paths are a nested list whose meaning is entirely positional, so the
+      // grouped-by-code view above cannot reconstruct it.
+      if (current.type === "LWPOLYLINE" || current.type === "HATCH")
+        (current.__seq = current.__seq || []).push([code, value]);
       if (section === "BLOCKS" && current.type === "BLOCK") {
         if (code === "2") blockName = value;
         if (code === "10") blockBase[0] = +value;
@@ -1314,6 +1513,13 @@
     }
     entities.__blocks = blocks;
     entities.__types = seenTypes;
+    entities.__layer_colors = readDxfLayerColors(pairs);
+    // A HATCH inside a BLOCK definition has to resolve its layer colour too, and
+    // an INSERT expansion walks the definition's own entity list.
+    Object.keys(blocks).forEach(function (name) {
+      blocks[name].entities.__blocks = blocks;
+      blocks[name].entities.__layer_colors = entities.__layer_colors;
+    });
     return entities;
   }
 
@@ -1407,6 +1613,309 @@
       const t = t0 + (sweep * i) / n;
       const ex = a * Math.cos(t), ey = b * Math.sin(t);
       out.push([cx + ex * Math.cos(rot) - ey * Math.sin(rot), cy + ex * Math.sin(rot) + ey * Math.cos(rot)]);
+    }
+    return out;
+  }
+
+  // ---------------------------------------------------------------------
+  // HATCH: filled regions, read as tie bars rather than as outlines
+  // ---------------------------------------------------------------------
+  //
+  // A designer marking tie bars on the drawing colours them in. That is a
+  // statement of intent, and it is worth far more than the geometric guess the
+  // face classifier below has to make. So a HATCH on the TIEBAR layer is read
+  // separately, kept whole with its holes and its colour, and treated as
+  // authoritative -- while every drawing that has no hatches goes down exactly
+  // the path it always did.
+
+  function dxfTrueColorCss(v) {
+    v = (+v || 0) >>> 0;
+    return "#" + ((v >> 16) & 255).toString(16).padStart(2, "0") +
+      ((v >> 8) & 255).toString(16).padStart(2, "0") +
+      (v & 255).toString(16).padStart(2, "0");
+  }
+
+  // The AutoCAD Colour Index is a fixed 256-entry table. The first nine and the
+  // greyscale tail are exact; the 10..249 body is reproduced from its
+  // construction (24 hue bands, five brightness pairs) rather than tabulated,
+  // which is close enough to tell one marked-up tie bar from another. An exact
+  // colour always arrives as a true colour (group 420) anyway.
+  function aciColorCss(aci) {
+    aci = Math.abs(parseInt(aci, 10) || 0);
+    const basic = { 1: "#ff0000", 2: "#ffff00", 3: "#00ff00", 4: "#00ffff",
+                    5: "#0000ff", 6: "#ff00ff", 7: "#ffffff", 8: "#808080", 9: "#c0c0c0" };
+    if (basic[aci]) return basic[aci];
+    // 250-255 is the grey ramp, and its six values are tabulated rather than
+    // interpolated: the real table's step is not a round number, and 255 is
+    // white, which a linear guess misses by a visible amount.
+    if (aci >= 250) {
+      const ramp = [51, 91, 132, 173, 214, 255];
+      const g = ramp[Math.min(ramp.length - 1, aci - 250)];
+      return "#" + g.toString(16).padStart(2, "0").repeat(3);
+    }
+    if (aci >= 10 && aci < 250) {
+      const band = Math.floor((aci - 10) / 10), shade = (aci - 10) % 10;
+      const h = (band * 15) % 360;
+      const sat = shade % 2 ? 55 : 100;
+      const light = [50, 65, 37, 50, 25, 35, 18, 27, 12, 20][shade];
+      const c = (1 - Math.abs(2 * light / 100 - 1)) * sat / 100;
+      const hp = h / 60, x = c * (1 - Math.abs(hp % 2 - 1));
+      let rgb = hp < 1 ? [c, x, 0] : hp < 2 ? [x, c, 0] : hp < 3 ? [0, c, x]
+        : hp < 4 ? [0, x, c] : hp < 5 ? [x, 0, c] : [c, 0, x];
+      const m = light / 100 - c / 2;
+      rgb = rgb.map((q) => Math.round(255 * (q + m)));
+      return "#" + rgb.map((q) => q.toString(16).padStart(2, "0")).join("");
+    }
+    return "#9b6bff";
+  }
+
+  // Entity true colour beats entity ACI beats the layer's colour beats magenta.
+  // 0 is BYBLOCK and 256 is BYLAYER: neither is a colour, so both fall through.
+  function hatchColor(e, layerColors, layer) {
+    const tc = e["420"] && Number.isFinite(+e["420"][0]) ? +e["420"][0] : null;
+    const rawAci = e["62"] && Number.isFinite(+e["62"][0]) ? +e["62"][0] : null;
+    const lr = (layerColors || {})[String(layer || "").toUpperCase()] || {};
+    const trueColor = tc != null ? tc : lr.true_color != null ? lr.true_color : null;
+    const aci = rawAci != null && rawAci !== 0 && rawAci !== 256 ? Math.abs(rawAci)
+      : lr.aci != null ? Math.abs(lr.aci) : 6;
+    return {
+      css: trueColor != null ? dxfTrueColorCss(trueColor) : aciColorCss(aci),
+      aci: aci, true_color: trueColor,
+      source: tc != null ? "entity true colour" : rawAci != null && rawAci !== 256
+        ? "entity ACI" : (lr.true_color != null || lr.aci != null ? "TIEBAR layer" : "default"),
+    };
+  }
+
+  // A hatch edge states its own direction (group 73), unlike an ARC entity,
+  // which is always counter-clockwise. Getting this wrong reverses part of a
+  // boundary and the stitched loop crosses itself.
+  function flattenArcDirectional(cx, cy, r, a0, a1, ccw, sagitta) {
+    let sweep = a1 - a0;
+    if (ccw) while (sweep <= 0) sweep += 360;
+    else while (sweep >= 0) sweep -= 360;
+    const rad = Math.abs(sweep) * Math.PI / 180;
+    if (!(r > 0) || !(rad > 0)) return [];
+    sagitta = sagitta || 0.02;
+    const step = r > sagitta ? 2 * Math.acos(Math.max(-1, Math.min(1, 1 - sagitta / r))) : rad;
+    const n = Math.max(2, Math.ceil(rad / Math.max(step, 1e-6)));
+    const out = [];
+    for (let i = 0; i <= n; i++) {
+      const a = (a0 + sweep * i / n) * Math.PI / 180;
+      out.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+    return out;
+  }
+
+  function flattenHatchEllipse(vals, sagitta) {
+    const cx = +(vals["10"] || [0])[0], cy = +(vals["20"] || [0])[0];
+    const mx = +(vals["11"] || [0])[0], my = +(vals["21"] || [0])[0];
+    const ratio = +(vals["40"] || [1])[0];
+    const a = Math.hypot(mx, my), b = a * ratio;
+    if (!(a > 0) || !(b > 0)) return [];
+    const t0 = +(vals["50"] || [0])[0], t1 = +(vals["51"] || [360])[0];
+    const ccw = +(vals["73"] || [1])[0] !== 0;
+    let sweep = t1 - t0;
+    if (ccw) while (sweep <= 0) sweep += 360;
+    else while (sweep >= 0) sweep -= 360;
+    const rmax = Math.max(a, b), rad = Math.abs(sweep) * Math.PI / 180;
+    sagitta = sagitta || 0.02;
+    const step = rmax > sagitta ? 2 * Math.acos(Math.max(-1, Math.min(1, 1 - sagitta / rmax))) : rad;
+    const n = Math.max(3, Math.ceil(rad / Math.max(step, 1e-6)));
+    const rot = Math.atan2(my, mx), out = [];
+    for (let i = 0; i <= n; i++) {
+      const t = (t0 + sweep * i / n) * Math.PI / 180;
+      const ex = a * Math.cos(t), ey = b * Math.sin(t);
+      out.push([cx + ex * Math.cos(rot) - ey * Math.sin(rot),
+                cy + ex * Math.sin(rot) + ey * Math.cos(rot)]);
+    }
+    return out;
+  }
+
+  // Edge types: 1 line, 2 arc, 3 ellipse, 4 spline. A spline edge is taken at
+  // its fit points (11/21) when it has them and its control points otherwise --
+  // the control polygon is not the curve, but it is the right shape and the
+  // right size, and a tie bar boundary is not drawn with splines in practice.
+  function hatchEdgePoints(type, vals, sagitta) {
+    if (type === 1) return [[+(vals["10"] || [0])[0], +(vals["20"] || [0])[0]],
+                            [+(vals["11"] || [0])[0], +(vals["21"] || [0])[0]]];
+    if (type === 2) return flattenArcDirectional(+(vals["10"] || [0])[0], +(vals["20"] || [0])[0],
+      +(vals["40"] || [0])[0], +(vals["50"] || [0])[0], +(vals["51"] || [0])[0],
+      +(vals["73"] || [1])[0] !== 0, sagitta);
+    if (type === 3) return flattenHatchEllipse(vals, sagitta);
+    if (type === 4) {
+      const fx = (vals["11"] || []).map(Number), fy = (vals["21"] || []).map(Number);
+      const xs = fx.length >= 2 ? fx : (vals["10"] || []).map(Number);
+      const ys = fy.length >= 2 ? fy : (vals["20"] || []).map(Number);
+      const out = [];
+      for (let i = 0; i < Math.min(xs.length, ys.length); i++) out.push([xs[i], ys[i]]);
+      return out;
+    }
+    return [];
+  }
+
+  // Edges arrive in order but not necessarily in direction, so each one is
+  // flipped if that is the end nearer the chain so far.
+  function stitchHatchEdges(edges, tol) {
+    tol = tol || 1e-5;
+    const out = [];
+    const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+    for (let k = 0; k < edges.length; k++) {
+      let q = edges[k].filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+      if (q.length < 2) continue;
+      if (out.length && d(out[out.length - 1], q[q.length - 1]) < d(out[out.length - 1], q[0])) q = q.slice().reverse();
+      if (!out.length) out.push.apply(out, q);
+      else out.push.apply(out, d(out[out.length - 1], q[0]) <= tol ? q.slice(1) : q);
+    }
+    if (out.length > 2 && d(out[0], out[out.length - 1]) <= tol) out.pop();
+    return out;
+  }
+
+  // Parse both boundary-path styles: polyline (flag bit 2) and edge list. The
+  // returned loops carry no duplicated closing point and keep the DXF path
+  // flags, which is where "this loop is the outer one" is recorded.
+  function hatchBoundaryLoops(e, sagitta) {
+    const seq = e.__seq || [], loops = [];
+    let i = 0, pathsRead = 0;
+    const nPaths = Math.max(0, +(e["91"] || [0])[0] || 0);
+    while (i < seq.length && (nPaths === 0 || pathsRead < nPaths)) {
+      while (i < seq.length && seq[i][0] !== "92") i++;
+      if (i >= seq.length) break;
+      const flags = +seq[i][1] || 0; i++; pathsRead++;
+      if (flags & 2) {
+        let hasBulge = 0, closed = 1, n = 0;
+        while (i < seq.length && seq[i][0] !== "10" && seq[i][0] !== "92") {
+          if (seq[i][0] === "72") hasBulge = +seq[i][1] || 0;
+          else if (seq[i][0] === "73") closed = +seq[i][1] || 0;
+          else if (seq[i][0] === "93") n = +seq[i][1] || 0;
+          i++;
+        }
+        const verts = [], bulges = [];
+        while (i < seq.length && verts.length < n && seq[i][0] !== "92") {
+          while (i < seq.length && seq[i][0] !== "10" && seq[i][0] !== "92") i++;
+          if (i >= seq.length || seq[i][0] === "92") break;
+          const x = +seq[i][1]; i++;
+          let y = NaN, b = 0;
+          while (i < seq.length && seq[i][0] !== "10" && seq[i][0] !== "92") {
+            if (seq[i][0] === "20") y = +seq[i][1];
+            else if (seq[i][0] === "42") b = +seq[i][1] || 0;
+            i++;
+          }
+          verts.push([x, y]); bulges.push(b);
+        }
+        const pts = [];
+        const last = closed ? verts.length : Math.max(0, verts.length - 1);
+        for (let v = 0; v < last; v++) {
+          const p0 = verts[v], p1 = verts[(v + 1) % verts.length];
+          pts.push(p0);
+          if (hasBulge) for (const q of bulgeArc(p0, p1, bulges[v], sagitta)) pts.push(q);
+        }
+        if (!closed && verts.length) pts.push(verts[verts.length - 1]);
+        if (closed && pts.length >= 3 && finitePts(pts)) loops.push({ polygon: pts, flags: flags });
+      } else {
+        let nEdges = 0;
+        while (i < seq.length && seq[i][0] !== "72" && seq[i][0] !== "92") {
+          if (seq[i][0] === "93") nEdges = +seq[i][1] || 0;
+          i++;
+        }
+        const edges = [];
+        for (let ed = 0; ed < nEdges && i < seq.length; ed++) {
+          if (seq[i][0] !== "72") break;
+          const type = +seq[i][1] || 0; i++;
+          const vals = {};
+          while (i < seq.length && seq[i][0] !== "72" && seq[i][0] !== "92") {
+            (vals[seq[i][0]] = vals[seq[i][0]] || []).push(seq[i][1]); i++;
+          }
+          const pts = hatchEdgePoints(type, vals, sagitta);
+          if (pts.length >= 2) edges.push(pts);
+        }
+        const pts = stitchHatchEdges(edges, 1e-4);
+        if (pts.length >= 3 && finitePts(pts)) loops.push({ polygon: pts, flags: flags });
+      }
+    }
+    return loops;
+  }
+
+  // Which loop is a hole is decided by nesting depth, not by the DXF flags: a
+  // hatch written by a script often flags every path the same way, and the
+  // even-odd rule is what the CAD system draws anyway. Even depth is solid, odd
+  // depth is a hole, and a hole inside a hole is an island in its own right.
+  function hatchLoopsToRegions(loops) {
+    const good = loops.filter((l) => l.polygon.length >= 3 && polygonArea(l.polygon) > 1e-6);
+    const depth = new Array(good.length).fill(0);
+    for (let i = 0; i < good.length; i++) {
+      const c = polygonCentroid(good[i].polygon), ai = polygonArea(good[i].polygon);
+      for (let j = 0; j < good.length; j++) {
+        if (i === j || polygonArea(good[j].polygon) <= ai) continue;
+        if (pointInPolygon(c, good[j].polygon)) depth[i]++;
+      }
+    }
+    const regions = [];
+    for (let i = 0; i < good.length; i++) {
+      if (depth[i] % 2) continue;
+      const outer = ensureCCW(good[i].polygon);
+      const holes = [];
+      for (let j = 0; j < good.length; j++) {
+        if (depth[j] !== depth[i] + 1) continue;
+        const c = polygonCentroid(good[j].polygon);
+        if (pointInPolygon(c, outer)) holes.push(ensureCCW(good[j].polygon).slice().reverse());
+      }
+      regions.push({ polygon: outer, holes: holes, boundary_flags: good[i].flags });
+    }
+    return regions;
+  }
+
+  // Collect every TIEBAR-layer HATCH, expanding INSERTs the same way the
+  // segment reader does so a pattern arrayed from a block still finds its bars.
+  // A hatch drawn on layer 0 inside a block inherits the INSERT's layer, which
+  // is how CAD resolves it.
+  function tiebarHatches(entities, sagitta, stats, blocks, inheritedLayer, parentTransform, depth) {
+    const out = [];
+    stats = stats || {}; blocks = blocks || entities.__blocks || {};
+    const layerColors = entities.__layer_colors || {};
+    inheritedLayer = inheritedLayer || "0";
+    parentTransform = parentTransform || function (p) { return [p[0], p[1]]; };
+    depth = depth || 0;
+    for (const e of entities) {
+      const rawLayer = (e["8"] || ["0"])[0];
+      const layer = rawLayer === "0" ? inheritedLayer : rawLayer;
+      if (e.type === "HATCH" && String(layer).toUpperCase() === "TIEBAR") {
+        const loops = hatchBoundaryLoops(e, sagitta).map((l) => ({
+          polygon: l.polygon.map(parentTransform), flags: l.flags,
+        }));
+        const regions = hatchLoopsToRegions(loops);
+        const color = hatchColor(e, layerColors, layer);
+        for (let r = 0; r < regions.length; r++) {
+          regions[r].source = "hatch";
+          regions[r].layer = layer;
+          regions[r].color = color;
+          regions[r].hatch = {
+            handle: (e["5"] || [""])[0], pattern: (e["2"] || ["SOLID"])[0],
+            solid_fill: +(e["70"] || [1])[0] !== 0, entity_index: out.length,
+          };
+          out.push(regions[r]);
+        }
+        stats.tiebar_hatches = (stats.tiebar_hatches || 0) + 1;
+        stats.tiebar_hatch_regions = (stats.tiebar_hatch_regions || 0) + regions.length;
+        stats.tiebar_hatch_holes = (stats.tiebar_hatch_holes || 0) + regions.reduce((s, r) => s + r.holes.length, 0);
+      } else if (e.type === "INSERT" && depth <= 6) {
+        const name = (e["2"] || [""])[0], def = blocks[name];
+        if (!def) continue;
+        const ix = +(e["10"] || [0])[0], iy = +(e["20"] || [0])[0];
+        const sx = +(e["41"] || [1])[0] || 1, sy = +(e["42"] || [1])[0] || 1;
+        const rot = (+(e["50"] || [0])[0]) * Math.PI / 180, ca = Math.cos(rot), sa = Math.sin(rot);
+        const nCols = Math.max(1, parseInt((e["70"] || ["1"])[0], 10) || 1);
+        const nRows = Math.max(1, parseInt((e["71"] || ["1"])[0], 10) || 1);
+        const dCol = +(e["44"] || [0])[0], dRow = +(e["45"] || [0])[0];
+        for (let rr = 0; rr < nRows; rr++) for (let cc = 0; cc < nCols; cc++) {
+          const ox = ix + cc * dCol, oy = iy + rr * dRow;
+          const tf = function (p) {
+            const x = (p[0] - def.base[0]) * sx, y = (p[1] - def.base[1]) * sy;
+            return parentTransform([ox + x * ca - y * sa, oy + x * sa + y * ca]);
+          };
+          const nested = tiebarHatches(def.entities, sagitta, stats, blocks, layer, tf, depth + 1);
+          out.push.apply(out, nested);
+        }
+      }
     }
     return out;
   }
@@ -1969,6 +2478,25 @@
     return [x0, x1, y0, y1];
   }
 
+  // Geometry-only identity test, used to recognise that an explicit TIEBAR
+  // HATCH and a face the automatic detector found are the same tie bar. It
+  // compares the OUTER boundary deliberately: a hatch may add holes the
+  // linework never described, and where the two disagree the drawn intent has
+  // to win. Area first (cheap and decisive), then centroid and bounding box, so
+  // two bars of the same size in different grooves can never be confused.
+  function sameOuterRegion(a, b, tol) {
+    const pa = a.polygon || a, pb = b.polygon || b;
+    if (!pa || !pb || pa.length < 3 || pb.length < 3) return false;
+    tol = Math.max(0.05, (tol || 0.01) * 10);
+    const aa = polygonArea(pa), ab = polygonArea(pb);
+    if (!(aa > 0) || !(ab > 0) || Math.abs(aa - ab) > 0.02 * Math.max(aa, ab)) return false;
+    const ca = polygonCentroid(pa), cb = polygonCentroid(pb);
+    if (Math.hypot(ca[0] - cb[0], ca[1] - cb[1]) > tol) return false;
+    const ba = bbox(pa), bb = bbox(pb);
+    for (let i = 0; i < 4; i++) if (Math.abs(ba[i] - bb[i]) > tol) return false;
+    return true;
+  }
+
   // How many block outlines sit wholly inside another one. Bounding boxes are
   // checked first so this stays cheap on a few hundred blocks.
   function countNestedLoops(blocks) {
@@ -2212,10 +2740,16 @@
   // Found by running the existing arrangement on the base pitch alone and
   // taking the x-extent of every closed outline, including the ones that wrap
   // the pitch boundary.
-  function landSpansX(chains, L, weldTol) {
+  // `regions` are closed regions that are land but are not drawn as outlines --
+  // an explicitly hatched tie bar. A bar is rubber, so under groove-only
+  // scaling it keeps its circumferential length like any other land; left out
+  // of this list a bar drawn where no block reaches would be stretched as
+  // though it were void.
+  function landSpansX(chains, L, weldTol, regions) {
     const arr = planarArrangement(chains, weldTol);
     const seam = closeAcrossSeam(arr.openChains, L, weldTol);
-    const loops = arr.faces.map((f) => f.polygon).concat(seam.loops);
+    const loops = arr.faces.map((f) => f.polygon).concat(seam.loops)
+      .concat((regions || []).map((r) => r.polygon));
     const spans = [];
     for (const poly of loops) {
       let lo = Infinity, hi = -Infinity;
@@ -2336,7 +2870,12 @@
   // Replicate the base pitch into the whole rolled-out tread.
   // `chains` are in local coordinates spanning [0, L0]; returns new chains
   // spanning [0, circumference] plus a report of what was done.
-  function replicatePitch(chains, spec, weldTol) {
+  //
+  // `regions` is the optional list of closed regions drawn on the same pitch --
+  // today, the explicit TIEBAR hatches. They ride the identical per-instance
+  // transform rather than a reconstruction of it, so a bar drawn once cannot
+  // end up anywhere other than exactly where its pitch put it.
+  function replicatePitch(chains, spec, weldTol, regions) {
     const lengths = pitchInstanceLengths(spec);
     if (!lengths || !lengths.length) throw new Error("no pitch sequence to replicate");
 
@@ -2439,24 +2978,30 @@
         "end, so they were kept as real tread edges. If they are cut lines, the drawing is missing the one at " +
         "the opposite boundary.");
 
-    const spans = mode === "groove_only" ? landSpansX(tiles, L0, weldTol) : null;
+    const spans = mode === "groove_only" ? landSpansX(tiles, L0, weldTol, regions) : null;
     if (spans && !spans.length)
       throw new Error("groove-only scaling found no closed block outlines in the drawn pitch, so it cannot " +
         "tell a block from a groove. Use uniform scaling.");
 
     const out = [];
+    const outRegions = [];
     const instances = [];
     let x0 = 0;
     for (let i = 0; i < lengths.length; i++) {
       const L1 = lengths[i];
       const map = Math.abs(L1 - L0) < 1e-12 ? null : pitchStretchMap(L0, L1, spans);
+      const place = (p) => [x0 + (map ? map(p[0]) : p[0]), p[1]];
       for (const ch of tiles) {
         const moved = new Array(ch.length);
-        for (let v = 0; v < ch.length; v++) {
-          const p = ch[v];
-          moved[v] = [x0 + (map ? map(p[0]) : p[0]), p[1]];
-        }
+        for (let v = 0; v < ch.length; v++) moved[v] = place(ch[v]);
         out.push(moved);
+      }
+      for (const rg of regions || []) {
+        outRegions.push(Object.assign({}, rg, {
+          polygon: rg.polygon.map(place),
+          holes: (rg.holes || []).map((h) => h.map(place)),
+          pitch_index: i,
+        }));
       }
       instances.push({ index: i, start: x0, length: L1,
                        scale: L1 / L0, id: "P" + String(i).padStart(3, "0") });
@@ -2472,7 +3017,7 @@
     }
 
     return {
-      chains: out, circumference: x0, base_length: L0, instances: instances,
+      chains: out, regions: outRegions, circumference: x0, base_length: L0, instances: instances,
       scaling: varies ? mode : "none (every pitch is the drawn length)",
       land_spans: spans, closure: closure, snapped: snapped,
       cut_lines_removed: cut.removed, warnings: warnings,
@@ -2504,6 +3049,11 @@
     validateImportOptions(opts);
     const entities = readDxfEntities(text);
     const stats = {};
+    // A HATCH is an annotation, not an outline segment. The TIEBAR layer is
+    // read separately and kept whole, so the planar arrangement below never
+    // sees it and the geometric detector stays exactly what it was -- the
+    // fallback for every drawing that carries no hatches at all.
+    let explicitHatchesRaw = tiebarHatches(entities, 0.02, stats);
     let segments = entitiesToSegments(entities, 0.02, stats);
     const warnings = [];
     if (!segments.length)
@@ -2561,6 +3111,12 @@
     }
     if (kept.length !== segments.length) warnings.push("ignored " + (segments.length - kept.length) + " full-span construction line(s)");
     segments = kept;
+    // The hatches move into the same frame as the linework, and from here on
+    // they are ordinary regions in tread coordinates.
+    explicitHatchesRaw = explicitHatchesRaw.map((hr) => Object.assign({}, hr, {
+      polygon: hr.polygon.map((p) => [p[0] - xMin, p[1] - yMin]),
+      holes: (hr.holes || []).map((h) => h.map((p) => [p[0] - xMin, p[1] - yMin])),
+    }));
 
     // Weld tolerance. CAD exports routinely leave corners a few microns apart
     // after a trim; at the old 1e-3 mm a 5 um gap lost the whole block with only
@@ -2577,8 +3133,12 @@
     // which for a pitch DXF is the pitch length, so it is replaced.
     let pitchRep = null;
     if (opts.pitch) {
-      pitchRep = replicatePitch(segments, opts.pitch, weldTol);
+      pitchRep = replicatePitch(segments, opts.pitch, weldTol, explicitHatchesRaw);
       segments = pitchRep.chains;
+      // A bar hatched once in the drawn pitch is a bar in every pitch. Without
+      // this the tread would come out with N pitches of blocks and one lonely
+      // tie bar, and nothing on the page would say so.
+      explicitHatchesRaw = pitchRep.regions;
       for (const w of pitchRep.warnings) warnings.push(w);
       if (opts.circumference && Math.abs(opts.circumference - pitchRep.circumference) > 1e-6)
         warnings.push("the pitch sequence adds up to " + pitchRep.circumference.toFixed(2) +
@@ -2619,9 +3179,45 @@
         return true;
       });
     }
+    const nDetectedBeforeHatch = tiebarFaces.length;
     if (cls.unclassified.length)
       warnings.push(cls.unclassified.length + " small region(s) share an edge with a block but touch only one of " +
         "them, so they were counted as blocks rather than tie bars — check 6 · Wear & tie bars if any of them is a bar");
+
+    // Reconcile the explicit hatches with what the detector found.
+    //
+    // Three outcomes, and each one has to be right or the bar is counted twice
+    // or not at all:
+    //   * the detector found the same face  -> keep the hatch, drop the face
+    //     (the hatch may carry holes and a colour the linework never had)
+    //   * the detector called it a BLOCK    -> drop the block; a drawn TIEBAR
+    //     layer is a statement of intent and outranks the area heuristic
+    //   * the detector found nothing there  -> the hatch stands alone, which is
+    //     the whole point of hatching bars that the linework does not close
+    const explicitHatches = [];
+    for (const hr of explicitHatchesRaw) {
+      if (hr.polygon.length < 3 || regionArea(hr.polygon, hr.holes) < Math.min(minBlockArea, 1.0)) continue;
+      if (explicitHatches.some((q) => sameOuterRegion(q, hr, weldTol))) continue;   // hatched twice
+      explicitHatches.push(hr);
+    }
+    let nMergedHatches = 0, nHatchBlocksReclaimed = 0;
+    if (explicitHatches.length) {
+      const usedAuto = new Set();
+      for (const hr of explicitHatches) {
+        for (let i = 0; i < tiebarFaces.length; i++) {
+          if (!usedAuto.has(i) && sameOuterRegion(hr, tiebarFaces[i], weldTol)) {
+            usedAuto.add(i); hr.merged_automatic = true; nMergedHatches++; break;
+          }
+        }
+      }
+      tiebarFaces = tiebarFaces.filter((f, i) => !usedAuto.has(i));
+      const beforeBlocks = loops.length;
+      loops = loops.filter((poly) => !explicitHatches.some((hr) => sameOuterRegion(hr, poly, weldTol)));
+      nHatchBlocksReclaimed = beforeBlocks - loops.length;
+      if (nHatchBlocksReclaimed)
+        warnings.push(nHatchBlocksReclaimed + " region(s) hatched on the TIEBAR layer had been read as blocks by " +
+          "outline area alone; the drawn layer wins and they are now tie bars.");
+    }
 
     // An import that yields no blocks is a failed import, not an empty tyre.
     // Left to run it produces all-zero charts with nothing to explain them.
@@ -2713,21 +3309,31 @@
     // fraction of the local block NSD and let the user set each one.
     const tbFrac = opts.tiebar_height_fraction == null ? 0.55 : opts.tiebar_height_fraction;
     const tiebars = [];
-    tiebarFaces.sort((a, b) => bbox(a.polygon)[0] - bbox(b.polygon)[0]);
-    for (let i = 0; i < tiebarFaces.length; i++) {
-      const poly = tiebarFaces[i].polygon.map((p) => [p[0], p[1] - half]);
-      const c = polygonCentroid(poly);
+    // Detected and hatched bars are numbered together, in circumferential
+    // order, so T007 means the eighth bar around the tyre however it was found.
+    const tiebarDefs = tiebarFaces.map((f) => Object.assign({ source: "automatic", holes: [] }, f))
+      .concat(explicitHatches.map((h) => Object.assign({}, h, { source: "hatch" })))
+      .sort((a, b) => bbox(a.polygon)[0] - bbox(b.polygon)[0]);
+    for (let i = 0; i < tiebarDefs.length; i++) {
+      const def = tiebarDefs[i];
+      const poly = def.polygon.map((p) => [p[0], p[1] - half]);
+      const holes = (def.holes || []).map((h) => h.map((p) => [p[0], p[1] - half]));
+      const c = regionCentroid(poly, holes);
       const zone = classifyZone(Math.abs(c[1]), width, opts.zone_center, opts.zone_intermediate);
       const nsd = defaults.height_by_zone[zone] != null ? defaults.height_by_zone[zone] : defaults.height;
       tiebars.push({
-        id: "T" + String(i).padStart(3, "0"), polygon: poly, zone: zone,
+        id: "T" + String(i).padStart(3, "0"), polygon: poly, holes: holes, zone: zone,
         nsd: nsd, height: Math.min(nsd, tbFrac * nsd),
         draft_angle: defaults.draft_by_zone[zone] != null ? defaults.draft_by_zone[zone] : defaults.draft_angle,
         shore_a: defaults.shore_a, sipes: [], n_lateral_sipes: 0,
         sipe_depth_fraction: defaults.sipe_depth_fraction, sipe_width: 0.5,
         enabled: true,
-        area: polygonArea(poly), centroid_x: c[0], centroid_y: c[1],
-        n_neighbours: (tiebarFaces[i].neighbours || []).length,
+        source: def.source || "automatic", layer: def.layer || null,
+        color: def.color || null, hatch: def.hatch || null,
+        merged_automatic: !!def.merged_automatic,
+        boundary_flags: def.boundary_flags == null ? null : def.boundary_flags,
+        area: regionArea(poly, holes), centroid_x: c[0], centroid_y: c[1],
+        n_neighbours: (def.neighbours || []).length,
       });
     }
     // Which blocks each bar is bonded to. Geometry only, so it survives every
@@ -2740,7 +3346,12 @@
         "coupling stiffness. This usually means the bar's outline does not meet the groove walls exactly.");
 
     if (tiebars.length)
-      warnings.push(tiebars.length + " tie bar(s) detected between blocks. They sit below the tread " +
+      warnings.push(tiebars.length + " tie bar(s) identified" +
+        (explicitHatches.length ? " (" + explicitHatches.length + " explicit TIEBAR HATCH region(s), " +
+          nDetectedBeforeHatch + " from area/shape detection" +
+          (nMergedHatches ? ", " + nMergedHatches + " of them the same bar found both ways" : "") + ")"
+          : " between blocks") +
+        ". They sit below the tread " +
         "surface, so they carry nothing until the tyre has worn past (NSD - tie-bar height) — set the " +
         "heights and the wear state in 6 · Wear & tie bars.");
 
@@ -2762,6 +3373,11 @@
       n_wrapped: seam.loops.length, n_discarded_open: seam.leftover.length, n_discarded_small: small.length,
       circumference: circ, tread_width: width, land_ratio: land / (circ * width), n_blocks: blocks.length,
       n_tiebars: tiebars.length, n_unclassified: cls.unclassified.length,
+      n_tiebars_detected: nDetectedBeforeHatch, n_tiebars_detected_retained: tiebarFaces.length,
+      n_tiebars_explicit: explicitHatches.length, n_tiebars_merged: nMergedHatches,
+      n_tiebar_blocks_reclaimed: nHatchBlocksReclaimed,
+      n_tiebar_hatches: stats.tiebar_hatches || 0,
+      n_tiebar_hatch_holes: stats.tiebar_hatch_holes || 0,
       n_faces: arr.faces.length, n_arrangement_edges: arr.stats.n_edges || 0,
       n_arrangement_splits: arr.stats.n_split || 0, weld_tolerance: weldTol,
       tiebar_reference_area: cls.referenceArea, tiebar_cut_area: cls.cutArea,
@@ -3353,8 +3969,12 @@
     return pieces.filter((p) => p.length >= 3);
   }
 
-  // Scanline-fill one polygon into `land` (Float32Array ny*nx) and `labels` (Int32Array), tagging with `idx`.
-  function fillPolygon(poly, grid, y0, land, labels, idx) {
+  // Scanline-fill one polygon into `land` (Float32Array ny*nx) and `labels`
+  // (Int32Array), tagging with `idx`. With `erase` set the same scan clears the
+  // pixels instead, which is how a hole is punched out -- but only where the
+  // label is still this region's own, so a hole can never rub out a neighbour
+  // that legitimately overlaps it on the raster.
+  function fillPolygon(poly, grid, y0, land, labels, idx, erase) {
     const ny = grid.ny, nx = grid.nx, dx = grid.dx, dy = grid.dy;
     let ymin = Infinity, ymax = -Infinity;
     for (const p of poly) { ymin = Math.min(ymin, p[1]); ymax = Math.max(ymax, p[1]); }
@@ -3380,7 +4000,11 @@
       for (let i = 0; i + 1 < xs.length; i += 2) {
         let c0 = Math.ceil(xs[i] / dx - 0.5), c1 = Math.ceil(xs[i + 1] / dx - 0.5);
         c0 = Math.max(0, Math.min(nx, c0)); c1 = Math.max(0, Math.min(nx, c1));
-        for (let c = c0; c < c1; c++) { land[rowBase + c] = 1; labels[rowBase + c] = idx; }
+        for (let c = c0; c < c1; c++) {
+          if (erase) {
+            if (labels[rowBase + c] === idx) { land[rowBase + c] = 0; labels[rowBase + c] = -1; }
+          } else { land[rowBase + c] = 1; labels[rowBase + c] = idx; }
+        }
       }
     }
   }
@@ -3404,9 +4028,16 @@
     const stiff = new Array(nBlocks);
     for (let i = 0; i < nBlocks; i++) stiff[i] = blockStiffness(pattern.blocks[i], stiffParams);
 
-    for (let idx = 0; idx < nBlocks; idx++)
+    for (let idx = 0; idx < nBlocks; idx++) {
       for (const piece of splitAtSeam(pattern.blocks[idx].polygon, pattern.tyre_circumference))
         fillPolygon(piece, grid, y0, land, labels, idx);
+      // Holes come out after the outline goes in, so a region drawn with a hole
+      // contributes its net area to contact -- the same area its stiffness was
+      // computed from.
+      for (const hole of pattern.blocks[idx].holes || [])
+        for (const piece of splitAtSeam(hole, pattern.tyre_circumference))
+          fillPolygon(piece, grid, y0, land, labels, idx, true);
+    }
 
     const blockPixelCount = new Int32Array(nBlocks);
     for (let i = 0; i < N; i++) { const l = labels[i]; if (l >= 0) blockPixelCount[l]++; }
@@ -4307,14 +4938,73 @@
   }
 
   // =====================================================================
+  // 12. writing a DXF back out
+  // =====================================================================
+  //
+  // The tread as it was understood, not as it was drawn: blocks as closed
+  // polylines on TREAD, and every tie bar as a colour-filled HATCH on TIEBAR --
+  // holes and all, in the colour it came in with. Re-importing this file has to
+  // give the same tread back, which is what makes it worth writing at all.
+
+  function dxfNum(v) {
+    if (!Number.isFinite(+v)) return "0";
+    return Number((+v).toFixed(8)).toString();
+  }
+
+  function patternToDxf(pattern) {
+    if (!pattern) throw new Error("no pattern to export");
+    const a = [], put = function (c, v) { a.push(String(c), String(v)); };
+    const layerAci = 6;
+    put(0, "SECTION"); put(2, "HEADER"); put(9, "$ACADVER"); put(1, "AC1027"); put(0, "ENDSEC");
+    put(0, "SECTION"); put(2, "TABLES"); put(0, "TABLE"); put(2, "LAYER"); put(70, 3);
+    [["0", 7], ["TREAD", 7], ["TIEBAR", layerAci]].forEach(function (l) {
+      put(0, "LAYER"); put(100, "AcDbSymbolTableRecord"); put(100, "AcDbLayerTableRecord");
+      put(2, l[0]); put(70, 0); put(62, l[1]); put(6, "CONTINUOUS");
+    });
+    put(0, "ENDTAB"); put(0, "ENDSEC");
+    put(0, "SECTION"); put(2, "ENTITIES");
+    function lwpoly(loop, layer) {
+      put(0, "LWPOLYLINE"); put(100, "AcDbEntity"); put(8, layer); put(100, "AcDbPolyline");
+      put(90, loop.length); put(70, 1);
+      loop.forEach(function (p) { put(10, dxfNum(p[0])); put(20, dxfNum(p[1])); });
+    }
+    (pattern.blocks || []).forEach(function (b) {
+      lwpoly(b.polygon, "TREAD");
+      (b.holes || []).forEach(function (h) { lwpoly(h, "TREAD"); });
+    });
+    (pattern.tiebars || []).forEach(function (tb) {
+      const loops = [ensureCCW(tb.polygon)].concat((tb.holes || []).map(function (h) { return ensureCCW(h).slice().reverse(); }));
+      put(0, "HATCH"); put(100, "AcDbEntity"); put(8, "TIEBAR");
+      if (tb.color && tb.color.true_color != null) put(420, tb.color.true_color);
+      else put(62, tb.color && tb.color.aci != null ? tb.color.aci : layerAci);
+      put(100, "AcDbHatch"); put(10, 0); put(20, 0); put(30, 0);
+      put(210, 0); put(220, 0); put(230, 1); put(2, "SOLID"); put(70, 1); put(71, 0);
+      put(91, loops.length);
+      loops.forEach(function (loop, i) {
+        put(92, i === 0 ? 3 : 2); put(72, 0); put(73, 1); put(93, loop.length);
+        loop.forEach(function (p) { put(10, dxfNum(p[0])); put(20, dxfNum(p[1])); });
+        put(97, 0);
+      });
+      put(75, 0); put(76, 1); put(98, 0);
+    });
+    put(0, "ENDSEC"); put(0, "EOF");
+    return a.join("\n") + "\n";
+  }
+
+  // =====================================================================
   return {
     // geometry
-    ensureCCW, polygonProps, polygonPerimeter, polygonArea, polygonCentroid, offsetPoly, clipPoly, splitBySipe, sipeClippedLength, netContactArea,
+    ensureCCW, polygonProps, polygonPerimeter, polygonArea, polygonCentroid,
+    regionArea, regionCentroid, regionProps,
+    offsetPoly, clipPoly, splitBySipe, sipeClippedLength, netContactArea,
     // stiffness
     SHORE_E_TABLE, SHORE_K_TABLE, shoreE, shoreK, shoreRangeWarning, calcG, beamKMatrix, effectiveK, computeKz, blockStiffness, effectiveSipes,
+    effectiveKRegion, computeKzRegion,
     // dxf
     readDxfEntities, entitiesToSegments, buildLoops, closeAcrossSeam, loadPattern, estimatePitchCount, geometricRepeat,
     dxfPairs, planarArrangement, classifyFaces, faceAdjacency, bulgeArc,
+    readDxfLayerColors, hatchBoundaryLoops, hatchLoopsToRegions, tiebarHatches,
+    hatchColor, aciColorCss, dxfTrueColorCss, sameOuterRegion, patternToDxf,
     replicatePitch, pitchInstanceLengths, pitchClosure, pitchStretchMap, landSpansX, PITCH_SCALING,
     crownMultiArc, parseCrownArcs, validateCrownArcs, buildCrown, MAX_CROWN_ARCS,
     crownFromDrops, crownArcsFromDrops, parseCrownDrops, validateCrownDrops, solveArcRadius, arcDropAfter,
