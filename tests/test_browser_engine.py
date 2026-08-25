@@ -1105,9 +1105,27 @@ def test_coupling_tab_carries_the_rolled_out_pattern():
     tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
     assert 'id="cplStrip"' in tpl
     assert "function renderCouplingStrip(" in ui
-    # one builder, used by both strips: the definition plus exactly two calls
+    # One builder for every rolled-out strip the tool draws -- the sweep tab, the
+    # coupling tab, and the segments the PDF captures offscreen.  What matters is
+    # that no second code path builds those shapes, not how many callers there
+    # are, so the geometry is asserted to come from one place.
     assert "function patternStripShapes(" in ui
-    assert ui.count("patternStripShapes(") == 3
+    for caller in ("function renderPatternStrip(", "function renderCouplingStrip(",
+                   "function captureStrip("):
+        body = ui[ui.index(caller):]
+        body = body[:body.index("\n  }")]
+        assert "patternStripShapes(" in body, caller
+    # Seam splitting is how a block that wraps theta = 0 gets drawn. Inside the
+    # builder it happens exactly twice -- once for blocks, once for tie bars --
+    # and no strip renderer does it for itself. (The canvas patch editor has its
+    # own copy; it is a different renderer, not a second strip.)
+    builder = ui[ui.index("function patternStripShapes("):ui.index("function couplingLinkShapes(")]
+    assert builder.count("E.splitAtSeam(") == 2
+    for caller in ("function renderPatternStrip(", "function renderCouplingStrip(",
+                   "function captureStrip("):
+        body = ui[ui.index(caller):]
+        body = body[:body.index("\n  }")]
+        assert "E.splitAtSeam(" not in body, caller + " builds strip geometry of its own"
     # the links drawn are the solver's link records, not a redraw rule of their own
     links = ui[ui.index("function couplingLinkShapes("):ui.index("function stripLayout(")]
     assert "tb.links" in links and "lk.kind" in links
@@ -2036,3 +2054,128 @@ def test_the_crown_precedence_is_visible_rather_than_only_documented():
     assert "function syncCrownFields(" in ui
     assert "el.disabled = overridden" in ui
     assert "Overridden by the" in ui
+
+
+# ---------------------------------------------------------------------------
+# the report, and the interactive review pack
+# ---------------------------------------------------------------------------
+
+
+def test_a_report_carries_only_what_was_asked_for():
+    """A design review wants four charts and a headline, not thirteen sections,
+    and which four changes every meeting.  One list drives both the PDF and the
+    review pack, so the two can never offer different contents, and a section
+    with no chart behind it is shown struck through rather than hidden -- the
+    list of what a report CAN carry should not change shape from run to run."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    css = open(os.path.join(APP, "style.css"), encoding="utf-8").read()
+    assert "var REPORT_SECTIONS" in ui
+    assert "function selectedSections(" in ui and "function reportOn(" in ui
+    assert 'id="reportSections"' in tpl and 'id="reportCount"' in tpl
+    assert ".rowchip.off" in css
+    # both exporters go through the one list
+    for fn in ("function exportPDF(", "function exportPack("):
+        body = ui[ui.index(fn):]
+        body = body[:body.index("\n  function ")]
+        assert "selectedSections()" in body or "reportOn(" in body, fn
+    # the chips are rendered after the charts exist, or every chart reads as
+    # unavailable and cannot be ticked
+    render_all = ui[ui.index("function renderAll("):ui.index("function renderNotes(")]
+    assert render_all.rindex("renderReportChips()") > render_all.index("renderThetaStack()")
+
+
+def test_the_report_no_longer_distorts_or_shreds_its_charts():
+    """Two defects the design office reported, both in the PDF.
+
+    The height was clamped against the page while the width stayed at full
+    bleed, so anything taller than a page -- the ten-row sweep -- came out
+    squashed.  And the rolled-out tread, six to fourteen times longer than it is
+    wide, became an unreadable ribbon a centimetre tall at page width.
+    """
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    pdf = ui[ui.index("function exportPDF("):ui.index("function refreshExportButtons(")]
+    # both dimensions scale by the same factor, chosen to fit the box
+    assert "var k = Math.min(maxW / wpx, maxH / hpx)" in pdf
+    assert "var w = wpx * k, h = hpx * k" in pdf
+    # the strip is cut into segments, rendered offscreen so the live figure is
+    # never relayouted mid-export
+    assert "function stripSegmentCount(" in ui and "function captureStrip(" in ui
+    cap = ui[ui.index("function captureStrip("):ui.index("// ---- PDF report")]
+    assert "position:fixed;left:-10000px" in cap
+    assert "Plotly.purge(host)" in cap, "the offscreen figure must be torn down"
+    assert "segments of" in pdf
+
+
+def test_greek_is_spelled_out_in_pdf_text_only():
+    """jsPDF's built-in fonts are WinAnsi and have no Greek: theta came out as a
+    comma and gamma as a superscript three, on the cover of every report.
+    Embedding a Unicode font would add a few hundred KB to each file for four
+    letters, so the letters are substituted -- at the one boundary, and only in
+    the PDF's own text.  The charts are images and keep the real symbols, and so
+    does the review pack, which is HTML."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    assert "var PDF_SUBST" in ui and "function pdfText(" in ui
+    assert '[/θ/g, "theta"]' in ui and '[/γ/g, "gamma"]' in ui
+    # wrapped once, at the document, rather than at every call site
+    assert "doc.text = function (t, x, y, o)" in ui
+    assert "doc.splitTextToSize = function (t, w, o)" in ui
+    # the review pack must NOT be sanitised: it is HTML and can show the real
+    # characters, and spelling them out there would be a downgrade
+    pack = ui[ui.index("function reviewPackHtml("):ui.index("function refreshExportButtons(")]
+    assert "pdfText(" not in pack
+
+
+def test_the_review_pack_is_self_contained_and_still_live():
+    """A PDF is a picture of a chart; in a review the question is always "what is
+    it at 140 degrees?" and a picture cannot answer it.  The pack carries the
+    figures as Plotly holds them, with the library lifted out of this page and
+    inlined, so it opens by double-click with nothing installed and no network.
+    It has no inputs, no engine and no DXF: it is a read-only view of one run."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert 'id="plotly-src"' in tpl, "the library needs an id to be lifted back out"
+    assert "function exportPack(" in ui and "function reviewPackHtml(" in ui
+    assert "function plotlySource(" in ui
+    # the engine and the DXF must not travel with it
+    pack = ui[ui.index("function escapeForScript("):ui.index("function refreshExportButtons(")]
+    assert "engine-src" not in pack and "sample-dxf" not in pack
+    # a closing script tag inside the JSON would end the host element early
+    assert "function escapeForScript(" in ui
+    assert 'replace(/</g, "\\\\u003c")' in ui
+    # the patch band is a UI overlay, not a Plotly object, so it is added as a
+    # shape -- where the patch sits is the first thing anyone asks in a review
+    assert 'type: "rect", xref: "x", yref: "paper"' in pack
+
+
+def test_the_build_refuses_to_inline_a_closing_script_tag():
+    """Anything inlined into a script element ends it the moment "</script"
+    appears -- in a string, a regex, or a comment.  It costs one page error and a
+    dead tool, and it is invisible in the source file, which parses perfectly
+    well on its own.  This caught exactly that, in a comment."""
+    build = open(os.path.join(REPO, "build_app.py"), encoding="utf-8").read()
+    assert '"</script" in value.lower()' in build
+    assert "would end the" in build
+    for name in ("engine.js", "ui.js", "worker.js"):
+        src = open(os.path.join(APP, name), encoding="utf-8").read()
+        assert "</script" not in src.lower(), name
+
+
+def test_the_crown_reaches_every_export():
+    """settingsSnapshot() re-assembles a new object from the captured inputs and
+    was silently dropping the crown, so every export -- the CSV header, the JSON,
+    the text summary and the PDF cover -- said "no crown resolved" while the page
+    showed the crown correctly.  The crown decides the contact point at every
+    lean, so a run recorded without it cannot be reproduced."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    snap = ui[ui.index("function settingsSnapshot("):]
+    snap = snap[:snap.index("\n  }")]
+    assert "crown:" in snap, "the crown must survive the snapshot"
+    # every key the capture holds should reach the snapshot, or the same class of
+    # bug can recur with a different field
+    capture = ui[ui.index("function captureInputs("):]
+    capture = capture[:capture.index("\n  }")]
+    for key in re.findall(r"^\s{6}([a-z_]+):", capture, re.M):
+        if key in ("grid",):
+            continue
+        assert key in snap, f"captureInputs records {key} but settingsSnapshot drops it"

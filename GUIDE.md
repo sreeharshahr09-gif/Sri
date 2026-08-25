@@ -98,8 +98,10 @@ One honest wrinkle it does surface: **the patch area is rasterised**. The sweep
 measures a whole number of pixels, so it differs from the exact area of the
 patch outline by a fraction of a percent, and the reported patch load is under
 the load you entered by that same fraction. Both areas are reported, and a
-physics note appears if the gap ever exceeds 1% — at which point the grid is too
-coarse for the patch and every area on the page is biased.
+physics note appears if the gap ever exceeds 3%. The **land ratio is unaffected**
+either way — the contact area is measured on the same grid, so the error largely
+cancels — but the absolute areas, the stiffnesses and the reported patch load all
+carry it, which matters when comparing against measured data.
 
 ---
 
@@ -580,6 +582,47 @@ The contact-area contribution is the opposite — nothing until worn into, then 
 - Rigid belt, uniform patch pressure, small displacement, linear elastic — as everywhere else in the tool.
 
 There is **no calibration factor**. The bar's stiffness comes from its geometry and the compound, like everything else.
+
+---
+
+## Taking it out of the tool: reports and review packs
+
+Both exports carry **exactly the sections ticked under Include** in
+*7 · Export* — not everything, every time. A design review wants four charts and
+a headline, and which four changes every meeting. A section whose chart has not
+been produced is shown struck through rather than hidden, so the list of what a
+report *can* carry stays the same from run to run.
+
+### PDF report
+
+The formal record: cover, settings, headline numbers, the per-lean table, the
+physics notes, and each ticked chart on its own page.
+
+Two things it does that are worth knowing:
+
+- **The rolled-out pattern is cut into segments** stacked down the page. A tread
+  is six to fourteen times longer than it is wide, so at page width it was an
+  unreadable ribbon a centimetre tall. Split into five 72° segments, the blocks
+  are the size they need to be to look at.
+- **Greek is spelled out** — "theta 0° to 72°", not "θ". The PDF's built-in
+  fonts have no Greek, and embedding a Unicode font would add a few hundred KB
+  to every file for four letters. The charts are images and keep the real
+  symbols.
+
+### Interactive review pack
+
+**A PDF is a picture of a chart.** In a review the question is always *"what is
+it at 140 degrees?"*, and a picture cannot answer it.
+
+The review pack is one HTML file with only the ticked sections and **the charts
+still live** — hover for values, drag to zoom, double-click to reset. It has no
+inputs, no compute engine, no DXF and no way back to them: a read-only view of
+one run, which is what should leave the department.
+
+Open it by double-clicking. It needs nothing installed and touches no network —
+the plotting library travels inside it, which is why it is about 5 MB whatever
+it contains. The contact-patch band is drawn in, so where the patch sits is
+visible without having to ask.
 
 ---
 

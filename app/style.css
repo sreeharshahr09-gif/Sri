@@ -405,3 +405,8 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
 .rowchip.on { background: var(--panel); color: var(--ink); border-color: currentColor; font-weight: 600; }
 .rowchip:hover { border-color: var(--ink-dim); }
 .rowpin { font-size: 12px; color: var(--ink-dim); display: flex; align-items: center; gap: 5px; cursor: pointer; }
+
+/* A report section that has nothing to include -- the coupling tab with no tie
+   bars, the comparison with only one run. Shown rather than hidden, so the list
+   of what a report CAN carry does not change shape from run to run. */
+.rowchip.off { opacity: 0.4; cursor: not-allowed; text-decoration: line-through; }

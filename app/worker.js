@@ -115,11 +115,17 @@
         if (!(ro.patch_area_outline > 0)) continue;
         worstQuant = Math.max(worstQuant, Math.abs(ro.patch_area / ro.patch_area_outline - 1));
       }
-      if (worstQuant > 0.01) {
+      // A percent or two is the ordinary cost of putting a small patch on a
+      // finite grid and is not worth interrupting anyone over; the LAND RATIO is
+      // unaffected either way, since the contact area is measured on the same
+      // grid and the error largely cancels. Past a few percent the absolute
+      // areas are biased enough to matter when comparing against measured data.
+      if (worstQuant > 0.03) {
         notes.push("the contact patch rasterises to " + (100 * worstQuant).toFixed(1) +
-          "% away from the area of its outline, so every area and stiffness on this page " +
-          "carries that bias and the reported patch load is under the load you entered by the " +
-          "same amount. Raise the grid resolution, or use a larger patch.");
+          "% away from the area of its outline. The land ratio is unaffected — the contact area is " +
+          "measured on the same grid — but the absolute areas, the stiffnesses and the reported patch " +
+          "load all carry that bias. Raise the grid resolution, or use a larger patch, before " +
+          "comparing these numbers with measured data.");
       }
 
       // per-block stiffness summary for the diagnostics tab

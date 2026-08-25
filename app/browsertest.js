@@ -155,7 +155,7 @@ const fs = require("fs");
 
       // Row chips: one per row, and switching some off rebuilds a shorter stack
       // rather than squashing the rest.
-      const chips = await page.$$eval(".rowchip", (n) => n.map((c) => c.dataset.row));
+      const chips = await page.$$eval("#rowToggles .rowchip", (n) => n.map((c) => c.dataset.row));
       const rowsBefore = await page.$eval("#thetaStack", (e) =>
         Object.keys(e._fullLayout).filter((k) => /^yaxis\d*$/.test(k)).length);
       console.log("row chips:", chips.join(","), "| rows:", rowsBefore);
@@ -163,7 +163,7 @@ const fs = require("fs");
         errors.push(`${chips.length} chips for ${rowsBefore} rows — the two lists have drifted apart`);
       const hBefore = await page.$eval("#thetaStack", (e) => e.getBoundingClientRect().height);
       for (const k of ["land", "blocks", "centroid", "c_kappa", "trail", "kx"]) {
-        await page.click(`.rowchip[data-row="${k}"]`);
+        await page.click(`#rowToggles .rowchip[data-row="${k}"]`);
         await page.waitForTimeout(150);
       }
       const after = await page.evaluate(() => {
@@ -181,22 +181,22 @@ const fs = require("fs");
       // reading "on" -- a control that says one thing while the chart shows
       // another is worse than the scrolling it was meant to fix.
       for (const k of ["area", "kz", "ky", "c_alpha"]) {
-        await page.click(`.rowchip[data-row="${k}"]`);
+        await page.click(`#rowToggles .rowchip[data-row="${k}"]`);
         await page.waitForTimeout(150);
       }
       const floor = await page.evaluate(() => {
         const e = document.getElementById("thetaStack");
         return { rows: Object.keys(e._fullLayout).filter((k) => /^yaxis\d*$/.test(k)).length,
-                 chipsOn: document.querySelectorAll(".rowchip.on").length };
+                 chipsOn: document.querySelectorAll("#rowToggles .rowchip.on").length };
       });
       console.log("with every chip clicked off the stack keeps", floor.rows, "row,", floor.chipsOn, "chip on");
       if (floor.rows !== 1) errors.push(`switching every row off left ${floor.rows} rows`);
       if (floor.chipsOn !== 1) errors.push(`${floor.chipsOn} chips read "on" while 1 row is drawn`);
       // Restore by reading the DOM rather than replaying the clicks: the refusal
       // above means the sequence is no longer a pure toggle.
-      const off = await page.$$eval(".rowchip:not(.on)", (n) => n.map((c) => c.dataset.row));
+      const off = await page.$$eval("#rowToggles .rowchip:not(.on)", (n) => n.map((c) => c.dataset.row));
       for (const k of off) {
-        await page.click(`.rowchip[data-row="${k}"]`);
+        await page.click(`#rowToggles .rowchip[data-row="${k}"]`);
         await page.waitForTimeout(120);
       }
       const restored = await page.$eval("#thetaStack", (e) =>
@@ -464,6 +464,92 @@ const fs = require("fs");
     await page.click("#runBtn");
     await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 60000 });
     await page.click('.tabs button[data-tab="stack"]');
+  }
+
+  // ---- the report: what goes in it, and does it come out undistorted -------
+  {
+    const chips = await page.$$eval("#reportSections .rowchip",
+      (n) => n.map((c) => ({ k: c.dataset.sec, on: c.classList.contains("on"), off: c.classList.contains("off") })));
+    console.log("report sections:", chips.map((c) => c.k + (c.off ? "(n/a)" : c.on ? "" : "[off]")).join(" "));
+    if (!chips.length) errors.push("the report has no section list");
+    // A chart section must only be offered when that chart exists
+    const stackChip = chips.find((c) => c.k === "stack");
+    if (!stackChip || stackChip.off) errors.push("the theta sweep is not offered as a report section");
+    const cplChip = chips.find((c) => c.k === "coupling");
+    if (!cplChip || !cplChip.off)
+      errors.push("the coupling section is offered on a drawing with no tie bars");
+
+    const dl2 = require("fs").mkdtempSync(require("path").join(require("os").tmpdir(), "tt-rep-"));
+    const grab = async (id, tag) => {
+      const [d] = await Promise.all([page.waitForEvent("download"), page.click(id)]);
+      const f = require("path").join(dl2, tag + "-" + d.suggestedFilename());
+      await d.saveAs(f);
+      return f;
+    };
+    const pdfAll = await grab("#exportPdf", "all");
+    const packAll = await grab("#exportPack", "all");
+    const pageCount = (f) =>
+      (fs.readFileSync(f).toString("latin1").match(/\/Type\s*\/Page[^s]/g) || []).length;
+    console.log(`report: PDF ${(fs.statSync(pdfAll).size / 1024).toFixed(0)} KB / ${pageCount(pdfAll)} pages,` +
+                ` pack ${(fs.statSync(packAll).size / 1024 / 1024).toFixed(2)} MB`);
+    if (pageCount(pdfAll) < 4) errors.push("the full report is only " + pageCount(pdfAll) + " pages");
+
+    // Switching sections off must actually shorten it.
+    for (const k of ["perlean", "notes", "lean", "orders", "zones", "patch", "cover"]) {
+      const sel = `#reportSections .rowchip[data-sec="${k}"]`;
+      if (await page.$(sel)) { await page.click(sel); await page.waitForTimeout(60); }
+    }
+    const pdfCut = await grab("#exportPdf", "cut");
+    const packCut = await grab("#exportPack", "cut");
+    console.log(`  trimmed: PDF ${pageCount(pdfAll)} -> ${pageCount(pdfCut)} pages`);
+    if (!(pageCount(pdfCut) < pageCount(pdfAll)))
+      errors.push("switching report sections off did not shorten the PDF");
+
+    // The Greek that jsPDF's built-in fonts cannot encode must not reach the
+    // page as punctuation: theta and gamma are spelled out in PDF text.
+    const pdfTxt = fs.readFileSync(pdfCut).toString("latin1");
+    if (/\(theta/.test(pdfTxt) === false && /theta/.test(pdfTxt) === false)
+      errors.push("the PDF does not spell out theta, so the Greek is being emitted unencodable");
+
+    // The review pack has to open on its own, with the charts still live and
+    // nothing fetched from anywhere.
+    const rv = await ctx.newPage();
+    const rvErr = [];
+    rv.on("pageerror", (e) => rvErr.push(e.message));
+    rv.on("console", (m) => { if (m.type() === "error") rvErr.push(m.text()); });
+    await rv.goto("file://" + packCut, { waitUntil: "load" });
+    await rv.waitForTimeout(1500);
+    const pack = await rv.evaluate(() => {
+      const figs = Array.from(document.querySelectorAll("[id^=fig]"));
+      return {
+        figs: figs.length,
+        drawn: figs.filter((f) => f.querySelector(".plot-container")).length,
+        headings: Array.from(document.querySelectorAll(".fig h2")).map((h) => h.textContent),
+        conf: !!document.querySelector(".conf"),
+        external: performance.getEntriesByType("resource").filter((r) => !r.name.startsWith("file:")).length,
+        greek: /θ/.test(document.body.textContent),
+      };
+    });
+    console.log("  review pack:", JSON.stringify(pack));
+    if (!pack.figs || pack.drawn !== pack.figs)
+      errors.push(`review pack drew ${pack.drawn} of ${pack.figs} figures`);
+    if (pack.external) errors.push("the review pack fetched " + pack.external + " external resource(s)");
+    if (!pack.conf) errors.push("the review pack carries no confidentiality notice");
+    if (!pack.greek) errors.push("the review pack lost the Greek symbols the PDF has to spell out");
+    // and it is genuinely interactive, not a picture
+    await rv.evaluate(() => Plotly.relayout("fig0", { "xaxis.range": [90, 180] }));
+    await rv.waitForTimeout(300);
+    const rng = await rv.$eval("#fig0", (e) => e._fullLayout.xaxis.range.map((v) => +v.toFixed(0)));
+    if (rng[0] !== 90 || rng[1] !== 180) errors.push("the review pack's charts are not interactive: " + rng);
+    console.log("  pack chart zooms:", rng, rvErr.length ? "ERRORS " + rvErr.join(" | ") : "no errors");
+    if (rvErr.length) errors.push("review pack page errors: " + rvErr.join(" | "));
+    await rv.close();
+
+    // put every section back so later checks see the normal page
+    for (const k of ["perlean", "notes", "lean", "orders", "zones", "patch", "cover"]) {
+      const sel = `#reportSections .rowchip[data-sec="${k}"]:not(.on)`;
+      if (await page.$(sel)) { await page.click(sel); await page.waitForTimeout(60); }
+    }
   }
 
   // export: every format must download and be self-describing

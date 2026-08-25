@@ -61,6 +61,20 @@ def build(out_path: str | None = None) -> str:
         "<!--__GUIDE__-->": guide_html,
         "<!--__SAMPLE_DXF__-->": _sample_dxf(),
     }
+    # Anything inlined into a <script> element ends that element the moment the
+    # text "</script" appears in it -- in a string, in a regex, or in a comment,
+    # the HTML parser does not care.  It costs one page error and a dead tool,
+    # and it is invisible in the source file, which parses perfectly well on its
+    # own.  Catch it here rather than in a browser.
+    for token, value in replacements.items():
+        if token.startswith("/*__") and "</script" in value.lower():
+            where = value.lower().index("</script")
+            line = value[:where].count("\n") + 1
+            raise ValueError(
+                f"{token} contains a literal closing script tag at line {line}, which would end the "
+                f"host <script> element early and break the page. Split it, or escape the '<'."
+            )
+
     html = template
     for token, value in replacements.items():
         if token not in html:

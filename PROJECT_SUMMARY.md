@@ -196,7 +196,8 @@ v6.4 reference JS  ──(~1e-9)──  Python engine  ──(<2e-3)──  Brow
   invariance, and proof that the two-radius blend and class fallbacks are
   untouched by the drop-first path.
 - `app/browsertest.js` — a real Chromium run: load, compute, crown
-  reconciliation, all three exports, drag interaction, zero page errors.
+  reconciliation, all three exports, drag interaction, the report's section
+  list and page count, the review pack opened as its own page, zero page errors.
 - `app/casecheck.js` — two complete tyres (2W blocked tread with a 40° lean
   sweep; TBR ribs with 38 tie bars, 9 mm worn, 4 ribs) driven end to end through
   the built page, with 35 physical statements checked on the numbers that come

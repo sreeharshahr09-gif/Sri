@@ -24,6 +24,7 @@
     bandMetric: "contact_area",
     thetaRange: null,    // shared x-range across the sweep rows and the pattern
     cplRange: null,      // and the coupling tab's own, kept apart from it
+    reportSections: {},  // report sections the user has switched off
     stackRows: {},       // sweep rows switched off by the user (key -> false)
     pinStrip: true,      // keep the rolled-out pattern at the foot of the window
     compareMetric: "kz",
@@ -1026,6 +1027,11 @@
     renderCompare();
     renderDiagnostics();
     drawEditor();
+    // Last, deliberately. Which sections a report CAN carry depends on which
+    // charts exist, and they do not exist until the lines above have drawn
+    // them -- run this at the top with the other chrome and every chart reads
+    // as unavailable.
+    renderReportChips();
   }
 
   // Physics caveats raised by the compute pass (skipped leans, clipping,
@@ -2648,6 +2654,12 @@
       contact_patch: base.contact_patch,
       load: base.load,
       wear_and_tiebars: base.wear_and_tiebars,
+      // The crown captureInputs() recorded for the run on screen. It was being
+      // dropped here, so every export -- the CSV header, the JSON, the text
+      // summary and the PDF cover -- has been saying "no crown resolved" while
+      // the page showed the crown correctly. The crown decides the contact point
+      // at every lean, so a run recorded without it cannot be reproduced.
+      crown: base.crown || crownSummary(),
       compound_resolved: state.compound || null,
       tiebar_coupling: couplingSummary(),
       analysis: {
@@ -2781,11 +2793,117 @@
     download(safeName() + "_summary.txt", out.join("\n"), "text/plain;charset=utf-8");
   }
 
+  // ---- what goes in a report -------------------------------------------
+  //
+  // One list, used by the PDF and by the interactive review pack, so the two can
+  // never offer different contents. A design review wants four charts and a
+  // headline, not thirteen sections -- and which four changes every meeting, so
+  // it is the user's choice rather than a fixed running order.
+  var REPORT_SECTIONS = [
+    { key: "cover",    label: "Cover & settings" },
+    { key: "summary",  label: "Headline numbers" },
+    { key: "perlean",  label: "Per-lean table" },
+    { key: "notes",    label: "Physics notes" },
+    { key: "stack",    label: "θ sweep",             plot: "thetaStack" },
+    { key: "pattern",  label: "Rolled-out pattern",  plot: "patternStrip", strip: true },
+    { key: "lean",     label: "Lean map",            plot: "leanHeat" },
+    { key: "orders",   label: "Order content",       plot: "orders" },
+    { key: "zones",    label: "Zone area",           plot: "zones" },
+    { key: "bands",    label: "Ribs",                plot: "bandsPlot" },
+    { key: "coupling", label: "Tie-bar coupling",    plot: "cplPlot" },
+    { key: "compare",  label: "Comparison",          plot: "comparePlot" },
+    { key: "patch",    label: "Contact patch",       plot: "patchPrev" },
+  ];
+
+  function reportOn(key) { return state.reportSections[key] !== false; }
+
+  // A section with a chart is only offered when that chart exists: the coupling
+  // tab is empty without tie bars, the comparison without a second run.
+  function sectionAvailable(sec) {
+    if (!sec.plot) return true;
+    var el = $(sec.plot);
+    return !!(el && el.data && el.data.length && el.querySelector(".plot-container"));
+  }
+
+  function selectedSections() {
+    return REPORT_SECTIONS.filter(function (sec) { return sectionAvailable(sec) && reportOn(sec.key); });
+  }
+
+  function renderReportChips() {
+    var host = $("reportSections");
+    if (!host) return;
+    var html = "";
+    for (var i = 0; i < REPORT_SECTIONS.length; i++) {
+      var sec = REPORT_SECTIONS[i], avail = sectionAvailable(sec);
+      html += "<span class='rowchip" + (avail && reportOn(sec.key) ? " on" : "") +
+        (avail ? "" : " off") + "' data-sec='" + escapeHtml(sec.key) + "'" +
+        (avail ? "" : " title='nothing to include — this chart has not been produced'") +
+        ">" + escapeHtml(sec.label) + "</span>";
+    }
+    host.innerHTML = html;
+    var n = selectedSections().length;
+    var lbl = $("reportCount");
+    if (lbl) lbl.textContent = n + " of " + REPORT_SECTIONS.filter(sectionAvailable).length + " included";
+  }
+
+  function toggleReportSection(key) {
+    var sec = REPORT_SECTIONS.filter(function (s) { return s.key === key; })[0];
+    if (!sec || !sectionAvailable(sec)) return;
+    state.reportSections[key] = state.reportSections[key] === false;
+    renderReportChips();
+  }
+
+  // The rolled-out tread is six to fourteen times longer than it is wide. At
+  // page width that is a ribbon a centimetre tall with nothing readable in it,
+  // which is what the design office complained about. Cut it into segments
+  // stacked down the page, each at an aspect a block can actually be seen in.
+  function stripSegmentCount() {
+    if (!state.pattern) return 1;
+    var aspect = state.pattern.tyre_circumference / state.pattern.tread_width;
+    return Math.max(1, Math.min(8, Math.round(aspect / 3.0)));
+  }
+
+  // Render the strip over a given theta range on an OFFSCREEN figure. The
+  // visible one is left alone: relayouting it mid-export would flicker, and an
+  // export that throws would strand it at the wrong zoom.
+  function captureStrip(range, wpx, hpx) {
+    var host = document.createElement("div");
+    host.style.cssText = "position:fixed;left:-10000px;top:0;width:" + wpx + "px;height:" + hpx + "px";
+    document.body.appendChild(host);
+    var th = plotTheme();
+    var layout = stripLayout(th, "", range);
+    layout.shapes = patternStripShapes({});
+    layout.height = hpx;
+    layout.margin = { l: 64, r: 12, t: 8, b: 34 };
+    return Plotly.newPlot(host, STRIP_TRACE, layout, { staticPlot: true })
+      .then(function () { return Plotly.toImage(host, { format: "png", width: wpx, height: hpx, scale: 2 }); })
+      .then(function (uri) { Plotly.purge(host); host.remove(); return uri; })
+      .catch(function (err) { try { Plotly.purge(host); host.remove(); } catch (e) {} throw err; });
+  }
+
   // ---- PDF report ------------------------------------------------------
   // Charts go in as PNGs rendered by Plotly itself (Plotly.toImage works
   // offline), so the report shows exactly what is on screen rather than a
   // redrawn approximation. jsPDF is vendored, so no network is involved.
   var CONFIDENTIAL = "INTERNAL USE ONLY — Apollo Tyres. Not for external distribution.";
+
+  // jsPDF's built-in fonts are WinAnsi, which has no Greek: theta and gamma came
+  // out as a comma and a superscript three, on the cover of every report and on
+  // every chart caption. Embedding a Unicode font would add a few hundred KB to
+  // each file for four letters, so they are spelled out instead -- in the PDF's
+  // own text only. The charts are images and keep the real symbols.
+  var PDF_SUBST = [
+    [/θ/g, "theta"], [/γ/g, "gamma"], [/α/g, "alpha"], [/κ/g, "kappa"],
+    [/Δ/g, "delta"], [/ν/g, "nu"], [/μ/g, "u"], [/Ω/g, "ohm"],
+    [/—/g, "-"], [/–/g, "-"], [/·/g, " - "], [/×/g, "x"], [/…/g, "..."],
+    [/²/g, "^2"], [/³/g, "^3"], [/≥/g, ">="], [/≤/g, "<="], [/≈/g, "~"],
+    [/[\u2018\u2019]/g, "'"], [/[\u201c\u201d]/g, '"'],
+  ];
+  function pdfText(v) {
+    var out = String(v);
+    for (var i = 0; i < PDF_SUBST.length; i++) out = out.replace(PDF_SUBST[i][0], PDF_SUBST[i][1]);
+    return out;
+  }
 
   // One phrasing of the compound and the wear state, shared by every export so
   // a CSV, a JSON and a PDF of the same run can never disagree about them.
@@ -2849,6 +2967,12 @@
     btn.disabled = true; btn.textContent = "Building…";
 
     var doc = new window.jspdf.jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    // Substitute once, at the boundary, rather than at seventy call sites.
+    var rawText = doc.text.bind(doc), rawSplit = doc.splitTextToSize.bind(doc);
+    doc.text = function (t, x, y, o) {
+      return rawText(Array.isArray(t) ? t.map(pdfText) : pdfText(t), x, y, o);
+    };
+    doc.splitTextToSize = function (t, w, o) { return rawSplit(pdfText(t), w, o); };
     var W = 210, H = 297, M = 14, y = 0;
     var s0 = settingsSnapshot(), proj = s0.project || {};
     var created = new Date();
@@ -2862,6 +2986,9 @@
     function newPage() { doc.addPage(); footer(doc.getNumberOfPages()); return M + 6; }
 
     // ---- cover ----
+    // The cover always carries the identification and the confidentiality mark;
+    // only the settings block and the notes are optional. A report page with no
+    // idea which tyre it describes is worse than a long one.
     doc.setFontSize(20); doc.text("Tread Pattern Evaluation", M, M + 10);
     doc.setFontSize(11); doc.setTextColor(90);
     doc.text("Contact and stiffness across rotation angle θ and lean angle γ", M, M + 18);
@@ -2891,6 +3018,7 @@
       ["Lean angles", s0.analysis.lean_angles_deg.join("°, ") + "°"],
       ["Grid", s0.analysis.grid.nx + " x " + s0.analysis.grid.ny],
     ];
+    if (!reportOn("cover")) rows = rows.slice(0, 6);
     doc.setFontSize(9);
     rows.forEach(function (rw) {
       if (!rw[0] && !rw[1]) { y += 3; return; }
@@ -2900,7 +3028,7 @@
       y += Math.max(5, 4.6 * doc.splitTextToSize(String(rw[1]), W - M - 52).length);
     });
 
-    if ((s0.physics_notes || []).length) {
+    if (reportOn("notes") && (s0.physics_notes || []).length) {
       y += 4; doc.setFontSize(10); doc.text("Physics notes", M, y); y += 5;
       doc.setFontSize(8); doc.setTextColor(90);
       s0.physics_notes.forEach(function (n) {
@@ -2918,6 +3046,7 @@
 
     // ---- headline numbers ----
     var r0 = currentResult();
+    if (reportOn("summary") || reportOn("perlean")) {
     y = newPage();
     doc.setFontSize(13); doc.text("Summary — γ = " + r0.gamma_deg + "°", M, y); y += 8;
     doc.setFontSize(9);
@@ -2938,57 +3067,88 @@
       cards.push(["Mean Cκ", E.fluctuationStats(r0.c_kappa).mean.toFixed(0) + " N per unit slip ratio"]);
       cards.push(["Pneumatic trail", E.fluctuationStats(r0.pneumatic_trail).mean.toFixed(2) + " mm"]);
     }
-    cards.forEach(function (c) {
-      doc.setTextColor(110); doc.text(c[0], M, y);
-      doc.setTextColor(0); doc.text(c[1], M + 55, y); y += 5.4;
-    });
-    y += 4;
-    doc.setFontSize(11); doc.text("Per lean angle", M, y); y += 6;
-    doc.setFontSize(8);
-    var hdr = ["γ", "area mean", "area CoV", "Kz mean", "Kz CoV", "Kx mean", "Ky mean", "blocks"];
-    var colX = [M, M + 16, M + 42, M + 62, M + 86, M + 106, M + 130, M + 154];
-    doc.setTextColor(110);
-    hdr.forEach(function (h, i) { doc.text(h, colX[i], y); });
-    doc.setTextColor(0); y += 4;
-    state.results.forEach(function (r) {
-      var a = E.fluctuationStats(r.contact_area), z = E.fluctuationStats(r.kz);
-      var vals = [r.gamma_deg + "°", a.mean.toFixed(0), (a.cov * 100).toFixed(2) + "%",
-                  z.mean.toFixed(0), (z.cov * 100).toFixed(2) + "%",
-                  E.fluctuationStats(r.kx).mean.toFixed(0), E.fluctuationStats(r.ky).mean.toFixed(0),
-                  E.fluctuationStats(r.block_count).mean.toFixed(2)];
-      vals.forEach(function (v, i) { doc.text(String(v), colX[i], y); });
-      y += 4.2;
-    });
+    if (reportOn("summary")) {
+      cards.forEach(function (c) {
+        doc.setTextColor(110); doc.text(c[0], M, y);
+        doc.setTextColor(0); doc.text(c[1], M + 55, y); y += 5.4;
+      });
+      y += 4;
+    }
+    if (reportOn("perlean")) {
+      doc.setFontSize(11); doc.text("Per lean angle", M, y); y += 6;
+      doc.setFontSize(8);
+      var hdr = ["γ", "area mean", "area CoV", "Kz mean", "Kz CoV", "Kx mean", "Ky mean", "blocks"];
+      var colX = [M, M + 16, M + 42, M + 62, M + 86, M + 106, M + 130, M + 154];
+      doc.setTextColor(110);
+      hdr.forEach(function (h, i) { doc.text(h, colX[i], y); });
+      doc.setTextColor(0); y += 4;
+      state.results.forEach(function (r) {
+        var a = E.fluctuationStats(r.contact_area), z = E.fluctuationStats(r.kz);
+        var vals = [r.gamma_deg + "°", a.mean.toFixed(0), (a.cov * 100).toFixed(2) + "%",
+                    z.mean.toFixed(0), (z.cov * 100).toFixed(2) + "%",
+                    E.fluctuationStats(r.kx).mean.toFixed(0), E.fluctuationStats(r.ky).mean.toFixed(0),
+                    E.fluctuationStats(r.block_count).mean.toFixed(2)];
+        vals.forEach(function (v, i) { doc.text(String(v), colX[i], y); });
+        y += 4.2;
+      });
+    }
+    }
 
-    // ---- the charts, exactly as drawn ----
-    var plots = [
-      ["thetaStack", "In-patch aggregates vs rotation angle θ"],
-      ["patternStrip", "Rolled-out tread pattern"],
-      ["leanHeat", "Lean map"],
-      ["orders", "Order content"],
-      ["zones", "Zone contact area"],
-      ["bandsPlot", "Bands (ribs)"],
-      ["comparePlot", "Design comparison"],
-      ["patchPrev", "Contact patch"],
-    ].filter(function (pl) {
-      var el = $(pl[0]);
-      return el && el.data && el.data.length && el.querySelector(".plot-container");
-    });
+    // ---- the charts, only the ones asked for ----
+    var plots = selectedSections().filter(function (sec) { return sec.plot; });
+
+    // Place an image inside the space left on the page WITHOUT distorting it.
+    // The old code clamped the height against the page and left the width at
+    // full bleed, so anything taller than a page -- the ten-row sweep, for one
+    // -- was squashed vertically.
+    function placeImage(uri, wpx, hpx, yy) {
+      var maxW = W - 2 * M, maxH = H - yy - 20;
+      var k = Math.min(maxW / wpx, maxH / hpx);
+      var w = wpx * k, h = hpx * k;
+      doc.addImage(uri, "PNG", M + (maxW - w) / 2, yy, w, h, undefined, "FAST");
+      return yy + h;
+    }
 
     var i = 0;
     function nextPlot() {
       if (i >= plots.length) { finish(); return; }
-      var id = plots[i][0], title = plots[i][1];
-      var el = $(id);
+      var sec = plots[i], el = $(sec.plot);
+      // The rolled-out tread gets its own treatment: cut into segments stacked
+      // down the page so a block is big enough to look at.
+      if (sec.strip && state.pattern) {
+        var nSeg = stripSegmentCount();
+        var yy = newPage();
+        doc.setFontSize(12);
+        doc.text("Rolled-out tread pattern" + (nSeg > 1 ? " — " + nSeg + " segments of " +
+          (360 / nSeg).toFixed(0) + "° each" : ""), M, yy);
+        yy += 5;
+        var avail = (H - yy - 24) / nSeg;
+        var boxW = W - 2 * M, boxH = avail - 6;
+        // Render each segment at the aspect of the box it goes into, so it fills
+        // the text column exactly and is neither distorted nor inset.
+        var segW = 1200, segH = Math.max(140, Math.round((segW * boxH) / boxW));
+        var seg = 0;
+        (function nextSeg() {
+          if (seg >= nSeg) { i++; nextPlot(); return; }
+          var a = (360 * seg) / nSeg, b = (360 * (seg + 1)) / nSeg;
+          captureStrip([a, b], segW, segH).then(function (uri) {
+            doc.setFontSize(8); doc.setTextColor(110);
+            doc.text("theta " + a.toFixed(0) + "° to " + b.toFixed(0) + "°", M, yy + 3);
+            doc.setTextColor(0);
+            doc.addImage(uri, "PNG", M, yy + 4, boxW, boxH, undefined, "FAST");
+            yy += avail;
+            seg++; nextSeg();
+          }).catch(function () { seg++; nextSeg(); });
+        })();
+        return;
+      }
       var wpx = Math.max(700, el.clientWidth || 900);
       var hpx = Math.max(320, el.clientHeight || 460);
       Plotly.toImage(el, { format: "png", width: wpx, height: hpx, scale: 2 })
         .then(function (uri) {
           var yy = newPage();
-          doc.setFontSize(12); doc.text(title, M, yy); yy += 5;
-          var availW = W - 2 * M;
-          var imgH = Math.min(availW * (hpx / wpx), H - yy - 22);
-          doc.addImage(uri, "PNG", M, yy, availW, imgH, undefined, "FAST");
+          doc.setFontSize(12); doc.text(sec.label, M, yy); yy += 5;
+          placeImage(uri, wpx, hpx, yy);
           i++; nextPlot();
         })
         .catch(function () { i++; nextPlot(); });
@@ -3002,11 +3162,226 @@
     nextPlot();
   }
 
+  // ---- interactive review pack ----------------------------------------
+  //
+  // A PDF is a picture of a chart. In a design review the question is always
+  // "what is it at 140 degrees?", and a picture cannot answer it.
+  //
+  // So write out a single HTML file carrying only the ticked sections, with the
+  // figures STILL LIVE -- hover, zoom, read values off them. It has no inputs,
+  // no compute engine, no DXF and no way back to them: it is a read-only view of
+  // one run, which is exactly what leaves the department. Plotly is lifted out of
+  // this page and inlined into it, so the file opens by double-click with
+  // nothing installed and no network.
+  function escapeForScript(json) {
+    // A closing script tag inside a JSON string would end the host element
+    // early, so "<" is escaped. The same hazard is why this comment does not
+    // spell the tag out: this file is inlined into a script element itself.
+    return json.replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+  }
+
+  function plotlySource() {
+    var el = document.getElementById("plotly-src");
+    return el ? el.textContent : "";
+  }
+
+  // The figure as Plotly holds it, trimmed to what a viewer needs to redraw it.
+  function figureSpec(sec) {
+    var gd = $(sec.plot);
+    if (!gd || !gd.data || !gd.data.length) return null;
+    var layout = JSON.parse(JSON.stringify(gd.layout || {}));
+    // The strip is drawn almost entirely as shapes, and the shapes live on the
+    // layout, so they travel with it. What does NOT travel is the patch band --
+    // it is an SVG overlay this page draws for dragging, not a Plotly object --
+    // so it is added here as a shape, since where the patch sits is the first
+    // thing anyone asks in a review.
+    if (sec.strip && state.patchTheta != null) {
+      var span = patchThetaSpanDeg();
+      if (span) {
+        layout.shapes = (layout.shapes || []).concat([{
+          type: "rect", xref: "x", yref: "paper",
+          x0: clampPatchTheta(state.patchTheta) + span[0],
+          x1: clampPatchTheta(state.patchTheta) + span[1],
+          y0: 0, y1: 1,
+          fillcolor: "rgba(90,150,255,0.13)",
+          line: { color: "rgba(90,150,255,0.55)", width: 1, dash: "dash" },
+        }]);
+      }
+      layout.height = 320;
+    }
+    layout.autosize = true;
+    delete layout.width;
+    return { title: sec.label, data: JSON.parse(JSON.stringify(gd.data)), layout: layout };
+  }
+
+  function exportPack() {
+    if (!state.results) return;
+    var btn = $("exportPack"), old = btn.textContent;
+    btn.disabled = true; btn.textContent = "Building…";
+    try {
+      var s0 = settingsSnapshot(), proj = s0.project || {}, r0 = currentResult();
+      var secs = selectedSections();
+      var figs = [];
+      for (var i = 0; i < secs.length; i++) {
+        if (!secs[i].plot) continue;
+        var f = figureSpec(secs[i]);
+        if (f) figs.push(f);
+      }
+
+      var rows = [
+        ["Project", proj.project || "—"],
+        ["Tread / design", proj.tread || s0.pattern.name || "—"],
+        ["Tyre type", proj.tyre_type_label || "—"],
+        ["Size", proj.size || "—"],
+        ["Designer", proj.designer || "—"],
+        ["Created", new Date().toLocaleString()],
+      ];
+      if (reportOn("cover")) {
+        rows = rows.concat([
+          ["Geometry", s0.pattern.circumference_mm.toFixed(1) + " × " + s0.pattern.tread_width_mm.toFixed(1) +
+            " mm, " + s0.pattern.n_blocks + " blocks, " + s0.pattern.n_pitches + " pitches"],
+          ["Block depth", "NSD " + s0.block_defaults.height + " mm, draft " + s0.block_defaults.draft_angle +
+            "°, " + s0.block_defaults.n_lateral_sipes + " sipes"],
+          ["Compound", compoundLine(s0)],
+          ["Wear state", tiebarLine(s0)],
+          ["Tie-bar coupling", couplingLine(s0)],
+          ["Tread arc / crown", crownLine(s0)],
+          ["Contact patch", E.describeSpec(s0.contact_patch)],
+          ["Load", s0.load.vertical_load + " N" + (s0.load.load_rises_with_lean ? " (rises with lean)" : " (constant)")],
+          ["Lean angles", s0.analysis.lean_angles_deg.join("°, ") + "°"],
+        ]);
+      }
+
+      var cards = [];
+      if (reportOn("summary")) {
+        cards = [
+          ["Patch area", r0.patch_area.toFixed(0), "mm²"],
+          ["Mean contact area", E.fluctuationStats(r0.contact_area).mean.toFixed(0), "mm²"],
+          ["Mean Kz", E.fluctuationStats(r0.kz).mean.toFixed(0), "N/mm"],
+          ["Kz fluctuation", (E.fluctuationStats(r0.kz).cov * 100).toFixed(2), "% CoV over θ"],
+          ["Blocks in patch", E.fluctuationStats(r0.block_count).mean.toFixed(2), "avg"],
+        ];
+        if (r0.c_alpha && r0.c_alpha.length) {
+          var ca = E.fluctuationStats(r0.c_alpha);
+          cards.push(["Mean Cα (tread only)", ca.mean.toFixed(0), "N/rad"]);
+          cards.push(["Cα fluctuation", (ca.cov * 100).toFixed(2), "% CoV over θ"]);
+          cards.push(["Pneumatic trail", E.fluctuationStats(r0.pneumatic_trail).mean.toFixed(2), "mm"]);
+        }
+      }
+
+      var perLean = null;
+      if (reportOn("perlean")) {
+        perLean = state.results.map(function (r) {
+          var a = E.fluctuationStats(r.contact_area), z = E.fluctuationStats(r.kz);
+          return [r.gamma_deg + "°", a.mean.toFixed(0), (a.cov * 100).toFixed(2) + "%",
+                  z.mean.toFixed(0), (z.cov * 100).toFixed(2) + "%",
+                  E.fluctuationStats(r.kx).mean.toFixed(0),
+                  E.fluctuationStats(r.ky).mean.toFixed(0),
+                  E.fluctuationStats(r.block_count).mean.toFixed(2)];
+        });
+      }
+
+      var payload = {
+        title: [proj.project, proj.tread].filter(Boolean).join(" · ") || s0.pattern.name || "Tread evaluation",
+        gamma: r0.gamma_deg,
+        rows: rows, cards: cards,
+        per_lean: perLean,
+        notes: reportOn("notes") ? (s0.physics_notes || []) : [],
+        figures: figs,
+        confidential: CONFIDENTIAL,
+      };
+
+      var html = reviewPackHtml(payload, plotlySource());
+      var name = [proj.project, proj.tread].filter(Boolean).join("_") || safeName();
+      download(name.replace(/[^A-Za-z0-9._-]+/g, "_") + "_review.html", html, "text/html;charset=utf-8");
+    } catch (err) {
+      alert("Could not build the review pack: " + err.message);
+    }
+    btn.disabled = false; btn.textContent = old;
+  }
+
+  function reviewPackHtml(payload, plotlyJs) {
+    var head = "<!doctype html><html lang='en'><head><meta charset='utf-8'>" +
+      "<meta name='viewport' content='width=device-width,initial-scale=1'>" +
+      "<title>" + escapeHtml(payload.title) + " — review pack</title><style>" +
+      "body{margin:0;background:#f4f6f9;color:#16202b;font:14px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}" +
+      ".wrap{max-width:1180px;margin:0 auto;padding:22px 20px 60px}" +
+      "h1{font-size:22px;margin:0 0 2px}.sub{color:#5b6b7d;margin:0 0 18px}" +
+      "table.meta{border-collapse:collapse;margin:0 0 18px;width:100%}" +
+      "table.meta td{padding:4px 10px 4px 0;vertical-align:top;border-bottom:1px solid #e3e9ef}" +
+      "table.meta td.k{color:#5b6b7d;width:150px}" +
+      ".cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin:0 0 20px}" +
+      ".card{background:#fff;border:1px solid #e3e9ef;border-radius:8px;padding:10px 12px}" +
+      ".card .k{font-size:11px;color:#5b6b7d;text-transform:uppercase;letter-spacing:.5px}" +
+      ".card .v{font-size:20px;font-weight:650}.card .u{font-size:12px;color:#5b6b7d}" +
+      "table.num{border-collapse:collapse;font-size:13px;margin:0 0 20px}" +
+      "table.num th,table.num td{border-bottom:1px solid #e3e9ef;padding:5px 12px;text-align:right}" +
+      "table.num th:first-child,table.num td:first-child{text-align:left}" +
+      "table.num th{color:#5b6b7d;font-weight:600}" +
+      ".fig{background:#fff;border:1px solid #e3e9ef;border-radius:10px;padding:12px;margin:0 0 16px}" +
+      ".fig h2{font-size:15px;margin:0 0 8px}" +
+      ".notes{background:#fff8e6;border:1px solid #f0dca8;border-radius:8px;padding:10px 14px;margin:0 0 20px}" +
+      ".notes li{margin:3px 0}" +
+      ".conf{background:#f7e6e6;color:#96201e;border-radius:6px;padding:9px 14px;margin:22px 0 0;text-align:center;font-size:13px}" +
+      ".hint{color:#5b6b7d;font-size:12.5px}" +
+      "</style></head><body><div class='wrap'>";
+
+    var body = "<h1>" + escapeHtml(payload.title) + "</h1>" +
+      "<p class='sub'>Tread pattern evaluation — contact and stiffness across rotation angle θ" +
+      " · shown at lean γ = " + payload.gamma + "°</p>";
+
+    body += "<table class='meta'>";
+    payload.rows.forEach(function (r) {
+      body += "<tr><td class='k'>" + escapeHtml(r[0]) + "</td><td>" + escapeHtml(String(r[1])) + "</td></tr>";
+    });
+    body += "</table>";
+
+    if (payload.cards.length) {
+      body += "<div class='cards'>";
+      payload.cards.forEach(function (c) {
+        body += "<div class='card'><div class='k'>" + escapeHtml(c[0]) + "</div><div class='v'>" +
+          escapeHtml(c[1]) + "</div><div class='u'>" + escapeHtml(c[2]) + "</div></div>";
+      });
+      body += "</div>";
+    }
+
+    if (payload.per_lean) {
+      body += "<table class='num'><tr><th>γ</th><th>area mean</th><th>area CoV</th><th>Kz mean</th>" +
+        "<th>Kz CoV</th><th>Kx mean</th><th>Ky mean</th><th>blocks</th></tr>";
+      payload.per_lean.forEach(function (row) {
+        body += "<tr>" + row.map(function (v) { return "<td>" + escapeHtml(v) + "</td>"; }).join("") + "</tr>";
+      });
+      body += "</table>";
+    }
+
+    if (payload.notes.length) {
+      body += "<div class='notes'><b>Physics notes</b><ul>";
+      payload.notes.forEach(function (n) { body += "<li>" + escapeHtml(n.replace(/\s+/g, " ")) + "</li>"; });
+      body += "</ul></div>";
+    }
+
+    for (var i = 0; i < payload.figures.length; i++)
+      body += "<div class='fig'><h2>" + escapeHtml(payload.figures[i].title) +
+        "</h2><div id='fig" + i + "'></div></div>";
+
+    body += "<p class='hint'>The charts above are live: hover for values, drag to zoom, double-click to reset. " +
+      "This file contains one run and nothing else — no inputs, no geometry and no way to recompute.</p>";
+    body += "<div class='conf'>" + escapeHtml(payload.confidential) + "</div>";
+
+    var boot = "<script>" + plotlyJs + "<\/script><script>var FIGS=" +
+      escapeForScript(JSON.stringify(payload.figures)) + ";" +
+      "for(var i=0;i<FIGS.length;i++){Plotly.newPlot('fig'+i,FIGS[i].data,FIGS[i].layout," +
+      "{responsive:true,displayModeBar:false});}<\/script>";
+
+    return head + body + "</div>" + boot + "</body></html>";
+  }
+
   function refreshExportButtons() {
     var on = !!state.results;
-    ["exportCsv", "exportJson", "exportTxt", "exportPdf"].forEach(function (id) {
+    ["exportCsv", "exportJson", "exportTxt", "exportPdf", "exportPack"].forEach(function (id) {
       var el = $(id); if (el) el.disabled = !on;
     });
+    renderReportChips();
   }
 
   // ---- tabs ------------------------------------------------------------
@@ -3046,6 +3421,12 @@
     on($("exportJson"), "click", exportJSON);
     on($("exportTxt"), "click", exportSummary);
     on($("exportPdf"), "click", exportPDF);
+    on($("exportPack"), "click", exportPack);
+    var secChips = $("reportSections");
+    if (secChips) on(secChips, "click", function (ev) {
+      var chip = ev.target.closest ? ev.target.closest(".rowchip") : null;
+      if (chip && chip.dataset.sec) toggleReportSection(chip.dataset.sec);
+    });
     on($("applyPreset"), "click", function () {
       applyTyrePreset(); updateLeanLoadReference(); syncCrownArcInfo(); drawEditor();
     });
@@ -3188,6 +3569,8 @@
       G: state.compound ? state.compound.G : null,
       k: state.compound ? state.compound.k : null,
       patchTheta: state.patchTheta == null ? null : clampPatchTheta(state.patchTheta),
+      crown: crownSummary(),
+      hasCrown: !!(state.pattern && state.pattern.crown),
     };
   };
   // The whole result for the lean on screen, so a test can check a curve rather

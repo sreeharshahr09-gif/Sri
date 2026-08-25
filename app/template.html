@@ -237,10 +237,19 @@
         <div class="filerow">
           <button id="exportCsv" class="btn secondary" disabled title="Every theta and lean sample as CSV, with a commented header recording the settings that produced it.">CSV data</button>
           <button id="exportJson" class="btn secondary" disabled title="The complete run — settings, import report, physics notes, per-block stiffness summary and all results — as JSON.">JSON run</button>
-          <button id="exportPdf" class="btn secondary" disabled title="A PDF report with the project details, every chart as shown, and the internal-use notice.">PDF report</button>
+          <button id="exportPdf" class="btn secondary" disabled title="A PDF report with the project details, the sections ticked below, and the internal-use notice.">PDF report</button>
           <button id="exportTxt" class="btn secondary" disabled title="A short text summary: one row per lean angle with means and fluctuations.">Summary</button>
         </div>
-        <div class="hint">Files download locally; nothing is uploaded.</div>
+        <div class="filerow" style="margin-top:6px">
+          <button id="exportPack" class="btn" disabled title="A single self-contained HTML file carrying only the sections ticked below, with the charts still live — hover, zoom, read values off them. No inputs, no compute, no DXF. Open it by double-clicking; it needs nothing installed. Meant for a design review, where a PDF is a picture of a chart and this is the chart.">Interactive review pack</button>
+        </div>
+        <div class="rowbar" style="margin-top:8px">
+          <span class="rowbar-lead">Include</span>
+          <span id="reportSections" class="rowchips"></span>
+          <span class="spacer"></span>
+          <span id="reportCount" class="hint"></span>
+        </div>
+        <div class="hint">Both the PDF and the review pack carry exactly what is ticked here. Files download locally; nothing is uploaded.</div>
       </div>
     </aside>
 
@@ -440,7 +449,9 @@
   </div>
 
   <script type="text/plain" id="sample-dxf"><!--__SAMPLE_DXF__--></script>
-  <script>/*__PLOTLY__*/</script>
+  <!-- id so the review-pack export can lift the library back out and inline it
+       into the file it writes, keeping that file self-contained too -->
+  <script id="plotly-src">/*__PLOTLY__*/</script>
   <script>/*__JSPDF__*/</script>
   <script id="engine-src">/*__ENGINE__*/</script>
   <script type="text/plain" id="worker-src">/*__WORKER__*/</script>
