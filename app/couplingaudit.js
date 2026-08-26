@@ -497,5 +497,108 @@ section("10. symmetry, wrap and convergence");
      gainsN.map(function (g) { return g.toFixed(5); }).join(" / "));
 }
 
+// =====================================================================
+section("9. separating a rotated block from a genuinely coupled network");
+// =====================================================================
+// A non-zero Kxy has two completely different causes and they mean opposite
+// things for design:
+//
+//   1. the blocks are ANISOTROPIC AND ROTATED relative to the tyre's axes. An
+//      angled lug has a stiff direction that is not "along the tyre", so it
+//      shows a cross term with nothing coupled to anything. Kxy is then a
+//      symptom of the measuring axes, not of any interaction.
+//   2. the parts are genuinely JOINED. An inclined tie bar drags its neighbour
+//      along the bar's own line, so pushing one block moves the other sideways.
+//      Cut the bar and it is gone.
+//
+// The tool has to keep these apart or "the tie bars are coupling the tread" can
+// be said about a pattern whose bars do nothing at all. The separation is the
+// difference between the two solves: bonded minus independent is cause 2 and
+// nothing else, because the blocks are identical in both.
+{
+  // A drawing whose blocks are rectangles -- so they carry NO cross term of
+  // their own, cause 1 is exactly zero -- bridged by diagonal tie bars.
+  const r = load("diagonal_tiebars.dxf", { height: 10, shore_a: 65, draft_angle: 0 }).pattern;
+  const wear = 6;
+  const pat = Object.assign({}, r, { blocks: E.effectiveBlocks(r, wear) });
+  const grid = E.makeGrid(pat, 1024, 96);
+  const pack = E.rasterise(pat, grid, SP, false, null);
+  const spec = { shape: "rectangle", length: 120, width: 150, gamma_deg: 0,
+                 scale_with_lean: false, y_center: 0 };
+  const patch = E.shapePatch(spec, r.crown, r.tread_width,
+                             { vertical_load: 4000, wheel_radius: 320, load_rises_with_lean: false });
+  const c = E.couplingSweep(r, pack, patch, wear, SP, 360, netOf(r, wear));
+  const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+  const relTo = (a, b) => Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 1e-12);
+
+  const kxyU = mean(c.kxy_uncoupled), kxyC = mean(c.kxy_coupled);
+  // Every block in this drawing is a rectangle, so no BLOCK contributes a cross
+  // term: cause 1 is absent at the block level.
+  const blockKxy = r.blocks.map((bk) => E.blockStiffness(bk, SP).kxy);
+  ck("no block in this drawing has a cross term of its own",
+     blockKxy.every((v) => Math.abs(v) < 1e-12),
+     r.blocks.length + " rectangular blocks, all Kxy = 0");
+
+  // But the BARS are diagonal, and a diagonal bar is itself an angled body. So
+  // cause 1 reappears at the bar level, and the independent solve -- nothing
+  // bonded to anything -- already shows a cross term.
+  //
+  // This is the trap, and it is worth stating plainly: reading the bonded Kxy
+  // and calling it "the tie bars coupling the tread" over-attributes, because
+  // part of it is just the bars being diagonal. Only the DIFFERENCE is the
+  // network.
+  ck("but the diagonal BARS each carry one, so the independent solve is not zero",
+     Math.abs(kxyU) > 1, "independent Kxy = " + kxyU.toFixed(2) + " N/mm with nothing bonded");
+  ck("bonding adds more on top", Math.abs(kxyC) > Math.abs(kxyU),
+     kxyU.toFixed(2) + " -> " + kxyC.toFixed(2) + " N/mm");
+  const share = (kxyC - kxyU) / kxyC;
+  ck("so the bonded value OVER-attributes: only the difference is the network",
+     share > 0.1 && share < 0.9,
+     "network share " + (100 * share).toFixed(0) + "% of the bonded " + kxyC.toFixed(2) +
+     " N/mm; reading the bonded number alone would over-state it by " +
+     (100 * kxyU / (kxyC - kxyU)).toFixed(0) + "%");
+
+  // The same subtraction on the diagonal terms. Comparing the two
+  // decompositions is what says whether the bars merely stiffened the tread or
+  // actually turned its stiff axis.
+  const prU = E.principalStiffness(mean(c.kx_uncoupled), mean(c.ky_uncoupled), kxyU);
+  const prC = E.principalStiffness(mean(c.kx_coupled), mean(c.ky_coupled), kxyC);
+  ck("the independent tread has almost no directional bias", prU.anisotropy < 1.01,
+     "K1/K2 = " + prU.anisotropy.toFixed(4));
+  ck("and bonding increases it", prC.anisotropy > prU.anisotropy,
+     prU.anisotropy.toFixed(4) + " -> " + prC.anisotropy.toFixed(4));
+  ck("Cxy states the coupling as a fraction, which the raw N/mm cannot",
+     Math.abs(prC.cxy) > Math.abs(prU.cxy) && Math.abs(prC.cxy) < 0.05,
+     (100 * prU.cxy).toFixed(3) + "% -> " + (100 * prC.cxy).toFixed(3) + "%");
+  ck("and both states stay positive definite", prU.det > 0 && prC.det > 0,
+     "det " + prU.det.toExponential(2) + " / " + prC.det.toExponential(2));
+
+  // Take the bars out altogether and BOTH contributions go: the bars' own cross
+  // term and the network's. Only the rectangular blocks are left, and they have
+  // none at all.
+  const bare = E.couplingSweep(r, pack, patch, wear, SP, 360, netOf(r, wear, false));
+  ck("remove the bars and the cross term vanishes entirely",
+     Math.abs(mean(bare.kxy_coupled)) < 1e-9,
+     "Kxy = " + mean(bare.kxy_coupled).toExponential(2) + " N/mm");
+  ck("and with nothing left to bond, the gains are exactly one",
+     Math.abs(bare.gain_kx - 1) < 1e-9 && Math.abs(bare.gain_ky - 1) < 1e-9,
+     "Kx x" + bare.gain_kx.toFixed(9));
+
+  // On a straight-ribbed tread with bars ACROSS the grooves rather than at an
+  // angle, the bars stiffen and do not couple -- the other half of the claim.
+  const s = load("tbr_ribs_tiebars.dxf", { height: 16, shore_a: 65, draft_angle: 0 }).pattern;
+  const sPat = Object.assign({}, s, { blocks: E.effectiveBlocks(s, 9) });
+  const sGrid = E.makeGrid(sPat, 1024, 96);
+  const sPack = E.rasterise(sPat, sGrid, SP, false, null);
+  const sPatch = E.shapePatch({ shape: "rectangle", length: 180, width: 190, gamma_deg: 0,
+                                scale_with_lean: false, y_center: 0 }, s.crown, s.tread_width,
+                              { vertical_load: 26000, wheel_radius: 520, load_rises_with_lean: false });
+  const sc = E.couplingSweep(s, sPack, sPatch, 9, SP, 360, netOf(s, 9));
+  ck("lateral bars on straight ribs stiffen the tread", sc.gain_kx > 1.01 && sc.gain_ky > 1.01,
+     "Kx x" + sc.gain_kx.toFixed(3) + ", Ky x" + sc.gain_ky.toFixed(3));
+  ck("and couple it not at all", Math.abs(mean(sc.kxy_coupled)) < 1e-6,
+     "Kxy = " + mean(sc.kxy_coupled).toExponential(2) + " N/mm");
+}
+
 console.log("\n" + (fails ? fails + " of " + checks + " CHECKS FAILED" : checks + " checks passed"));
 process.exitCode = fails ? 1 : 0;

@@ -458,6 +458,8 @@
         <div id="cplBody" style="display:none">
           <div id="cplCards" class="cards"></div>
           <div class="plot-host"><div id="cplPlot" class="plot"></div></div>
+          <div class="hint" style="margin-top:6px">The four curves above overlap, because bonding changes the stiffness by a few percent. Subtracting them shows the tie bars’ contribution on its own — and <b>where</b> in the revolution it happens, which the mean in the table cannot.</div>
+          <div class="plot-host"><div id="cplDelta" class="plot"></div></div>
           <div class="plot-host"><div id="cplStrip" class="plot"></div></div>
           <div class="hint" style="margin:-4px 0 10px">The same rolled-out tread, on the same θ axis as the curve above — zooming either moves both. Violet outlines are the tie bars; the thin violet lines are the bonded links the network above is actually solving — one per shared wall, joining a bar to the block it is tied to. A bar with no line touches nothing along a shared edge and contributes no coupling stiffness, however solid it looks. A bar still below the tread surface is drawn dotted: it adds no contact area yet, but it <b>is</b> already coupling the blocks either side of it, which is why the gain is there from new.</div>
           <div id="cplTable"></div>
@@ -469,6 +471,9 @@
             <ul>
               <li><b>Uncoupled</b> is the tread as independent springs — what the other tabs show. <b>Coupled</b> is the same tread solved as a network. Both are measured the same way, so the <b>gain</b> between them is the tie bars' contribution and nothing else.</li>
               <li><b>Kxy</b> is the cross term: push the tread circumferentially and it also moves laterally. Bars square to the tread give none. A <b>diagonal</b> bar does, and that is a real steering effect you would otherwise not see.</li>
+              <li><b>Read the difference, not the bonded value.</b> A non-zero Kxy has two causes and only one of them is the network. The other is simple geometry: an angled block — or an angled <em>bar</em> — has a stiff direction that is not along the tyre, so it shows a cross term with nothing bonded to anything. That is why the independent column is not always zero, and why the bonded number on its own over-states what the bars do. On the bundled diagonal-bar drawing the bonded Kxy is 27.9 N/mm of which only 16.5 is the network: reading the bonded figure alone would over-state the bars by <b>69%</b>.</li>
+              <li><b>Cxy</b> is the cross term as a fraction of √(Kx·Ky) — roughly how much of an applied force comes back out sideways. It is dimensionless, so unlike Kxy it can be compared between patterns of different size and land ratio. A few tenths of a percent is a rounding error; several percent is a real steering effect.</li>
+              <li>The <b>stiff axis</b> is the direction the tread is stiffest in, and <b>K₁/K₂</b> says how pronounced that is. Near 1 there is no meaningful direction however precisely the angle is known, so the two are always read together. Watching the axis turn between the independent and bonded states is the clearest single statement of what the bars did.</li>
               <li>The gain is <b>largest when few blocks are loaded</b> and smallest when the patch covers a whole tied rib. That is not an artefact — blocks moving together put no load into the bars at all.</li>
             </ul>
             <h4>Two mechanisms, at opposite ends of the tyre's life</h4>
@@ -495,7 +500,7 @@
         </div>
         <div id="compareList"></div>
         <div class="field wide" id="compareMetricRow" style="display:none"><label>Metric</label>
-          <select id="compareMetric"><option value="kz">Kz — vertical (N/mm)</option><option value="kx">Kx — longitudinal (N/mm)</option><option value="ky">Ky — lateral (N/mm)</option><option value="kxy">Kxy — cross term (N/mm)</option><option value="contact_area">contact area (mm²)</option><option value="land_ratio">land ratio</option><option value="block_count">blocks in patch</option><option value="c_alpha">Cα — cornering stiffness (N/rad)</option><option value="c_kappa">Cκ — longitudinal slip stiffness (N)</option><option value="pneumatic_trail">pneumatic trail (mm)</option></select>
+          <select id="compareMetric"><option value="kz">Kz — vertical (N/mm)</option><option value="kx">Kx — longitudinal (N/mm)</option><option value="ky">Ky — lateral (N/mm)</option><option value="kxy">Kxy — cross term (N/mm)</option><option value="c_xy">Cxy — normalised coupling (%)</option><option value="anisotropy">anisotropy K₁/K₂</option><option value="contact_area">contact area (mm²)</option><option value="land_ratio">land ratio</option><option value="block_count">blocks in patch</option><option value="c_alpha">Cα — cornering stiffness (N/rad)</option><option value="c_kappa">Cκ — longitudinal slip stiffness (N)</option><option value="pneumatic_trail">pneumatic trail (mm)</option></select>
         </div>
         <div class="plot-host"><div id="comparePlot" class="plot"></div></div>
         <div id="compareTable"></div>

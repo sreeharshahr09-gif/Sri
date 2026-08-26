@@ -918,6 +918,8 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
         <div id="cplBody" style="display:none">
           <div id="cplCards" class="cards"></div>
           <div class="plot-host"><div id="cplPlot" class="plot"></div></div>
+          <div class="hint" style="margin-top:6px">The four curves above overlap, because bonding changes the stiffness by a few percent. Subtracting them shows the tie bars’ contribution on its own — and <b>where</b> in the revolution it happens, which the mean in the table cannot.</div>
+          <div class="plot-host"><div id="cplDelta" class="plot"></div></div>
           <div class="plot-host"><div id="cplStrip" class="plot"></div></div>
           <div class="hint" style="margin:-4px 0 10px">The same rolled-out tread, on the same θ axis as the curve above — zooming either moves both. Violet outlines are the tie bars; the thin violet lines are the bonded links the network above is actually solving — one per shared wall, joining a bar to the block it is tied to. A bar with no line touches nothing along a shared edge and contributes no coupling stiffness, however solid it looks. A bar still below the tread surface is drawn dotted: it adds no contact area yet, but it <b>is</b> already coupling the blocks either side of it, which is why the gain is there from new.</div>
           <div id="cplTable"></div>
@@ -929,6 +931,9 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
             <ul>
               <li><b>Uncoupled</b> is the tread as independent springs — what the other tabs show. <b>Coupled</b> is the same tread solved as a network. Both are measured the same way, so the <b>gain</b> between them is the tie bars' contribution and nothing else.</li>
               <li><b>Kxy</b> is the cross term: push the tread circumferentially and it also moves laterally. Bars square to the tread give none. A <b>diagonal</b> bar does, and that is a real steering effect you would otherwise not see.</li>
+              <li><b>Read the difference, not the bonded value.</b> A non-zero Kxy has two causes and only one of them is the network. The other is simple geometry: an angled block — or an angled <em>bar</em> — has a stiff direction that is not along the tyre, so it shows a cross term with nothing bonded to anything. That is why the independent column is not always zero, and why the bonded number on its own over-states what the bars do. On the bundled diagonal-bar drawing the bonded Kxy is 27.9 N/mm of which only 16.5 is the network: reading the bonded figure alone would over-state the bars by <b>69%</b>.</li>
+              <li><b>Cxy</b> is the cross term as a fraction of √(Kx·Ky) — roughly how much of an applied force comes back out sideways. It is dimensionless, so unlike Kxy it can be compared between patterns of different size and land ratio. A few tenths of a percent is a rounding error; several percent is a real steering effect.</li>
+              <li>The <b>stiff axis</b> is the direction the tread is stiffest in, and <b>K₁/K₂</b> says how pronounced that is. Near 1 there is no meaningful direction however precisely the angle is known, so the two are always read together. Watching the axis turn between the independent and bonded states is the clearest single statement of what the bars did.</li>
               <li>The gain is <b>largest when few blocks are loaded</b> and smallest when the patch covers a whole tied rib. That is not an artefact — blocks moving together put no load into the bars at all.</li>
             </ul>
             <h4>Two mechanisms, at opposite ends of the tyre's life</h4>
@@ -955,7 +960,7 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
         </div>
         <div id="compareList"></div>
         <div class="field wide" id="compareMetricRow" style="display:none"><label>Metric</label>
-          <select id="compareMetric"><option value="kz">Kz — vertical (N/mm)</option><option value="kx">Kx — longitudinal (N/mm)</option><option value="ky">Ky — lateral (N/mm)</option><option value="kxy">Kxy — cross term (N/mm)</option><option value="contact_area">contact area (mm²)</option><option value="land_ratio">land ratio</option><option value="block_count">blocks in patch</option><option value="c_alpha">Cα — cornering stiffness (N/rad)</option><option value="c_kappa">Cκ — longitudinal slip stiffness (N)</option><option value="pneumatic_trail">pneumatic trail (mm)</option></select>
+          <select id="compareMetric"><option value="kz">Kz — vertical (N/mm)</option><option value="kx">Kx — longitudinal (N/mm)</option><option value="ky">Ky — lateral (N/mm)</option><option value="kxy">Kxy — cross term (N/mm)</option><option value="c_xy">Cxy — normalised coupling (%)</option><option value="anisotropy">anisotropy K₁/K₂</option><option value="contact_area">contact area (mm²)</option><option value="land_ratio">land ratio</option><option value="block_count">blocks in patch</option><option value="c_alpha">Cα — cornering stiffness (N/rad)</option><option value="c_kappa">Cκ — longitudinal slip stiffness (N)</option><option value="pneumatic_trail">pneumatic trail (mm)</option></select>
         </div>
         <div class="plot-host"><div id="comparePlot" class="plot"></div></div>
         <div id="compareTable"></div>
@@ -1170,9 +1175,23 @@ lateral        u = tan α · s      α = slip angle</code></pre>
 <p><strong>Kxy</strong> is the cross term: push the tread circumferentially and it also moves laterally. Bars square to the tread give none. A <strong>diagonal</strong> bar does, and that is a real steering effect you would otherwise never see.</p>
 <p>The gain is <strong>largest when few blocks are loaded</strong> and smallest when the patch covers a whole tied rib. That is not an artefact — blocks moving together put no load into the bars at all.</p>
 <p>Below the curve is the <strong>same rolled-out tread</strong>, on the same θ axis — zoom either and both follow. Blocks are dimmed, tie bars are violet, and the thin violet lines are the bonded links the solver actually assembled: one per shared wall, joining a bar to the block it is tied to. This is the fastest way to check a drawing. <strong>A bar with no line touches nothing along a shared edge</strong>, so it contributes no coupling stiffness however solid it looks on the pattern — usually its outline does not quite meet the groove wall. A bar drawn dotted is still below the tread surface: it adds no contact area yet, but it <em>is</em> already coupling the blocks either side of it, which is why the gain is there from new.</p>
+<h3>What the bars actually did — read the difference</h3>
+<p>The four curves on the main chart mostly lie on top of each other, because bonding changes the stiffness by a couple of percent. The chart below subtracts them: <strong>ΔKx, ΔKy and ΔKxy, bonded minus independent</strong>. Every curve is zero if the bars do nothing, so the shape <em>is</em> their contribution — and it shows <strong>where in the revolution</strong> it happens, which the mean in the table cannot.</p>
+<p><strong>Do not read the bonded Kxy on its own.</strong> A cross term has two causes (see <em>Kxy</em> above), and only one of them is the network. An angled block — or an angled <em>bar</em> — carries one before anything is bonded, which is why the independent column is not always zero.</p>
+<p>On the bundled <code>diagonal_tiebars</code> drawing, with the whole tread under the patch, the bonded Kxy is <strong>27.9 N/mm of which only 16.5 is the network</strong>: reading the bonded figure alone would over-state what the bars do by <strong>69%</strong>. The <em>difference</em> column, and the <em>Kxy from the bars</em> card, are the honest numbers.</p>
+<h3>Cxy and the stiff axis, before and after bonding</h3>
+<p>The table gives both states for <strong>Cxy</strong> (the coupling as a fraction of √(Kx·Ky)), <strong>K₁/K₂</strong> (how directional the tread is) and the <strong>stiff axis</strong>. Comparing the two decompositions is the clearest single statement of what the bars did:</p>
+<ul><li><strong>K₁/K₂ rises</strong> → the bars made the tread more directional than it was.</li><li><strong>The stiff axis turns</strong> → they changed <em>which way</em> it is stiffest. Where the independent tread was near-isotropic the card says "bars gave it one", because turning an axis that barely existed is not the same as turning a real one.</li><li><strong>Cxy rises</strong> → they coupled the two directions, and by a stated fraction rather than a raw N/mm you cannot compare against anything.</li></ul>
+<p>A gain is withheld wherever the independent value passes through zero: a ratio to nothing is not a number. The difference always is.</p>
 <h3>Two mechanisms, at opposite ends of the tyre's life</h3>
 <p>The coupling works <strong>from new</strong>, and its relative value <em>falls</em> as the tread wears: a block stiffens as roughly 1/L³ as it shortens, while the bar only shrinks once the tread reaches it. On a 16 mm NSD with an 8.8 mm bar the model gives ×1.32 at zero wear falling to ×1.05 at 12 mm.</p>
 <p>The contact-area contribution is the opposite — nothing until worn into, then land like any block. <strong>Tie bars earn their keep across the whole life because the two mechanisms hand over, not because they add up.</strong></p>
+<h3>What it does not model: block rotation</h3>
+<p>Every element in the network has <strong>two</strong> degrees of freedom — it can slide along the tyre and across it. It cannot <strong>spin</strong> about the vertical axis.</p>
+<p>Think of a door. Push it in the middle and it just moves; push it near the <strong>edge</strong> and it swings. Same force, different result, because rotation matters.</p>
+<p>A tie bar attached near one end of a long block, pulling at an angle, would try to spin that block. The model cannot represent that spin, so where bars are attached <strong>off a block's centre</strong> and at an angle, it is likely to <strong>under-count</strong> what they do. Bars attached square across a groove near the middle of their blocks — which is most of them — are unaffected.</p>
+<p>Adding it means a third degree of freedom per element: each block needs a torsional stiffness about the vertical axis, each link needs the moment arm from the wall it bonds to out to the block centre, and the effective stiffness has to be condensed back to a 2×2. The solve cost rises by about 3.4× and the element ceiling drops from 800 to about 530. <strong>It would also move existing numbers</strong> — Kx and Ky gains would change for any pattern with off-centre bars — so it is recorded here rather than slipped in.</p>
+<p>Whether it is worth doing is answerable from the tool itself: if <strong>Cxy</strong> on your drawings is a few tenths of a percent, refining the coupling model buys very little. If it is several percent, it becomes worth the work.</p>
 <h3>What it assumes</h3>
 <ul><li>A bar is a linear spring bonded over (wall length × bar height). No bulging, no contact non-linearity.</li><li>One point per block, two translational degrees of freedom. The bar sits below the block top, so it really applies a couple as well as a force; that moment is <strong>not</strong> modelled, which makes the bars read slightly <em>soft</em>.</li><li>Coupling is whatever the DXF adjacency says. Two blocks that merely abut are not linked — the span would be zero.</li><li>Rigid belt, uniform patch pressure, small displacement, linear elastic — as everywhere else in the tool.</li></ul>
 <p>There is <strong>no calibration factor</strong>. The bar's stiffness comes from its geometry and the compound, like everything else.</p>
@@ -1251,13 +1270,23 @@ python build_report.py --config my_tyre.json</code></pre>
 <p>Ky mattering most at high lean, Kx most upright, is a reasonable rule of thumb.</p>
 <h3>Kxy — the cross term</h3>
 <p><strong>What it is.</strong> The off-diagonal of the same 2×2 stiffness. It says how much a deflection along the tyre produces a force <em>across</em> it — which is exactly what an angled lug does. It is the only stiffness on the page that can be <strong>negative</strong>.</p>
+<p><strong>Two causes, and they mean opposite things.</strong> This is the thing to get right before reading the number:</p>
+<div class="tablewrap"><table><thead><tr><th></th><th>what it is</th><th>how to tell</th></tr></thead><tbody><tr><td><strong>1 · a rotated shape</strong></td><td>An angled lug has a stiff direction that is not "along the tyre". Measured in the tyre's axes it shows a cross term with <strong>nothing coupled to anything</strong>. Think of a plank laid at 30° across a bench: push it along the bench and it deflects across, and the plank has not changed — your rulers are just not lined up with it.</td><td>It is there with the tie bars removed.</td></tr><tr><td><strong>2 · things genuinely joined</strong></td><td>An inclined tie bar drags its neighbour along the bar's own line, so pushing one block moves the other sideways. Two people on ice, linked by a diagonal rope.</td><td>It disappears when the bars are cut.</td></tr></tbody></table></div>
+<p><strong>The θ sweep and the Compare tab show cause 1 only.</strong> They treat every block as an independent spring — there are no tie bars in that number at all. Cause 2 lives on the <strong>Tie-bar coupling</strong> tab, in the <em>difference</em> between the bonded and independent solves.</p>
 <p><strong>How to read it — two ways, and both matter.</strong></p>
-<ul><li><strong>The swing</strong> is how strongly the pattern couples the two directions. A straight rib has no cross term at all: Kxy is exactly zero, everywhere. An angled or directional block pattern swings as each lug enters and leaves the patch.</li><li><strong>The mean</strong> says whether that coupling is <em>balanced</em>. On a symmetric pattern the left-leaning lugs cancel the right-leaning ones and the mean sits at essentially zero however large the swing. A mean that is a real fraction of the swing is a pattern with a built-in pull.</li></ul>
+<ul><li><strong>The swing</strong> is how strongly the pattern couples the two directions. A straight rib has none: Kxy is exactly zero, everywhere. An angled or directional block pattern swings as each lug enters and leaves the patch.</li><li><strong>The mean</strong> says whether that coupling is <em>balanced</em>. On a symmetric pattern the left-leaning lugs cancel the right-leaning ones and the mean sits at essentially zero however large the swing. A mean that is a real fraction of the swing is a pattern with a built-in pull.</li></ul>
 <p>Because a balanced pattern's mean is near zero, a CoV against it would be arithmetic rather than a reading — so wherever Kxy is summarised the tool shows <strong>± the half-swing</strong> instead, and absolute rather than percentage differences.</p>
 <p>It is offered on the <strong>Compare</strong> tab, and it is in the CSV export as <code>kxy_N_per_mm</code>.</p>
-<h3>Anisotropy Kx/Ky</h3>
-<p><strong>What it is.</strong> The ratio of the two. <strong>1.0 means the tyre is equally stiff in both directions.</strong></p>
-<p><strong>How to read it.</strong> Above 1, the pattern resists braking better than cornering; below 1, the reverse. What matters is less the value than <strong>how much it moves</strong> through a revolution — a ratio that swings means the tyre's character changes depending on wheel position.</p>
+<h3>Cxy — the coupling as a fraction</h3>
+<p><strong>What it is.</strong> <code>Kxy / √(Kx·Ky)</code>. Roughly: <strong>of the force you put in, what fraction comes back out sideways?</strong></p>
+<p><strong>Why it exists.</strong> Raw Kxy is in N/mm and its size depends on how much rubber is under the patch, so it cannot be compared between two patterns. 20 N/mm on a 5 000 N/mm tread is <strong>0.4%</strong> and irrelevant; the same 20 N/mm on a 200 N/mm tread is <strong>10%</strong> and a real steering effect. Cxy is dimensionless and tells the two apart. It is a selectable metric on <strong>Compare</strong> for exactly that reason.</p>
+<p>The card on the θ sweep reports the <strong>peak</strong>, not the mean, because the mean cancels on any balanced pattern — a mean of 0.00% says the pattern is symmetric, not that nothing couples.</p>
+<p>For reference: the bundled 2W sample peaks at about <strong>0.3%</strong>.</p>
+<h3>Stiff axis and K₁/K₂</h3>
+<p><strong>What it is.</strong> Every 2D stiffness has a stiffest direction and a softest one at right angles — like the grain in wood. The <strong>stiff axis</strong> is which way that grain runs, in degrees from the rolling direction; <strong>K₁/K₂</strong> is how pronounced it is.</p>
+<p><strong>Read them together, always.</strong> The angle stays numerically well-determined long after it stops being interesting: perturbing the stiffnesses by 0.1% moves it by only 2.4° even at K₁/K₂ = 1.0001. So a precise-looking angle on a tread with K₁/K₂ = 1.01 is precise <em>and</em> immaterial. The anisotropy is what tells you which situation you are in, so the card shows both and flags "near-isotropic" below 1.02.</p>
+<p>Most well-mixed treads come out near-isotropic under the patch — the lug orientations average away — and that is itself a useful finding: the pattern has no net directional bias. It becomes directional at <strong>lean</strong>, when the patch narrows onto fewer, more aligned lugs.</p>
+<p><strong>It is deliberately not a Compare curve.</strong> An axis wraps: −89° and +89° are two degrees apart as directions, so a mean and a CoV over a series of them are meaningless — a tread whose axis sits steadily across the tyre would summarise as "mean −0.07°, ±89.9°". The single-number form on the card decomposes the <em>mean</em> 2×2 instead, which is well defined. Cxy and K₁/K₂ are ordinary scalars and do average, so those are the two offered for comparison.</p>
 <h3>Blocks in contact</h3>
 <p><strong>What it is.</strong> How many blocks are in the patch at once. It's fractional ("effective") because a block half inside counts as 0.5.</p>
 <p><strong>How to read it.</strong> <strong>This is the most important number in the report and the easiest to understand.</strong> More blocks = more averaging = smoother everything.</p>
@@ -69856,6 +69885,75 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     return { xx: M.yy / det, yy: M.xx / det, xy: -M.xy / det };
   }
 
+  // ---------------------------------------------------------------------
+  // Reading a 2x2 stiffness: principal axes and normalised coupling
+  // ---------------------------------------------------------------------
+  //
+  // Kxy on its own is hard to act on. It is a signed number in N/mm whose size
+  // depends on how much rubber is under the patch, so it cannot be compared
+  // between two patterns, and it does not say what it is a symptom OF.
+  //
+  // Two derived quantities fix that, and both come from the same eigen problem:
+  //
+  //   * the PRINCIPAL AXES. Every symmetric 2x2 has a stiffest direction and a
+  //     softest one at right angles to it -- the grain of the tread under the
+  //     patch. Kxy is non-zero precisely when that grain is not aligned with
+  //     the tyre's own axes, and the angle says so directly. Note what this
+  //     means: an angled lug shows Kxy without anything being COUPLED. It is
+  //     an unrotated ruler measuring a rotated object.
+  //
+  //   * the NORMALISED COUPLING Cxy = Kxy / sqrt(Kx*Ky). Dimensionless, so it
+  //     compares across patterns and tyre sizes: roughly the fraction of an
+  //     applied force that comes back out at right angles to it. 20 N/mm on a
+  //     5000 N/mm tread is 0.4% and irrelevant; the same 20 on a 200 N/mm tread
+  //     is 10% and a real steering effect. The raw number cannot tell them
+  //     apart.
+  //
+  // Angles are DEGREES, measured from +x (the rolling direction), in (-90, 90].
+  // An axis has no sign -- -89 deg and +91 deg are the same direction -- so the
+  // range covers every distinct axis exactly once. 0 is along the tyre, +/-90 is
+  // across it.
+  //
+  // `angle_deg` is null only when the stiffness ellipse is a CIRCLE, where there
+  // is genuinely no direction to point at. The tolerance is deliberately tight.
+  // The obvious worry is that the angle goes soft as the ellipse rounds off, and
+  // it was measured rather than assumed: perturbing the three stiffnesses by
+  // 0.1% moves the axis by 2.4 deg at an anisotropy of 1.0001, and by 1.0 deg at
+  // 1.025 -- so the angle stays well determined far past the point where it
+  // stops being interesting. Suppressing it there would be hiding a sound number
+  // on a judgement about materiality that belongs to the reader.
+  //
+  // `anisotropy` = K1/K2 is what carries that judgement. Near 1 the tread has no
+  // meaningful directional bias however precisely the axis is known, so the two
+  // are always reported together.
+  function principalStiffness(kx, ky, kxy, isoTol) {
+    kxy = kxy || 0;
+    const half = (kx + ky) / 2, dev = (kx - ky) / 2;
+    const rad = Math.hypot(dev, kxy);
+    const k1 = half + rad, k2 = half - rad;
+    const scale = Math.max(Math.abs(half), 1e-30);
+    const tol = isoTol == null ? 1e-6 : isoTol;
+    // The factor of two is the reason principal axes repeat every 180 deg
+    // rather than every 360: rotating a stiffness ellipse by 180 deg maps it
+    // onto itself.
+    let angle = rad <= tol * scale ? null : (Math.atan2(2 * kxy, kx - ky) * 90) / Math.PI;
+    if (angle !== null && angle <= -90) angle += 180;
+    if (angle !== null && angle > 90) angle -= 180;
+    const denom = kx > 0 && ky > 0 ? Math.sqrt(kx * ky) : 0;
+    return {
+      k1: k1, k2: k2,
+      // k1 is the stiff axis by construction, so the ratio is >= 1 and says how
+      // directional the tread is regardless of how stiff it is overall.
+      anisotropy: Math.abs(k2) > 1e-30 ? k1 / k2 : Infinity,
+      angle_deg: angle,
+      cxy: denom > 0 ? kxy / denom : 0,
+      // Positive definite means deflecting the tread in ANY direction costs
+      // energy. If this ever went negative there would be a direction that
+      // gave energy back, and the 2x2 would not describe an elastic body.
+      det: kx * ky - kxy * kxy,
+    };
+  }
+
   function clipPoly(poly, lp1, lp2, keepPos) {
     const n = poly.length, dx = lp2[0] - lp1[0], dy = lp2[1] - lp1[1];
     const sides = poly.map((v) => dx * (v[1] - lp1[1]) - dy * (v[0] - lp1[0]));
@@ -74649,6 +74747,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     ensureCCW, polygonProps, polygonPerimeter, polygonArea, polygonCentroid,
     regionArea, regionCentroid, regionProps,
     offsetPoly, clipPoly, splitBySipe, sipeClippedLength, netContactArea,
+    principalStiffness,
     // stiffness
     SHORE_E_TABLE, SHORE_K_TABLE, shoreE, shoreK, shoreRangeWarning, calcG, beamKMatrix, effectiveK, computeKz, blockStiffness, effectiveSipes,
     effectiveKRegion, computeKzRegion,
@@ -76091,6 +76190,52 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     el.innerHTML = html + "</ul>";
   }
 
+  // ---- reading the 2x2: derived series ---------------------------------
+  //
+  // Cxy and the principal axis are pointwise functions of kx, ky and kxy, which
+  // every run already carries. They are derived here rather than shipped from
+  // the worker for two reasons: the payload does not grow by three more arrays
+  // per lean, and a run exported before these existed still works -- load it
+  // into the comparison and it gets them too.
+  var DERIVED = {
+    c_xy: function (r, i) {
+      return E.principalStiffness(r.kx[i], r.ky[i], r.kxy ? r.kxy[i] : 0).cxy * 100;
+    },
+    anisotropy: function (r, i) {
+      var p = E.principalStiffness(r.kx[i], r.ky[i], r.kxy ? r.kxy[i] : 0);
+      return isFinite(p.anisotropy) ? p.anisotropy : 0;
+    },
+  };
+
+  // Any metric, stored or derived, as an array. Returns null when the run
+  // predates whatever it needs, which is what the callers already test for.
+  function metricSeries(r, key) {
+    if (!r) return null;
+    if (!DERIVED[key]) return r[key] || null;
+    if (!r.kx || !r.ky || !r.kxy) return null;   // a run from before Kxy existed
+    var out = new Array(r.kx.length);
+    for (var i = 0; i < r.kx.length; i++) out[i] = DERIVED[key](r, i);
+    return out;
+  }
+
+  // The principal axis of the MEAN 2x2.
+  //
+  // This is NOT the mean of the pointwise angles, and the difference is not
+  // pedantic. An axis wraps at +/-90 deg -- -89 deg and +89 deg are two degrees
+  // apart as directions -- so ordinary statistics on a series of them are
+  // meaningless: a tread whose axis sits steadily across the tyre summarises as
+  // "mean -0.07 deg, +/-89.9", which is the exact opposite of what it does.
+  // Averaging the stiffnesses first and decomposing once is well defined, so
+  // the axis is offered as a single number here and deliberately NOT as a
+  // comparison curve. Cxy and the anisotropy are ordinary scalars and do
+  // average, so those are the two the comparison offers.
+  function meanPrincipal(r) {
+    if (!r || !r.kxy) return null;
+    return E.principalStiffness(E.fluctuationStats(r.kx).mean,
+                                E.fluctuationStats(r.ky).mean,
+                                E.fluctuationStats(r.kxy).mean);
+  }
+
   function renderCards() {
     var r = currentResult();
     var kz = E.fluctuationStats(r.kz), ca = E.fluctuationStats(r.contact_area), bc = E.fluctuationStats(r.block_count);
@@ -76112,6 +76257,34 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       cards.push(["Cα fluctuation", (caS.cov * 100).toFixed(1), "% CoV over θ"]);
       cards.push(["Mean Cκ", E.fluctuationStats(r.c_kappa).mean.toFixed(0), "N per unit slip ratio"]);
       cards.push(["Pneumatic trail", trS.mean.toFixed(1), "mm behind patch centre"]);
+    }
+    // What the cross term is a symptom OF. Kxy alone is a signed number whose
+    // size depends on how much rubber is under the patch; these two say how
+    // much coupling that is as a fraction, and which way the tread's stiff axis
+    // is pointing -- which is the thing a lug angle actually controls.
+    var pr = meanPrincipal(r);
+    if (pr) {
+      var kxyS = E.fluctuationStats(r.kxy);
+      // PEAK coupling, not mean. The mean cancels on any balanced pattern -- the
+      // left-leaning lugs against the right-leaning ones -- so a mean of 0.00%
+      // says the pattern is symmetric, not that nothing couples. The peak is
+      // what "how much force comes out sideways" actually asks for.
+      var peakC = 0;
+      for (var ci = 0; ci < r.kx.length; ci++) {
+        var c = Math.abs(E.principalStiffness(r.kx[ci], r.ky[ci], r.kxy[ci]).cxy);
+        if (c > peakC) peakC = c;
+      }
+      cards.push(["Peak coupling Cxy", (100 * peakC).toFixed(2),
+                  "% sideways — mean " + (100 * pr.cxy).toFixed(2) + "%"]);
+      // The angle and how much to trust it, always together: an axis on a
+      // nearly round ellipse is precisely known and barely matters, and only
+      // the anisotropy beside it says which situation you are in.
+      cards.push(["Stiff axis", pr.angle_deg == null ? "–" : pr.angle_deg.toFixed(1) + "\u00b0",
+                  pr.angle_deg == null ? "isotropic — no direction at all"
+                    : "from rolling · K\u2081/K\u2082 " + pr.anisotropy.toFixed(3) +
+                      (pr.anisotropy < 1.02 ? " (near-isotropic)" : "")]);
+      cards.push(["Kxy swing", ((kxyS.max - kxyS.min) / 2).toFixed(2),
+                  "\u00b1 N/mm, mean " + kxyS.mean.toFixed(2)]);
     }
     var html = "";
     for (var i = 0; i < cards.length; i++)
@@ -76463,6 +76636,62 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       .then(linkCouplingFigures);
   }
 
+  // What the tie bars actually did, on its own axes.
+  //
+  // The chart above draws four curves that mostly lie on top of each other:
+  // bonded and independent Kx differ by a couple of percent, and reading a 2%
+  // difference off two overlaid lines is guesswork. This subtracts them. Every
+  // curve here is zero if the bars do nothing, so the shape IS the contribution
+  // -- both how big it is and where in the revolution it happens, which an
+  // average over theta cannot show.
+  function renderCouplingDelta(c) {
+    var gd = $("cplDelta");
+    if (!gd) return;
+    var th = plotTheme();
+    var sub = function (a, b) {
+      var out = new Array(a.length);
+      for (var i = 0; i < a.length; i++) out[i] = a[i] - b[i];
+      return out;
+    };
+    var dKx = sub(c.kx_coupled, c.kx_uncoupled);
+    var dKy = sub(c.ky_coupled, c.ky_uncoupled);
+    var dKxy = sub(c.kxy_coupled, c.kxy_uncoupled);
+    var peak = function (a) { return Math.max.apply(null, a.map(Math.abs)); };
+    var big = Math.max(peak(dKx), peak(dKy)), small = peak(dKxy);
+    // The cross term's contribution is typically an order below the diagonal
+    // ones. Give it the right-hand axis when it would otherwise be a flat line
+    // on zero -- but only then, because two axes are a cost as well.
+    var split = small > 0 && big / Math.max(small, 1e-12) > 5;
+    var data = [
+      { x: c.theta_deg, y: dKx, name: "ΔKx", type: "scatter", mode: "lines",
+        line: { color: th.accent, width: 2 } },
+      { x: c.theta_deg, y: dKy, name: "ΔKy", type: "scatter", mode: "lines",
+        line: { color: th.bad, width: 2 } },
+      { x: c.theta_deg, y: dKxy, name: "ΔKxy" + (split ? " (right)" : ""), type: "scatter", mode: "lines",
+        yaxis: split ? "y2" : "y", line: { color: th.accent2, width: 2 } },
+    ];
+    var layout = {
+      paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+      margin: { l: 76, r: split ? 76 : 16, t: 38, b: 78 }, height: 300,
+      legend: { orientation: "h", y: -0.22, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
+      title: { text: "What the tie bars contribute — bonded minus independent, so zero means they did nothing",
+               font: { size: 13 } },
+      xaxis: { title: { text: "rotation angle θ (deg)", font: { size: 11 } },
+               range: (state.cplRange || [0, 360]).slice(), gridcolor: th.grid,
+               tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
+      yaxis: { title: { text: "ΔKx, ΔKy (N/mm)", font: { size: 11 } }, gridcolor: th.grid,
+               zeroline: true, zerolinecolor: th.inkDim },
+    };
+    if (split) {
+      var m = small * 1.3;
+      layout.yaxis2 = { title: { text: "ΔKxy (N/mm)", font: { size: 11 }, standoff: 6 },
+                        overlaying: "y", side: "right", range: [-m, m],
+                        zeroline: false, showgrid: false,
+                        tickfont: { color: th.accent2 }, titlefont: { color: th.accent2 } };
+    }
+    Plotly.react(gd, data, layout, { responsive: true, displayModeBar: false });
+  }
+
   // Zoom on either coupling figure moves both. Deliberately its own range state
   // rather than sharing thetaRange with the sweep tab: zooming one tab must not
   // silently re-frame another.
@@ -76500,6 +76729,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   // a band chart and an export can never disagree about what a number is.
   var METRIC_LABEL = {
     kz: "Kz (N/mm)", kx: "Kx (N/mm)", ky: "Ky (N/mm)", kxy: "Kxy (N/mm)",
+    c_xy: "Coupling Cxy (%)", anisotropy: "Anisotropy K₁/K₂",
     contact_area: "Contact area (mm²)", block_count: "Blocks", land_ratio: "Land ratio",
     c_alpha: "Cα (N/rad)", c_kappa: "Cκ (N)", c_mz: "Cmz (N·mm/rad)",
     pneumatic_trail: "Pneumatic trail (mm)",
@@ -77572,6 +77802,15 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     return state.coupling[0] || null;
   }
 
+  // The wrapped difference between two axes. Defined once here because both the
+  // card and the table row need it, and they must not disagree.
+  function cplAxisDelta(from, to) {
+    var d = to - from;
+    while (d <= -90) d += 180;
+    while (d > 90) d -= 180;
+    return d;
+  }
+
   function renderCoupling() {
     var c = currentCoupling();
     var empty = $("cplEmpty"), body = $("cplBody");
@@ -77590,11 +77829,23 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     var kxc = mean(c.kx_coupled), kxu = mean(c.kx_uncoupled);
     var kyc = mean(c.ky_coupled), kyu = mean(c.ky_uncoupled);
     var kxyc = mean(c.kxy_coupled), kxyu = mean(c.kxy_uncoupled);
+    // The same 2x2 read twice. Comparing the two decompositions is what says
+    // whether the bars merely stiffened the tread or actually turned it.
+    var prC = E.principalStiffness(kxc, kyc, kxyc);
+    var prU = E.principalStiffness(kxu, kyu, kxyu);
 
     $("cplCards").innerHTML = [
       card("Kx gain", (c.gain_kx).toFixed(3) + "×", "circumferential"),
       card("Ky gain", (c.gain_ky).toFixed(3) + "×", "lateral"),
-      card("Mean Kxy", kxyc.toFixed(1), "N/mm — cross term"),
+      card("Kxy from the bars", (kxyc - kxyu).toFixed(2), "N/mm — bonded minus independent"),
+      card("Coupling Cxy", (100 * prC.cxy).toFixed(2) + "%", "bonded, was " + (100 * prU.cxy).toFixed(2) + "%"),
+      card("Stiff axis", prC.angle_deg == null ? "–" : prC.angle_deg.toFixed(1) + "°",
+           prU.angle_deg == null || prC.angle_deg == null ? "from rolling direction"
+             // Turning an axis that barely existed is not the same as turning a
+             // real one, so the state it started from is part of the statement.
+             : prU.anisotropy < 1.02
+               ? "bars gave it one — was near-isotropic"
+               : "bars turned it " + cplAxisDelta(prU.angle_deg, prC.angle_deg).toFixed(2) + "°"),
       card("Bars in the network", String(c.n_engaged + c.n_submerged), c.n_submerged + " below the surface"),
       card("Bonded links", String(c.n_links), c.n_components + " independent group(s)"),
       card("Tread worn", (c.wear_mm || 0).toFixed(1), "mm"),
@@ -77633,21 +77884,46 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
                 tickfont: { color: th.accent2 }, titlefont: { color: th.accent2 } },
     }, { responsive: true, displayModeBar: false });
 
+    renderCouplingDelta(c);
     renderCouplingStrip(c);
 
-    var row = function (label, u, cc) {
+    // An axis has no sign and wraps at +/-90 deg, so the change from one to
+    // another is the wrapped difference -- and a RATIO of two angles is not a
+    // quantity at all, so the gain column is withheld for it.
+    var axisDelta = cplAxisDelta;
+    var row = function (label, u, cc, dp, isAngle) {
       var g = u !== 0 ? cc / u : 1;
-      return "<tr><td>" + label + "</td><td class='num'>" + u.toFixed(1) + "</td><td class='num'>" +
-        cc.toFixed(1) + "</td><td class='num'>" + (cc - u).toFixed(1) + "</td><td class='num'>" +
-        (u !== 0 ? (100 * (g - 1)).toFixed(2) + "%" : "—") + "</td></tr>";
+      dp = dp == null ? 1 : dp;
+      if (isAngle) {
+        return "<tr><td>" + label + "</td><td class='num'>" + u.toFixed(dp) + "</td><td class='num'>" +
+          cc.toFixed(dp) + "</td><td class='num'>" + axisDelta(u, cc).toFixed(dp) + "</td>" +
+          "<td class='num'>—</td></tr>";
+      }
+      // A gain is a ratio, and Kxy's independent value passes through zero on a
+      // balanced pattern, so the ratio is meaningless there. The DIFFERENCE is
+      // always meaningful, which is why it has its own column and why the gain
+      // is withheld rather than printed as a large number.
+      var ratioOk = Math.abs(u) > 1e-6 * Math.max(Math.abs(cc), 1e-9) && Math.abs(u) > 0.01;
+      return "<tr><td>" + label + "</td><td class='num'>" + u.toFixed(dp) + "</td><td class='num'>" +
+        cc.toFixed(dp) + "</td><td class='num'>" + (cc - u).toFixed(dp) + "</td><td class='num'>" +
+        (ratioOk ? (100 * (g - 1)).toFixed(2) + "%" : "—") + "</td></tr>";
     };
     $("cplTable").innerHTML =
       "<table class='metrics' style='max-width:640px'><tr><th>Mean over θ</th><th>independent</th>" +
       "<th>bonded network</th><th>difference</th><th>gain</th></tr>" +
       row("Kx (circumferential)", kxu, kxc) + row("Ky (lateral)", kyu, kyc) +
-      row("Kxy (cross)", kxyu, kxyc) + "</table>" +
+      row("Kxy (cross)", kxyu, kxyc, 2) +
+      row("Coupling Cxy (%)", 100 * prU.cxy, 100 * prC.cxy, 3) +
+      row("Anisotropy K₁/K₂", prU.anisotropy, prC.anisotropy, 4) +
+      (prU.angle_deg == null || prC.angle_deg == null ? ""
+        : row("Stiff axis (° from rolling)", prU.angle_deg, prC.angle_deg, 2, true)) +
+      "</table>" +
       "<div class='hint' style='margin-top:6px'>Both columns are the same measurement on the same tread; only the " +
-      "bonded links differ. Contact area is identical in both — a sub-surface bar touches nothing.</div>";
+      "bonded links differ, so the <b>difference</b> column is the tie bars\u2019 contribution and nothing else. " +
+      "Contact area is identical in both — a sub-surface bar touches nothing. " +
+      "<b>Cxy</b> is the cross term as a fraction of \u221a(Kx\u00b7Ky): roughly how much of an applied force comes " +
+      "back out sideways. A gain is withheld where the independent value passes through zero, since a ratio to " +
+      "nothing is not a number.</div>";
   }
 
   // ---- design comparison ----------------------------------------------
@@ -77782,8 +78058,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     var missing = 0;
     var data = list.map(function (e, i) {
       var r = e.results.find(function (x) { return x.gamma_deg === gamma; }) || e.results[0];
-      if (!r[metric]) { missing++; return null; }
-      return { x: r.theta_deg, y: r[metric], type: "scatter", mode: "lines",
+      var y = metricSeries(r, metric);
+      if (!y) { missing++; return null; }
+      return { x: r.theta_deg, y: y, type: "scatter", mode: "lines",
                name: e.label.slice(0, 42), line: { color: palette[i % palette.length], width: 1.4 } };
     }).filter(Boolean);
     Plotly.react($("comparePlot"), data, {
@@ -77803,12 +78080,24 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       "<th>max</th><th>vs first</th></tr>";
     list.forEach(function (e) {
       var r = e.results.find(function (x) { return x.gamma_deg === gamma; }) || e.results[0];
-      if (!r[metric]) {
+      var series = metricSeries(r, metric);
+      if (!series) {
         rows += "<tr><td>" + escapeHtml(e.label) +
           "</td><td colspan='5' class='hint'>run predates this metric</td></tr>";
         return;
       }
-      var st = E.fluctuationStats(r[metric]);
+      // A derived series can carry gaps where the quantity is undefined -- the
+      // principal axis of a round stiffness ellipse. Summarise what exists and
+      // say how much did not.
+      var defined = series.filter(function (v) { return isFinite(v); });
+      if (!defined.length) {
+        rows += "<tr><td>" + escapeHtml(e.label) +
+          "</td><td colspan='5' class='hint'>no stiff axis: this tread is isotropic under the patch</td></tr>";
+        isBase = false;
+        return;
+      }
+      var gaps = series.length - defined.length;
+      var st = E.fluctuationStats(defined);
       if (base === null) { base = st.mean; baseSwing = Math.max(Math.abs(st.max), Math.abs(st.min)); }
       // A signed metric can average out to nearly nothing. Kxy does exactly
       // that on a symmetric pattern -- the left-leaning lugs cancel the
@@ -77833,7 +78122,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       isBase = false;
       var spread = meanIsNoise ? "±" + fmtMetric((st.max - st.min) / 2)
                                : (st.cov * 100).toFixed(2) + "%";
-      rows += "<tr><td>" + escapeHtml(e.label) + "</td><td class='num'>" + fmtMetric(st.mean) +
+      rows += "<tr><td>" + escapeHtml(e.label) +
+        (gaps ? " <span class='hint'>(" + (100 * gaps / series.length).toFixed(0) + "% isotropic)</span>" : "") +
+        "</td><td class='num'>" + fmtMetric(st.mean) +
         "</td><td class='num'>" + spread + "</td><td class='num'>" +
         fmtMetric(st.min) + "</td><td class='num'>" + fmtMetric(st.max) + "</td><td class='num'>" +
         vs + "</td></tr>";

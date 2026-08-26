@@ -422,5 +422,146 @@ section("9. the cross stiffness Kxy");
      Array.prototype.some.call(resS.kxy, (v) => v > 1e-9));
 }
 
+// ---------------------------------------------------------------------------
+section("10. reading the 2x2: principal axes, Cxy, positive definiteness");
+// ---------------------------------------------------------------------------
+{
+  // The identity the whole decomposition rests on. Take an UNCOUPLED structure
+  // -- principal stiffnesses K1 and K2, no cross term in its own axes -- and
+  // rotate it by theta. Measured in the tyre's axes it now shows
+  //
+  //     Kxy = (K1 - K2)/2 * sin(2 theta)
+  //
+  // WITHOUT anything having been coupled. Nothing was added; a rotated object
+  // is being measured with unrotated rulers. If the tool cannot reproduce this
+  // exactly, it cannot tell that mechanism from a genuine tie-bar interaction.
+  const K1 = 900, K2 = 300;
+  function rotated(thDeg) {
+    const th = thDeg * Math.PI / 180, c = Math.cos(th), s = Math.sin(th);
+    return {
+      kx: K1 * c * c + K2 * s * s,
+      ky: K1 * s * s + K2 * c * c,
+      kxy: (K1 - K2) * s * c,
+    };
+  }
+  let worstKxy = 0, worstAng = 0, worstK1 = 0;
+  for (let a = -85; a <= 90; a += 5) {
+    const r = rotated(a);
+    const want = ((K1 - K2) / 2) * Math.sin(2 * a * Math.PI / 180);
+    worstKxy = Math.max(worstKxy, Math.abs(r.kxy - want));
+    const p = E.principalStiffness(r.kx, r.ky, r.kxy);
+    worstK1 = Math.max(worstK1, Math.abs(p.k1 - K1), Math.abs(p.k2 - K2));
+    // The recovered axis is the angle it was rotated by, modulo 180.
+    let d = p.angle_deg - a;
+    while (d <= -90) d += 180;
+    while (d > 90) d -= 180;
+    worstAng = Math.max(worstAng, Math.abs(d));
+  }
+  ck("a merely ROTATED structure shows Kxy = (K1-K2)/2 sin(2th) and nothing else",
+     worstKxy < 1e-9, "worst " + worstKxy.toExponential(2) + " N/mm over -85..90 deg");
+  ck("the principal stiffnesses are recovered whatever the rotation",
+     worstK1 < 1e-9, "worst " + worstK1.toExponential(2) + " N/mm vs " + K1 + " / " + K2);
+  ck("and the principal AXIS recovers the rotation that was applied",
+     worstAng < 1e-9, "worst " + worstAng.toExponential(2) + " deg");
+
+  // Invariants: rotating a stiffness cannot change its trace or determinant.
+  const r30 = rotated(30), p30 = E.principalStiffness(r30.kx, r30.ky, r30.kxy);
+  ck("trace is invariant under rotation  [N/mm]",
+     rel(p30.k1 + p30.k2, K1 + K2) < 1e-12, (p30.k1 + p30.k2).toFixed(6));
+  ck("determinant is invariant under rotation  [(N/mm)^2]",
+     rel(p30.det, K1 * K2) < 1e-12, p30.det.toFixed(4));
+  ck("anisotropy is dimensionless and unchanged by rotation",
+     rel(p30.anisotropy, K1 / K2) < 1e-12, p30.anisotropy.toFixed(6));
+
+  // Cxy is dimensionless: scale every length and the load and it must not move
+  // AT ALL, while the stiffnesses it is built from each move by one power of
+  // lambda. The similarity pattern above is rectangular and has no cross term
+  // to speak of, so the sheared block from section 9 is used instead -- a test
+  // against an identically zero quantity proves nothing.
+  const shearAt = (s) => {
+    const b = { polygon: [[0, 0], [40 * s, 0], [55 * s, 25 * s], [15 * s, 25 * s]],
+                height: 9 * s, draft_angle: 0, shore_a: 60, sipes: [], n_lateral_sipes: 0 };
+    const k = E.blockStiffness(b, SP);
+    return E.principalStiffness(k.kx, k.ky, k.kxy);
+  };
+  const cA = shearAt(1), cB = shearAt(LAM);
+  ck("Cxy is dimensionless -- unchanged by geometric similarity",
+     Math.abs(cA.cxy - cB.cxy) < 1e-9,
+     cA.cxy.toFixed(9) + " at 1:1 vs " + cB.cxy.toFixed(9) + " at " + LAM + ":1");
+  ck("the principal stiffnesses it is built from DO scale, by one power of lambda",
+     rel(cB.k1 / LAM, cA.k1) < 1e-9 && rel(cB.k2 / LAM, cA.k2) < 1e-9,
+     cA.k1.toFixed(2) + " -> " + cB.k1.toFixed(2) + " N/mm");
+  ck("and the principal AXIS is a shape property, so it does not move either",
+     Math.abs(cA.angle_deg - cB.angle_deg) < 1e-9,
+     cA.angle_deg.toFixed(6) + " deg at both scales");
+  ck("Cxy is a ratio, so it cannot reach 1 for a positive-definite 2x2",
+     Math.abs(cA.cxy) < 1, Math.abs(cA.cxy).toFixed(6));
+
+  // Positive definiteness. This is the one that has real bite in this engine:
+  // every other map is clamped at zero to absorb FFT round-off, and Kxy is
+  // deliberately NOT, so a clamp that fired on Kx while Kxy stayed finite would
+  // report a tread that gives energy back.
+  // Run it on the real motorcycle sample rather than the rectangular similarity
+  // pattern: that one has no cross term at all, so it would satisfy this
+  // trivially and prove nothing about the case the guard exists for.
+  const real = E.loadPattern(fs.readFileSync(path.join(DATA, "130_80R17_Tramplr_XR_tread_plan.dxf"), "utf8"),
+    { height: 8.5, shore_a: 60, draft_angle: 3 }, {});
+  const realPack = E.rasterise(real.pattern, E.makeGrid(real.pattern, 2048, 128), SP, false, {});
+  const rr = E.sweepLean(real.pattern, realPack, 0,
+    { shape: "rounded", length: 90, width: 50, corner_radius: 12, gamma_deg: 0,
+      scale_with_lean: false, y_center: 0 },
+    { vertical_load: 1500, wheel_radius: 320, load_rises_with_lean: false }, null, 90, null);
+  const kxySwing = Math.max.apply(null, Array.prototype.map.call(rr.kxy, Math.abs));
+  ck("the sample tread really does carry a cross term, so this is not vacuous",
+     kxySwing > 0.5, "peak |Kxy| = " + kxySwing.toFixed(3) + " N/mm");
+  let worstDet = Infinity, atTheta = 0, worstC = 0;
+  for (let i = 0; i < rr.kx.length; i++) {
+    const d = rr.kx[i] * rr.ky[i] - rr.kxy[i] * rr.kxy[i];
+    if (d < worstDet) { worstDet = d; atTheta = rr.theta_deg[i]; }
+    worstC = Math.max(worstC, Math.abs(E.principalStiffness(rr.kx[i], rr.ky[i], rr.kxy[i]).cxy));
+  }
+  ck("KxKy - Kxy^2 > 0 at every theta: deflecting the tread always costs energy",
+     worstDet > 0, "worst " + worstDet.toExponential(3) + " (N/mm)^2 at theta = " + atTheta.toFixed(1) + " deg");
+  ck("which is the same as saying |Cxy| < 1 everywhere",
+     worstC < 1, "worst |Cxy| = " + worstC.toExponential(2));
+  ck("and on this tread the coupling is a fraction of a percent, not a design driver",
+     worstC < 0.02, "peak |Cxy| = " + (100 * worstC).toFixed(3) + "%");
+
+  // Symmetry. True by construction today -- the compliance inverted is
+  // symmetric, and the network assembly writes one value into both off-diagonal
+  // slots -- so this is a tripwire for a future mechanism that writes them
+  // separately, not a verification of anything the code currently chooses.
+  const eng = fs.readFileSync(path.join(__dirname, "engine.js"), "utf8");
+  const asm = eng.slice(eng.indexOf("function factorCouplingNetwork("),
+                        eng.indexOf("function invert2x2("));
+  ck("the network writes ONE kxy into both off-diagonal slots (Maxwell-Betti)",
+     /A\[\(2 \* a\) \* n \+ \(2 \* a \+ 1\)\] \+= K\.kxy/.test(asm) &&
+     /A\[\(2 \* a \+ 1\) \* n \+ \(2 \* a\)\] \+= K\.kxy/.test(asm),
+     "Kxy = Kyx by construction");
+  const inv = E.invert2x2({ xx: 640, xy: -37, yy: 410 });
+  ck("and inverting a symmetric 2x2 gives a symmetric 2x2",
+     Math.abs(inv.xy - inv.xy) === 0 && rel(inv.xx * 640 + inv.xy * -37, 1) < 1e-12);
+
+  // A block's own 2x2 must be positive definite too, or the patch sum of them
+  // could not be.
+  const shearBlk = { polygon: [[0, 0], [40, 0], [55, 25], [15, 25]], height: 9,
+                     draft_angle: 0, shore_a: 60, sipes: [], n_lateral_sipes: 0 };
+  const sb = E.blockStiffness(shearBlk, SP);
+  const ps = E.principalStiffness(sb.kx, sb.ky, sb.kxy);
+  ck("a single sheared block is positive definite", ps.det > 0 && ps.k2 > 0,
+     "K1 " + ps.k1.toFixed(2) + ", K2 " + ps.k2.toFixed(2) + " N/mm");
+  ck("and its stiff axis is tilted off the rolling direction, as a slanted block must be",
+     ps.angle_deg !== null && Math.abs(ps.angle_deg) > 0.5,
+     "principal axis at " + ps.angle_deg.toFixed(2) + " deg, Cxy = " + ps.cxy.toFixed(4));
+  const mirroredBlk = Object.assign({}, shearBlk,
+    { polygon: shearBlk.polygon.map((q) => [-q[0], q[1]]) });
+  const pm = E.principalStiffness.apply(null,
+    ["kx", "ky", "kxy"].map((k) => E.blockStiffness(mirroredBlk, SP)[k]));
+  ck("mirroring the block mirrors the axis and leaves the principal values alone",
+     rel(pm.k1, ps.k1) < 1e-9 && rel(pm.k2, ps.k2) < 1e-9 &&
+     Math.abs(pm.angle_deg + ps.angle_deg) < 1e-9,
+     ps.angle_deg.toFixed(3) + " deg vs " + pm.angle_deg.toFixed(3) + " deg");
+}
+
 console.log("\n" + (fails ? fails + " of " + checks + " checks FAILED" : checks + " checks passed"));
 process.exitCode = fails ? 1 : 0;

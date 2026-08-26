@@ -1171,6 +1171,52 @@
     el.innerHTML = html + "</ul>";
   }
 
+  // ---- reading the 2x2: derived series ---------------------------------
+  //
+  // Cxy and the principal axis are pointwise functions of kx, ky and kxy, which
+  // every run already carries. They are derived here rather than shipped from
+  // the worker for two reasons: the payload does not grow by three more arrays
+  // per lean, and a run exported before these existed still works -- load it
+  // into the comparison and it gets them too.
+  var DERIVED = {
+    c_xy: function (r, i) {
+      return E.principalStiffness(r.kx[i], r.ky[i], r.kxy ? r.kxy[i] : 0).cxy * 100;
+    },
+    anisotropy: function (r, i) {
+      var p = E.principalStiffness(r.kx[i], r.ky[i], r.kxy ? r.kxy[i] : 0);
+      return isFinite(p.anisotropy) ? p.anisotropy : 0;
+    },
+  };
+
+  // Any metric, stored or derived, as an array. Returns null when the run
+  // predates whatever it needs, which is what the callers already test for.
+  function metricSeries(r, key) {
+    if (!r) return null;
+    if (!DERIVED[key]) return r[key] || null;
+    if (!r.kx || !r.ky || !r.kxy) return null;   // a run from before Kxy existed
+    var out = new Array(r.kx.length);
+    for (var i = 0; i < r.kx.length; i++) out[i] = DERIVED[key](r, i);
+    return out;
+  }
+
+  // The principal axis of the MEAN 2x2.
+  //
+  // This is NOT the mean of the pointwise angles, and the difference is not
+  // pedantic. An axis wraps at +/-90 deg -- -89 deg and +89 deg are two degrees
+  // apart as directions -- so ordinary statistics on a series of them are
+  // meaningless: a tread whose axis sits steadily across the tyre summarises as
+  // "mean -0.07 deg, +/-89.9", which is the exact opposite of what it does.
+  // Averaging the stiffnesses first and decomposing once is well defined, so
+  // the axis is offered as a single number here and deliberately NOT as a
+  // comparison curve. Cxy and the anisotropy are ordinary scalars and do
+  // average, so those are the two the comparison offers.
+  function meanPrincipal(r) {
+    if (!r || !r.kxy) return null;
+    return E.principalStiffness(E.fluctuationStats(r.kx).mean,
+                                E.fluctuationStats(r.ky).mean,
+                                E.fluctuationStats(r.kxy).mean);
+  }
+
   function renderCards() {
     var r = currentResult();
     var kz = E.fluctuationStats(r.kz), ca = E.fluctuationStats(r.contact_area), bc = E.fluctuationStats(r.block_count);
@@ -1192,6 +1238,34 @@
       cards.push(["Cα fluctuation", (caS.cov * 100).toFixed(1), "% CoV over θ"]);
       cards.push(["Mean Cκ", E.fluctuationStats(r.c_kappa).mean.toFixed(0), "N per unit slip ratio"]);
       cards.push(["Pneumatic trail", trS.mean.toFixed(1), "mm behind patch centre"]);
+    }
+    // What the cross term is a symptom OF. Kxy alone is a signed number whose
+    // size depends on how much rubber is under the patch; these two say how
+    // much coupling that is as a fraction, and which way the tread's stiff axis
+    // is pointing -- which is the thing a lug angle actually controls.
+    var pr = meanPrincipal(r);
+    if (pr) {
+      var kxyS = E.fluctuationStats(r.kxy);
+      // PEAK coupling, not mean. The mean cancels on any balanced pattern -- the
+      // left-leaning lugs against the right-leaning ones -- so a mean of 0.00%
+      // says the pattern is symmetric, not that nothing couples. The peak is
+      // what "how much force comes out sideways" actually asks for.
+      var peakC = 0;
+      for (var ci = 0; ci < r.kx.length; ci++) {
+        var c = Math.abs(E.principalStiffness(r.kx[ci], r.ky[ci], r.kxy[ci]).cxy);
+        if (c > peakC) peakC = c;
+      }
+      cards.push(["Peak coupling Cxy", (100 * peakC).toFixed(2),
+                  "% sideways — mean " + (100 * pr.cxy).toFixed(2) + "%"]);
+      // The angle and how much to trust it, always together: an axis on a
+      // nearly round ellipse is precisely known and barely matters, and only
+      // the anisotropy beside it says which situation you are in.
+      cards.push(["Stiff axis", pr.angle_deg == null ? "–" : pr.angle_deg.toFixed(1) + "\u00b0",
+                  pr.angle_deg == null ? "isotropic — no direction at all"
+                    : "from rolling · K\u2081/K\u2082 " + pr.anisotropy.toFixed(3) +
+                      (pr.anisotropy < 1.02 ? " (near-isotropic)" : "")]);
+      cards.push(["Kxy swing", ((kxyS.max - kxyS.min) / 2).toFixed(2),
+                  "\u00b1 N/mm, mean " + kxyS.mean.toFixed(2)]);
     }
     var html = "";
     for (var i = 0; i < cards.length; i++)
@@ -1543,6 +1617,62 @@
       .then(linkCouplingFigures);
   }
 
+  // What the tie bars actually did, on its own axes.
+  //
+  // The chart above draws four curves that mostly lie on top of each other:
+  // bonded and independent Kx differ by a couple of percent, and reading a 2%
+  // difference off two overlaid lines is guesswork. This subtracts them. Every
+  // curve here is zero if the bars do nothing, so the shape IS the contribution
+  // -- both how big it is and where in the revolution it happens, which an
+  // average over theta cannot show.
+  function renderCouplingDelta(c) {
+    var gd = $("cplDelta");
+    if (!gd) return;
+    var th = plotTheme();
+    var sub = function (a, b) {
+      var out = new Array(a.length);
+      for (var i = 0; i < a.length; i++) out[i] = a[i] - b[i];
+      return out;
+    };
+    var dKx = sub(c.kx_coupled, c.kx_uncoupled);
+    var dKy = sub(c.ky_coupled, c.ky_uncoupled);
+    var dKxy = sub(c.kxy_coupled, c.kxy_uncoupled);
+    var peak = function (a) { return Math.max.apply(null, a.map(Math.abs)); };
+    var big = Math.max(peak(dKx), peak(dKy)), small = peak(dKxy);
+    // The cross term's contribution is typically an order below the diagonal
+    // ones. Give it the right-hand axis when it would otherwise be a flat line
+    // on zero -- but only then, because two axes are a cost as well.
+    var split = small > 0 && big / Math.max(small, 1e-12) > 5;
+    var data = [
+      { x: c.theta_deg, y: dKx, name: "ΔKx", type: "scatter", mode: "lines",
+        line: { color: th.accent, width: 2 } },
+      { x: c.theta_deg, y: dKy, name: "ΔKy", type: "scatter", mode: "lines",
+        line: { color: th.bad, width: 2 } },
+      { x: c.theta_deg, y: dKxy, name: "ΔKxy" + (split ? " (right)" : ""), type: "scatter", mode: "lines",
+        yaxis: split ? "y2" : "y", line: { color: th.accent2, width: 2 } },
+    ];
+    var layout = {
+      paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+      margin: { l: 76, r: split ? 76 : 16, t: 38, b: 78 }, height: 300,
+      legend: { orientation: "h", y: -0.22, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
+      title: { text: "What the tie bars contribute — bonded minus independent, so zero means they did nothing",
+               font: { size: 13 } },
+      xaxis: { title: { text: "rotation angle θ (deg)", font: { size: 11 } },
+               range: (state.cplRange || [0, 360]).slice(), gridcolor: th.grid,
+               tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
+      yaxis: { title: { text: "ΔKx, ΔKy (N/mm)", font: { size: 11 } }, gridcolor: th.grid,
+               zeroline: true, zerolinecolor: th.inkDim },
+    };
+    if (split) {
+      var m = small * 1.3;
+      layout.yaxis2 = { title: { text: "ΔKxy (N/mm)", font: { size: 11 }, standoff: 6 },
+                        overlaying: "y", side: "right", range: [-m, m],
+                        zeroline: false, showgrid: false,
+                        tickfont: { color: th.accent2 }, titlefont: { color: th.accent2 } };
+    }
+    Plotly.react(gd, data, layout, { responsive: true, displayModeBar: false });
+  }
+
   // Zoom on either coupling figure moves both. Deliberately its own range state
   // rather than sharing thetaRange with the sweep tab: zooming one tab must not
   // silently re-frame another.
@@ -1580,6 +1710,7 @@
   // a band chart and an export can never disagree about what a number is.
   var METRIC_LABEL = {
     kz: "Kz (N/mm)", kx: "Kx (N/mm)", ky: "Ky (N/mm)", kxy: "Kxy (N/mm)",
+    c_xy: "Coupling Cxy (%)", anisotropy: "Anisotropy K₁/K₂",
     contact_area: "Contact area (mm²)", block_count: "Blocks", land_ratio: "Land ratio",
     c_alpha: "Cα (N/rad)", c_kappa: "Cκ (N)", c_mz: "Cmz (N·mm/rad)",
     pneumatic_trail: "Pneumatic trail (mm)",
@@ -2652,6 +2783,15 @@
     return state.coupling[0] || null;
   }
 
+  // The wrapped difference between two axes. Defined once here because both the
+  // card and the table row need it, and they must not disagree.
+  function cplAxisDelta(from, to) {
+    var d = to - from;
+    while (d <= -90) d += 180;
+    while (d > 90) d -= 180;
+    return d;
+  }
+
   function renderCoupling() {
     var c = currentCoupling();
     var empty = $("cplEmpty"), body = $("cplBody");
@@ -2670,11 +2810,23 @@
     var kxc = mean(c.kx_coupled), kxu = mean(c.kx_uncoupled);
     var kyc = mean(c.ky_coupled), kyu = mean(c.ky_uncoupled);
     var kxyc = mean(c.kxy_coupled), kxyu = mean(c.kxy_uncoupled);
+    // The same 2x2 read twice. Comparing the two decompositions is what says
+    // whether the bars merely stiffened the tread or actually turned it.
+    var prC = E.principalStiffness(kxc, kyc, kxyc);
+    var prU = E.principalStiffness(kxu, kyu, kxyu);
 
     $("cplCards").innerHTML = [
       card("Kx gain", (c.gain_kx).toFixed(3) + "×", "circumferential"),
       card("Ky gain", (c.gain_ky).toFixed(3) + "×", "lateral"),
-      card("Mean Kxy", kxyc.toFixed(1), "N/mm — cross term"),
+      card("Kxy from the bars", (kxyc - kxyu).toFixed(2), "N/mm — bonded minus independent"),
+      card("Coupling Cxy", (100 * prC.cxy).toFixed(2) + "%", "bonded, was " + (100 * prU.cxy).toFixed(2) + "%"),
+      card("Stiff axis", prC.angle_deg == null ? "–" : prC.angle_deg.toFixed(1) + "°",
+           prU.angle_deg == null || prC.angle_deg == null ? "from rolling direction"
+             // Turning an axis that barely existed is not the same as turning a
+             // real one, so the state it started from is part of the statement.
+             : prU.anisotropy < 1.02
+               ? "bars gave it one — was near-isotropic"
+               : "bars turned it " + cplAxisDelta(prU.angle_deg, prC.angle_deg).toFixed(2) + "°"),
       card("Bars in the network", String(c.n_engaged + c.n_submerged), c.n_submerged + " below the surface"),
       card("Bonded links", String(c.n_links), c.n_components + " independent group(s)"),
       card("Tread worn", (c.wear_mm || 0).toFixed(1), "mm"),
@@ -2713,21 +2865,46 @@
                 tickfont: { color: th.accent2 }, titlefont: { color: th.accent2 } },
     }, { responsive: true, displayModeBar: false });
 
+    renderCouplingDelta(c);
     renderCouplingStrip(c);
 
-    var row = function (label, u, cc) {
+    // An axis has no sign and wraps at +/-90 deg, so the change from one to
+    // another is the wrapped difference -- and a RATIO of two angles is not a
+    // quantity at all, so the gain column is withheld for it.
+    var axisDelta = cplAxisDelta;
+    var row = function (label, u, cc, dp, isAngle) {
       var g = u !== 0 ? cc / u : 1;
-      return "<tr><td>" + label + "</td><td class='num'>" + u.toFixed(1) + "</td><td class='num'>" +
-        cc.toFixed(1) + "</td><td class='num'>" + (cc - u).toFixed(1) + "</td><td class='num'>" +
-        (u !== 0 ? (100 * (g - 1)).toFixed(2) + "%" : "—") + "</td></tr>";
+      dp = dp == null ? 1 : dp;
+      if (isAngle) {
+        return "<tr><td>" + label + "</td><td class='num'>" + u.toFixed(dp) + "</td><td class='num'>" +
+          cc.toFixed(dp) + "</td><td class='num'>" + axisDelta(u, cc).toFixed(dp) + "</td>" +
+          "<td class='num'>—</td></tr>";
+      }
+      // A gain is a ratio, and Kxy's independent value passes through zero on a
+      // balanced pattern, so the ratio is meaningless there. The DIFFERENCE is
+      // always meaningful, which is why it has its own column and why the gain
+      // is withheld rather than printed as a large number.
+      var ratioOk = Math.abs(u) > 1e-6 * Math.max(Math.abs(cc), 1e-9) && Math.abs(u) > 0.01;
+      return "<tr><td>" + label + "</td><td class='num'>" + u.toFixed(dp) + "</td><td class='num'>" +
+        cc.toFixed(dp) + "</td><td class='num'>" + (cc - u).toFixed(dp) + "</td><td class='num'>" +
+        (ratioOk ? (100 * (g - 1)).toFixed(2) + "%" : "—") + "</td></tr>";
     };
     $("cplTable").innerHTML =
       "<table class='metrics' style='max-width:640px'><tr><th>Mean over θ</th><th>independent</th>" +
       "<th>bonded network</th><th>difference</th><th>gain</th></tr>" +
       row("Kx (circumferential)", kxu, kxc) + row("Ky (lateral)", kyu, kyc) +
-      row("Kxy (cross)", kxyu, kxyc) + "</table>" +
+      row("Kxy (cross)", kxyu, kxyc, 2) +
+      row("Coupling Cxy (%)", 100 * prU.cxy, 100 * prC.cxy, 3) +
+      row("Anisotropy K₁/K₂", prU.anisotropy, prC.anisotropy, 4) +
+      (prU.angle_deg == null || prC.angle_deg == null ? ""
+        : row("Stiff axis (° from rolling)", prU.angle_deg, prC.angle_deg, 2, true)) +
+      "</table>" +
       "<div class='hint' style='margin-top:6px'>Both columns are the same measurement on the same tread; only the " +
-      "bonded links differ. Contact area is identical in both — a sub-surface bar touches nothing.</div>";
+      "bonded links differ, so the <b>difference</b> column is the tie bars\u2019 contribution and nothing else. " +
+      "Contact area is identical in both — a sub-surface bar touches nothing. " +
+      "<b>Cxy</b> is the cross term as a fraction of \u221a(Kx\u00b7Ky): roughly how much of an applied force comes " +
+      "back out sideways. A gain is withheld where the independent value passes through zero, since a ratio to " +
+      "nothing is not a number.</div>";
   }
 
   // ---- design comparison ----------------------------------------------
@@ -2862,8 +3039,9 @@
     var missing = 0;
     var data = list.map(function (e, i) {
       var r = e.results.find(function (x) { return x.gamma_deg === gamma; }) || e.results[0];
-      if (!r[metric]) { missing++; return null; }
-      return { x: r.theta_deg, y: r[metric], type: "scatter", mode: "lines",
+      var y = metricSeries(r, metric);
+      if (!y) { missing++; return null; }
+      return { x: r.theta_deg, y: y, type: "scatter", mode: "lines",
                name: e.label.slice(0, 42), line: { color: palette[i % palette.length], width: 1.4 } };
     }).filter(Boolean);
     Plotly.react($("comparePlot"), data, {
@@ -2883,12 +3061,24 @@
       "<th>max</th><th>vs first</th></tr>";
     list.forEach(function (e) {
       var r = e.results.find(function (x) { return x.gamma_deg === gamma; }) || e.results[0];
-      if (!r[metric]) {
+      var series = metricSeries(r, metric);
+      if (!series) {
         rows += "<tr><td>" + escapeHtml(e.label) +
           "</td><td colspan='5' class='hint'>run predates this metric</td></tr>";
         return;
       }
-      var st = E.fluctuationStats(r[metric]);
+      // A derived series can carry gaps where the quantity is undefined -- the
+      // principal axis of a round stiffness ellipse. Summarise what exists and
+      // say how much did not.
+      var defined = series.filter(function (v) { return isFinite(v); });
+      if (!defined.length) {
+        rows += "<tr><td>" + escapeHtml(e.label) +
+          "</td><td colspan='5' class='hint'>no stiff axis: this tread is isotropic under the patch</td></tr>";
+        isBase = false;
+        return;
+      }
+      var gaps = series.length - defined.length;
+      var st = E.fluctuationStats(defined);
       if (base === null) { base = st.mean; baseSwing = Math.max(Math.abs(st.max), Math.abs(st.min)); }
       // A signed metric can average out to nearly nothing. Kxy does exactly
       // that on a symmetric pattern -- the left-leaning lugs cancel the
@@ -2913,7 +3103,9 @@
       isBase = false;
       var spread = meanIsNoise ? "±" + fmtMetric((st.max - st.min) / 2)
                                : (st.cov * 100).toFixed(2) + "%";
-      rows += "<tr><td>" + escapeHtml(e.label) + "</td><td class='num'>" + fmtMetric(st.mean) +
+      rows += "<tr><td>" + escapeHtml(e.label) +
+        (gaps ? " <span class='hint'>(" + (100 * gaps / series.length).toFixed(0) + "% isotropic)</span>" : "") +
+        "</td><td class='num'>" + fmtMetric(st.mean) +
         "</td><td class='num'>" + spread + "</td><td class='num'>" +
         fmtMetric(st.min) + "</td><td class='num'>" + fmtMetric(st.max) + "</td><td class='num'>" +
         vs + "</td></tr>";

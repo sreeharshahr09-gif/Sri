@@ -2738,3 +2738,95 @@ def test_two_plots_never_share_one_overlay():
         assert m, f"{gd} has no host of its own"
     css = open(os.path.join(APP, "style.css"), encoding="utf-8").read()
     assert re.search(r"\.plot-host\s*{[^}]*position: relative", css)
+
+
+# ---------------------------------------------------------------------------
+# reading the 2x2: principal axes, normalised coupling, and what the bars did
+# ---------------------------------------------------------------------------
+
+
+def test_the_stiffness_matrix_is_decomposed_in_one_place():
+    """Kxy alone is a signed number in N/mm whose size depends on how much rubber
+    is under the patch: it cannot be compared between patterns, and it does not
+    say what it is a symptom of.  The principal axes and the normalised coupling
+    both come from the same eigen problem, so they come from one function --
+    the sweep, the comparison and the coupling network must not each roll their
+    own and drift.
+    """
+    eng = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    assert "function principalStiffness(" in eng
+    ps = eng[eng.index("function principalStiffness("):eng.index("function clipPoly(")]
+    for k in ("k1", "k2", "anisotropy", "angle_deg", "cxy", "det"):
+        assert k + ":" in ps, k
+    # the axis wraps at +/-90: it is an axis, not a vector
+    assert "angle += 180" in ps and "angle -= 180" in ps
+    # and it is null only for a genuine circle, not merely a round one
+    assert "isoTol == null ? 1e-6" in ps, \
+        "the axis stays well determined far past the point it stops being interesting"
+    # one implementation, used everywhere
+    assert ui.count("E.principalStiffness(") >= 3
+    assert "function principalStiffness" not in ui, "the UI must not re-derive it"
+
+
+def test_an_axis_is_never_averaged_or_ratioed_like_a_scalar():
+    """An axis wraps: -89 deg and +89 deg are two degrees apart as directions.
+    Ordinary statistics on a series of them are meaningless -- a tread whose
+    axis sits steadily across the tyre summarises as "mean -0.07, +/-89.9" --
+    and a RATIO of two angles is not a quantity at all.
+    """
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    # not offered as a comparison curve, because the table would average it
+    sel = tpl[tpl.index('<select id="compareMetric">'):]
+    sel = sel[:sel.index("</select>")]
+    assert 'value="principal_deg"' not in sel, "an axis cannot be summarised by mean and CoV"
+    for m in ("c_xy", "anisotropy"):
+        assert f'value="{m}"' in sel, f"{m} is an ordinary scalar and should be offered"
+    # the single-number form decomposes the MEAN 2x2 rather than averaging angles
+    mp = ui[ui.index("function meanPrincipal("):ui.index("function renderCards(")]
+    assert "fluctuationStats(r.kx).mean" in mp and "fluctuationStats(r.kxy).mean" in mp
+    # and a change of axis is the wrapped difference, with no gain column
+    assert "function cplAxisDelta(" in ui
+    ad = ui[ui.index("function cplAxisDelta("):ui.index("function renderCoupling(")]
+    assert "d += 180" in ad and "d -= 180" in ad
+
+
+def test_the_coupling_tab_shows_what_the_bars_did_not_just_the_bonded_state():
+    """A non-zero Kxy has two causes and only one is the network.  An angled
+    block -- or an angled BAR -- has a stiff direction that is not along the
+    tyre, so it shows a cross term with nothing bonded.  The bonded value alone
+    therefore over-states what the bars do; the difference is the network and
+    nothing else.
+    """
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert 'id="cplDelta"' in tpl
+    assert "function renderCouplingDelta(" in ui
+    d = ui[ui.index("function renderCouplingDelta("):ui.index("  // Zoom on either coupling figure")]
+    for s in ("kx_coupled", "kx_uncoupled", "ky_coupled", "kxy_coupled", "kxy_uncoupled"):
+        assert s in d, s
+    assert "ΔKxy" in d and "ΔKx" in d and "ΔKy" in d
+    # the card leads with the bars' own contribution, not the bonded value
+    assert "Kxy from the bars" in ui and "kxyc - kxyu" in ui
+    # a gain is withheld where the independent value passes through zero
+    assert "ratioOk" in ui
+    # and the tab says why the bonded number misleads
+    assert "over-states what the bars do" in tpl or "over-state" in tpl
+
+
+def test_the_new_read_outs_do_not_grow_the_payload():
+    """Cxy and the anisotropy are pointwise functions of kx, ky and kxy, which
+    every run already carries.  Deriving them in the UI keeps three more arrays
+    per lean out of the worker message -- and means a run exported before they
+    existed still gets them when it is loaded into the comparison."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    worker = open(os.path.join(APP, "worker.js"), encoding="utf-8").read()
+    assert "c_xy" not in worker and "anisotropy" not in worker, \
+        "derived quantities must not be shipped"
+    assert "var DERIVED = {" in ui and "function metricSeries(" in ui
+    # every consumer goes through the helper, or a derived metric silently
+    # renders as an empty chart
+    rc = ui[ui.index("function renderCompare("):ui.index("  // Every held design")]
+    assert "metricSeries(r, metric)" in rc
+    assert "r[metric]" not in rc, "a raw lookup would skip the derived metrics"

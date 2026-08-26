@@ -754,11 +754,72 @@ The gain is **largest when few blocks are loaded** and smallest when the patch c
 
 Below the curve is the **same rolled-out tread**, on the same θ axis — zoom either and both follow. Blocks are dimmed, tie bars are violet, and the thin violet lines are the bonded links the solver actually assembled: one per shared wall, joining a bar to the block it is tied to. This is the fastest way to check a drawing. **A bar with no line touches nothing along a shared edge**, so it contributes no coupling stiffness however solid it looks on the pattern — usually its outline does not quite meet the groove wall. A bar drawn dotted is still below the tread surface: it adds no contact area yet, but it *is* already coupling the blocks either side of it, which is why the gain is there from new.
 
+### What the bars actually did — read the difference
+
+The four curves on the main chart mostly lie on top of each other, because
+bonding changes the stiffness by a couple of percent. The chart below subtracts
+them: **ΔKx, ΔKy and ΔKxy, bonded minus independent**. Every curve is zero if the
+bars do nothing, so the shape *is* their contribution — and it shows **where in
+the revolution** it happens, which the mean in the table cannot.
+
+**Do not read the bonded Kxy on its own.** A cross term has two causes (see
+*Kxy* above), and only one of them is the network. An angled block — or an
+angled *bar* — carries one before anything is bonded, which is why the
+independent column is not always zero.
+
+On the bundled `diagonal_tiebars` drawing, with the whole tread under the patch,
+the bonded Kxy is **27.9 N/mm of which only 16.5 is the network**: reading the
+bonded figure alone would over-state what the bars do by **69%**. The
+*difference* column, and the *Kxy from the bars* card, are the honest numbers.
+
+### Cxy and the stiff axis, before and after bonding
+
+The table gives both states for **Cxy** (the coupling as a fraction of
+√(Kx·Ky)), **K₁/K₂** (how directional the tread is) and the **stiff axis**.
+Comparing the two decompositions is the clearest single statement of what the
+bars did:
+
+- **K₁/K₂ rises** → the bars made the tread more directional than it was.
+- **The stiff axis turns** → they changed *which way* it is stiffest. Where the
+  independent tread was near-isotropic the card says "bars gave it one", because
+  turning an axis that barely existed is not the same as turning a real one.
+- **Cxy rises** → they coupled the two directions, and by a stated fraction
+  rather than a raw N/mm you cannot compare against anything.
+
+A gain is withheld wherever the independent value passes through zero: a ratio
+to nothing is not a number. The difference always is.
+
 ### Two mechanisms, at opposite ends of the tyre's life
 
 The coupling works **from new**, and its relative value *falls* as the tread wears: a block stiffens as roughly 1/L³ as it shortens, while the bar only shrinks once the tread reaches it. On a 16 mm NSD with an 8.8 mm bar the model gives ×1.32 at zero wear falling to ×1.05 at 12 mm.
 
 The contact-area contribution is the opposite — nothing until worn into, then land like any block. **Tie bars earn their keep across the whole life because the two mechanisms hand over, not because they add up.**
+
+### What it does not model: block rotation
+
+Every element in the network has **two** degrees of freedom — it can slide along
+the tyre and across it. It cannot **spin** about the vertical axis.
+
+Think of a door. Push it in the middle and it just moves; push it near the
+**edge** and it swings. Same force, different result, because rotation matters.
+
+A tie bar attached near one end of a long block, pulling at an angle, would try
+to spin that block. The model cannot represent that spin, so where bars are
+attached **off a block's centre** and at an angle, it is likely to **under-count**
+what they do. Bars attached square across a groove near the middle of their
+blocks — which is most of them — are unaffected.
+
+Adding it means a third degree of freedom per element: each block needs a
+torsional stiffness about the vertical axis, each link needs the moment arm from
+the wall it bonds to out to the block centre, and the effective stiffness has to
+be condensed back to a 2×2. The solve cost rises by about 3.4× and the element
+ceiling drops from 800 to about 530. **It would also move existing numbers** —
+Kx and Ky gains would change for any pattern with off-centre bars — so it is
+recorded here rather than slipped in.
+
+Whether it is worth doing is answerable from the tool itself: if **Cxy** on your
+drawings is a few tenths of a percent, refining the coupling model buys very
+little. If it is several percent, it becomes worth the work.
 
 ### What it assumes
 
@@ -1035,12 +1096,24 @@ Ky mattering most at high lean, Kx most upright, is a reasonable rule of thumb.
 deflection along the tyre produces a force *across* it — which is exactly what an
 angled lug does. It is the only stiffness on the page that can be **negative**.
 
+**Two causes, and they mean opposite things.** This is the thing to get right
+before reading the number:
+
+| | what it is | how to tell |
+|---|---|---|
+| **1 · a rotated shape** | An angled lug has a stiff direction that is not "along the tyre". Measured in the tyre's axes it shows a cross term with **nothing coupled to anything**. Think of a plank laid at 30° across a bench: push it along the bench and it deflects across, and the plank has not changed — your rulers are just not lined up with it. | It is there with the tie bars removed. |
+| **2 · things genuinely joined** | An inclined tie bar drags its neighbour along the bar's own line, so pushing one block moves the other sideways. Two people on ice, linked by a diagonal rope. | It disappears when the bars are cut. |
+
+**The θ sweep and the Compare tab show cause 1 only.** They treat every block as
+an independent spring — there are no tie bars in that number at all. Cause 2
+lives on the **Tie-bar coupling** tab, in the *difference* between the bonded and
+independent solves.
+
 **How to read it — two ways, and both matter.**
 
 - **The swing** is how strongly the pattern couples the two directions. A
-  straight rib has no cross term at all: Kxy is exactly zero, everywhere. An
-  angled or directional block pattern swings as each lug enters and leaves the
-  patch.
+  straight rib has none: Kxy is exactly zero, everywhere. An angled or
+  directional block pattern swings as each lug enters and leaves the patch.
 - **The mean** says whether that coupling is *balanced*. On a symmetric pattern
   the left-leaning lugs cancel the right-leaning ones and the mean sits at
   essentially zero however large the swing. A mean that is a real fraction of
@@ -1053,15 +1126,47 @@ arithmetic rather than a reading — so wherever Kxy is summarised the tool show
 It is offered on the **Compare** tab, and it is in the CSV export as
 `kxy_N_per_mm`.
 
-### Anisotropy Kx/Ky
+### Cxy — the coupling as a fraction
 
-**What it is.** The ratio of the two. **1.0 means the tyre is equally stiff in
-both directions.**
+**What it is.** `Kxy / √(Kx·Ky)`. Roughly: **of the force you put in, what
+fraction comes back out sideways?**
 
-**How to read it.** Above 1, the pattern resists braking better than cornering;
-below 1, the reverse. What matters is less the value than **how much it moves**
-through a revolution — a ratio that swings means the tyre's character changes
-depending on wheel position.
+**Why it exists.** Raw Kxy is in N/mm and its size depends on how much rubber is
+under the patch, so it cannot be compared between two patterns. 20 N/mm on a
+5 000 N/mm tread is **0.4%** and irrelevant; the same 20 N/mm on a 200 N/mm tread
+is **10%** and a real steering effect. Cxy is dimensionless and tells the two
+apart. It is a selectable metric on **Compare** for exactly that reason.
+
+The card on the θ sweep reports the **peak**, not the mean, because the mean
+cancels on any balanced pattern — a mean of 0.00% says the pattern is symmetric,
+not that nothing couples.
+
+For reference: the bundled 2W sample peaks at about **0.3%**.
+
+### Stiff axis and K₁/K₂
+
+**What it is.** Every 2D stiffness has a stiffest direction and a softest one at
+right angles — like the grain in wood. The **stiff axis** is which way that grain
+runs, in degrees from the rolling direction; **K₁/K₂** is how pronounced it is.
+
+**Read them together, always.** The angle stays numerically well-determined long
+after it stops being interesting: perturbing the stiffnesses by 0.1% moves it by
+only 2.4° even at K₁/K₂ = 1.0001. So a precise-looking angle on a tread with
+K₁/K₂ = 1.01 is precise *and* immaterial. The anisotropy is what tells you which
+situation you are in, so the card shows both and flags "near-isotropic" below
+1.02.
+
+Most well-mixed treads come out near-isotropic under the patch — the lug
+orientations average away — and that is itself a useful finding: the pattern has
+no net directional bias. It becomes directional at **lean**, when the patch
+narrows onto fewer, more aligned lugs.
+
+**It is deliberately not a Compare curve.** An axis wraps: −89° and +89° are two
+degrees apart as directions, so a mean and a CoV over a series of them are
+meaningless — a tread whose axis sits steadily across the tyre would summarise
+as "mean −0.07°, ±89.9°". The single-number form on the card decomposes the
+*mean* 2×2 instead, which is well defined. Cxy and K₁/K₂ are ordinary scalars and
+do average, so those are the two offered for comparison.
 
 ### Blocks in contact
 

@@ -983,6 +983,82 @@ const fs = require("fs");
     await click("#clearCompare");
   }
 
+  // ---- reading the 2x2: what the cross term is a symptom of ---------------
+  // Kxy alone is a signed N/mm figure. The page has to say how much coupling
+  // that is as a fraction, which way the tread's stiff axis points, and -- on
+  // the coupling tab -- how much of the bonded cross term the BARS are actually
+  // responsible for, since an angled bar carries one before anything is bonded.
+  {
+    // The y-centre drag above left the patch off-centre, and on this drawing
+    // the bars sit near one shoulder -- an inherited patch position would miss
+    // them and every number below would be a legitimate zero for the wrong
+    // reason. Put it back on the crown before starting.
+    await check("#cpAutoY");
+    await openTab("plan");
+    await setInputFiles("#fileInput", path.join(__dirname, "..", "data", "diagonal_tiebars.dxf"));
+    await page.waitForTimeout(700);
+    await fill("#nsd", "10");
+    await fill("#wear", "6");
+    await page.waitForTimeout(200);
+    await click("#runBtn");
+    await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 90000 });
+
+    await openTab("stack");
+    const cards = (await page.textContent("#cards")).replace(/\s+/g, " ");
+    console.log("2x2 cards:", (cards.match(/Peak coupling Cxy[^K]*|Stiff axis[^K]*|Kxy swing[^A-Z]*/g) || []).join(" | "));
+    if (!/Peak coupling Cxy/.test(cards)) errors.push("the sweep does not report the normalised coupling");
+    if (!/Stiff axis/.test(cards)) errors.push("the sweep does not report the principal axis");
+    if (!/K₁\/K₂/.test(cards)) errors.push("the axis is reported without the anisotropy that qualifies it");
+
+    // The coupling tab: the difference curve, and the attribution.
+    await openTab("coupling");
+    await page.waitForTimeout(900);
+    const delta = await page.evaluate(() => {
+      const gd = document.getElementById("cplDelta");
+      if (!gd || !gd._fullLayout) return null;
+      const pk = (a) => Math.max(...a.map(Math.abs));
+      return { names: gd.data.map((d) => d.name), peaks: gd.data.map((d) => +pk(d.y).toFixed(2)) };
+    });
+    if (!delta) errors.push("the coupling tab has no difference chart");
+    else {
+      console.log("coupling deltas:", delta.names.map((n, i) => n + " " + delta.peaks[i]).join(", "));
+      if (delta.names.length !== 3) errors.push(`expected dKx, dKy and dKxy, got ${delta.names}`);
+      if (!delta.peaks.some((v) => v > 0)) errors.push("every difference curve is flat zero");
+    }
+    // Independent, bonded and difference must all be present, and the
+    // difference must be the one the card leads with.
+    const cplTable = (await page.textContent("#cplTable")).replace(/\s+/g, " ");
+    for (const rowName of ["Kxy (cross)", "Coupling Cxy", "Anisotropy"])
+      if (!cplTable.includes(rowName)) errors.push(`the coupling table has no ${rowName} row`);
+    const cplCards = (await page.textContent("#cplCards")).replace(/\s+/g, " ");
+    if (!/Kxy from the bars/.test(cplCards))
+      errors.push("the coupling cards do not attribute the cross term to the bars");
+    console.log("coupling attribution:", (cplCards.match(/Kxy from the bars[^B]*/) || [""])[0].slice(0, 80));
+
+    // The numbers themselves: on this drawing every block is rectangular, so
+    // any independent cross term is the BARS being diagonal, not the network.
+    const attribution = await page.evaluate(() => {
+      const st = window.__ttState ? window.__ttState() : null;
+      const p = window.__ttPattern();
+      const gd = document.getElementById("cplPlot");
+      const s = {};
+      gd.data.forEach((d) => { s[d.name] = d.y.reduce((a, v) => a + v, 0) / d.y.length; });
+      return { blocks: p.blocks.length,
+               u: s["Kxy uncoupled (right)"], c: s["Kxy coupled (right)"], gamma: st ? st.gamma : null };
+    });
+    console.log(`Kxy: independent ${attribution.u.toFixed(2)} -> bonded ${attribution.c.toFixed(2)} N/mm`);
+    if (!(Math.abs(attribution.c) > Math.abs(attribution.u)))
+      errors.push("bonding diagonal bars did not increase the cross term");
+
+    await page.screenshot({ path: path.join(outDir, "tab-coupling-delta.png"), fullPage: false });
+    await openTab("plan");
+    await setInputFiles("#fileInput", []);
+    await click("#sampleBtn");
+    await page.waitForTimeout(400);
+    await fill("#nsd", "8.5");
+    await fill("#wear", "0");
+  }
+
   console.log(errors.length ? "ERRORS:\n" + errors.join("\n") : "no page errors");
   await browser.close();
   process.exitCode = errors.length ? 1 : 0;

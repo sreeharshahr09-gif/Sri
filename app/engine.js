@@ -216,6 +216,75 @@
     return { xx: M.yy / det, yy: M.xx / det, xy: -M.xy / det };
   }
 
+  // ---------------------------------------------------------------------
+  // Reading a 2x2 stiffness: principal axes and normalised coupling
+  // ---------------------------------------------------------------------
+  //
+  // Kxy on its own is hard to act on. It is a signed number in N/mm whose size
+  // depends on how much rubber is under the patch, so it cannot be compared
+  // between two patterns, and it does not say what it is a symptom OF.
+  //
+  // Two derived quantities fix that, and both come from the same eigen problem:
+  //
+  //   * the PRINCIPAL AXES. Every symmetric 2x2 has a stiffest direction and a
+  //     softest one at right angles to it -- the grain of the tread under the
+  //     patch. Kxy is non-zero precisely when that grain is not aligned with
+  //     the tyre's own axes, and the angle says so directly. Note what this
+  //     means: an angled lug shows Kxy without anything being COUPLED. It is
+  //     an unrotated ruler measuring a rotated object.
+  //
+  //   * the NORMALISED COUPLING Cxy = Kxy / sqrt(Kx*Ky). Dimensionless, so it
+  //     compares across patterns and tyre sizes: roughly the fraction of an
+  //     applied force that comes back out at right angles to it. 20 N/mm on a
+  //     5000 N/mm tread is 0.4% and irrelevant; the same 20 on a 200 N/mm tread
+  //     is 10% and a real steering effect. The raw number cannot tell them
+  //     apart.
+  //
+  // Angles are DEGREES, measured from +x (the rolling direction), in (-90, 90].
+  // An axis has no sign -- -89 deg and +91 deg are the same direction -- so the
+  // range covers every distinct axis exactly once. 0 is along the tyre, +/-90 is
+  // across it.
+  //
+  // `angle_deg` is null only when the stiffness ellipse is a CIRCLE, where there
+  // is genuinely no direction to point at. The tolerance is deliberately tight.
+  // The obvious worry is that the angle goes soft as the ellipse rounds off, and
+  // it was measured rather than assumed: perturbing the three stiffnesses by
+  // 0.1% moves the axis by 2.4 deg at an anisotropy of 1.0001, and by 1.0 deg at
+  // 1.025 -- so the angle stays well determined far past the point where it
+  // stops being interesting. Suppressing it there would be hiding a sound number
+  // on a judgement about materiality that belongs to the reader.
+  //
+  // `anisotropy` = K1/K2 is what carries that judgement. Near 1 the tread has no
+  // meaningful directional bias however precisely the axis is known, so the two
+  // are always reported together.
+  function principalStiffness(kx, ky, kxy, isoTol) {
+    kxy = kxy || 0;
+    const half = (kx + ky) / 2, dev = (kx - ky) / 2;
+    const rad = Math.hypot(dev, kxy);
+    const k1 = half + rad, k2 = half - rad;
+    const scale = Math.max(Math.abs(half), 1e-30);
+    const tol = isoTol == null ? 1e-6 : isoTol;
+    // The factor of two is the reason principal axes repeat every 180 deg
+    // rather than every 360: rotating a stiffness ellipse by 180 deg maps it
+    // onto itself.
+    let angle = rad <= tol * scale ? null : (Math.atan2(2 * kxy, kx - ky) * 90) / Math.PI;
+    if (angle !== null && angle <= -90) angle += 180;
+    if (angle !== null && angle > 90) angle -= 180;
+    const denom = kx > 0 && ky > 0 ? Math.sqrt(kx * ky) : 0;
+    return {
+      k1: k1, k2: k2,
+      // k1 is the stiff axis by construction, so the ratio is >= 1 and says how
+      // directional the tread is regardless of how stiff it is overall.
+      anisotropy: Math.abs(k2) > 1e-30 ? k1 / k2 : Infinity,
+      angle_deg: angle,
+      cxy: denom > 0 ? kxy / denom : 0,
+      // Positive definite means deflecting the tread in ANY direction costs
+      // energy. If this ever went negative there would be a direction that
+      // gave energy back, and the 2x2 would not describe an elastic body.
+      det: kx * ky - kxy * kxy,
+    };
+  }
+
   function clipPoly(poly, lp1, lp2, keepPos) {
     const n = poly.length, dx = lp2[0] - lp1[0], dy = lp2[1] - lp1[1];
     const sides = poly.map((v) => dx * (v[1] - lp1[1]) - dy * (v[0] - lp1[0]));
@@ -5009,6 +5078,7 @@
     ensureCCW, polygonProps, polygonPerimeter, polygonArea, polygonCentroid,
     regionArea, regionCentroid, regionProps,
     offsetPoly, clipPoly, splitBySipe, sipeClippedLength, netContactArea,
+    principalStiffness,
     // stiffness
     SHORE_E_TABLE, SHORE_K_TABLE, shoreE, shoreK, shoreRangeWarning, calcG, beamKMatrix, effectiveK, computeKz, blockStiffness, effectiveSipes,
     effectiveKRegion, computeKzRegion,

@@ -76,7 +76,7 @@ function directMoments(pattern, pack, patch, thetaDeg) {
   const masks = E.patchMasks(patch, grid);
   const sk = E.slipKernels(masks, grid);
   const j = Math.round((thetaDeg / 360) * nx) % nx;
-  let cK = 0, cA = 0, mz = 0, ky = 0, kx = 0, area = 0;
+  let cK = 0, cA = 0, mz = 0, ky = 0, kx = 0, kxy = 0, area = 0;
   for (let r = 0; r < ny; r++) {
     const base = r * nx;
     for (let c = 0; c < nx; c++) {
@@ -87,9 +87,13 @@ function directMoments(pattern, pack, patch, thetaDeg) {
       cA += pack.ky[pc] * sk.s[base + c];
       mz += pack.ky[pc] * sk.su[base + c];
       kx += pack.kx[pc]; ky += pack.ky[pc]; area += pack.area[pc];
+      // The cross term is the only SIGNED map, so it is the only one where a
+      // sign or conjugation slip in the transform could survive: every other
+      // quantity here is non-negative and would not notice.
+      kxy += pack.kxy[pc];
     }
   }
-  return { c_kappa: cK, c_alpha: cA, c_mz: -mz, kx: kx, ky: ky, area: area,
+  return { c_kappa: cK, c_alpha: cA, c_mz: -mz, kx: kx, ky: ky, kxy: kxy, area: area,
            trail: cA > 1 ? -mz / cA : 0 };
 }
 
@@ -198,6 +202,53 @@ section("3. the FFT route agrees with a direct summation");
   ck("C_kappa: FFT = direct summation", worstK < 1e-9, "worst rel " + worstK.toExponential(2));
   ck("C_mz: FFT = direct summation", worstM < 1e-8, "worst rel " + worstM.toExponential(2));
   ck("trail: FFT = direct summation", worstT < 1e-9, "worst abs " + worstT.toExponential(2) + " mm");
+}
+
+// The cross stiffness needs its own fixture and its own check.
+//
+// Kxy is the ONLY map that carries a sign through the correlation. Every other
+// quantity in this engine -- area, Kx, Ky, Kz, C_alpha, C_kappa -- is
+// non-negative and is clamped at zero to absorb round-off, so a sign error or a
+// conjugation slip in the transform would leave all of them untouched and would
+// pass every other check in this suite. The mirror-symmetry check in the units
+// audit works on a single BLOCK, before the transform. This is the only place
+// the signed quantity meets the FFT and is checked against arithmetic.
+//
+// The rib fixture above has no cross term at all, so it is useless here: this
+// runs on the motorcycle sample, whose angled lugs give it a real one.
+{
+  const p = dxf("130_80R17_Tramplr_XR_tread_plan.dxf", 8.5);
+  const pack = packOf(p, 2048, 128);
+  const spec = rectSpec(90, 50);
+  const patch = E.shapePatch(spec, p.crown, p.tread_width, PARAMS);
+  const r = E.sweepLean(p, pack, 0, spec, PARAMS, null, 90, null);
+  const nx = pack.grid.nx;
+
+  const peak = Math.max.apply(null, Array.prototype.map.call(r.kxy, Math.abs));
+  ck("the fixture carries a real cross term, so this check is not vacuous",
+     peak > 0.5, "peak |Kxy| = " + peak.toFixed(3) + " N/mm");
+  ck("and it takes BOTH signs, so a flipped sign could not hide as an offset",
+     Array.prototype.some.call(r.kxy, (v) => v < -0.1) &&
+     Array.prototype.some.call(r.kxy, (v) => v > 0.1));
+
+  let worstXY = 0, worstKx = 0, worstKy = 0, worstAr = 0, sameSign = true;
+  for (const th of [0, 37.5, 91.2, 180, 274.6]) {
+    const j = Math.round((th / 360) * nx) % nx;
+    const d = directMoments(p, pack, patch, (j * 360) / nx);
+    // Absolute, not relative: the cross term passes through zero, and a
+    // relative error against a value near zero is meaningless.
+    worstXY = Math.max(worstXY, Math.abs(d.kxy - r.kxy[j]));
+    worstKx = Math.max(worstKx, rel(d.kx, r.kx[j]));
+    worstKy = Math.max(worstKy, rel(d.ky, r.ky[j]));
+    worstAr = Math.max(worstAr, rel(d.area, r.contact_area[j]));
+    if (Math.abs(d.kxy) > 0.1 && d.kxy * r.kxy[j] <= 0) sameSign = false;
+  }
+  ck("Kxy: FFT = direct summation", worstXY < 1e-8,
+     "worst abs " + worstXY.toExponential(2) + " N/mm against a " + peak.toFixed(2) + " N/mm peak");
+  ck("and with the same SIGN at every angle tested", sameSign);
+  ck("Kx, Ky and contact area agree on the same tread to the same precision",
+     worstKx < 1e-9 && worstKy < 1e-9 && worstAr < 1e-9,
+     "worst rel " + Math.max(worstKx, worstKy, worstAr).toExponential(2));
 }
 
 // =====================================================================

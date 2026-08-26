@@ -274,6 +274,56 @@ though it were an open groove.
   patch is at that angle, because a fixed arc length subtends a different angle
   on a different circumference.
 
+### Reading the 2×2 rather than staring at Kxy
+
+Prompted by a review that made one point worth acting on: a non-zero Kxy has two
+causes and they mean opposite things. Either the blocks are **anisotropic and
+rotated** relative to the tyre's axes — an angled lug has a stiff direction that
+is not "along the tyre", so it shows a cross term with nothing coupled to
+anything — or the parts are **genuinely joined**, which is what a tie bar does.
+Confusing them lets "the tie bars are coupling the tread" be said about a pattern
+whose bars do nothing.
+
+The tool was already structured to separate them; it was not saying so.
+
+- **One decomposition, `principalStiffness`**, turning (Kx, Ky, Kxy) into the
+  principal values, the principal axis, the anisotropy K₁/K₂ and the normalised
+  coupling Cxy = Kxy/√(Kx·Ky). Verified against the rotation identity
+  Kxy = (K₁−K₂)/2·sin 2θ to **5.7e-14** over the full angle range, with the
+  principal values and the applied rotation both recovered exactly.
+- **Cxy on the sweep and in the comparison.** Dimensionless, so it compares
+  across patterns of different size and land ratio — which raw N/mm cannot.
+  Peak, not mean, because the mean cancels on any balanced pattern. The bundled
+  2W sample peaks at 0.30%.
+- **The stiff axis and K₁/K₂ together.** The angle stays well determined far past
+  the point it stops being interesting — 0.1% perturbation moves it 2.4° even at
+  K₁/K₂ = 1.0001 — so it is reported with the anisotropy that says how much to
+  weight it, rather than suppressed on a judgement that belongs to the reader.
+  It is deliberately **not** a comparison curve: an axis wraps at ±90°, so a mean
+  and a CoV over a series of them are meaningless.
+- **ΔKx, ΔKy, ΔKxy on the coupling tab.** The four existing curves overlap
+  because bonding moves the stiffness by a couple of percent; subtracting them
+  shows the bars' contribution alone, and where in the revolution it happens.
+  On `diagonal_tiebars` the bonded Kxy is 27.9 N/mm of which only 16.5 is the
+  network — reading the bonded figure alone over-states the bars by **69%**,
+  because the diagonal bars carry a cross term of their own before anything is
+  bonded. That case is now pinned in the audit.
+- **The one place a sign error could hide.** Kxy is the only map carrying a sign
+  through the FFT; every other quantity is non-negative and clamped. It now has
+  the same direct-summation cross-check the slip response has — agreeing to
+  **5.0e-15** against a 2.74 N/mm peak — and a negative control confirms the
+  check fails when the sign is deliberately flipped.
+- **Positive definiteness** asserted across the sweep on real geometry, which is
+  where the clamp/no-clamp asymmetry between Kx, Ky and Kxy could have bitten.
+
+Not done, and recorded as a limitation instead: the network gives each element
+two degrees of freedom and no **in-plane rotation**, so an inclined bar attached
+off a block's centre cannot spin it. Adding φz means a torsional stiffness per
+block, moment arms per link and static condensation back to a 2×2 — about 3.4×
+the solve cost, an element ceiling falling from 800 to ~530, and changed numbers
+for any pattern with off-centre bars. Whether it is worth it is answerable from
+Cxy: a few tenths of a percent says no.
+
 ---
 
 ## 5. How the numbers are kept honest
@@ -286,7 +336,7 @@ v6.4 reference JS  ──(~1e-9)──  Python engine  ──(<2e-3)──  Brow
   verify/tool_v64_reference.js   tread_eval/*.py              app/engine.js
 ```
 
-- **342 tests** (from 153 at the start of the audit).
+- **346 tests** (from 153 at the start of the audit).
 - `tests/test_physics.py` checks every equation against a **closed form worked
   out by hand**, not against a previous run — a golden-value test would have
   blessed the bugs above.
@@ -297,14 +347,14 @@ v6.4 reference JS  ──(~1e-9)──  Python engine  ──(<2e-3)──  Brow
   (every template input is read and vice versa), every input documented, exports
   wired and frozen.
 - `app/selftest.js` — 13 engine checks under Node.
-- `app/couplingaudit.js` — 58 checks on the tie-bar network: linear algebra
+- `app/couplingaudit.js` — 70 checks on the tie-bar network: linear algebra
   against closed forms, the assembled system against equilibrium, a three-node
   case against a hand solution.
-- `app/slipaudit.js` — 43 checks on the brush-model slip response: the textbook
+- `app/slipaudit.js` — 48 checks on the brush-model slip response: the textbook
   closed forms for a rectangular patch (Cα = Ky·a, t = a/3) and an elliptical
   one (Cα/Ky = 8a/3π, t = 3πa/32), the FFT against a direct summation to 1e-15,
   and the direction sensitivity that no other quantity on the page has.
-- `app/unitsaudit.js` — 73 checks on dimensional consistency, proved by
+- `app/unitsaudit.js` — 92 checks on dimensional consistency, proved by
   geometric similarity: scale every length by λ and the load by λ², and all 24
   outputs land on the power of λ their units demand, to five decimals.
 - `app/pitchaudit.js` — 52 checks on pitch replication: the replicated tread
@@ -434,7 +484,7 @@ app/
 tread_eval/              the Python pipeline (schema, stiffness, dxf, raster,
                          sweep, metrics, contact_patch, cp_shapes, report, config)
 verify/                  v6.4 functions extracted verbatim, the reference oracle
-tests/                   342 tests
+tests/                   346 tests
 data/                    the Tramplr sample DXF, tie-bar and pitch fixtures,
                          hatch fixtures and their generators, footprints
 GUIDE.md                 plain-language guide, embedded in the app as a tab
