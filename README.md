@@ -136,9 +136,16 @@ checking one revision against another.
   each drawing centred and zoomed to fill its own pane, so files placed at
   unrelated absolute coordinates are still shown as comparable close-ups.
   All panes share **one scale**, so a part that is genuinely bigger looks
-  bigger; pan and zoom drive every pane together. Optionally highlight, in
-  each pane, what **differs from the reference** (the first visible file),
-  and stack panes vertically instead of horizontally.
+  bigger; pan and zoom drive every pane together.
+  - **Line up on** picks the datum placed at each pane's centre — bounding-box
+    centre, left/right edge, top/bottom edge, or bottom-left corner — so every
+    model can be brought to the same position at once.
+  - **Per-pane nudging**: hold `Alt` (or tick *Drag moves only the pane under
+    the cursor*) to shift a single model into line without disturbing the
+    others; nudged panes are marked, and **Reset pane offsets** clears them.
+  - Optionally highlight, in each pane, what **differs from the reference**
+    (the first visible file), and stack panes vertically instead of
+    horizontally.
 - **Overlay** mode draws every file in its own colour on one canvas.
 - **Difference** mode picks two files (A and B) and classifies geometry:
   **red = only in A**, **green = only in B**, grey = matching. Matching is

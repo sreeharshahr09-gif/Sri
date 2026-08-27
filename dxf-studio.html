@@ -321,8 +321,23 @@
         <option value="diff">Difference — A vs B highlighting</option>
       </select>
       <div id="cmpTileRow" style="margin-top:8px">
+        <div class="row" style="margin-bottom:4px">
+          <span class="mini">Line up on</span>
+          <select id="cmpAnchor" style="flex:1" title="Which point of each drawing is placed at the centre of its pane">
+            <option value="centre">Bounding-box centre</option>
+            <option value="left">Left edge</option>
+            <option value="right">Right edge</option>
+            <option value="bottom">Bottom edge</option>
+            <option value="top">Top edge</option>
+            <option value="bl">Bottom-left corner</option>
+          </select>
+        </div>
+        <label class="chk"><input type="checkbox" id="cmpIndiv" /> Drag moves only the pane under the cursor (or hold <span class="kbd">Alt</span>)</label>
         <label class="chk"><input type="checkbox" id="cmpTileDiff" checked /> Highlight what differs from the reference file (first visible)</label>
         <label class="chk"><input type="checkbox" id="cmpTileRows" /> Stack panes vertically instead of side by side</label>
+        <div class="row" style="margin-top:6px">
+          <button class="secondary" id="cmpResetOff" title="Clear all per-pane nudges">Reset pane offsets</button>
+        </div>
       </div>
       <div id="cmpABrow" class="row" style="margin-top:8px;display:none">
         <span class="mini">A</span><select id="cmpA" style="flex:1"></select>
@@ -4126,7 +4141,11 @@ function cmpAllBBox(){
 }
 function cmpFit(){
   cmpResize();
-  if($('#cmpMode').value==='tiled'){ cmpTile={zoom:1,panX:0,panY:0}; cmpDraw(); return; }
+  if($('#cmpMode').value==='tiled'){
+    cmpTile={zoom:1,panX:0,panY:0};
+    for(const f of CMP){ f.tileDX=0; f.tileDY=0; }
+    cmpDraw(); return;
+  }
   const bb=cmpAllBBox(); if(!bb){ cmpDraw(); return; }
   const w=cvCmp.width/devicePixelRatio, h=cvCmp.height/devicePixelRatio;
   const dw=(bb.max[0]-bb.min[0])||1, dh=(bb.max[1]-bb.min[1])||1;
@@ -4170,16 +4189,24 @@ function cmpPaneLayout(){
     scale=Math.min(scale, (pw*0.86)/w, (ph*0.82)/h);
   }
   if(!isFinite(scale)||scale<=0) scale=1;
+  const anchor=$('#cmpAnchor')?$('#cmpAnchor').value:'centre';
   const panes=files.map((f,i)=>{
     const cx=stack?pw/2:(i+0.5)*pw, cy=stack?(i+0.5)*ph:ph/2;
-    return {file:f, cx, cy, x0:stack?0:i*pw, y0:stack?i*ph:0, w:pw, h:ph,
-            fcx:(f.bbox.min[0]+f.bbox.max[0])/2, fcy:(f.bbox.min[1]+f.bbox.max[1])/2};
+    const mid=[(f.bbox.min[0]+f.bbox.max[0])/2,(f.bbox.min[1]+f.bbox.max[1])/2];
+    let ax=mid[0], ay=mid[1];
+    if(anchor==='left') ax=f.bbox.min[0];
+    else if(anchor==='right') ax=f.bbox.max[0];
+    else if(anchor==='bottom') ay=f.bbox.min[1];
+    else if(anchor==='top') ay=f.bbox.max[1];
+    else if(anchor==='bl'){ ax=f.bbox.min[0]; ay=f.bbox.min[1]; }
+    return {file:f, cx, cy, x0:stack?0:i*pw, y0:stack?i*ph:0, w:pw, h:ph, fcx:ax, fcy:ay};
   });
   return {files,panes,W,H,scale};
 }
 function paneW2S(pane,scale,x,y){
-  return [pane.cx + (x-pane.fcx)*scale*cmpTile.zoom + cmpTile.panX,
-          pane.cy - (y-pane.fcy)*scale*cmpTile.zoom + cmpTile.panY];
+  const f=pane.file;
+  return [pane.cx + (x-pane.fcx)*scale*cmpTile.zoom + cmpTile.panX + (f.tileDX||0),
+          pane.cy - (y-pane.fcy)*scale*cmpTile.zoom + cmpTile.panY + (f.tileDY||0)];
 }
 /* which segments of each file have no counterpart in the reference file */
 function cmpTileClassify(){
@@ -4187,12 +4214,14 @@ function cmpTileClassify(){
   if(files.length<2){ cmpTileCache=null; return; }
   const tol=cmpTolValue();
   const ref=files[0];
-  const refSegs=cmpSegments(ref).map(sg=>[[sg[0][0]-((ref.bbox.min[0]+ref.bbox.max[0])/2),sg[0][1]-((ref.bbox.min[1]+ref.bbox.max[1])/2)],
-                                          [sg[1][0]-((ref.bbox.min[0]+ref.bbox.max[0])/2),sg[1][1]-((ref.bbox.min[1]+ref.bbox.max[1])/2)]]);
+  const L0=cmpPaneLayout();
+  const anchorOf=f=>{ const pn=L0.panes.find(p=>p.file===f); return pn?[pn.fcx,pn.fcy]:[(f.bbox.min[0]+f.bbox.max[0])/2,(f.bbox.min[1]+f.bbox.max[1])/2]; };
+  const [rax,ray]=anchorOf(ref);
+  const refSegs=cmpSegments(ref).map(sg=>[[sg[0][0]-rax,sg[0][1]-ray],[sg[1][0]-rax,sg[1][1]-ray]]);
   const cache=new Map();
   for(const f of files){
     if(f===ref){ cache.set(f,{same:cmpSegments(f),diff:[]}); continue; }
-    const cx=(f.bbox.min[0]+f.bbox.max[0])/2, cy=(f.bbox.min[1]+f.bbox.max[1])/2;
+    const [cx,cy]=anchorOf(f);
     const local=cmpSegments(f).map(sg=>[[sg[0][0]-cx,sg[0][1]-cy],[sg[1][0]-cx,sg[1][1]-cy]]);
     const r=classifySegments(local, refSegs, tol);
     // map back to the file's own coordinates for drawing
@@ -4242,6 +4271,7 @@ function cmpDrawTiled(){
       const d=cmpTileCache.get(pane.file).diff.length;
       label += d? '  ('+d+' differing segs)' : '  (matches reference)';
     } else if(hl && pane.file===ref) label += '  (reference)';
+    if(pane.file.tileDX||pane.file.tileDY) label += '  ⇔ nudged';
     cctx.fillText(label, pane.x0+24, pane.y0+19);
     const st=pane.file.stats;
     cctx.fillStyle=TH.labelUnsel; cctx.font='11px sans-serif';
@@ -4337,7 +4367,7 @@ function cmpLegend(){
   if($('#cmpMode').value==='tiled'){
     el.innerHTML = ($('#cmpTileDiff')&&$('#cmpTileDiff').checked&&CMP.filter(f=>f.visible).length>1)
       ? '<span style="color:#f85149">■</span> differs from the reference &nbsp; <span style="color:'+TH.dimUnsel+'">■</span> same as reference — panes share one scale, so sizes are directly comparable.'
-      : 'Each file is drawn centred in its own pane at a shared scale. Drag/scroll pans and zooms every pane together.';
+      : 'Each file is drawn on its own pane at a shared scale. Drag/scroll moves every pane together; hold Alt (or tick the box above) to nudge just one pane into line.';
   } else if($('#cmpMode').value==='diff'){
     el.innerHTML='<span style="color:#f85149">■</span> only in A &nbsp; <span style="color:#2ea043">■</span> only in B &nbsp; <span style="color:'+TH.dimUnsel+'">■</span> matching geometry';
   } else {
@@ -4403,6 +4433,13 @@ $('#cmpAlign').addEventListener('change',()=>{ cmpRefresh(true); });
 $('#cmpMode').addEventListener('change',()=>{ cmpRefresh(false); });
 $('#cmpA').addEventListener('change',()=>{ cmpRefresh(false); });
 $('#cmpB').addEventListener('change',()=>{ cmpRefresh(false); });
+$('#cmpAnchor').addEventListener('change',()=>{ cmpTileCache=null; cmpDraw(); });
+$('#cmpIndiv').addEventListener('change',cmpLegend);
+$('#cmpResetOff').addEventListener('click',()=>{
+  for(const f of CMP){ f.tileDX=0; f.tileDY=0; }
+  cmpTile.panX=0; cmpTile.panY=0;
+  cmpDraw(); cmpToast('Pane offsets reset.');
+});
 $('#cmpTileDiff').addEventListener('change',()=>{ cmpTileCache=null; cmpLegend(); cmpDraw(); });
 $('#cmpTileRows').addEventListener('change',()=>{ cmpDraw(); });
 $('#cmpRun').addEventListener('click',()=>{ cmpRefresh(false); cmpToast('Comparison recomputed.'); });
@@ -4442,12 +4479,27 @@ if(cvCmp){
     cmpView.ox=mx-wx*cmpView.scale; cmpView.oy=my+wy*cmpView.scale;
     cmpDraw();
   },{passive:false});
-  let cpan=false,clx=0,cly=0;
-  cvCmp.addEventListener('mousedown',e=>{ cpan=true; clx=e.clientX; cly=e.clientY; cvCmp.style.cursor='grabbing'; });
+  let cpan=false,clx=0,cly=0,cGrabFile=null;
+  cvCmp.addEventListener('mousedown',e=>{
+    cpan=true; clx=e.clientX; cly=e.clientY; cvCmp.style.cursor='grabbing';
+    cGrabFile=null;
+    if($('#cmpMode').value==='tiled'){
+      const r=cvCmp.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+      const L=cmpPaneLayout();
+      const pane=L.panes.find(pn=>mx>=pn.x0&&mx<pn.x0+pn.w&&my>=pn.y0&&my<pn.y0+pn.h);
+      if(pane) cGrabFile=pane.file;
+    }
+  });
   window.addEventListener('mousemove',e=>{
     if(!cpan)return;
     const dx=e.clientX-clx, dy=e.clientY-cly;
-    if($('#cmpMode').value==='tiled'){ cmpTile.panX+=dx; cmpTile.panY+=dy; }
+    if($('#cmpMode').value==='tiled'){
+      const solo = ($('#cmpIndiv') && $('#cmpIndiv').checked) || e.altKey;
+      if(solo && cGrabFile){
+        cGrabFile.tileDX=(cGrabFile.tileDX||0)+dx;
+        cGrabFile.tileDY=(cGrabFile.tileDY||0)+dy;
+      } else { cmpTile.panX+=dx; cmpTile.panY+=dy; }
+    }
     else { cmpView.ox+=dx; cmpView.oy+=dy; }
     clx=e.clientX; cly=e.clientY; cmpDraw();
   });
