@@ -127,6 +127,25 @@ modern browser and drop a DXF in.
   on the end that stops short (or **Bridge**/draw the missing edge), then
   fill again.
 
+### Compare tab (multiple DXFs)
+A dedicated **⇄ Compare** workspace, switched from the header tabs, for
+checking one revision against another.
+- Load any number of DXFs at once (or **add the drawing open in the Editor**).
+  Each file gets its own colour, with show/hide and remove per file.
+- **Overlay** mode draws every file in its own colour on one canvas.
+- **Difference** mode picks two files (A and B) and classifies geometry:
+  **red = only in A**, **green = only in B**, grey = matching. Matching is
+  geometric (segments are sampled and compared within an adjustable
+  tolerance), so it survives entities being split, re-ordered or re-typed
+  between revisions.
+- **Alignment**: compare in original coordinates, or align by bounding-box
+  corner/centre when the two drawings sit at different absolute positions.
+- A **metrics table** compares entity counts, per-type breakdown, layers,
+  closed loops, open chains, tie-bar fills, size, closed area, total length
+  and origin — values that differ are highlighted. **Export table → CSV**.
+- Comparison parsing is fully isolated: loading files here never disturbs the
+  drawing you are editing.
+
 ### Export
 - Export selected drawings into one DXF, or each into its own file.
 - Two formats:

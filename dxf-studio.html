@@ -43,6 +43,18 @@
   button:disabled{opacity:.45;cursor:not-allowed}
   button.tgl.on{outline:2px solid var(--accent)}
   select,input[type=number],input[type=text]{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font-size:13px}
+  .tabs{display:flex;gap:4px;background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:3px}
+  .tabs button{background:transparent;color:var(--muted);border:none;border-radius:6px;padding:5px 14px;font-size:12.5px;font-weight:600;cursor:pointer}
+  .tabs button.on{background:var(--panel);color:var(--txt);box-shadow:0 1px 2px #0003}
+  table.cmp{width:100%;border-collapse:collapse;font-size:12px}
+  table.cmp th,table.cmp td{border-bottom:1px solid var(--line);padding:4px 6px;text-align:right;white-space:nowrap}
+  table.cmp th:first-child,table.cmp td:first-child{text-align:left}
+  table.cmp th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--panel)}
+  table.cmp td.diff{color:var(--warn);font-weight:600}
+  .cmpwrap{max-height:34vh;overflow:auto}
+  .fileRow{display:flex;align-items:center;gap:7px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-bottom:6px}
+  .fileRow .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;font-weight:600}
+  .fileRow .sw{width:13px;height:13px;border-radius:3px;flex:0 0 auto}
   input[type=color]{width:42px;height:30px;padding:2px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;cursor:pointer}
   .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .drawings{display:flex;flex-direction:column;gap:8px;max-height:34vh;overflow:auto}
@@ -85,10 +97,14 @@
   <h1>DXF Studio</h1>
   <span class="sub">Group · classify · edit · colour-fill tie bars · verify closed profiles · export clean DXF for downstream tools. Runs 100% in your browser — no upload.</span>
   <span style="flex:1"></span>
+  <div class="tabs">
+    <button id="tabEditor" class="on">✎ Editor</button>
+    <button id="tabCompare">⇄ Compare</button>
+  </div>
   <button class="secondary" id="themeToggle" title="Toggle dark / light theme (T)" style="padding:6px 10px">🌙 Dark</button>
 </header>
 
-<div class="app">
+<div class="app" id="viewEditor">
   <!-- ============================ SIDEBAR ============================ -->
   <div class="sidebar">
     <div class="card">
@@ -270,6 +286,70 @@
     </div>
     <canvas id="cv"></canvas>
     <div class="toast" id="toast"></div>
+  </div>
+</div>
+
+<!-- ============================ COMPARE VIEW ============================ -->
+<div class="app" id="viewCompare" style="display:none">
+  <div class="sidebar">
+    <div class="card">
+      <h2>1 · Files to compare <span class="badge" id="cmpCount">0</span></h2>
+      <label class="file"><input id="cmpInput" type="file" accept=".dxf,text/plain" multiple /></label>
+      <div class="hint" style="margin:6px 0">Load two or more DXFs (or add the drawing open in the Editor). Each gets its own colour.</div>
+      <div class="row">
+        <button class="secondary" id="cmpAddCurrent">Add current editor drawing</button>
+        <button class="secondary red" id="cmpClear">Clear all</button>
+      </div>
+      <div id="cmpFiles" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card">
+      <h2>2 · Alignment</h2>
+      <select id="cmpAlign" style="width:100%">
+        <option value="none">Original coordinates (as drawn)</option>
+        <option value="min">Align bounding-box corner</option>
+        <option value="centre">Align bounding-box centre</option>
+      </select>
+      <div class="hint" style="margin-top:6px">Use alignment when the drawings sit at different absolute positions but should be compared shape-to-shape.</div>
+    </div>
+
+    <div class="card">
+      <h2>3 · View mode</h2>
+      <select id="cmpMode" style="width:100%">
+        <option value="overlay">Overlay — every file in its own colour</option>
+        <option value="diff">Difference — A vs B highlighting</option>
+      </select>
+      <div id="cmpABrow" class="row" style="margin-top:8px;display:none">
+        <span class="mini">A</span><select id="cmpA" style="flex:1"></select>
+        <span class="mini">B</span><select id="cmpB" style="flex:1"></select>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <span class="mini">Match tol.</span>
+        <input id="cmpTol" type="number" step="any" style="width:110px" title="How close geometry must be to count as unchanged" />
+        <button class="secondary" id="cmpRun">Recompute</button>
+      </div>
+      <div id="cmpLegend" class="hint" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <h2>4 · Comparison</h2>
+      <div class="cmpwrap"><table class="cmp" id="cmpTable"></table></div>
+      <div class="hint" style="margin-top:8px">Values that differ across files are highlighted. Area/perimeter cover closed profiles only.</div>
+      <div class="row" style="margin-top:8px">
+        <button class="secondary" id="cmpExportCsv">Export table → CSV</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="toolbar">
+      <button class="secondary" id="cmpFit">Fit view</button>
+      <span class="mini">Drag = pan · Scroll = zoom</span>
+      <span style="flex:1"></span>
+      <span id="cmpInfo" class="mini"></span>
+    </div>
+    <canvas id="cvCmp"></canvas>
+    <div class="toast" id="cmpToast"></div>
   </div>
 </div>
 
@@ -3848,6 +3928,394 @@ if(!savedTheme && window.matchMedia && window.matchMedia('(prefers-color-scheme:
 applyTheme(savedTheme||'dark');
 updateHistoryButtons();
 resizeCanvas();
+
+/* =========================================================================
+   COMPARE WORKSPACE
+   Loads several DXFs side by side, overlays them with per-file colours, and
+   reports both a geometric difference (what is present in A but not B) and a
+   numeric comparison table. Parsing reuses the editor's parser but never
+   touches its live state.
+   ========================================================================= */
+const CMP_PALETTE=['#4c9aff','#f0883e','#2ea043','#a371f7','#db61a2','#39c5cf','#e3b341','#ff7b72'];
+let CMP=[];                       // [{name,ents,bbox,color,visible,stats,segs}]
+let cmpView={scale:1,ox:0,oy:0};
+const cvCmp=$('#cvCmp'), cctx=cvCmp?cvCmp.getContext('2d'):null;
+let cmpDiff=null;                 // {aOnly:[],bOnly:[],common:[],ai,bi}
+let cmpToastTimer;
+function cmpToast(msg){const t=$('#cmpToast');if(!t)return;t.textContent=msg;t.classList.add('show');clearTimeout(cmpToastTimer);cmpToastTimer=setTimeout(()=>t.classList.remove('show'),2600);}
+
+/* ---- parse a DXF into a standalone entity list (no globals touched) ---- */
+function cmpParse(name, text){
+  const savedHandle=HANDLE_MAX;
+  const dxf=parseDXF(text);
+  dxf.blocks=parseBlocks(dxf);
+  const ents=buildEntities(dxf, dxf.blocks);
+  HANDLE_MAX=savedHandle;                     // parsing bumps the counter; keep editor state clean
+  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+  for(const e of ents){ if(!e.geom) continue;
+    minx=Math.min(minx,e.geom.min[0]);miny=Math.min(miny,e.geom.min[1]);
+    maxx=Math.max(maxx,e.geom.max[0]);maxy=Math.max(maxy,e.geom.max[1]); }
+  const bbox=isFinite(minx)?{min:[minx,miny],max:[maxx,maxy]}:null;
+  return {name, ents, bbox, color:CMP_PALETTE[CMP.length%CMP_PALETTE.length], visible:true,
+          stats:cmpStats(ents,bbox), segs:null};
+}
+/* segments of one file's geometry, in that file's own coordinates */
+function cmpSegments(file){
+  if(file.segs) return file.segs;
+  const out=[];
+  for(const e of file.ents){
+    if(e.del || e.cls!=='geometry' || !e.geom || !e.geom.draw) continue;
+    for(const pr of e.geom.draw){
+      if(pr.type==='poly'){
+        const p=pr.pts;
+        for(let k=0;k<p.length-1;k++) out.push([p[k],p[k+1]]);
+        if(pr.closed && p.length>2) out.push([p[p.length-1],p[0]]);
+      } else if(pr.type==='circle'){
+        const N=96,c=[];
+        for(let k=0;k<=N;k++){const a=2*Math.PI*k/N;c.push([pr.x+pr.r*Math.cos(a),pr.y+pr.r*Math.sin(a)]);}
+        for(let k=0;k<N;k++) out.push([c[k],c[k+1]]);
+      } else if(pr.type==='arc'){
+        const span=((pr.a2-pr.a1)%360+360)%360||360;
+        const N=Math.max(8,Math.ceil(span/5)),c=[];
+        for(let k=0;k<=N;k++){const a=(pr.a1+span*k/N)*Math.PI/180;c.push([pr.x+pr.r*Math.cos(a),pr.y+pr.r*Math.sin(a)]);}
+        for(let k=0;k<N;k++) out.push([c[k],c[k+1]]);
+      }
+    }
+  }
+  file.segs=out;
+  return out;
+}
+/* per-file metrics for the comparison table */
+function cmpStats(ents,bbox){
+  const byType={}; const layers=new Set();
+  let total=0, closed=0, open=0, hatches=0, length=0, area=0;
+  const savedTol=CURTOL;
+  const diag=bbox?Math.hypot(bbox.max[0]-bbox.min[0],bbox.max[1]-bbox.min[1]):1;
+  CURTOL=Math.max(diag*1e-6,1e-9);
+  for(const e of ents){
+    if(e.del) continue;
+    total++;
+    byType[e.type]=(byType[e.type]||0)+1;
+    layers.add(e.layer);
+    if(e.type==='HATCH'){ hatches++; continue; }
+    if(e.cls!=='geometry') continue;
+    if(e.geom&&e.geom.draw) for(const pr of e.geom.draw){
+      if(pr.type==='poly'){
+        for(let k=0;k<pr.pts.length-1;k++) length+=Math.hypot(pr.pts[k+1][0]-pr.pts[k][0],pr.pts[k+1][1]-pr.pts[k][1]);
+        if(pr.closed&&pr.pts.length>2) length+=Math.hypot(pr.pts[0][0]-pr.pts[pr.pts.length-1][0],pr.pts[0][1]-pr.pts[pr.pts.length-1][1]);
+      } else if(pr.type==='circle') length+=2*Math.PI*pr.r;
+      else if(pr.type==='arc'){ const span=((pr.a2-pr.a1)%360+360)%360||360; length+=2*Math.PI*pr.r*span/360; }
+    }
+    const ee=entityEnds(e);
+    if(ee){
+      if(ee.closed){
+        closed++;
+        const poly=closedPolygonOf(e);
+        if(poly) area+=polyArea(poly);
+      } else open++;
+    }
+  }
+  CURTOL=savedTol;
+  return {total, byType, layers:layers.size, closedLoops:closed, openChains:open, hatches,
+          length, area,
+          width:bbox?bbox.max[0]-bbox.min[0]:0, height:bbox?bbox.max[1]-bbox.min[1]:0,
+          originX:bbox?bbox.min[0]:0, originY:bbox?bbox.min[1]:0};
+}
+/* alignment offset for a file, per the chosen mode */
+function cmpOffset(file){
+  const mode=$('#cmpAlign').value;
+  if(mode==='none' || !file.bbox) return [0,0];
+  const ref=CMP.find(f=>f.bbox);
+  if(!ref || !ref.bbox) return [0,0];
+  if(mode==='min') return [ref.bbox.min[0]-file.bbox.min[0], ref.bbox.min[1]-file.bbox.min[1]];
+  const c=b=>[(b.min[0]+b.max[0])/2,(b.min[1]+b.max[1])/2];
+  const rc=c(ref.bbox), fc=c(file.bbox);
+  return [rc[0]-fc[0], rc[1]-fc[1]];
+}
+function cmpAutoTol(){
+  const f=CMP.find(x=>x.bbox);
+  if(!f) return 0.01;
+  const diag=Math.hypot(f.bbox.max[0]-f.bbox.min[0], f.bbox.max[1]-f.bbox.min[1])||1;
+  return diag*0.002;
+}
+function cmpTolValue(){
+  const v=parseFloat($('#cmpTol').value);
+  return (isFinite(v)&&v>0)?v:cmpAutoTol();
+}
+/* ---- geometric difference: which segments of A have no counterpart in B --- */
+function segGrid(segs,cell){
+  const g=new Map(), key=(x,y)=>x+'|'+y;
+  segs.forEach((s,i)=>{
+    const x0=Math.floor(Math.min(s[0][0],s[1][0])/cell), x1=Math.floor(Math.max(s[0][0],s[1][0])/cell);
+    const y0=Math.floor(Math.min(s[0][1],s[1][1])/cell), y1=Math.floor(Math.max(s[0][1],s[1][1])/cell);
+    for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++){const k=key(x,y);if(!g.has(k))g.set(k,[]);g.get(k).push(i);}
+  });
+  return {g,cell,key};
+}
+function ptSegDist(p,a,b){
+  const vx=b[0]-a[0], vy=b[1]-a[1], L2=vx*vx+vy*vy;
+  let t=L2>0?((p[0]-a[0])*vx+(p[1]-a[1])*vy)/L2:0;
+  t=Math.max(0,Math.min(1,t));
+  return Math.hypot(p[0]-(a[0]+t*vx), p[1]-(a[1]+t*vy));
+}
+function nearAnySegment(p, grid, segs, tol){
+  const cx=Math.floor(p[0]/grid.cell), cy=Math.floor(p[1]/grid.cell);
+  for(let x=cx-1;x<=cx+1;x++)for(let y=cy-1;y<=cy+1;y++){
+    const arr=grid.g.get(grid.key(x,y)); if(!arr) continue;
+    for(const i of arr){ if(ptSegDist(p,segs[i][0],segs[i][1])<=tol) return true; }
+  }
+  return false;
+}
+/* a segment counts as matched when every sampled point lies on some segment
+   of the other drawing within tolerance                                     */
+function classifySegments(aSegs, bSegs, tol){
+  const cell=Math.max(tol*4,1e-9);
+  const grid=segGrid(bSegs,cell);
+  const same=[], diff=[];
+  for(const s of aSegs){
+    const L=Math.hypot(s[1][0]-s[0][0], s[1][1]-s[0][1]);
+    const n=Math.max(2,Math.min(24,Math.ceil(L/Math.max(tol*2,1e-9))));
+    let ok=true;
+    for(let k=0;k<=n;k++){
+      const t=k/n, p=[s[0][0]+(s[1][0]-s[0][0])*t, s[0][1]+(s[1][1]-s[0][1])*t];
+      if(!nearAnySegment(p,grid,bSegs,tol)){ ok=false; break; }
+    }
+    (ok?same:diff).push(s);
+  }
+  return {same, diff};
+}
+function shiftSegs(segs,dx,dy){
+  if(!dx&&!dy) return segs;
+  return segs.map(s=>[[s[0][0]+dx,s[0][1]+dy],[s[1][0]+dx,s[1][1]+dy]]);
+}
+function computeDiff(){
+  cmpDiff=null;
+  if($('#cmpMode').value!=='diff') return;
+  const ai=parseInt($('#cmpA').value,10), bi=parseInt($('#cmpB').value,10);
+  if(!CMP[ai]||!CMP[bi]||ai===bi) return;
+  const tol=cmpTolValue();
+  const A=CMP[ai], B=CMP[bi];
+  const [adx,ady]=cmpOffset(A), [bdx,bdy]=cmpOffset(B);
+  const aS=shiftSegs(cmpSegments(A),adx,ady), bS=shiftSegs(cmpSegments(B),bdx,bdy);
+  const ra=classifySegments(aS,bS,tol);
+  const rb=classifySegments(bS,aS,tol);
+  cmpDiff={ai,bi,common:ra.same,aOnly:ra.diff,bOnly:rb.diff,tol};
+}
+
+/* ---------------------------- rendering ------------------------------- */
+function cmpResize(){
+  if(!cvCmp) return;
+  const r=cvCmp.getBoundingClientRect();
+  cvCmp.width=Math.max(1,r.width*devicePixelRatio); cvCmp.height=Math.max(1,r.height*devicePixelRatio);
+  cctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+}
+function cmpAllBBox(){
+  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity,any=false;
+  for(const f of CMP){
+    if(!f.visible||!f.bbox) continue;
+    const [dx,dy]=cmpOffset(f); any=true;
+    minx=Math.min(minx,f.bbox.min[0]+dx); miny=Math.min(miny,f.bbox.min[1]+dy);
+    maxx=Math.max(maxx,f.bbox.max[0]+dx); maxy=Math.max(maxy,f.bbox.max[1]+dy);
+  }
+  return any?{min:[minx,miny],max:[maxx,maxy]}:null;
+}
+function cmpFit(){
+  cmpResize();
+  const bb=cmpAllBBox(); if(!bb){ cmpDraw(); return; }
+  const w=cvCmp.width/devicePixelRatio, h=cvCmp.height/devicePixelRatio;
+  const dw=(bb.max[0]-bb.min[0])||1, dh=(bb.max[1]-bb.min[1])||1;
+  const s=Math.min(w/(dw*1.1), h/(dh*1.1));
+  cmpView.scale=s;
+  cmpView.ox=w/2-((bb.min[0]+bb.max[0])/2)*s;
+  cmpView.oy=h/2+((bb.min[1]+bb.max[1])/2)*s;
+}
+function CW2S(x,y){ return [x*cmpView.scale+cmpView.ox, -y*cmpView.scale+cmpView.oy]; }
+function CS2W(px,py){ return [(px-cmpView.ox)/cmpView.scale, -(py-cmpView.oy)/cmpView.scale]; }
+function strokeSegs(segs,color,width,alpha){
+  if(!segs.length) return;
+  cctx.save(); cctx.strokeStyle=color; cctx.lineWidth=width; cctx.globalAlpha=alpha;
+  cctx.beginPath();
+  for(const s of segs){
+    const [x0,y0]=CW2S(s[0][0],s[0][1]), [x1,y1]=CW2S(s[1][0],s[1][1]);
+    cctx.moveTo(x0,y0); cctx.lineTo(x1,y1);
+  }
+  cctx.stroke(); cctx.restore();
+}
+function cmpDraw(){
+  if(!cctx) return;
+  cctx.clearRect(0,0,cvCmp.width,cvCmp.height);
+  if(!CMP.length){ $('#cmpInfo').textContent='No files loaded.'; return; }
+  const mode=$('#cmpMode').value;
+  if(mode==='diff' && cmpDiff){
+    strokeSegs(cmpDiff.common, TH.dimUnsel, 1, 0.85);
+    strokeSegs(cmpDiff.bOnly, '#2ea043', 2, 0.95);
+    strokeSegs(cmpDiff.aOnly, '#f85149', 2, 0.95);
+    const A=CMP[cmpDiff.ai], B=CMP[cmpDiff.bi];
+    $('#cmpInfo').textContent=`A: ${A.name} · B: ${B.name} · ${cmpDiff.aOnly.length} only in A · ${cmpDiff.bOnly.length} only in B · ${cmpDiff.common.length} matching (tol ${cmpDiff.tol.toPrecision(3)})`;
+  } else {
+    let shown=0;
+    for(const f of CMP){
+      if(!f.visible) continue;
+      const [dx,dy]=cmpOffset(f);
+      strokeSegs(shiftSegs(cmpSegments(f),dx,dy), f.color, 1.2, 0.9);
+      shown++;
+    }
+    $('#cmpInfo').textContent=`${shown} of ${CMP.length} file(s) shown · overlay`;
+  }
+}
+
+/* ------------------------------ UI ------------------------------------ */
+function cmpRenderFiles(){
+  const box=$('#cmpFiles'); if(!box) return;
+  box.innerHTML='';
+  CMP.forEach((f,i)=>{
+    const el=document.createElement('div');
+    el.className='fileRow';
+    el.innerHTML=`<span class="sw" style="background:${f.color}"></span>
+      <span class="nm" title="${f.name}">${f.name}</span>
+      <span class="badge">${f.stats.total}</span>
+      <span class="eye ${f.visible?'':'off'}" title="show/hide">${f.visible?'👁':'🚫'}</span>
+      <button class="secondary" data-rm title="remove" style="padding:2px 6px">✕</button>`;
+    el.querySelector('.eye').addEventListener('click',()=>{ f.visible=!f.visible; cmpRenderFiles(); cmpDraw(); });
+    el.querySelector('[data-rm]').addEventListener('click',()=>{ CMP.splice(i,1); cmpRefresh(true); });
+    box.appendChild(el);
+  });
+  $('#cmpCount').textContent=CMP.length;
+  // A/B selectors
+  for(const id of ['#cmpA','#cmpB']){
+    const sel=$(id), prev=sel.value;
+    sel.innerHTML='';
+    CMP.forEach((f,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=f.name; sel.appendChild(o); });
+    if(prev!=='' && CMP[prev]) sel.value=prev;
+  }
+  if(CMP.length>1 && $('#cmpA').value===$('#cmpB').value) $('#cmpB').value='1';
+}
+const CMP_ROWS=[
+  ['Entities',        f=>f.stats.total,        v=>String(v)],
+  ['Layers',          f=>f.stats.layers,       v=>String(v)],
+  ['Closed loops',    f=>f.stats.closedLoops,  v=>String(v)],
+  ['Open chains',     f=>f.stats.openChains,   v=>String(v)],
+  ['Tie-bar fills',   f=>f.stats.hatches,      v=>String(v)],
+  ['Width',           f=>f.stats.width,        v=>fmtNum(v)],
+  ['Height',          f=>f.stats.height,       v=>fmtNum(v)],
+  ['Closed area',     f=>f.stats.area,         v=>fmtNum(v)],
+  ['Total length',    f=>f.stats.length,       v=>fmtNum(v)],
+  ['Origin X',        f=>f.stats.originX,      v=>fmtNum(v)],
+  ['Origin Y',        f=>f.stats.originY,      v=>fmtNum(v)],
+];
+function cmpRenderTable(){
+  const t=$('#cmpTable'); if(!t) return;
+  if(!CMP.length){ t.innerHTML='<tr><td class="mini">Load files to compare.</td></tr>'; return; }
+  let html='<tr><th>Metric</th>'+CMP.map(f=>`<th title="${f.name}"><span style="color:${f.color}">■</span> ${f.name.length>14?f.name.slice(0,13)+'…':f.name}</th>`).join('')+'</tr>';
+  for(const [label,get,fmtv] of CMP_ROWS){
+    const vals=CMP.map(get);
+    const differs=vals.some(v=>Math.abs(v-vals[0])>Math.max(1e-9,Math.abs(vals[0])*1e-9));
+    html+='<tr><td>'+label+'</td>'+vals.map(v=>`<td class="${differs?'diff':''}">${fmtv(v)}</td>`).join('')+'</tr>';
+  }
+  // entity-type breakdown
+  const types=[...new Set(CMP.flatMap(f=>Object.keys(f.stats.byType)))].sort();
+  for(const ty of types){
+    const vals=CMP.map(f=>f.stats.byType[ty]||0);
+    const differs=vals.some(v=>v!==vals[0]);
+    html+=`<tr><td class="mini">· ${ty}</td>`+vals.map(v=>`<td class="${differs?'diff':''}">${v}</td>`).join('')+'</tr>';
+  }
+  t.innerHTML=html;
+}
+function cmpLegend(){
+  const el=$('#cmpLegend'); if(!el) return;
+  if($('#cmpMode').value==='diff'){
+    el.innerHTML='<span style="color:#f85149">■</span> only in A &nbsp; <span style="color:#2ea043">■</span> only in B &nbsp; <span style="color:'+TH.dimUnsel+'">■</span> matching geometry';
+  } else {
+    el.innerHTML=CMP.map(f=>`<span style="color:${f.color}">■</span> ${f.name}`).join(' &nbsp; ')||'Load files to see the legend.';
+  }
+}
+function cmpRefresh(fit){
+  $('#cmpABrow').style.display = $('#cmpMode').value==='diff'?'flex':'none';
+  if(!$('#cmpTol').value && CMP.length) $('#cmpTol').value=cmpAutoTol().toPrecision(3);
+  cmpRenderFiles(); cmpRenderTable();
+  computeDiff(); cmpLegend();
+  if(fit) cmpFit();
+  cmpDraw();
+}
+function cmpAddFile(name,text){
+  try{
+    const f=cmpParse(name,text);
+    CMP.push(f);
+    return true;
+  }catch(err){ console.error(err); cmpToast('Could not parse '+name); return false; }
+}
+
+/* tabs */
+function setWorkspace(which){
+  const cmp = which==='compare';
+  $('#viewEditor').style.display = cmp?'none':'grid';
+  $('#viewCompare').style.display = cmp?'grid':'none';
+  $('#tabEditor').classList.toggle('on',!cmp);
+  $('#tabCompare').classList.toggle('on',cmp);
+  if(cmp){ cmpResize(); if(!cmpView._init && CMP.length){ cmpView._init=true; cmpFit(); } cmpDraw(); }
+  else { resizeCanvas(); draw(); }
+}
+$('#tabEditor').addEventListener('click',()=>setWorkspace('editor'));
+$('#tabCompare').addEventListener('click',()=>setWorkspace('compare'));
+
+$('#cmpInput').addEventListener('change',async e=>{
+  const files=[...e.target.files];
+  let n=0;
+  for(const f of files){ if(cmpAddFile(f.name, await f.text())) n++; }
+  e.target.value='';
+  cmpRefresh(true);
+  cmpToast(n?('Loaded '+n+' file(s) for comparison.'):'Nothing loaded.');
+});
+$('#cmpAddCurrent').addEventListener('click',()=>{
+  if(!ENTITIES.length){ cmpToast('No drawing open in the Editor.'); return; }
+  const ents=ENTITIES.filter(e=>!e.del).map(e=>({type:e.type,layer:e.layer,cls:e.cls,geom:e.geom,raw:e.raw,del:false,_verts:e._verts,_closed:e._closed}));
+  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+  for(const e of ents){ if(!e.geom) continue;
+    minx=Math.min(minx,e.geom.min[0]);miny=Math.min(miny,e.geom.min[1]);
+    maxx=Math.max(maxx,e.geom.max[0]);maxy=Math.max(maxy,e.geom.max[1]); }
+  const bbox=isFinite(minx)?{min:[minx,miny],max:[maxx,maxy]}:null;
+  CMP.push({name:(baseName||'editor')+' (editor)', ents, bbox,
+            color:CMP_PALETTE[CMP.length%CMP_PALETTE.length], visible:true,
+            stats:cmpStats(ents,bbox), segs:null});
+  cmpRefresh(true);
+  cmpToast('Added the current editor drawing.');
+});
+$('#cmpClear').addEventListener('click',()=>{ CMP=[]; cmpDiff=null; cmpRefresh(true); });
+$('#cmpAlign').addEventListener('change',()=>{ cmpRefresh(true); });
+$('#cmpMode').addEventListener('change',()=>{ cmpRefresh(false); });
+$('#cmpA').addEventListener('change',()=>{ cmpRefresh(false); });
+$('#cmpB').addEventListener('change',()=>{ cmpRefresh(false); });
+$('#cmpRun').addEventListener('click',()=>{ cmpRefresh(false); cmpToast('Comparison recomputed.'); });
+$('#cmpFit').addEventListener('click',()=>{ cmpFit(); cmpDraw(); });
+$('#cmpExportCsv').addEventListener('click',()=>{
+  if(!CMP.length){ cmpToast('Nothing to export.'); return; }
+  const rows=[['Metric',...CMP.map(f=>f.name)]];
+  for(const [label,get] of CMP_ROWS) rows.push([label,...CMP.map(f=>get(f))]);
+  const types=[...new Set(CMP.flatMap(f=>Object.keys(f.stats.byType)))].sort();
+  for(const ty of types) rows.push([ty,...CMP.map(f=>f.stats.byType[ty]||0)]);
+  const csv=rows.map(r=>r.map(v=>{const s=String(v);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(',')).join('\r\n');
+  download('dxf-comparison.csv', csv, 'text/csv');
+  cmpToast('Comparison table exported.');
+});
+
+/* compare canvas: pan & zoom */
+if(cvCmp){
+  cvCmp.addEventListener('wheel',e=>{
+    e.preventDefault();
+    const r=cvCmp.getBoundingClientRect();
+    const mx=e.clientX-r.left, my=e.clientY-r.top;
+    const [wx,wy]=CS2W(mx,my);
+    cmpView.scale *= e.deltaY<0?1.1:1/1.1;
+    cmpView.ox=mx-wx*cmpView.scale; cmpView.oy=my+wy*cmpView.scale;
+    cmpDraw();
+  },{passive:false});
+  let cpan=false,clx=0,cly=0;
+  cvCmp.addEventListener('mousedown',e=>{ cpan=true; clx=e.clientX; cly=e.clientY; cvCmp.style.cursor='grabbing'; });
+  window.addEventListener('mousemove',e=>{ if(!cpan)return; cmpView.ox+=e.clientX-clx; cmpView.oy+=e.clientY-cly; clx=e.clientX; cly=e.clientY; cmpDraw(); });
+  window.addEventListener('mouseup',()=>{ if(cpan){cpan=false;cvCmp.style.cursor='crosshair';} });
+  window.addEventListener('resize',()=>{ if($('#viewCompare').style.display!=='none'){ cmpResize(); cmpDraw(); } });
+}
+cmpRefresh(false);
 </script>
 </body>
 </html>
