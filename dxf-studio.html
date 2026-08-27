@@ -316,9 +316,14 @@
     <div class="card">
       <h2>3 · View mode</h2>
       <select id="cmpMode" style="width:100%">
+        <option value="tiled">Side by side — one pane per file (close-up)</option>
         <option value="overlay">Overlay — every file in its own colour</option>
         <option value="diff">Difference — A vs B highlighting</option>
       </select>
+      <div id="cmpTileRow" style="margin-top:8px">
+        <label class="chk"><input type="checkbox" id="cmpTileDiff" checked /> Highlight what differs from the reference file (first visible)</label>
+        <label class="chk"><input type="checkbox" id="cmpTileRows" /> Stack panes vertically instead of side by side</label>
+      </div>
       <div id="cmpABrow" class="row" style="margin-top:8px;display:none">
         <span class="mini">A</span><select id="cmpA" style="flex:1"></select>
         <span class="mini">B</span><select id="cmpB" style="flex:1"></select>
@@ -4121,6 +4126,7 @@ function cmpAllBBox(){
 }
 function cmpFit(){
   cmpResize();
+  if($('#cmpMode').value==='tiled'){ cmpTile={zoom:1,panX:0,panY:0}; cmpDraw(); return; }
   const bb=cmpAllBBox(); if(!bb){ cmpDraw(); return; }
   const w=cvCmp.width/devicePixelRatio, h=cvCmp.height/devicePixelRatio;
   const dw=(bb.max[0]-bb.min[0])||1, dh=(bb.max[1]-bb.min[1])||1;
@@ -4141,11 +4147,116 @@ function strokeSegs(segs,color,width,alpha){
   }
   cctx.stroke(); cctx.restore();
 }
+/* ---- side-by-side tiled panes -------------------------------------------
+   Each visible file gets its own pane and is drawn centred on its own
+   geometry, so files placed at unrelated coordinates still appear as
+   close-ups. All panes share one scale and one pan/zoom, so shapes stay
+   directly comparable.                                                     */
+let cmpTile={zoom:1, panX:0, panY:0};
+let cmpTileCache=null;            // per-file {same,diff} vs the reference
+function cmpVisibleFiles(){ return CMP.filter(f=>f.visible && f.bbox); }
+function cmpPaneLayout(){
+  const files=cmpVisibleFiles();
+  const n=files.length;
+  const W=cvCmp.width/devicePixelRatio, H=cvCmp.height/devicePixelRatio;
+  if(!n) return {files:[],panes:[],W,H,scale:1};
+  const stack=$('#cmpTileRows') && $('#cmpTileRows').checked;
+  const cols=stack?1:n, rows=stack?n:1;
+  const pw=W/cols, ph=H/rows;
+  // one shared scale: the largest drawing must fit its pane
+  let scale=Infinity;
+  for(const f of files){
+    const w=(f.bbox.max[0]-f.bbox.min[0])||1, h=(f.bbox.max[1]-f.bbox.min[1])||1;
+    scale=Math.min(scale, (pw*0.86)/w, (ph*0.82)/h);
+  }
+  if(!isFinite(scale)||scale<=0) scale=1;
+  const panes=files.map((f,i)=>{
+    const cx=stack?pw/2:(i+0.5)*pw, cy=stack?(i+0.5)*ph:ph/2;
+    return {file:f, cx, cy, x0:stack?0:i*pw, y0:stack?i*ph:0, w:pw, h:ph,
+            fcx:(f.bbox.min[0]+f.bbox.max[0])/2, fcy:(f.bbox.min[1]+f.bbox.max[1])/2};
+  });
+  return {files,panes,W,H,scale};
+}
+function paneW2S(pane,scale,x,y){
+  return [pane.cx + (x-pane.fcx)*scale*cmpTile.zoom + cmpTile.panX,
+          pane.cy - (y-pane.fcy)*scale*cmpTile.zoom + cmpTile.panY];
+}
+/* which segments of each file have no counterpart in the reference file */
+function cmpTileClassify(){
+  const files=cmpVisibleFiles();
+  if(files.length<2){ cmpTileCache=null; return; }
+  const tol=cmpTolValue();
+  const ref=files[0];
+  const refSegs=cmpSegments(ref).map(sg=>[[sg[0][0]-((ref.bbox.min[0]+ref.bbox.max[0])/2),sg[0][1]-((ref.bbox.min[1]+ref.bbox.max[1])/2)],
+                                          [sg[1][0]-((ref.bbox.min[0]+ref.bbox.max[0])/2),sg[1][1]-((ref.bbox.min[1]+ref.bbox.max[1])/2)]]);
+  const cache=new Map();
+  for(const f of files){
+    if(f===ref){ cache.set(f,{same:cmpSegments(f),diff:[]}); continue; }
+    const cx=(f.bbox.min[0]+f.bbox.max[0])/2, cy=(f.bbox.min[1]+f.bbox.max[1])/2;
+    const local=cmpSegments(f).map(sg=>[[sg[0][0]-cx,sg[0][1]-cy],[sg[1][0]-cx,sg[1][1]-cy]]);
+    const r=classifySegments(local, refSegs, tol);
+    // map back to the file's own coordinates for drawing
+    const back=arr=>arr.map(sg=>[[sg[0][0]+cx,sg[0][1]+cy],[sg[1][0]+cx,sg[1][1]+cy]]);
+    cache.set(f,{same:back(r.same), diff:back(r.diff)});
+  }
+  cmpTileCache=cache;
+}
+function strokeSegsPane(segs,pane,scale,color,width,alpha){
+  if(!segs.length) return;
+  cctx.save(); cctx.strokeStyle=color; cctx.lineWidth=width; cctx.globalAlpha=alpha;
+  cctx.beginPath();
+  for(const sg of segs){
+    const a=paneW2S(pane,scale,sg[0][0],sg[0][1]), b=paneW2S(pane,scale,sg[1][0],sg[1][1]);
+    cctx.moveTo(a[0],a[1]); cctx.lineTo(b[0],b[1]);
+  }
+  cctx.stroke(); cctx.restore();
+}
+function cmpDrawTiled(){
+  const L=cmpPaneLayout();
+  if(!L.panes.length){ $('#cmpInfo').textContent='No visible files.'; return; }
+  const hl=$('#cmpTileDiff') && $('#cmpTileDiff').checked && L.files.length>1;
+  if(hl && !cmpTileCache) cmpTileClassify();
+  const ref=L.files[0];
+  L.panes.forEach((pane,i)=>{
+    cctx.save();
+    cctx.beginPath(); cctx.rect(pane.x0,pane.y0,pane.w,pane.h); cctx.clip();
+    const segs=cmpSegments(pane.file);
+    if(hl && cmpTileCache && cmpTileCache.has(pane.file) && pane.file!==ref){
+      const c=cmpTileCache.get(pane.file);
+      strokeSegsPane(c.same,pane,L.scale,TH.dimUnsel,1,0.75);
+      strokeSegsPane(c.diff,pane,L.scale,'#f85149',2,0.95);
+    } else {
+      strokeSegsPane(segs,pane,L.scale,pane.file.color,1.2,0.95);
+    }
+    cctx.restore();
+    // pane frame + label
+    cctx.save();
+    cctx.strokeStyle=TH.bboxUnsel; cctx.globalAlpha=0.5; cctx.lineWidth=1;
+    cctx.strokeRect(pane.x0+0.5,pane.y0+0.5,pane.w-1,pane.h-1);
+    cctx.globalAlpha=1;
+    cctx.fillStyle=pane.file.color;
+    cctx.fillRect(pane.x0+10,pane.y0+10,9,9);
+    cctx.fillStyle=TH.labelUnsel; cctx.font='12px sans-serif';
+    let label=pane.file.name;
+    if(hl && pane.file!==ref && cmpTileCache && cmpTileCache.has(pane.file)){
+      const d=cmpTileCache.get(pane.file).diff.length;
+      label += d? '  ('+d+' differing segs)' : '  (matches reference)';
+    } else if(hl && pane.file===ref) label += '  (reference)';
+    cctx.fillText(label, pane.x0+24, pane.y0+19);
+    const st=pane.file.stats;
+    cctx.fillStyle=TH.labelUnsel; cctx.font='11px sans-serif';
+    cctx.fillText(`${st.total} ents · ${fmtNum(st.width)} × ${fmtNum(st.height)}`, pane.x0+10, pane.y0+34);
+    cctx.restore();
+  });
+  $('#cmpInfo').textContent=`${L.panes.length} pane(s) · shared scale ${(L.scale*cmpTile.zoom).toPrecision(3)} px/unit`
+    + (hl?` · reference: ${ref.name}`:'');
+}
 function cmpDraw(){
   if(!cctx) return;
   cctx.clearRect(0,0,cvCmp.width,cvCmp.height);
   if(!CMP.length){ $('#cmpInfo').textContent='No files loaded.'; return; }
   const mode=$('#cmpMode').value;
+  if(mode==='tiled'){ cmpDrawTiled(); return; }
   if(mode==='diff' && cmpDiff){
     strokeSegs(cmpDiff.common, TH.dimUnsel, 1, 0.85);
     strokeSegs(cmpDiff.bOnly, '#2ea043', 2, 0.95);
@@ -4223,14 +4334,21 @@ function cmpRenderTable(){
 }
 function cmpLegend(){
   const el=$('#cmpLegend'); if(!el) return;
-  if($('#cmpMode').value==='diff'){
+  if($('#cmpMode').value==='tiled'){
+    el.innerHTML = ($('#cmpTileDiff')&&$('#cmpTileDiff').checked&&CMP.filter(f=>f.visible).length>1)
+      ? '<span style="color:#f85149">■</span> differs from the reference &nbsp; <span style="color:'+TH.dimUnsel+'">■</span> same as reference — panes share one scale, so sizes are directly comparable.'
+      : 'Each file is drawn centred in its own pane at a shared scale. Drag/scroll pans and zooms every pane together.';
+  } else if($('#cmpMode').value==='diff'){
     el.innerHTML='<span style="color:#f85149">■</span> only in A &nbsp; <span style="color:#2ea043">■</span> only in B &nbsp; <span style="color:'+TH.dimUnsel+'">■</span> matching geometry';
   } else {
     el.innerHTML=CMP.map(f=>`<span style="color:${f.color}">■</span> ${f.name}`).join(' &nbsp; ')||'Load files to see the legend.';
   }
 }
 function cmpRefresh(fit){
-  $('#cmpABrow').style.display = $('#cmpMode').value==='diff'?'flex':'none';
+  const mode=$('#cmpMode').value;
+  $('#cmpABrow').style.display = mode==='diff'?'flex':'none';
+  $('#cmpTileRow').style.display = mode==='tiled'?'block':'none';
+  cmpTileCache=null;
   if(!$('#cmpTol').value && CMP.length) $('#cmpTol').value=cmpAutoTol().toPrecision(3);
   cmpRenderFiles(); cmpRenderTable();
   computeDiff(); cmpLegend();
@@ -4285,6 +4403,8 @@ $('#cmpAlign').addEventListener('change',()=>{ cmpRefresh(true); });
 $('#cmpMode').addEventListener('change',()=>{ cmpRefresh(false); });
 $('#cmpA').addEventListener('change',()=>{ cmpRefresh(false); });
 $('#cmpB').addEventListener('change',()=>{ cmpRefresh(false); });
+$('#cmpTileDiff').addEventListener('change',()=>{ cmpTileCache=null; cmpLegend(); cmpDraw(); });
+$('#cmpTileRows').addEventListener('change',()=>{ cmpDraw(); });
 $('#cmpRun').addEventListener('click',()=>{ cmpRefresh(false); cmpToast('Comparison recomputed.'); });
 $('#cmpFit').addEventListener('click',()=>{ cmpFit(); cmpDraw(); });
 $('#cmpExportCsv').addEventListener('click',()=>{
@@ -4304,14 +4424,33 @@ if(cvCmp){
     e.preventDefault();
     const r=cvCmp.getBoundingClientRect();
     const mx=e.clientX-r.left, my=e.clientY-r.top;
+    const f=e.deltaY<0?1.1:1/1.1;
+    if($('#cmpMode').value==='tiled'){
+      // keep the point under the cursor fixed within its own pane
+      const L=cmpPaneLayout();
+      const pane=L.panes.find(pn=>mx>=pn.x0&&mx<pn.x0+pn.w&&my>=pn.y0&&my<pn.y0+pn.h)||L.panes[0];
+      if(pane){
+        cmpTile.panX += (mx-pane.cx-cmpTile.panX)*(1-f);
+        cmpTile.panY += (my-pane.cy-cmpTile.panY)*(1-f);
+      }
+      cmpTile.zoom*=f;
+      cmpDraw();
+      return;
+    }
     const [wx,wy]=CS2W(mx,my);
-    cmpView.scale *= e.deltaY<0?1.1:1/1.1;
+    cmpView.scale *= f;
     cmpView.ox=mx-wx*cmpView.scale; cmpView.oy=my+wy*cmpView.scale;
     cmpDraw();
   },{passive:false});
   let cpan=false,clx=0,cly=0;
   cvCmp.addEventListener('mousedown',e=>{ cpan=true; clx=e.clientX; cly=e.clientY; cvCmp.style.cursor='grabbing'; });
-  window.addEventListener('mousemove',e=>{ if(!cpan)return; cmpView.ox+=e.clientX-clx; cmpView.oy+=e.clientY-cly; clx=e.clientX; cly=e.clientY; cmpDraw(); });
+  window.addEventListener('mousemove',e=>{
+    if(!cpan)return;
+    const dx=e.clientX-clx, dy=e.clientY-cly;
+    if($('#cmpMode').value==='tiled'){ cmpTile.panX+=dx; cmpTile.panY+=dy; }
+    else { cmpView.ox+=dx; cmpView.oy+=dy; }
+    clx=e.clientX; cly=e.clientY; cmpDraw();
+  });
   window.addEventListener('mouseup',()=>{ if(cpan){cpan=false;cvCmp.style.cursor='crosshair';} });
   window.addEventListener('resize',()=>{ if($('#viewCompare').style.display!=='none'){ cmpResize(); cmpDraw(); } });
 }

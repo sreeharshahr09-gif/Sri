@@ -132,6 +132,13 @@ A dedicated **⇄ Compare** workspace, switched from the header tabs, for
 checking one revision against another.
 - Load any number of DXFs at once (or **add the drawing open in the Editor**).
   Each file gets its own colour, with show/hide and remove per file.
+- **Side by side** *(default)* — the canvas is split into one pane per file,
+  each drawing centred and zoomed to fill its own pane, so files placed at
+  unrelated absolute coordinates are still shown as comparable close-ups.
+  All panes share **one scale**, so a part that is genuinely bigger looks
+  bigger; pan and zoom drive every pane together. Optionally highlight, in
+  each pane, what **differs from the reference** (the first visible file),
+  and stack panes vertically instead of horizontally.
 - **Overlay** mode draws every file in its own colour on one canvas.
 - **Difference** mode picks two files (A and B) and classifies geometry:
   **red = only in A**, **green = only in B**, grey = matching. Matching is
