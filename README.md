@@ -117,8 +117,9 @@ modern browser and drop a DXF in.
   tables and block records); exports with no hatch stay R12. Tie-bar
   hatches are always included in the export, regardless of the
   geometry-only / closed-only filters.
-- Regions bounded by separate lines: run **Join & close chains** (or draw
-  the outline with the Polyline tool) first, then hatch.
+- If a click finds no region, the boundary has a real gap: use **⟶ Extend**
+  on the end that stops short (or **Bridge**/draw the missing edge), then
+  fill again.
 
 ### Export
 - Export selected drawings into one DXF, or each into its own file.
