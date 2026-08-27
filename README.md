@@ -58,6 +58,12 @@ modern browser and drop a DXF in.
   geometry (hover shows the reach and the exact distance). **Extend all free
   ends** fixes every such shortfall in the selection at once, limited by a
   **max gap** so nothing shoots across the drawing. Undoable.
+- **⋈ Weld** (`W`) — when a line is *broken in the middle* and the two halves
+  are slightly offset, the ends are parallel so Extend can never reach: weld
+  pulls both ends onto their midpoint instead, closing the break exactly.
+  Hover shows the pair and the gap distance; **Weld all free ends** fixes
+  every such break in the selection, capped by **max gap**. If nothing is in
+  range the tool reports the nearest actual gap so you know what to set.
 - **Delete open-ended** — removes geometry not part of any closed loop.
 - **⚡ Prepare for stiffness tool** — one click: strips
   dimensions/text/construction/hatches/frames, joins & closes chains, then

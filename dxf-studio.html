@@ -171,8 +171,12 @@
         <input id="extGap" type="number" step="any" style="width:110px" title="Longest gap an end may be extended across. Blank = 2% of the drawing size." />
         <button class="secondary" id="extendAllBtn" title="Extend every free end in the selected drawings that reaches a line within the max gap">Extend all free ends</button>
       </div>
+      <div class="row" style="margin-top:6px">
+        <button class="secondary" id="weldBtn" title="Click where two free ends should meet (W)">⋈ Weld two ends together</button>
+        <button class="secondary" id="weldAllBtn" title="Weld every pair of free ends closer than the max gap">Weld all free ends</button>
+      </div>
       <div class="hint" style="margin-top:8px">
-        <b>Join &amp; close</b> welds touching LINE/ARC segments (within tolerance) into single polylines and marks loops as closed — gaps ≤ tolerance are healed. <b>Extend</b> pushes a free end along its own direction until it meets the nearest crossing line — the usual fix when an end stops just short and a tie-bar region will not close. <b>Bridge gap</b> joins two open endpoints (red ✚) with a straight line. <b>Delete open-ended</b> removes geometry that still isn't part of a closed loop. All are undoable (<span class="kbd">Ctrl+Z</span>).
+        <b>Join &amp; close</b> welds touching LINE/ARC segments (within tolerance) into single polylines and marks loops as closed — gaps ≤ tolerance are healed. <b>Extend</b> pushes a free end along its own direction until it meets the nearest crossing line — the usual fix when an end stops just short and a tie-bar region will not close. <b>Weld</b> pulls two free ends that face each other onto one point — the fix when a line is broken in the middle and the two halves are slightly offset, where Extend cannot help (parallel ends never meet). <b>Bridge gap</b> joins two open endpoints (red ✚) with a straight line. <b>Delete open-ended</b> removes geometry that still isn't part of a closed loop. All are undoable (<span class="kbd">Ctrl+Z</span>).
       </div>
       <div class="split" style="margin-top:10px">
         <button class="green" id="prepBtn">⚡ Prepare for stiffness tool</button>
@@ -250,6 +254,7 @@
       <button class="secondary tgl" id="toolPoly" title="Draw a polyline: click each vertex, Enter/double-click to finish, C to close, Esc to cancel (P)">⭗ Polyline</button>
       <button class="secondary tgl" id="toolTrim" title="Trim: click the part of a line to cut away at its intersections with other geometry (X)">✂ Trim</button>
       <button class="secondary tgl" id="toolExtend" title="Extend: click a free line end that stops short of a crossing line — it is extended until it meets it (E)">⟶ Extend</button>
+      <button class="secondary tgl" id="toolWeld" title="Weld: click where two free ends should meet — both are pulled to a common point, closing a line broken in the middle (W)">⋈ Weld</button>
       <button class="secondary tgl" id="toolHatch" title="Colour fill: click inside any bounded region to mark it as a tie-bar. Click a fill to remove it. (H)">▩ Fill</button>
       <span style="width:8px"></span>
       <button class="secondary" id="undoBtn" title="Undo (Ctrl+Z)">↶ Undo</button>
@@ -261,7 +266,7 @@
       <span id="viewInfo">No file loaded.</span>
     </div>
     <div class="toolbar" style="border-top:none;padding-top:0">
-      <span class="mini">Drag = box-select · <span class="kbd">Shift</span> add · <span class="kbd">Alt</span> remove · Right-drag/<span class="kbd">Space</span> = pan · Scroll = zoom · <span class="kbd">Del</span> delete · <span class="kbd">Ctrl+Z</span>/<span class="kbd">Ctrl+Y</span> undo/redo · <span class="kbd">R</span> rotate · <span class="kbd">B</span> bridge · <span class="kbd">L</span> line · <span class="kbd">P</span> polyline · <span class="kbd">X</span> trim · <span class="kbd">E</span> extend · <span class="kbd">H</span> hatch · <span class="kbd">T</span> theme · <span class="kbd">F</span> fit · <span class="kbd">Esc</span> cancel · ▫ = snap</span>
+      <span class="mini">Drag = box-select · <span class="kbd">Shift</span> add · <span class="kbd">Alt</span> remove · Right-drag/<span class="kbd">Space</span> = pan · Scroll = zoom · <span class="kbd">Del</span> delete · <span class="kbd">Ctrl+Z</span>/<span class="kbd">Ctrl+Y</span> undo/redo · <span class="kbd">R</span> rotate · <span class="kbd">B</span> bridge · <span class="kbd">L</span> line · <span class="kbd">P</span> polyline · <span class="kbd">X</span> trim · <span class="kbd">E</span> extend · <span class="kbd">W</span> weld · <span class="kbd">H</span> hatch · <span class="kbd">T</span> theme · <span class="kbd">F</span> fit · <span class="kbd">Esc</span> cancel · ▫ = snap</span>
     </div>
     <canvas id="cv"></canvas>
     <div class="toast" id="toast"></div>
@@ -1134,9 +1139,9 @@ function refreshAfterEdit(){
     d.bbox=bboxOf(d.entityIdx);
   }
   bridgeHover=null; // OPEN_ENDS is rebuilt below; stale refs would mislead
-  trimHover=-1; extendHover=null;
+  trimHover=-1; extendHover=null; weldHover=null;
   analyzeAll();
-  if(tool==='line'||tool==='poly'||tool==='trim'||tool==='extend') buildSnapIndex();
+  if(tool==='line'||tool==='poly'||tool==='trim'||tool==='extend'||tool==='weld') buildSnapIndex();
   renderDrawings(); renderClasses(); renderLayers();
   draw();
 }
@@ -1913,6 +1918,22 @@ function drawSketch(){
     ctx.beginPath(); ctx.arc(sx,sy,7,0,Math.PI*2); ctx.stroke();
     ctx.restore();
   }
+  // Weld tool: show the two ends that will be pulled together
+  if(tool==='weld' && weldHover){
+    const [ax,ay]=W2S(weldHover.a.p[0],weldHover.a.p[1]);
+    const [bx,by]=W2S(weldHover.b.p[0],weldHover.b.p[1]);
+    const mx=(ax+bx)/2, my=(ay+by)/2;
+    ctx.save();
+    ctx.strokeStyle='#2ea043'; ctx.lineWidth=1.8; ctx.setLineDash([5,4]);
+    ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
+    ctx.setLineDash([]);
+    for(const [x,y] of [[ax,ay],[bx,by]]){ ctx.beginPath(); ctx.arc(x,y,6,0,Math.PI*2); ctx.stroke(); }
+    ctx.fillStyle='#2ea043';
+    ctx.beginPath(); ctx.arc(mx,my,3.5,0,Math.PI*2); ctx.fill();
+    ctx.font='11px sans-serif';
+    ctx.fillText(weldHover.d.toFixed(4), mx+8, my-8);
+    ctx.restore();
+  }
 
 }
 
@@ -1959,6 +1980,7 @@ window.addEventListener('keydown',e=>{
   if(e.key.toLowerCase()==='p'){ setTool('poly'); toast('Polyline: click vertices · Enter finish · C close · Esc cancel.'); }
   if(e.key.toLowerCase()==='x'){ setTool('trim'); toast('Trim: click the part of a LINE to cut away.'); }
   if(e.key.toLowerCase()==='e'){ setTool('extend'); toast('Extend: click a free line end to stretch it to the nearest line.'); }
+  if(e.key.toLowerCase()==='w'){ setTool('weld'); toast('Weld: click where two free ends should meet — both are pulled together.'); }
   if(e.key.toLowerCase()==='h'){ setTool('hatch'); toast('Hatch: click inside a closed region to mark it as a tie bar.'); }
   if(e.key.toLowerCase()==='t'){ toggleTheme(); }
   if(e.key.toLowerCase()==='f'){ fitView(); draw(); }
@@ -1979,6 +2001,7 @@ let snapPt=null;          // current snap target [x,y] in world coords, or null
 let snapIndex=[];         // candidate world points for snapping
 let trimHover=-1;         // entity index highlighted for trimming
 let extendHover=null;     // free end under the cursor for the Extend tool
+let weldHover=null;       // candidate pair of free ends for the Weld tool
 
 function findOpenEndNear(px,py,maxDist=12){
   let best=null, bd=maxDist;
@@ -2615,6 +2638,104 @@ function autoExtendFreeEnds(){
   toast('Extended '+edits.length+' free end'+(edits.length===1?'':'s')+' (largest gap '+worst.toFixed(4)+'). Ctrl+Z to undo.');
 }
 
+/* ============================= WELD =====================================
+   Two free ends that face each other but are slightly offset (a line broken
+   in the middle) cannot be fixed by Extend: the rays are parallel and never
+   meet. Weld pulls both ends onto a common point, closing the break exactly.
+   Ends of the same entity may also be welded, which closes that loop.      */
+function weldGapLimit(mode){
+  const v=parseFloat($('#extGap') ? $('#extGap').value : '');
+  if(isFinite(v) && v>0) return v;
+  const bb=allBBox();
+  const diag=bb?Math.hypot(bb.max[0]-bb.min[0],bb.max[1]-bb.min[1]):1;
+  return Math.max(diag*(mode==='auto'?0.02:0.10), 1e-9);
+}
+/* candidate pairs of free ends, closest first */
+function weldCandidatePairs(maxGap, wanted){
+  const ends=extendableEnds().filter(it=>!wanted || wanted.has(it.idx));
+  const pairs=[];
+  for(let a=0;a<ends.length;a++) for(let b=a+1;b<ends.length;b++){
+    const d=Math.hypot(ends[a].p[0]-ends[b].p[0], ends[a].p[1]-ends[b].p[1]);
+    if(d<=maxGap && d>1e-12) pairs.push({a:ends[a], b:ends[b], d});
+  }
+  pairs.sort((x,y)=>x.d-y.d);
+  return pairs;
+}
+/* move both ends of a pair to their midpoint; returns the two edits */
+function weldPair(pair){
+  const mid=[(pair.a.p[0]+pair.b.p[0])/2, (pair.a.p[1]+pair.b.p[1])/2];
+  const edits=[];
+  for(const it of [pair.a, pair.b]){
+    const e=ENTITIES[it.idx]; if(!e) continue;
+    edits.push({idx:it.idx, recIdx:it.recIdx, xCode:it.xCode, yCode:it.yCode, nth:it.nth,
+                from:[it.p[0],it.p[1]], to:[mid[0],mid[1]]});
+    setRecordCoord(e.raw[it.recIdx], it.xCode, it.yCode, it.nth, mid[0], mid[1]);
+    recomputeGeom(it.idx);
+  }
+  return edits;
+}
+function findWeldPairNear(px,py){
+  const maxGap=weldGapLimit('click');
+  const pairs=weldCandidatePairs(maxGap, null);
+  if(!pairs.length) return null;
+  // the pair whose ends are nearest the cursor
+  let best=null, bd=Infinity;
+  for(const pr of pairs){
+    for(const it of [pr.a, pr.b]){
+      const [sx,sy]=W2S(it.p[0],it.p[1]);
+      const d=Math.hypot(sx-px, sy-py);
+      if(d<bd){ bd=d; best=pr; }
+    }
+  }
+  return bd<=20 ? best : null;
+}
+function weldAt(px,py){
+  const pair=findWeldPairNear(px,py);
+  if(!pair){
+    const any=weldCandidatePairs(Infinity,null);
+    toast(any.length
+      ? 'No weldable pair near the cursor within '+weldGapLimit('click').toFixed(4)+'. Nearest pair anywhere is '+any[0].d.toFixed(4)+' apart — raise “max gap”.'
+      : 'No free ends to weld — every end already meets something.');
+    return;
+  }
+  const edits=weldPair(pair);
+  if(!edits.length){ toast('Could not weld those ends.'); return; }
+  pushUndo({type:'endpoint', edits});
+  refreshAfterEdit(); renderDrawings(); buildSnapIndex();
+  toast('Welded 2 ends together across '+pair.d.toFixed(4)+' units. Ctrl+Z to undo.');
+}
+function weldAllFreeEnds(){
+  if(!DRAWINGS.length){ toast('Load a DXF first.'); return; }
+  const maxGap=weldGapLimit('auto');
+  const sel=DRAWINGS.filter(d=>d.selected);
+  const targets=sel.length?sel:DRAWINGS;
+  const wanted=new Set();
+  for(const d of targets) for(const i of d.entityIdx) wanted.add(i);
+  const pairs=weldCandidatePairs(maxGap, wanted);
+  if(!pairs.length){
+    const any=weldCandidatePairs(Infinity, wanted);
+    toast(any.length
+      ? 'No free ends within '+maxGap.toFixed(4)+'. Nearest pair is '+any[0].d.toFixed(4)+' apart — set “max gap” to at least that.'
+      : 'No free ends to weld in the selection.');
+    return;
+  }
+  // greedy: closest pairs first, each end used once
+  const usedKey=e=>e.idx+':'+e.recIdx+':'+e.xCode+':'+e.nth;
+  const used=new Set(), edits=[];
+  let n=0, worst=0;
+  for(const pr of pairs){
+    const ka=usedKey(pr.a), kb=usedKey(pr.b);
+    if(used.has(ka)||used.has(kb)) continue;
+    used.add(ka); used.add(kb);
+    edits.push(...weldPair(pr));
+    n++; worst=Math.max(worst,pr.d);
+  }
+  if(!edits.length){ toast('Nothing to weld.'); return; }
+  pushUndo({type:'endpoint', edits});
+  refreshAfterEdit(); renderDrawings(); buildSnapIndex();
+  toast('Welded '+n+' pair'+(n===1?'':'s')+' of free ends (largest gap '+worst.toFixed(4)+'). Ctrl+Z to undo.');
+}
+
 /* ============================ TRIM ====================================== */
 /* Trim a LINE: remove the picked sub-segment bounded by the line's nearest
    intersections with other visible geometry. Cutting edges are taken from
@@ -2780,6 +2901,8 @@ cv.addEventListener('mousedown',e=>{
       trimAt(px,py);
     } else if(tool==='extend'){
       extendAt(px,py);
+    } else if(tool==='weld'){
+      weldAt(px,py);
     } else if(tool==='hatch'){
       hatchRegionAt(px,py);
     } else if(tool==='move'){
@@ -2831,6 +2954,10 @@ window.addEventListener('mousemove',e=>{
   } else if(tool==='extend' && DRAWINGS.length){
     const [px,py]=canvasPt(e);
     extendHover=findFreeEndNear(px,py);
+    draw();
+  } else if(tool==='weld' && DRAWINGS.length){
+    const [px,py]=canvasPt(e);
+    weldHover=findWeldPairNear(px,py);
     draw();
   }
 });
@@ -3666,12 +3793,14 @@ function setTool(t){
   $('#toolPoly').classList.toggle('on',t==='poly');
   $('#toolTrim').classList.toggle('on',t==='trim');
   $('#toolExtend').classList.toggle('on',t==='extend');
+  $('#toolWeld').classList.toggle('on',t==='weld');
   $('#toolHatch').classList.toggle('on',t==='hatch');
   if(t!=='bridge'){ bridgeFirst=null; bridgeHover=null; }
   if(t!=='extend') extendHover=null;
+  if(t!=='weld') weldHover=null;
   if(t!=='line' && t!=='poly'){ drawPts=[]; }         // discard in-progress sketch
-  if(t==='line'||t==='poly'||t==='trim'||t==='extend') buildSnapIndex();
-  if(t!=='line'&&t!=='poly'&&t!=='bridge'&&t!=='trim'&&t!=='extend') hoverScreen=null;
+  if(t==='line'||t==='poly'||t==='trim'||t==='extend'||t==='weld') buildSnapIndex();
+  if(t!=='line'&&t!=='poly'&&t!=='bridge'&&t!=='trim'&&t!=='extend'&&t!=='weld') hoverScreen=null;
   snapPt=null;
   cv.style.cursor = t==='move'?'move':'crosshair';
   draw();
@@ -3684,8 +3813,11 @@ $('#toolLine').addEventListener('click',()=>{ setTool('line'); toast('Line tool:
 $('#toolPoly').addEventListener('click',()=>{ setTool('poly'); toast('Polyline tool: click each vertex · Enter/double-click = finish · C = close · Esc = cancel.'); });
 $('#toolTrim').addEventListener('click',()=>{ setTool('trim'); toast('Trim tool: click the part of a LINE you want to cut away (removed between its intersections with other geometry).'); });
 $('#toolExtend').addEventListener('click',()=>{ setTool('extend'); toast('Extend tool: click a free line end — it is extended until it meets the nearest line.'); });
+$('#toolWeld').addEventListener('click',()=>{ setTool('weld'); toast('Weld tool: click where two free ends should meet — both are pulled to a common point.'); });
 $('#extendBtn').addEventListener('click',()=>{ setTool('extend'); toast('Extend tool active: click a free end (hover shows how far it will reach).'); });
 $('#extendAllBtn').addEventListener('click',autoExtendFreeEnds);
+$('#weldBtn').addEventListener('click',()=>{ setTool('weld'); toast('Weld tool active: click where two free ends should meet.'); });
+$('#weldAllBtn').addEventListener('click',weldAllFreeEnds);
 $('#toolHatch').addEventListener('click',()=>{ setTool('hatch'); toast('Fill tool: click inside any bounded region to mark it as a tie bar. Click a fill to remove it.'); });
 $('#hatchTool2').addEventListener('click',()=>{ setTool('hatch'); toast('Fill tool active: click any bounded region, including one formed by separate curves.'); });
 $('#hatchSel').addEventListener('click',hatchSelectedRegions);
