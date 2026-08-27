@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>DXF Studio — Group, Clean, Close & Export</title>
+<title>DXF Studio — Group, Colour Fill, Clean & Export</title>
 <style>
   :root{
     --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --line:#2a323d;
@@ -43,6 +43,7 @@
   button:disabled{opacity:.45;cursor:not-allowed}
   button.tgl.on{outline:2px solid var(--accent)}
   select,input[type=number],input[type=text]{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font-size:13px}
+  input[type=color]{width:42px;height:30px;padding:2px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;cursor:pointer}
   .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .drawings{display:flex;flex-direction:column;gap:8px;max-height:34vh;overflow:auto}
   .dw{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:5px}
@@ -82,7 +83,7 @@
 <body>
 <header>
   <h1>DXF Studio</h1>
-  <span class="sub">Group · classify · edit · verify closed profiles · export clean DXF for downstream tools (e.g. stiffness analysis). Runs 100% in your browser — no upload.</span>
+  <span class="sub">Group · classify · edit · colour-fill tie bars · verify closed profiles · export clean DXF for downstream tools. Runs 100% in your browser — no upload.</span>
   <span style="flex:1"></span>
   <button class="secondary" id="themeToggle" title="Toggle dark / light theme (T)" style="padding:6px 10px">🌙 Dark</button>
 </header>
@@ -162,8 +163,16 @@
       <div class="row" style="margin-top:6px">
         <button class="secondary" id="bridgeBtn">✏ Bridge gap — draw closing line</button>
       </div>
+      <div class="row" style="margin-top:6px">
+        <button class="secondary" id="extendBtn" title="Click free ends to extend them (E)">⟶ Extend end to nearest line</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <span class="mini">Max gap</span>
+        <input id="extGap" type="number" step="any" style="width:110px" title="Longest gap an end may be extended across. Blank = 2% of the drawing size." />
+        <button class="secondary" id="extendAllBtn" title="Extend every free end in the selected drawings that reaches a line within the max gap">Extend all free ends</button>
+      </div>
       <div class="hint" style="margin-top:8px">
-        <b>Join &amp; close</b> welds touching LINE/ARC segments (within tolerance) into single polylines and marks loops as closed — gaps ≤ tolerance are healed. <b>Bridge gap</b> lets you click two open endpoints (red ✚) and draws a straight line between them to close the profile. <b>Delete open-ended</b> removes geometry that still isn't part of a closed loop. All are undoable (<span class="kbd">Ctrl+Z</span>).
+        <b>Join &amp; close</b> welds touching LINE/ARC segments (within tolerance) into single polylines and marks loops as closed — gaps ≤ tolerance are healed. <b>Extend</b> pushes a free end along its own direction until it meets the nearest crossing line — the usual fix when an end stops just short and a tie-bar region will not close. <b>Bridge gap</b> joins two open endpoints (red ✚) with a straight line. <b>Delete open-ended</b> removes geometry that still isn't part of a closed loop. All are undoable (<span class="kbd">Ctrl+Z</span>).
       </div>
       <div class="split" style="margin-top:10px">
         <button class="green" id="prepBtn">⚡ Prepare for stiffness tool</button>
@@ -172,23 +181,25 @@
     </div>
 
     <div class="card">
-      <h2>6 · Tie-bar hatch <span class="badge" id="hatchCount">0</span></h2>
-      <div class="hint" style="margin-bottom:8px">Mark an enclosed region as a tie bar. It is exported as a <b>real DXF HATCH</b> on layer <b>TIEBAR</b> so tools like TLPT recognise it automatically. Including a hatch upgrades the clean export to DXF 2000 (AC1015).</div>
+      <h2>6 · Tie-bar colour fill <span class="badge" id="hatchCount">0</span></h2>
+      <div class="hint" style="margin-bottom:8px">Click any bounded region to colour-fill it as a tie bar. The boundary may be one closed loop or several touching/intersecting curves. The fill is exported as a <b>real DXF HATCH</b> on layer <b>TIEBAR</b>.</div>
       <div class="row">
         <span class="mini">Pattern</span>
         <select id="hatchPattern">
           <option value="SOLID">Solid fill</option>
           <option value="ANSI31">ANSI31 (diagonal)</option>
         </select>
+        <span class="mini">Colour</span>
+        <input id="hatchColor" type="color" value="#ff7a00" title="Colour used for new tie-bar fills" />
       </div>
       <div class="row" style="margin-top:8px">
-        <button id="hatchTool2" title="Click inside closed regions to hatch (H)">▩ Hatch tool</button>
-        <button class="secondary" id="hatchSel" title="Hatch every closed loop in the selected drawings">Hatch selected regions</button>
+        <button id="hatchTool2" title="Click inside any bounded region to fill it (H)">▩ Fill region</button>
+        <button class="secondary" id="hatchSel" title="Fill every bounded face in the selected drawings">Fill selected regions</button>
       </div>
       <div class="row" style="margin-top:6px">
         <button class="secondary red" id="hatchClear">Remove all hatches</button>
       </div>
-      <div class="hint" style="margin-top:8px">Regions bounded by several entities (block edges + groove boundaries) are detected automatically — just click inside. The boundary only needs to <i>close within the snap tolerance</i>; if a click finds nothing, raise the tolerance (card 5) or bridge/draw the missing edge.</div>
+      <div class="hint" style="margin-top:8px">A second click on an existing fill removes it. Intersections and coincident endpoints are detected automatically, so separate boundary curves do not need to be joined first.</div>
     </div>
 
     <div class="card">
@@ -238,7 +249,8 @@
       <button class="secondary tgl" id="toolLine" title="Draw a straight line: click start, click end (L). Points snap to nearby vertices.">╱ Line</button>
       <button class="secondary tgl" id="toolPoly" title="Draw a polyline: click each vertex, Enter/double-click to finish, C to close, Esc to cancel (P)">⭗ Polyline</button>
       <button class="secondary tgl" id="toolTrim" title="Trim: click the part of a line to cut away at its intersections with other geometry (X)">✂ Trim</button>
-      <button class="secondary tgl" id="toolHatch" title="Hatch: click inside any enclosed region (even one bounded by several entities) to mark it as a tie bar — real DXF HATCH on layer TIEBAR. Click a hatch to remove it. (H)">▩ Hatch</button>
+      <button class="secondary tgl" id="toolExtend" title="Extend: click a free line end that stops short of a crossing line — it is extended until it meets it (E)">⟶ Extend</button>
+      <button class="secondary tgl" id="toolHatch" title="Colour fill: click inside any bounded region to mark it as a tie-bar. Click a fill to remove it. (H)">▩ Fill</button>
       <span style="width:8px"></span>
       <button class="secondary" id="undoBtn" title="Undo (Ctrl+Z)">↶ Undo</button>
       <button class="secondary" id="redoBtn" title="Redo (Ctrl+Y or Ctrl+Shift+Z)">↷ Redo</button>
@@ -249,7 +261,7 @@
       <span id="viewInfo">No file loaded.</span>
     </div>
     <div class="toolbar" style="border-top:none;padding-top:0">
-      <span class="mini">Drag = box-select · <span class="kbd">Shift</span> add · <span class="kbd">Alt</span> remove · Right-drag/<span class="kbd">Space</span> = pan · Scroll = zoom · <span class="kbd">Del</span> delete · <span class="kbd">Ctrl+Z</span>/<span class="kbd">Ctrl+Y</span> undo/redo · <span class="kbd">R</span> rotate · <span class="kbd">B</span> bridge · <span class="kbd">L</span> line · <span class="kbd">P</span> polyline · <span class="kbd">X</span> trim · <span class="kbd">H</span> hatch · <span class="kbd">T</span> theme · <span class="kbd">F</span> fit · <span class="kbd">Esc</span> cancel · ▫ = snap</span>
+      <span class="mini">Drag = box-select · <span class="kbd">Shift</span> add · <span class="kbd">Alt</span> remove · Right-drag/<span class="kbd">Space</span> = pan · Scroll = zoom · <span class="kbd">Del</span> delete · <span class="kbd">Ctrl+Z</span>/<span class="kbd">Ctrl+Y</span> undo/redo · <span class="kbd">R</span> rotate · <span class="kbd">B</span> bridge · <span class="kbd">L</span> line · <span class="kbd">P</span> polyline · <span class="kbd">X</span> trim · <span class="kbd">E</span> extend · <span class="kbd">H</span> hatch · <span class="kbd">T</span> theme · <span class="kbd">F</span> fit · <span class="kbd">Esc</span> cancel · ▫ = snap</span>
     </div>
     <canvas id="cv"></canvas>
     <div class="toast" id="toast"></div>
@@ -1005,7 +1017,6 @@ function analyzeAll(){
   const tol=parseFloat($('#tol').value);
   const t=isFinite(tol)&&tol>0?tol:autoTol();
   CURTOL=t;               // keep coincidence tests (entityEnds, export) at this scale
-  if(typeof invalidateRegions==='function') invalidateRegions();  // geometry/visibility may have changed
   OPEN_ENDS=[];
   let loops=0, open=0, ends=0;
   for(const d of DRAWINGS){
@@ -1123,9 +1134,9 @@ function refreshAfterEdit(){
     d.bbox=bboxOf(d.entityIdx);
   }
   bridgeHover=null; // OPEN_ENDS is rebuilt below; stale refs would mislead
-  trimHover=-1;
+  trimHover=-1; extendHover=null;
   analyzeAll();
-  if(tool==='line'||tool==='poly'||tool==='trim') buildSnapIndex();
+  if(tool==='line'||tool==='poly'||tool==='trim'||tool==='extend') buildSnapIndex();
   renderDrawings(); renderClasses(); renderLayers();
   draw();
 }
@@ -1226,22 +1237,31 @@ function rotateRecord(rec, angleDeg, cx, cy){
 function recomputeGeom(i){
   const e=ENTITIES[i];
   if(e.type==='HATCH'){
-    // boundary polygon = the 10/20 pairs between the 93 (vertex count) and 97
-    const rec=e.raw[0]; const pts=[]; let inPath=false;
+    // Polyline boundary paths: each 93 vertex count is followed by 10/20 pairs.
+    const rec=e.raw[0]; const loops=[];
     for(let k=0;k<rec.length;k++){
-      const [c,v]=rec[k];
-      if(c===93){ inPath=true; continue; }
-      if(c===97){ inPath=false; }
-      if(inPath && c===10 && rec[k+1] && rec[k+1][0]===20){
-        const x=parseFloat(v), y=parseFloat(rec[k+1][1]);
-        if(isFinite(x)&&isFinite(y)) pts.push([x,y]);
+      if(rec[k][0]!==93) continue;
+      const count=parseInt(rec[k][1],10); if(!isFinite(count)||count<3) continue;
+      const pts=[];
+      for(let j=k+1;j<rec.length && pts.length<count && rec[j][0]!==97;j++){
+        if(rec[j][0]===10 && rec[j+1] && rec[j+1][0]===20){
+          const x=parseFloat(rec[j][1]), y=parseFloat(rec[j+1][1]);
+          if(isFinite(x)&&isFinite(y)) pts.push([x,y]);
+        }
       }
+      if(pts.length>=3) loops.push(pts);
     }
-    e._boundary=pts;
-    if(pts.length){
+    e._boundaries=loops;
+    e._boundary=loops[0]||[]; // compatibility with projects made by earlier versions
+    e._pattern=e._pattern||(gval(rec,2)||'SOLID').trim().toUpperCase();
+    const tc=gnum(rec,420);
+    if(!e._fillColor && isFinite(tc)) e._fillColor=trueColorToHex(tc);
+    if(!e._fillColor) e._fillColor='#ff7a00';
+    const all=loops.flat();
+    if(all.length){
       let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
-      for(const [x,y] of pts){minx=Math.min(minx,x);miny=Math.min(miny,y);maxx=Math.max(maxx,x);maxy=Math.max(maxy,y);}
-      e.geom={min:[minx,miny],max:[maxx,maxy],draw:[{type:'poly',pts:pts.slice(),closed:true,hatch:true}],type:'HATCH'};
+      for(const [x,y] of all){minx=Math.min(minx,x);miny=Math.min(miny,y);maxx=Math.max(maxx,x);maxy=Math.max(maxy,y);}
+      e.geom={min:[minx,miny],max:[maxx,maxy],draw:loops.map(pts=>({type:'poly',pts:pts.slice(),closed:true,hatch:true})),type:'HATCH'};
     } else e.geom=null;
     return;
   }
@@ -1316,10 +1336,37 @@ function applyOp(op, dir){
     for(const i of op.added)   if(ENTITIES[i]) ENTITIES[i].del = dir<0;
     for(const i of op.removed) if(ENTITIES[i]) ENTITIES[i].del = dir>0;
   }
+  else if(op.type==='endpoint'){
+    // op.edits: [{idx, recIdx, xCode, yCode, from:[x,y], to:[x,y]}]
+    for(const ed of op.edits){
+      const e=ENTITIES[ed.idx]; if(!e) continue;
+      const p = dir>0 ? ed.to : ed.from;
+      setRecordCoord(e.raw[ed.recIdx], ed.xCode, ed.yCode, ed.nth||0, p[0], p[1]);
+      recomputeGeom(ed.idx);
+    }
+  }
   else if(op.type==='multi'){
     const seq = dir>0 ? op.ops : [...op.ops].reverse();
     for(const sub of seq) applyOp(sub, dir);
   }
+}
+/* write the nth (x,y) pair of the given group codes in a record */
+function setRecordCoord(rec, xCode, yCode, nth, x, y){
+  let seenX=-1;
+  for(let k=0;k<rec.length;k++){
+    if(rec[k][0]===xCode){
+      seenX++;
+      if(seenX===nth){
+        rec[k][1]=fmt(x);
+        for(let j=k+1;j<rec.length;j++){
+          if(rec[j][0]===yCode){ rec[j][1]=fmt(y); break; }
+          if(rec[j][0]===xCode) break;
+        }
+        return true;
+      }
+    }
+  }
+  return false;
 }
 function undo(){
   const op=UNDO.pop();
@@ -1622,31 +1669,40 @@ function W2S(x,y){ return [x*view.scale+view.ox, -y*view.scale+view.oy]; }
 function S2W(px,py){ return [(px-view.ox)/view.scale, -(py-view.oy)/view.scale]; }
 
 function drawHatch(e, color){
-  const pts=e._boundary; if(!pts||pts.length<3) return;
+  const loops=(e._boundaries&&e._boundaries.length?e._boundaries:(e._boundary?[e._boundary]:[])).filter(p=>p&&p.length>=3);
+  if(!loops.length) return;
+  const hatchColor=color||e._fillColor||CLS_META.hatch.dot;
+  const path=()=>{
+    ctx.beginPath();
+    for(const pts of loops){
+      pts.forEach((p,k)=>{const [sx,sy]=W2S(p[0],p[1]); k?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy);});
+      ctx.closePath();
+    }
+  };
   ctx.save();
-  ctx.beginPath();
-  pts.forEach((p,k)=>{const [sx,sy]=W2S(p[0],p[1]); k?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy);});
-  ctx.closePath();
-  // translucent fill
-  ctx.globalAlpha=0.18; ctx.fillStyle=color; ctx.fill();
-  // diagonal pattern lines clipped to the region (visual only)
-  ctx.globalAlpha=0.5; ctx.clip();
-  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
-  for(const p of pts){const [sx,sy]=W2S(p[0],p[1]);minx=Math.min(minx,sx);miny=Math.min(miny,sy);maxx=Math.max(maxx,sx);maxy=Math.max(maxy,sy);}
-  ctx.strokeStyle=color; ctx.lineWidth=1;
-  const step=8;
-  ctx.beginPath();
-  for(let x=minx-(maxy-miny); x<maxx; x+=step){
-    ctx.moveTo(x, maxy); ctx.lineTo(x+(maxy-miny), miny);
+  path();
+  // Even-odd filling keeps nested boundary loops visible as holes.
+  ctx.globalAlpha=e._pattern==='ANSI31'?0.16:0.46;
+  ctx.fillStyle=hatchColor; ctx.fill('evenodd');
+  if(e._pattern!=='ANSI31'){ ctx.restore(); }
+  else {
+    // diagonal pattern lines clipped to the region (visual only)
+    ctx.globalAlpha=0.65; path(); ctx.clip('evenodd');
+    let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+    for(const pts of loops) for(const p of pts){const [sx,sy]=W2S(p[0],p[1]);minx=Math.min(minx,sx);miny=Math.min(miny,sy);maxx=Math.max(maxx,sx);maxy=Math.max(maxy,sy);}
+    ctx.strokeStyle=hatchColor; ctx.lineWidth=1;
+    const step=8;
+    ctx.beginPath();
+    for(let x=minx-(maxy-miny); x<maxx; x+=step){
+      ctx.moveTo(x, maxy); ctx.lineTo(x+(maxy-miny), miny);
+    }
+    ctx.stroke();
+    ctx.restore();
   }
-  ctx.stroke();
-  ctx.restore();
   // boundary outline
   ctx.save();
-  ctx.strokeStyle=color; ctx.globalAlpha=0.9; ctx.lineWidth=1.4;
-  ctx.beginPath();
-  pts.forEach((p,k)=>{const [sx,sy]=W2S(p[0],p[1]); k?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy);});
-  ctx.closePath(); ctx.stroke();
+  ctx.strokeStyle=hatchColor; ctx.globalAlpha=0.95; ctx.lineWidth=1.4;
+  path(); ctx.stroke();
   ctx.restore();
 }
 function drawPrim(pr, color){
@@ -1731,7 +1787,7 @@ function draw(){
       let col=dim;
       if(e.cls!=='geometry') col = d.selected ? CLS_META[e.cls].dot : TH.clsUnsel;
       if(entSel){ col=TH.entSel; ctx.lineWidth=2; }
-      if(e.type==='HATCH' && e._boundary){ drawHatch(e, entSel?TH.entSel:CLS_META.hatch.dot); }
+      if(e.type==='HATCH' && (e._boundary||e._boundaries)){ drawHatch(e, entSel?TH.entSel:(e._fillColor||CLS_META.hatch.dot)); }
       else { for(const pr of g.draw) drawPrim(pr, col); }
       ctx.lineWidth=1;
       ctx.restore();
@@ -1837,6 +1893,27 @@ function drawSketch(){
     for(const pr of ENTITIES[trimHover].geom.draw) drawPrim(pr,'#f0a020');
     ctx.restore();
   }
+  // Extend tool: highlight the free end under the cursor and preview the reach
+  if(tool==='extend' && extendHover){
+    const [sx,sy]=W2S(extendHover.p[0],extendHover.p[1]);
+    const hit=rayFirstHit(extendHover.p, extendHover.dir, obstacleSegments(extendHover.idx), extendGapLimit('click'));
+    ctx.save();
+    if(hit){
+      const [hx,hy]=W2S(hit.point[0],hit.point[1]);
+      ctx.strokeStyle='#2ea043'; ctx.lineWidth=1.8; ctx.setLineDash([6,4]);
+      ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(hx,hy); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(hx,hy,4,0,Math.PI*2); ctx.stroke();
+      ctx.fillStyle='#2ea043'; ctx.font='11px sans-serif';
+      ctx.fillText(hit.t.toFixed(4), (sx+hx)/2+6, (sy+hy)/2-6);
+    } else {
+      ctx.strokeStyle='#d29922'; ctx.lineWidth=1.6;
+    }
+    ctx.strokeStyle=hit?'#2ea043':'#d29922'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(sx,sy,7,0,Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+
 }
 
 /* =========================== INTERACTION ================================ */
@@ -1881,6 +1958,7 @@ window.addEventListener('keydown',e=>{
   if(e.key.toLowerCase()==='l'){ setTool('line'); toast('Line tool: click start then end. Esc cancels.'); }
   if(e.key.toLowerCase()==='p'){ setTool('poly'); toast('Polyline: click vertices · Enter finish · C close · Esc cancel.'); }
   if(e.key.toLowerCase()==='x'){ setTool('trim'); toast('Trim: click the part of a LINE to cut away.'); }
+  if(e.key.toLowerCase()==='e'){ setTool('extend'); toast('Extend: click a free line end to stretch it to the nearest line.'); }
   if(e.key.toLowerCase()==='h'){ setTool('hatch'); toast('Hatch: click inside a closed region to mark it as a tie bar.'); }
   if(e.key.toLowerCase()==='t'){ toggleTheme(); }
   if(e.key.toLowerCase()==='f'){ fitView(); draw(); }
@@ -1900,6 +1978,7 @@ let drawPts=[];           // committed world vertices of the in-progress sketch
 let snapPt=null;          // current snap target [x,y] in world coords, or null
 let snapIndex=[];         // candidate world points for snapping
 let trimHover=-1;         // entity index highlighted for trimming
+let extendHover=null;     // free end under the cursor for the Extend tool
 
 function findOpenEndNear(px,py,maxDist=12){
   let best=null, bd=maxDist;
@@ -2021,15 +2100,30 @@ function finishPolyline(close){
 /* ==================== HATCH (tie-bar marking) =========================== */
 const HATCH_LAYER='TIEBAR';
 function hatchPattern(){ const s=$('#hatchPattern'); return s?s.value:'SOLID'; }
-function patternSpacing(boundary){
+function hatchColor(){ return normalizeHexColor($('#hatchColor')?$('#hatchColor').value:'#ff7a00'); }
+function normalizeHexColor(c){
+  const s=String(c||'').trim();
+  return /^#[0-9a-f]{6}$/i.test(s)?s.toLowerCase():'#ff7a00';
+}
+function colorToTrueColor(c){ return parseInt(normalizeHexColor(c).slice(1),16); }
+function trueColorToHex(n){ return '#'+(Math.max(0,Math.min(0xFFFFFF,Math.round(n)))>>>0).toString(16).padStart(6,'0'); }
+function normalizeBoundaries(boundaries){
+  if(!Array.isArray(boundaries)||!boundaries.length) return [];
+  return (typeof boundaries[0][0]==='number'?[boundaries]:boundaries)
+    .filter(loop=>Array.isArray(loop)&&loop.length>=3)
+    .map(loop=>loop.map(p=>[Number(p[0]),Number(p[1])]));
+}
+function patternSpacing(boundaries){
+  const all=normalizeBoundaries(boundaries).flat();
   let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
-  for(const p of boundary){ minx=Math.min(minx,p[0]);miny=Math.min(miny,p[1]);maxx=Math.max(maxx,p[0]);maxy=Math.max(maxy,p[1]); }
+  for(const p of all){ minx=Math.min(minx,p[0]);miny=Math.min(miny,p[1]);maxx=Math.max(maxx,p[0]);maxy=Math.max(maxy,p[1]); }
   const span=Math.min(maxx-minx,maxy-miny)||1;
   return Math.max(span/12, 1e-6);
 }
 /* HATCH body pairs (everything after the AcDbHatch subclass marker) — shared
    by the in-memory record (faithful export) and the AC1015 clean export. */
-function hatchBodyPairs(boundary, pattern, dx, dy){
+function hatchBodyPairs(boundaries, pattern, dx, dy){
+  const loops=normalizeBoundaries(boundaries);
   const solid = (pattern==='SOLID');
   const p=[[100,'AcDbHatch'],
     [10,'0.0'],[20,'0.0'],[30,'0.0'],
@@ -2037,17 +2131,17 @@ function hatchBodyPairs(boundary, pattern, dx, dy){
     [2, solid?'SOLID':pattern],
     [70, solid?1:0],
     [71,0],          // non-associative
-    [91,1],          // one boundary path
-    [92,3],          // external + polyline
-    [72,0],          // no bulges
-    [73,1],          // closed
-    [93, boundary.length]];
-  for(const pt of boundary) p.push([10,fmt(pt[0]+dx)],[20,fmt(pt[1]+dy)]);
-  p.push([97,0]);    // no source boundary objects (non-associative)
-  p.push([75,1]);    // outer style
+    [91,loops.length]];
+  loops.forEach((boundary,k)=>{
+    p.push([92,k===0?3:18]); // outer external polyline; subsequent paths are islands
+    p.push([72,0],[73,1],[93,boundary.length]);
+    for(const pt of boundary) p.push([10,fmt(pt[0]+dx)],[20,fmt(pt[1]+dy)]);
+    p.push([97,0]);          // non-associative boundary
+  });
+  p.push([75,0]);    // normal island detection (even-odd)
   p.push([76,1]);    // predefined pattern type
   if(!solid){
-    const s=patternSpacing(boundary);
+    const s=patternSpacing(loops);
     p.push([52,'0.0'],[41,'1.0'],[77,0],[78,1]);
     p.push([53,'45.0'],[43,'0.0'],[44,'0.0'],
            [45,fmt(-s*Math.SQRT1_2)],[46,fmt(s*Math.SQRT1_2)],[79,0]);
@@ -2055,191 +2149,203 @@ function hatchBodyPairs(boundary, pattern, dx, dy){
   p.push([98,0]);    // no seed points
   return p;
 }
-function makeHatchEntity(boundary, pattern, layer){
+function makeHatchEntity(boundaries, pattern, layer, fillColor){
   const L=layer||HATCH_LAYER;
-  const rec=[[0,'HATCH'],[5,nextHandle()],[100,'AcDbEntity'],[8,L],
-    ...hatchBodyPairs(boundary, pattern, 0, 0)];
+  const loops=normalizeBoundaries(boundaries), colour=normalizeHexColor(fillColor);
+  const rec=[[0,'HATCH'],[5,nextHandle()],[100,'AcDbEntity'],[8,L],[420,colorToTrueColor(colour)],
+    ...hatchBodyPairs(loops, pattern, 0, 0)];
   const e={raw:[rec], type:'HATCH', layer:L, ltype:'', geom:null, block:null,
-    del:false, cls:'hatch', _tiebar:true, _boundary:boundary.map(p=>[p[0],p[1]]), _pattern:pattern};
+    del:false, cls:'hatch', _tiebar:true, _boundary:loops[0]||[], _boundaries:loops,
+    _pattern:pattern, _fillColor:colour};
   return e;
 }
 
-/* collect closed single-entity loops (visible geometry) as polygons */
-function collectClosedLoops(){
-  const loops=[];
-  for(let i=0;i<ENTITIES.length;i++){
-    if(!entVisible(i)) continue;
-    const e=ENTITIES[i];
-    if(e.type==='HATCH') continue;
-    const ee=entityEnds(e);
-    if(!ee || !ee.closed) continue;
-    const poly=closedPolygonOf(e);
-    if(poly && poly.length>=3) loops.push({idx:i, poly, area:polyArea(poly)});
-  }
-  return loops;
-}
-function hatchIndexAt(wx,wy){
-  // topmost existing tie-bar hatch whose boundary contains the point
-  for(let i=ENTITIES.length-1;i>=0;i--){
-    const e=ENTITIES[i];
-    if(e.del || e.type!=='HATCH' || !e._boundary) continue;
-    if(!entVisible(i)) continue;
-    if(pointInPoly(wx,wy,e._boundary)) return i;
-  }
-  return -1;
-}
-
-/* ============= ENCLOSED-REGION DETECTION (planar arrangement) ============
-   A tie bar is bounded by pieces of several entities (block edges, groove
-   boundaries) and is never a single closed loop. We build a planar
-   arrangement of every visible geometry segment — splitting them at all
-   intersections and T-junctions — then extract the minimal face cycles.
-   Clicking a point finds the smallest face that encloses it.              */
-let REGION_CACHE=null;
-function invalidateRegions(){ REGION_CACHE=null; }
-function signedAreaPoly(poly){
-  let a=0;
-  for(let i=0;i<poly.length;i++){ const [x1,y1]=poly[i], [x2,y2]=poly[(i+1)%poly.length]; a+=x1*y2-x2*y1; }
-  return a/2;
-}
-/* segments of every visible geometry entity (arcs/circles sampled) */
-function gatherRegionSegments(){
+/* Convert all visible boundary primitives to straight segments. Curved DXF
+   entities already have sampled display geometry; circles/arcs are sampled
+   here. The source entity index is retained so the new fill stays with the
+   correct detected drawing. */
+function collectBoundarySegments(wanted){
   const segs=[];
+  const add=(a,b,idx)=>{
+    if(!a||!b||!isFinite(a[0])||!isFinite(a[1])||!isFinite(b[0])||!isFinite(b[1])) return;
+    if(Math.hypot(b[0]-a[0],b[1]-a[1])<1e-12) return;
+    segs.push({a:[a[0],a[1]],b:[b[0],b[1]],sources:new Set([idx])});
+  };
+  const polySegs=(pts,closed,idx)=>{
+    for(let k=1;k<pts.length;k++) add(pts[k-1],pts[k],idx);
+    if(closed&&pts.length>2) add(pts[pts.length-1],pts[0],idx);
+  };
   for(let i=0;i<ENTITIES.length;i++){
     if(!entVisible(i)) continue;
+    if(wanted && !wanted.has(i)) continue;
     const e=ENTITIES[i];
-    if(e.type==='HATCH' || e.cls!=='geometry' || !e.geom || !e.geom.draw) continue;
+    if(e.type==='HATCH'||e.cls!=='geometry'||!e.geom||!e.geom.draw) continue;
     for(const pr of e.geom.draw){
-      if(pr.type==='poly'){
-        const p=pr.pts;
-        for(let k=0;k<p.length-1;k++) segs.push([p[k],p[k+1]]);
-        if(pr.closed && p.length>2) segs.push([p[p.length-1],p[0]]);
-      } else if(pr.type==='circle'){
-        const N=72, c=[]; for(let k=0;k<=N;k++){const a=2*Math.PI*k/N;c.push([pr.x+pr.r*Math.cos(a),pr.y+pr.r*Math.sin(a)]);}
-        for(let k=0;k<N;k++) segs.push([c[k],c[k+1]]);
+      if(pr.type==='poly') polySegs(pr.pts,!!pr.closed,i);
+      else if(pr.type==='circle'){
+        const pts=[], n=96;
+        for(let k=0;k<n;k++){const a=Math.PI*2*k/n;pts.push([pr.x+pr.r*Math.cos(a),pr.y+pr.r*Math.sin(a)]);}
+        polySegs(pts,true,i);
       } else if(pr.type==='arc'){
-        let s=pr.a1*Math.PI/180, e2=pr.a2*Math.PI/180; if(e2<s) e2+=2*Math.PI;
-        const N=Math.max(2,Math.ceil((e2-s)/(Math.PI/36))), c=[];
-        for(let k=0;k<=N;k++){const a=s+(e2-s)*k/N;c.push([pr.x+pr.r*Math.cos(a),pr.y+pr.r*Math.sin(a)]);}
-        for(let k=0;k<N;k++) segs.push([c[k],c[k+1]]);
+        const span=((pr.a2-pr.a1)%360+360)%360;
+        const n=Math.max(8,Math.ceil((span||360)/5)), pts=[];
+        for(let k=0;k<=n;k++){const a=(pr.a1+(span||360)*k/n)*Math.PI/180;pts.push([pr.x+pr.r*Math.cos(a),pr.y+pr.r*Math.sin(a)]);}
+        polySegs(pts,false,i);
       }
     }
   }
   return segs;
 }
-function segIntersect(p1,p2,p3,p4){
-  const rpx=p2[0]-p1[0], rpy=p2[1]-p1[1], spx=p4[0]-p3[0], spy=p4[1]-p3[1];
-  const d=rpx*spy-rpy*spx;
-  if(Math.abs(d)<1e-12) return null;   // parallel / collinear
-  const t=((p3[0]-p1[0])*spy-(p3[1]-p1[1])*spx)/d;
-  const u=((p3[0]-p1[0])*rpy-(p3[1]-p1[1])*rpx)/d;
-  const e=1e-6;
-  if(t<-e||t>1+e||u<-e||u>1+e) return null;
-  return {t,u};
-}
-/* split all segments at intersections/T-junctions → nodes + unique edges */
-function buildArrangement(segs, tol){
-  const n=segs.length;
-  const params=new Array(n); for(let i=0;i<n;i++) params[i]=[0,1];
-  const bb=segs.map(s=>{const [a,b]=s;return [Math.min(a[0],b[0]),Math.min(a[1],b[1]),Math.max(a[0],b[0]),Math.max(a[1],b[1])];});
-  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
-  for(const b of bb){minx=Math.min(minx,b[0]);miny=Math.min(miny,b[1]);maxx=Math.max(maxx,b[2]);maxy=Math.max(maxy,b[3]);}
-  const diag=Math.hypot(maxx-minx,maxy-miny)||1;
-  const cell=Math.max(diag/160, tol*4, 1e-9);
-  const grid=new Map(), key=(cx,cy)=>cx+'|'+cy;
-  for(let i=0;i<n;i++){
-    const cx0=Math.floor(bb[i][0]/cell), cy0=Math.floor(bb[i][1]/cell);
-    const cx1=Math.floor(bb[i][2]/cell), cy1=Math.floor(bb[i][3]/cell);
-    for(let cx=cx0;cx<=cx1;cx++)for(let cy=cy0;cy<=cy1;cy++){const k=key(cx,cy);if(!grid.has(k))grid.set(k,[]);grid.get(k).push(i);}
+
+function addSegmentIntersections(a,b,cutsA,cutsB,tol){
+  const ax=a.a[0], ay=a.a[1], rx=a.b[0]-ax, ry=a.b[1]-ay;
+  const bx=b.a[0], by=b.a[1], sx=b.b[0]-bx, sy=b.b[1]-by;
+  const cross=(x1,y1,x2,y2)=>x1*y2-y1*x2;
+  const den=cross(rx,ry,sx,sy), qx=bx-ax, qy=by-ay;
+  const la=Math.hypot(rx,ry), lb=Math.hypot(sx,sy);
+  const eps=Math.max(1e-12,tol*(la+lb));
+  const add=(arr,t)=>{ if(t>=-1e-9&&t<=1+1e-9) arr.push(Math.max(0,Math.min(1,t))); };
+  if(Math.abs(den)>eps){
+    const t=cross(qx,qy,sx,sy)/den, u=cross(qx,qy,rx,ry)/den;
+    if(t>=-1e-9&&t<=1+1e-9&&u>=-1e-9&&u<=1+1e-9){add(cutsA,t);add(cutsB,u);}
+  } else if(Math.abs(cross(qx,qy,rx,ry))<=eps){
+    const da=rx*rx+ry*ry, db=sx*sx+sy*sy;
+    if(da>0){ add(cutsA,((bx-ax)*rx+(by-ay)*ry)/da); add(cutsA,((b.b[0]-ax)*rx+(b.b[1]-ay)*ry)/da); }
+    if(db>0){ add(cutsB,((ax-bx)*sx+(ay-by)*sy)/db); add(cutsB,((a.b[0]-bx)*sx+(a.b[1]-by)*sy)/db); }
   }
-  const seen=new Set();
-  for(const [,arr] of grid){
-    for(let a=0;a<arr.length;a++)for(let b=a+1;b<arr.length;b++){
-      let i=arr[a], j=arr[b]; if(i>j){const t=i;i=j;j=t;}
-      const pk=i*n+j; if(seen.has(pk)) continue; seen.add(pk);
-      if(bb[i][2]<bb[j][0]-tol||bb[j][2]<bb[i][0]-tol||bb[i][3]<bb[j][1]-tol||bb[j][3]<bb[i][1]-tol) continue;
-      const r=segIntersect(segs[i][0],segs[i][1],segs[j][0],segs[j][1]);
-      if(r){ if(r.t>1e-7&&r.t<1-1e-7) params[i].push(r.t); if(r.u>1e-7&&r.u<1-1e-7) params[j].push(r.u); }
-    }
-  }
-  const store=makeNodeStore(tol);
-  const edgeSet=new Set(), edges=[];
-  for(let i=0;i<n;i++){
-    const [A,B]=segs[i];
-    let ps=params[i].map(t=>Math.max(0,Math.min(1,t))).sort((x,y)=>x-y);
-    const uniq=[]; for(const t of ps){ if(!uniq.length||t-uniq[uniq.length-1]>1e-9) uniq.push(t); }
-    for(let k=0;k<uniq.length-1;k++){
-      const t0=uniq[k], t1=uniq[k+1];
-      const x0=A[0]+(B[0]-A[0])*t0, y0=A[1]+(B[1]-A[1])*t0;
-      const x1=A[0]+(B[0]-A[0])*t1, y1=A[1]+(B[1]-A[1])*t1;
-      if(Math.hypot(x1-x0,y1-y0)<=tol) continue;
-      const na=store.findOrCreate(x0,y0), nb=store.findOrCreate(x1,y1);
-      if(na===nb) continue;
-      const ek=na<nb?na+'_'+nb:nb+'_'+na;
-      if(edgeSet.has(ek)) continue; edgeSet.add(ek);
-      edges.push({a:na,b:nb});
-    }
-  }
-  return {nodes:store.nodes, edges};
-}
-/* minimal face cycles via half-edge traversal (interior faces = CCW/+area) */
-function extractFaces(nodes, edges){
-  const he=[]; const outAt=new Map();
-  for(const {a,b} of edges){
-    if(a===b) continue;
-    const h1=he.length; he.push({from:a,to:b,ang:Math.atan2(nodes[b].y-nodes[a].y,nodes[b].x-nodes[a].x)});
-    const h2=he.length; he.push({from:b,to:a,ang:Math.atan2(nodes[a].y-nodes[b].y,nodes[a].x-nodes[b].x)});
-    if(!outAt.has(a))outAt.set(a,[]); outAt.get(a).push(h1);
-    if(!outAt.has(b))outAt.set(b,[]); outAt.get(b).push(h2);
-  }
-  for(const [,arr] of outAt) arr.sort((x,y)=>he[x].ang-he[y].ang);
-  const twin=k=>k^1;
-  const nextHE=(k)=>{
-    const v=he[k].to, arr=outAt.get(v), t=twin(k);
-    const idx=arr.indexOf(t);
-    return arr[(idx-1+arr.length)%arr.length];   // clockwise neighbour of the twin
+  // Also split a segment where another segment's endpoint lands within the
+  // topology tolerance (T-junctions and tiny drafting inaccuracies).
+  const project=(p,s,cuts)=>{
+    const dx=s.b[0]-s.a[0],dy=s.b[1]-s.a[1],d2=dx*dx+dy*dy;if(!d2)return;
+    const t=((p[0]-s.a[0])*dx+(p[1]-s.a[1])*dy)/d2;
+    if(t<=1e-9||t>=1-1e-9)return;
+    const x=s.a[0]+t*dx,y=s.a[1]+t*dy;
+    if(Math.hypot(p[0]-x,p[1]-y)<=tol*1.5) add(cuts,t);
   };
-  const faces=[]; const visited=new Array(he.length).fill(false);
-  for(let k=0;k<he.length;k++){
-    if(visited[k]) continue;
-    const cyc=[]; let cur=k, guard=he.length+5;
-    while(!visited[cur] && guard-->0){ visited[cur]=true; cyc.push(cur); cur=nextHE(cur); }
-    if(cyc.length>=3){
-      const poly=cyc.map(h=>[nodes[he[h].from].x, nodes[he[h].from].y]);
-      const area=signedAreaPoly(poly);
-      if(area>1e-9) faces.push({poly, area});   // keep bounded interior faces only
+  project(a.a,b,cutsB);project(a.b,b,cutsB);project(b.a,a,cutsA);project(b.b,a,cutsA);
+}
+
+function splitBoundarySegments(segs,tol){
+  const n=segs.length;if(!n)return [];
+  const cuts=segs.map(()=>[0,1]);
+  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+  for(const s of segs){for(const p of [s.a,s.b]){minx=Math.min(minx,p[0]);miny=Math.min(miny,p[1]);maxx=Math.max(maxx,p[0]);maxy=Math.max(maxy,p[1]);}}
+  const gridN=Math.max(4,Math.min(96,Math.ceil(Math.sqrt(n))));
+  const cw=Math.max((maxx-minx)/gridN,tol*4,1e-12), ch=Math.max((maxy-miny)/gridN,tol*4,1e-12);
+  const grid=new Map(), key=(x,y)=>x+'|'+y;
+  segs.forEach((s,i)=>{
+    const x0=Math.floor((Math.min(s.a[0],s.b[0])-minx-tol)/cw),x1=Math.floor((Math.max(s.a[0],s.b[0])-minx+tol)/cw);
+    const y0=Math.floor((Math.min(s.a[1],s.b[1])-miny-tol)/ch),y1=Math.floor((Math.max(s.a[1],s.b[1])-miny+tol)/ch);
+    for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++){const k=key(x,y);if(!grid.has(k))grid.set(k,[]);grid.get(k).push(i);}
+  });
+  const seen=new Set();
+  for(const arr of grid.values()) for(let a=0;a<arr.length;a++) for(let b=a+1;b<arr.length;b++){
+    const i=Math.min(arr[a],arr[b]),j=Math.max(arr[a],arr[b]),k=i+'|'+j;if(seen.has(k))continue;seen.add(k);
+    addSegmentIntersections(segs[i],segs[j],cuts[i],cuts[j],tol);
+  }
+  const pieces=[];
+  segs.forEach((s,i)=>{
+    const len=Math.hypot(s.b[0]-s.a[0],s.b[1]-s.a[1]);
+    const ts=cuts[i].sort((a,b)=>a-b).filter((t,k,A)=>k===0||Math.abs(t-A[k-1])*len>tol*.2);
+    for(let k=1;k<ts.length;k++){
+      const t0=ts[k-1],t1=ts[k];if((t1-t0)*len<=tol*.2)continue;
+      const P=t=>[s.a[0]+(s.b[0]-s.a[0])*t,s.a[1]+(s.b[1]-s.a[1])*t];
+      pieces.push({a:P(t0),b:P(t1),sources:new Set(s.sources)});
     }
+  });
+  return pieces;
+}
+
+function signedPolyArea(pts){
+  let a=0;for(let i=0;i<pts.length;i++){const p=pts[i],q=pts[(i+1)%pts.length];a+=p[0]*q[1]-q[0]*p[1];}return a/2;
+}
+function cleanFacePolygon(pts,tol){
+  const out=[];
+  for(const p of pts){if(!out.length||Math.hypot(p[0]-out[out.length-1][0],p[1]-out[out.length-1][1])>tol*.2)out.push(p);}
+  if(out.length>2&&Math.hypot(out[0][0]-out[out.length-1][0],out[0][1]-out[out.length-1][1])<=tol*.2)out.pop();
+  return out;
+}
+function polygonInteriorPoint(poly){
+  const A=signedPolyArea(poly);let cx=0,cy=0;
+  if(Math.abs(A)>1e-18){
+    for(let i=0;i<poly.length;i++){const p=poly[i],q=poly[(i+1)%poly.length],c=p[0]*q[1]-q[0]*p[1];cx+=(p[0]+q[0])*c;cy+=(p[1]+q[1])*c;}
+    cx/=6*A;cy/=6*A;if(pointInPoly(cx,cy,poly))return [cx,cy];
+  }
+  let miny=Infinity,maxy=-Infinity;for(const p of poly){miny=Math.min(miny,p[1]);maxy=Math.max(maxy,p[1]);}
+  for(const f of [.5,.37,.63,.23,.77]){
+    const y=miny+(maxy-miny)*f,xs=[];
+    for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+      const a=poly[j],b=poly[i];if((a[1]>y)!==(b[1]>y))xs.push(a[0]+(y-a[1])*(b[0]-a[0])/(b[1]-a[1]));
+    }
+    xs.sort((a,b)=>a-b);let best=null;
+    for(let i=0;i+1<xs.length;i+=2)if(!best||xs[i+1]-xs[i]>best[1]-best[0])best=[xs[i],xs[i+1]];
+    if(best)return [(best[0]+best[1])/2,y];
+  }
+  return poly[0].slice();
+}
+
+/* Trace the bounded faces of the planar segment graph. Positive (CCW) face
+   walks are bounded; the corresponding negative walk is the outside face. */
+function collectBoundedFaces(wanted){
+  const tol=Math.max(parseFloat($('#tol').value)||CURTOL||1e-9,1e-9);
+  const pieces=splitBoundarySegments(collectBoundarySegments(wanted),tol);
+  const store=makeNodeStore(tol), edgeMap=new Map(), edges=[];
+  for(const s of pieces){
+    const u=store.findOrCreate(s.a[0],s.a[1]),v=store.findOrCreate(s.b[0],s.b[1]);if(u===v)continue;
+    const k=Math.min(u,v)+'|'+Math.max(u,v);
+    if(edgeMap.has(k)){for(const x of s.sources)edges[edgeMap.get(k)].sources.add(x);continue;}
+    edgeMap.set(k,edges.length);edges.push({u,v,sources:new Set(s.sources)});
+  }
+  const adj=store.nodes.map(()=>[]);
+  edges.forEach((e,id)=>{adj[e.u].push({to:e.v,id});adj[e.v].push({to:e.u,id});});
+  adj.forEach((a,u)=>a.sort((x,y)=>Math.atan2(store.nodes[x.to].y-store.nodes[u].y,store.nodes[x.to].x-store.nodes[u].x)-Math.atan2(store.nodes[y.to].y-store.nodes[u].y,store.nodes[y.to].x-store.nodes[u].x)));
+  const visited=new Set(),faces=[], dkey=(u,v)=>u+'>'+v;
+  const trace=(u0,v0)=>{
+    let u=u0,v=v0;const ids=[],pts=[];
+    for(let guard=0;guard<edges.length*2+5;guard++){
+      const dk=dkey(u,v);if(visited.has(dk)){return (u===u0&&v===v0)?{pts,ids}:null;}
+      visited.add(dk);pts.push([store.nodes[u].x,store.nodes[u].y]);
+      const list=adj[v],pos=list.findIndex(x=>x.to===u);if(pos<0||!list.length)return null;
+      ids.push(list[pos].id);
+      const w=list[(pos-1+list.length)%list.length].to;u=v;v=w;
+      if(u===u0&&v===v0)return {pts,ids};
+    }
+    return null;
+  };
+  for(const e of edges) for(const uv of [[e.u,e.v],[e.v,e.u]]){
+    if(visited.has(dkey(uv[0],uv[1])))continue;const r=trace(uv[0],uv[1]);if(!r)continue;
+    const poly=cleanFacePolygon(r.pts,tol),area=signedPolyArea(poly);
+    if(poly.length<3||area<=tol*tol)continue;
+    const sources=new Set();for(const id of r.ids)for(const s of edges[id].sources)sources.add(s);
+    faces.push({poly,area,absArea:area,sources,seed:polygonInteriorPoint(poly),parent:-1,children:[]});
+  }
+  // Disconnected nested loops bound annular regions. Record immediate child
+  // loops so a fill of the outer region leaves those inner regions unfilled.
+  for(let i=0;i<faces.length;i++){
+    let parent=-1,best=Infinity;
+    for(let j=0;j<faces.length;j++)if(i!==j&&faces[j].absArea>faces[i].absArea&&faces[j].absArea<best&&pointInPoly(faces[i].seed[0],faces[i].seed[1],faces[j].poly)){parent=j;best=faces[j].absArea;}
+    faces[i].parent=parent;if(parent>=0)faces[parent].children.push(i);
   }
   return faces;
 }
-function getRegions(){
-  if(REGION_CACHE) return REGION_CACHE;
-  const loops=collectClosedLoops().map(L=>({poly:L.poly, area:L.area, idx:L.idx}));
-  let faces=[];
-  try{
-    const segs=gatherRegionSegments();
-    if(segs.length && segs.length<=9000){
-      const tol=Math.max(CURTOL,1e-9);
-      const arr=buildArrangement(segs, tol);
-      faces=extractFaces(arr.nodes, arr.edges);
-    } else if(segs.length>9000){
-      console.warn('region detection skipped: too many segments ('+segs.length+')');
-    }
-  }catch(err){ console.warn('region detection failed', err); }
-  REGION_CACHE={loops, faces, tooBig:gatherRegionSegments().length>9000};
-  return REGION_CACHE;
+function faceRegion(face,faces){
+  const holes=face.children.map(i=>faces[i].poly);
+  return {boundaries:[face.poly,...holes],area:face.absArea-face.children.reduce((s,i)=>s+faces[i].absArea,0),sources:face.sources,seed:face.seed};
 }
-/* smallest enclosing region (single-entity loop OR arrangement face) */
-function regionAt(wx,wy){
-  const R=getRegions();
-  let best=null;
-  for(const L of R.loops) if(pointInPoly(wx,wy,L.poly) && (!best||L.area<best.area)) best=L;
-  for(const F of R.faces) if(pointInPoly(wx,wy,F.poly) && (!best||F.area<best.area)) best=F;
-  return best;
+function boundarySignature(boundaries){
+  const loops=normalizeBoundaries(boundaries).map(loop=>loop.map(p=>fmt(p[0])+','+fmt(p[1])).join(';')).sort();
+  return loops.join('||');
 }
-function drawingForPoint(wx,wy){
-  for(const d of DRAWINGS){ if(d.bbox && wx>=d.bbox.min[0]&&wx<=d.bbox.max[0]&&wy>=d.bbox.min[1]&&wy<=d.bbox.max[1]) return d; }
-  return null;
+function hatchContainsPoint(e,x,y){
+  const loops=normalizeBoundaries(e._boundaries&&e._boundaries.length?e._boundaries:e._boundary);let inside=false;
+  for(const loop of loops)if(pointInPoly(x,y,loop))inside=!inside;return inside;
+}
+function hatchIndexAt(wx,wy){
+  for(let i=ENTITIES.length-1;i>=0;i--){
+    const e=ENTITIES[i];if(e.del||e.type!=='HATCH'||!entVisible(i))continue;
+    if(hatchContainsPoint(e,wx,wy))return i;
+  }
+  return -1;
 }
 function hatchRegionAt(px,py){
   const [wx,wy]=S2W(px,py);
@@ -2249,25 +2355,24 @@ function hatchRegionAt(px,py){
     ENTITIES[existing].del=true;
     pushUndo({type:'delete', idxs:[existing]});
     refreshAfterEdit(); renderDrawings();
-    toast('Tie-bar hatch removed. Ctrl+Z to undo.');
+    toast('Tie-bar colour fill removed. Ctrl+Z to undo.');
     return;
   }
-  const reg=regionAt(wx,wy);
-  if(!reg){
-    const R=getRegions();
-    toast(R.tooBig
-      ? 'Region detection skipped — drawing too complex. Hide non-geometry / delete junk to reduce it, then retry.'
-      : 'No enclosed region here. The boundary must close within tolerance — raise the snap tolerance (card 5), or bridge/draw the missing edges.');
+  const faces=collectBoundedFaces();
+  const containing=faces.filter(f=>pointInPoly(wx,wy,f.poly)).sort((a,b)=>a.absArea-b.absArea);
+  if(!containing.length){
+    toast('No bounded region found here. Check for a visible gap or increase the snap tolerance slightly.');
     return;
   }
-  const d=drawingForPoint(wx,wy) || targetDrawingForNew();
-  const he=makeHatchEntity(reg.poly, hatchPattern(), HATCH_LAYER);
+  const region=faceRegion(containing[0],faces);
+  const d=DRAWINGS.find(x=>[...region.sources].some(i=>x.entityIdx.includes(i))) || targetDrawingForNew();
+  const he=makeHatchEntity(region.boundaries,hatchPattern(),HATCH_LAYER,hatchColor());
   const idx=ENTITIES.length; ENTITIES.push(he); recomputeGeom(idx);
   d.entityIdx.push(idx);
   if(!LAYERS.has(HATCH_LAYER)) LAYERS.set(HATCH_LAYER,{visible:true});
   pushUndo({type:'join', added:[idx], removed:[]});
   refreshAfterEdit(); renderDrawings();
-  toast('Tie-bar hatch added on layer '+HATCH_LAYER+' (area '+reg.area.toFixed(2)+', '+reg.poly.length+' boundary pts). Exports as a real DXF HATCH.');
+  toast('Tie-bar region filled (area '+region.area.toFixed(2)+'). Click the fill again to remove it.');
 }
 function hatchSelectedRegions(){
   if(!DRAWINGS.length){ toast('Load a DXF first.'); return; }
@@ -2275,23 +2380,22 @@ function hatchSelectedRegions(){
   const targets=sel.length?sel:DRAWINGS;
   const wanted=new Set();
   for(const d of targets) for(const i of d.entityIdx) wanted.add(i);
-  const loops=collectClosedLoops().filter(L=>wanted.has(L.idx));
-  if(!loops.length){ toast('No closed single-entity loops in the selection to hatch. Join & close (or draw a boundary) first.'); return; }
+  const faces=collectBoundedFaces(wanted);
+  if(!faces.length){ toast('No bounded regions found in the selected drawings. Check for visible gaps or the snap tolerance.'); return; }
+  const existing=new Set(ENTITIES.filter(e=>!e.del&&e.type==='HATCH').map(e=>boundarySignature(e._boundaries||e._boundary)));
   const added=[];
-  for(const L of loops){
-    // skip loops already hatched (a hatch centroid inside)
-    const c=L.poly[0];
-    if(hatchIndexAt(c[0],c[1])>=0) continue;
-    const d=DRAWINGS.find(x=>x.entityIdx.includes(L.idx))||targets[0];
-    const he=makeHatchEntity(L.poly, hatchPattern(), HATCH_LAYER);
+  for(const face of faces){
+    const region=faceRegion(face,faces),sig=boundarySignature(region.boundaries);if(existing.has(sig))continue;
+    const d=DRAWINGS.find(x=>[...region.sources].some(i=>x.entityIdx.includes(i)))||targets[0];
+    const he=makeHatchEntity(region.boundaries,hatchPattern(),HATCH_LAYER,hatchColor());
     const idx=ENTITIES.length; ENTITIES.push(he); recomputeGeom(idx);
-    d.entityIdx.push(idx); added.push(idx);
+    d.entityIdx.push(idx); added.push(idx);existing.add(sig);
   }
-  if(!added.length){ toast('Those regions are already hatched.'); return; }
+  if(!added.length){ toast('Those bounded regions are already filled.'); return; }
   if(!LAYERS.has(HATCH_LAYER)) LAYERS.set(HATCH_LAYER,{visible:true});
   pushUndo({type:'join', added, removed:[]});
   refreshAfterEdit(); renderDrawings();
-  toast('Hatched '+added.length+' region(s) on layer '+HATCH_LAYER+'.');
+  toast('Colour-filled '+added.length+' bounded region(s) as tie bars.');
 }
 function removeAllHatches(){
   const idxs=ENTITIES.map((e,i)=>(!e.del&&e.type==='HATCH')?i:-1).filter(i=>i>=0);
@@ -2300,6 +2404,215 @@ function removeAllHatches(){
   pushUndo({type:'delete', idxs});
   refreshAfterEdit(); renderDrawings();
   toast('Removed '+idxs.length+' hatch(es).');
+}
+
+/* =========================== EXTEND =====================================
+   Free (dangling) ends that stop just short of a crossing line stop a region
+   from closing. Extend pushes such an end along its own direction until it
+   meets the nearest piece of other visible geometry.                       */
+
+/* Every extendable free end: a degree-1 endpoint of a LINE or an open
+   polyline, with the record location needed to rewrite it.                 */
+function extendableEnds(){
+  const tol=Math.max(CURTOL,1e-12);
+  const store=makeNodeStore(tol);
+  const items=[];   // {idx, recIdx, xCode, yCode, nth, p:[x,y], dir:[dx,dy], node}
+  const pushItem=(idx,recIdx,xCode,yCode,nth,p,from)=>{
+    const dx=p[0]-from[0], dy=p[1]-from[1], L=Math.hypot(dx,dy);
+    if(!(L>0)) return;
+    items.push({idx,recIdx,xCode,yCode,nth,p:[p[0],p[1]],dir:[dx/L,dy/L],
+                node:store.findOrCreate(p[0],p[1])});
+  };
+  for(let i=0;i<ENTITIES.length;i++){
+    if(!entVisible(i)) continue;
+    const e=ENTITIES[i];
+    if(e.cls!=='geometry') continue;
+    if(e.type==='LINE'){
+      const r=e.raw[0];
+      const a=[gnum(r,10),gnum(r,20)], b=[gnum(r,11),gnum(r,21)];
+      if(![a[0],a[1],b[0],b[1]].every(isFinite)) continue;
+      pushItem(i,0,10,20,0,a,b);
+      pushItem(i,0,11,21,0,b,a);
+    } else if(e.type==='LWPOLYLINE'){
+      const r=e.raw[0];
+      if(((parseInt(gval(r,70)||'0',10))&1)===1) continue;    // closed
+      const v=lwVerts(r);
+      if(v.length<2) continue;
+      pushItem(i,0,10,20,0,[v[0].x,v[0].y],[v[1].x,v[1].y]);
+      pushItem(i,0,10,20,v.length-1,[v[v.length-1].x,v[v.length-1].y],[v[v.length-2].x,v[v.length-2].y]);
+    } else if(e.type==='POLYLINE'){
+      if(e._closed) continue;
+      const v=e._verts||[];
+      if(v.length<2) continue;
+      const vrecs=[];
+      e.raw.forEach((rec,k)=>{ if(etype(rec)==='VERTEX') vrecs.push(k); });
+      if(vrecs.length<2) continue;
+      pushItem(i,vrecs[0],10,20,0,[v[0].x,v[0].y],[v[1].x,v[1].y]);
+      pushItem(i,vrecs[vrecs.length-1],10,20,0,[v[v.length-1].x,v[v.length-1].y],[v[v.length-2].x,v[v.length-2].y]);
+    }
+  }
+  // An end is free only if no other end shares its node AND it does not
+  // already lie on another entity's geometry (a T-junction is not free).
+  const deg=new Map();
+  for(const it of items) deg.set(it.node,(deg.get(it.node)||0)+1);
+  const candidates=items.filter(it=>(deg.get(it.node)||0)===1);
+  if(!candidates.length) return candidates;
+  const segs=allGeometrySegments();
+  const near=(p,skip)=>{
+    for(const s of segs){
+      if(s.idx===skip) continue;
+      const ax=s.a[0],ay=s.a[1],bx=s.b[0],by=s.b[1];
+      const vx=bx-ax, vy=by-ay, L2=vx*vx+vy*vy;
+      let t = L2>0 ? ((p[0]-ax)*vx+(p[1]-ay)*vy)/L2 : 0;
+      t=Math.max(0,Math.min(1,t));
+      if(Math.hypot(p[0]-(ax+t*vx), p[1]-(ay+t*vy))<=tol) return true;
+    }
+    return false;
+  };
+  return candidates.filter(it=>!near(it.p,it.idx));
+}
+/* all visible geometry segments tagged with their entity index */
+function allGeometrySegments(){
+  const out=[];
+  for(let i=0;i<ENTITIES.length;i++){
+    if(!entVisible(i)) continue;
+    const e=ENTITIES[i];
+    if(e.type==='HATCH' || e.cls!=='geometry' || !e.geom || !e.geom.draw) continue;
+    for(const pr of e.geom.draw){
+      if(pr.type==='poly'){
+        const p=pr.pts;
+        for(let k=0;k<p.length-1;k++) out.push({a:p[k],b:p[k+1],idx:i});
+        if(pr.closed && p.length>2) out.push({a:p[p.length-1],b:p[0],idx:i});
+      } else if(pr.type==='circle'){
+        const N=96, c=[];
+        for(let k=0;k<=N;k++){const a=2*Math.PI*k/N;c.push([pr.x+pr.r*Math.cos(a),pr.y+pr.r*Math.sin(a)]);}
+        for(let k=0;k<N;k++) out.push({a:c[k],b:c[k+1],idx:i});
+      } else if(pr.type==='arc'){
+        const span=((pr.a2-pr.a1)%360+360)%360 || 360;
+        const N=Math.max(8,Math.ceil(span/5)), c=[];
+        for(let k=0;k<=N;k++){const a=(pr.a1+span*k/N)*Math.PI/180;c.push([pr.x+pr.r*Math.cos(a),pr.y+pr.r*Math.sin(a)]);}
+        for(let k=0;k<N;k++) out.push({a:c[k],b:c[k+1],idx:i});
+      }
+    }
+  }
+  return out;
+}
+
+/* segments + curves of visible geometry, excluding one entity */
+function obstacleSegments(excludeIdx){
+  const out=[];
+  for(let i=0;i<ENTITIES.length;i++){
+    if(i===excludeIdx || !entVisible(i)) continue;
+    const e=ENTITIES[i];
+    if(e.type==='HATCH' || e.cls!=='geometry' || !e.geom || !e.geom.draw) continue;
+    for(const pr of e.geom.draw){
+      if(pr.type==='poly'){
+        const p=pr.pts;
+        for(let k=0;k<p.length-1;k++) out.push([p[k],p[k+1]]);
+        if(pr.closed && p.length>2) out.push([p[p.length-1],p[0]]);
+      } else if(pr.type==='circle'){
+        const N=96; const c=[];
+        for(let k=0;k<=N;k++){const a=2*Math.PI*k/N;c.push([pr.x+pr.r*Math.cos(a),pr.y+pr.r*Math.sin(a)]);}
+        for(let k=0;k<N;k++) out.push([c[k],c[k+1]]);
+      } else if(pr.type==='arc'){
+        const span=((pr.a2-pr.a1)%360+360)%360 || 360;
+        const N=Math.max(8,Math.ceil(span/5)); const c=[];
+        for(let k=0;k<=N;k++){const a=(pr.a1+span*k/N)*Math.PI/180;c.push([pr.x+pr.r*Math.cos(a),pr.y+pr.r*Math.sin(a)]);}
+        for(let k=0;k<N;k++) out.push([c[k],c[k+1]]);
+      }
+    }
+  }
+  return out;
+}
+/* nearest forward hit of ray (origin,dir) on the given segments */
+function rayFirstHit(origin, dir, segs, maxDist){
+  let best=null;
+  const eps=Math.max(CURTOL,1e-12);
+  for(const [A,B] of segs){
+    const sx=B[0]-A[0], sy=B[1]-A[1];
+    const den=dir[0]*sy - dir[1]*sx;
+    if(Math.abs(den)<1e-15) continue;                      // parallel
+    const qx=A[0]-origin[0], qy=A[1]-origin[1];
+    const t=(qx*sy - qy*sx)/den;                           // along ray
+    const u=(qx*dir[1] - qy*dir[0])/den;                   // along segment
+    if(u<-1e-9 || u>1+1e-9) continue;
+    if(t<=eps || t>maxDist) continue;                      // forward only
+    if(!best || t<best.t) best={t, point:[origin[0]+dir[0]*t, origin[1]+dir[1]*t]};
+  }
+  return best;
+}
+/* How far an end may be stretched. An explicit "max gap" always wins. With
+   no value set: a deliberate click reaches generously (the user pointed at
+   that end), while "extend all" stays conservative so nothing shoots across
+   the drawing unattended.                                                   */
+function extendGapLimit(mode){
+  const v=parseFloat($('#extGap') ? $('#extGap').value : '');
+  if(isFinite(v) && v>0) return v;
+  const bb=allBBox();
+  const diag=bb?Math.hypot(bb.max[0]-bb.min[0],bb.max[1]-bb.min[1]):1;
+  return Math.max(diag*(mode==='auto'?0.02:0.25), 1e-6);
+}
+/* extend one free end; returns the edit record or null */
+function extendOne(it, maxDist){
+  const segs=obstacleSegments(it.idx);
+  const hit=rayFirstHit(it.p, it.dir, segs, maxDist);
+  if(!hit) return null;
+  const e=ENTITIES[it.idx];
+  const edit={idx:it.idx, recIdx:it.recIdx, xCode:it.xCode, yCode:it.yCode, nth:it.nth,
+              from:[it.p[0],it.p[1]], to:[hit.point[0],hit.point[1]], dist:hit.t};
+  setRecordCoord(e.raw[it.recIdx], it.xCode, it.yCode, it.nth, hit.point[0], hit.point[1]);
+  recomputeGeom(it.idx);
+  return edit;
+}
+function findFreeEndNear(px,py,maxPx=14){
+  let best=null, bd=maxPx;
+  for(const it of extendableEnds()){
+    const [sx,sy]=W2S(it.p[0],it.p[1]);
+    const d=Math.hypot(sx-px,sy-py);
+    if(d<bd){ bd=d; best=it; }
+  }
+  return best;
+}
+function extendAt(px,py){
+  const it=findFreeEndNear(px,py);
+  if(!it){ toast('Click near a free end (a dangling line end). Zoom in if needed.'); return; }
+  const maxDist=extendGapLimit('click');
+  const edit=extendOne(it, maxDist);
+  if(!edit){
+    toast('Nothing to extend to within '+maxDist.toFixed(3)+' units along that direction — raise “max gap”, or the end may already touch.');
+    return;
+  }
+  pushUndo({type:'endpoint', edits:[edit]});
+  refreshAfterEdit(); renderDrawings(); buildSnapIndex();
+  toast('Extended by '+edit.dist.toFixed(4)+' units to meet the nearest line. Ctrl+Z to undo.');
+}
+function autoExtendFreeEnds(){
+  if(!DRAWINGS.length){ toast('Load a DXF first.'); return; }
+  const maxDist=extendGapLimit('auto');
+  const sel=DRAWINGS.filter(d=>d.selected);
+  const targets=sel.length?sel:DRAWINGS;
+  const wanted=new Set();
+  for(const d of targets) for(const i of d.entityIdx) wanted.add(i);
+  const edits=[];
+  let guard=0;
+  // repeat: extending one end can create the target for another
+  while(guard++<4){
+    const ends=extendableEnds().filter(it=>wanted.has(it.idx));
+    let progressed=false;
+    for(const it of ends){
+      const ed=extendOne(it, maxDist);
+      if(ed){ edits.push(ed); progressed=true; }
+    }
+    if(!progressed) break;
+  }
+  if(!edits.length){
+    toast('No free ends could be extended within '+maxDist.toFixed(3)+' units. Increase the max gap if the shortfall is larger.');
+    return;
+  }
+  pushUndo({type:'endpoint', edits});
+  refreshAfterEdit(); renderDrawings(); buildSnapIndex();
+  const worst=edits.reduce((m,e)=>Math.max(m,e.dist),0);
+  toast('Extended '+edits.length+' free end'+(edits.length===1?'':'s')+' (largest gap '+worst.toFixed(4)+'). Ctrl+Z to undo.');
 }
 
 /* ============================ TRIM ====================================== */
@@ -2465,6 +2778,8 @@ cv.addEventListener('mousedown',e=>{
       drawPts.push(p); draw();
     } else if(tool==='trim'){
       trimAt(px,py);
+    } else if(tool==='extend'){
+      extendAt(px,py);
     } else if(tool==='hatch'){
       hatchRegionAt(px,py);
     } else if(tool==='move'){
@@ -2512,6 +2827,10 @@ window.addEventListener('mousemove',e=>{
   } else if(tool==='trim' && DRAWINGS.length){
     const [px,py]=canvasPt(e);
     trimHover=findLineNear(px,py).idx;
+    draw();
+  } else if(tool==='extend' && DRAWINGS.length){
+    const [px,py]=canvasPt(e);
+    extendHover=findFreeEndNear(px,py);
     draw();
   }
 });
@@ -2965,8 +3284,8 @@ function entTo2000(e, dx, dy, H, owner){
   const ent=e.raw[0];
   const n=(c)=>gnum(ent,c);
   if(t==='HATCH'){
-    let s=L(0,'HATCH')+L(5,H())+L(330,owner)+L(100,'AcDbEntity')+L(8,lay);
-    for(const [c,v] of hatchBodyPairs(e._boundary, e._pattern||'SOLID', dx, dy)) s+=L(c,v);
+    let s=L(0,'HATCH')+L(5,H())+L(330,owner)+L(100,'AcDbEntity')+L(8,lay)+L(420,colorToTrueColor(e._fillColor||'#ff7a00'));
+    for(const [c,v] of hatchBodyPairs(e._boundaries||e._boundary, e._pattern||'SOLID', dx, dy)) s+=L(c,v);
     return s;
   }
   if(t==='LINE'){
@@ -3033,7 +3352,7 @@ function download(filename, text, mime){
    profile can be reopened exactly where it was left off. Everything derived
    (geometry, bounding boxes, topology) is recomputed on import.            */
 const PROJECT_FORMAT='dxf-studio-project';
-const PROJECT_VERSION=1;
+const PROJECT_VERSION=2;
 
 function serializeProject(){
   // original DXF sections, minus ENTITIES (rebuilt from the live ENTITIES array)
@@ -3057,6 +3376,7 @@ function serializeProject(){
       expFormat:$('#expFormat').value,
       expGeomOnly:$('#expGeomOnly').checked, expClosedOnly:$('#expClosedOnly').checked,
       expRecenter:$('#expRecenter').checked,
+      hatchPattern:hatchPattern(), hatchColor:hatchColor(),
       theme:THEME, uiMode, tool, rotAngle:$('#rotAngle')?$('#rotAngle').value:'90',
     },
     view:{scale:view.scale, ox:view.ox, oy:view.oy},
@@ -3066,6 +3386,7 @@ function serializeProject(){
       raw:e.raw, type:e.type, layer:e.layer, ltype:e.ltype||'',
       del:!!e.del, cls:e.cls, block:e.block||null,
       closed:!!e._closed, verts:e._verts||null, pattern:e._pattern||null, tiebar:!!e._tiebar,
+      boundaries:e._boundaries||null, fillColor:e._fillColor||null,
     })),
     drawings:DRAWINGS.map(d=>({
       id:d.id, name:d.name, color:d.color,
@@ -3106,6 +3427,8 @@ function loadProject(obj){
     raw:se.raw, type:se.type, layer:se.layer, ltype:se.ltype||'',
     geom:null, block:se.block||null, del:!!se.del, cls:se.cls,
     _verts:se.verts||undefined, _closed:!!se.closed, _pattern:se.pattern||undefined, _tiebar:!!se.tiebar,
+    _boundaries:se.boundaries||undefined, _boundary:se.boundaries&&se.boundaries[0]||undefined,
+    _fillColor:se.fillColor||undefined,
   }));
   for(let i=0;i<ENTITIES.length;i++) recomputeGeom(i);
 
@@ -3134,6 +3457,8 @@ function loadProject(obj){
   $('#expGeomOnly').checked=!!ui.expGeomOnly;
   $('#expClosedOnly').checked=!!ui.expClosedOnly;
   $('#expRecenter').checked=!!ui.expRecenter;
+  if(ui.hatchPattern) $('#hatchPattern').value=ui.hatchPattern;
+  if(ui.hatchColor) $('#hatchColor').value=normalizeHexColor(ui.hatchColor);
   if($('#rotAngle') && ui.rotAngle!==undefined) $('#rotAngle').value=ui.rotAngle;
   $('#spatialOpts').style.display = $('#method').value==='spatial'?'flex':'none';
   applyTheme(ui.theme==='light'?'light':'dark');
@@ -3166,6 +3491,7 @@ $('#fileInput').addEventListener('change',async e=>{
     DXF=parseDXF(text);
     DXF.blocks=parseBlocks(DXF);
     ENTITIES=buildEntities(DXF, DXF.blocks);
+    for(let i=0;i<ENTITIES.length;i++) if(ENTITIES[i].type==='HATCH') recomputeGeom(i);
     UNDO=[]; REDO=[]; updateHistoryButtons(); SEL_ENT.clear();
     LAYERS=new Map();
     for(const en of ENTITIES){ if(!LAYERS.has(en.layer)) LAYERS.set(en.layer,{visible:true}); }
@@ -3339,11 +3665,13 @@ function setTool(t){
   $('#toolLine').classList.toggle('on',t==='line');
   $('#toolPoly').classList.toggle('on',t==='poly');
   $('#toolTrim').classList.toggle('on',t==='trim');
+  $('#toolExtend').classList.toggle('on',t==='extend');
   $('#toolHatch').classList.toggle('on',t==='hatch');
   if(t!=='bridge'){ bridgeFirst=null; bridgeHover=null; }
+  if(t!=='extend') extendHover=null;
   if(t!=='line' && t!=='poly'){ drawPts=[]; }         // discard in-progress sketch
-  if(t==='line'||t==='poly'||t==='trim') buildSnapIndex();
-  if(t!=='line'&&t!=='poly'&&t!=='bridge'&&t!=='trim') hoverScreen=null;
+  if(t==='line'||t==='poly'||t==='trim'||t==='extend') buildSnapIndex();
+  if(t!=='line'&&t!=='poly'&&t!=='bridge'&&t!=='trim'&&t!=='extend') hoverScreen=null;
   snapPt=null;
   cv.style.cursor = t==='move'?'move':'crosshair';
   draw();
@@ -3355,8 +3683,11 @@ $('#toolMove').addEventListener('click',()=>setTool('move'));
 $('#toolLine').addEventListener('click',()=>{ setTool('line'); toast('Line tool: click start then end. Points snap to nearby vertices (▫). Esc cancels.'); });
 $('#toolPoly').addEventListener('click',()=>{ setTool('poly'); toast('Polyline tool: click each vertex · Enter/double-click = finish · C = close · Esc = cancel.'); });
 $('#toolTrim').addEventListener('click',()=>{ setTool('trim'); toast('Trim tool: click the part of a LINE you want to cut away (removed between its intersections with other geometry).'); });
-$('#toolHatch').addEventListener('click',()=>{ setTool('hatch'); toast('Hatch tool: click inside a closed region to mark it as a tie bar. Click a hatch to remove it.'); });
-$('#hatchTool2').addEventListener('click',()=>{ setTool('hatch'); toast('Hatch tool active: click inside a closed region.'); });
+$('#toolExtend').addEventListener('click',()=>{ setTool('extend'); toast('Extend tool: click a free line end — it is extended until it meets the nearest line.'); });
+$('#extendBtn').addEventListener('click',()=>{ setTool('extend'); toast('Extend tool active: click a free end (hover shows how far it will reach).'); });
+$('#extendAllBtn').addEventListener('click',autoExtendFreeEnds);
+$('#toolHatch').addEventListener('click',()=>{ setTool('hatch'); toast('Fill tool: click inside any bounded region to mark it as a tie bar. Click a fill to remove it.'); });
+$('#hatchTool2').addEventListener('click',()=>{ setTool('hatch'); toast('Fill tool active: click any bounded region, including one formed by separate curves.'); });
 $('#hatchSel').addEventListener('click',hatchSelectedRegions);
 $('#hatchClear').addEventListener('click',removeAllHatches);
 $('#rotCCW').addEventListener('click',()=>rotateCurrentSelection(1));

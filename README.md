@@ -52,6 +52,12 @@ modern browser and drop a DXF in.
   drawn between them to close the profile manually: endpoints snap under the
   cursor, a dashed preview shows the closing line with its length, and the
   new line inherits the profile's layer.
+- **⟶ Extend** (`E`) — a free line end that stops just short of a crossing
+  line is the usual reason a tie-bar region will not close. Click the end and
+  it is stretched along its own direction until it meets the nearest piece of
+  geometry (hover shows the reach and the exact distance). **Extend all free
+  ends** fixes every such shortfall in the selection at once, limited by a
+  **max gap** so nothing shoots across the drawing. Undoable.
 - **Delete open-ended** — removes geometry not part of any closed loop.
 - **⚡ Prepare for stiffness tool** — one click: strips
   dimensions/text/construction/hatches/frames, joins & closes chains, then
