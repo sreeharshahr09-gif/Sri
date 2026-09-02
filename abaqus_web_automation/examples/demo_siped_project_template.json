@@ -1,0 +1,262 @@
+{
+  "version": "0.7.0",
+  "step_token": null,
+  "uploaded_name": null,
+  "cad_metadata": null,
+  "sets": [
+    {
+      "name": "SIPE_001_SIDE_A",
+      "kind": "face",
+      "entity_ids": [
+        "B001_F0007"
+      ],
+      "source": "auto_sipe"
+    },
+    {
+      "name": "SIPE_001_SIDE_B",
+      "kind": "face",
+      "entity_ids": [
+        "B001_F0010"
+      ],
+      "source": "auto_sipe"
+    },
+    {
+      "name": "SIPE_001_WALLS",
+      "kind": "face",
+      "entity_ids": [
+        "B001_F0007",
+        "B001_F0010"
+      ],
+      "source": "auto_sipe"
+    },
+    {
+      "name": "SIPE_002_SIDE_A",
+      "kind": "face",
+      "entity_ids": [
+        "B001_F0011"
+      ],
+      "source": "auto_sipe"
+    },
+    {
+      "name": "SIPE_002_SIDE_B",
+      "kind": "face",
+      "entity_ids": [
+        "B001_F0014"
+      ],
+      "source": "auto_sipe"
+    },
+    {
+      "name": "SIPE_002_WALLS",
+      "kind": "face",
+      "entity_ids": [
+        "B001_F0011",
+        "B001_F0014"
+      ],
+      "source": "auto_sipe"
+    },
+    {
+      "name": "SIPE_003_SIDE_A",
+      "kind": "face",
+      "entity_ids": [
+        "B001_F0015"
+      ],
+      "source": "auto_sipe"
+    },
+    {
+      "name": "SIPE_003_SIDE_B",
+      "kind": "face",
+      "entity_ids": [
+        "B001_F0017"
+      ],
+      "source": "auto_sipe"
+    },
+    {
+      "name": "SIPE_003_WALLS",
+      "kind": "face",
+      "entity_ids": [
+        "B001_F0015",
+        "B001_F0017"
+      ],
+      "source": "auto_sipe"
+    },
+    {
+      "name": "ALL_SIPE_WALLS",
+      "kind": "face",
+      "entity_ids": [
+        "B001_F0007",
+        "B001_F0010",
+        "B001_F0011",
+        "B001_F0014",
+        "B001_F0015",
+        "B001_F0017"
+      ],
+      "source": "auto_sipe"
+    },
+    {
+      "name": "TREAD_BODY",
+      "kind": "body",
+      "entity_ids": [
+        "B001"
+      ]
+    },
+    {
+      "name": "TREAD_ROAD_CONTACT",
+      "kind": "face",
+      "entity_ids": [
+        "B001_F0003"
+      ]
+    }
+  ],
+  "sipe_detection": {
+    "applied": true,
+    "result": null
+  },
+  "model": {
+    "model_name": "Model-1",
+    "part_name": "ImportedPart",
+    "instance_name": "IMPORTEDPART-1"
+  },
+  "analysis": {
+    "job_name": "Demo_Sipe_Tread",
+    "solver": "standard",
+    "cpus": 2,
+    "nlgeom": true,
+    "field_variables": [
+      "U",
+      "S"
+    ]
+  },
+  "mesh": {
+    "global_size": 2.0,
+    "element_type": "C3D10H"
+  },
+  "road": {
+    "enabled": true,
+    "normal_axis": "Z",
+    "normal_sign": "-",
+    "length": 50.0,
+    "width": 40.0,
+    "center_x": 0.0,
+    "center_y": 0.0,
+    "center_z": 15.0,
+    "friction": 0.8,
+    "contact_set": "TREAD_ROAD_CONTACT"
+  },
+  "material_library": {
+    "include_token": null,
+    "uploaded_name": null,
+    "sha256": null,
+    "material_code": "RC1234",
+    "body_set": "TREAD_BODY",
+    "password": "",
+    "available_codes": []
+  },
+  "sipe": {
+    "radial_axis": "Z",
+    "top_sign": "+",
+    "max_gap": 1.2,
+    "min_depth": 8.0,
+    "opposition_tolerance_deg": 30.0,
+    "wall_tilt_tolerance_deg": 20.0,
+    "min_area": 0.0,
+    "friction": 0.8
+  },
+  "steps": [
+    {
+      "name": "Preload",
+      "time_period": 1.0,
+      "nlgeom": true,
+      "initial_increment": 0.01,
+      "min_increment": 1e-08,
+      "max_increment": 0.05,
+      "max_increments": 1000,
+      "stabilization": null
+    },
+    {
+      "name": "Longitudinal",
+      "time_period": 1.0,
+      "nlgeom": true,
+      "initial_increment": 0.01,
+      "min_increment": 1e-08,
+      "max_increment": 0.05,
+      "max_increments": 1000,
+      "stabilization": null
+    }
+  ],
+  "reference_points": [],
+  "interactions": [],
+  "self_contacts": [
+    {
+      "name": "SELF_SIPE_001",
+      "surface_set": "SIPE_001_WALLS",
+      "friction": 0.8,
+      "source": "auto_sipe"
+    },
+    {
+      "name": "SELF_SIPE_002",
+      "surface_set": "SIPE_002_WALLS",
+      "friction": 0.8,
+      "source": "auto_sipe"
+    },
+    {
+      "name": "SELF_SIPE_003",
+      "surface_set": "SIPE_003_WALLS",
+      "friction": 0.8,
+      "source": "auto_sipe"
+    }
+  ],
+  "boundary_conditions": [
+    {
+      "name": "RoadMotion",
+      "operation": "create",
+      "target_bc": "",
+      "step": "Preload",
+      "region_type": "rp",
+      "region": "RP_ROAD",
+      "u1": 0.0,
+      "u2": 0.0,
+      "u3": -1.0,
+      "ur1": 0.0,
+      "ur2": 0.0,
+      "ur3": 0.0
+    },
+    {
+      "name": "RoadMotion_Long",
+      "operation": "modify",
+      "target_bc": "RoadMotion",
+      "step": "Longitudinal",
+      "region_type": "set",
+      "region": "",
+      "u1": 10.0,
+      "u2": null,
+      "u3": null,
+      "ur1": null,
+      "ur2": null,
+      "ur3": null
+    }
+  ],
+  "loads": [],
+  "outputs": [
+    {
+      "variable": "U",
+      "region": "",
+      "position": "NODAL"
+    },
+    {
+      "variable": "S",
+      "region": "",
+      "position": "INTEGRATION_POINT"
+    }
+  ],
+  "parametric": [
+    {
+      "enabled": true,
+      "path": "road.friction",
+      "start": 0.6,
+      "end": 0.8,
+      "increment": 0.2
+    }
+  ],
+  "generation_id": null,
+  "_readme": "Load examples/demo_siped_tread.step first, then load this file with 'Load settings'. Upload your material .inc and set the material code before generating."
+}

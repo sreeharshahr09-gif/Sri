@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+{# Refreshes itself only while work is outstanding. No polling JavaScript. #}
+{% if active %}<meta http-equiv="refresh" content="3">{% endif %}
+<title>Abaqus run {{ generation_id }}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div><h1>Abaqus run</h1><p>{{ generation_id }}</p></div>
+  <div class="status">v{{ version }}</div>
+</header>
+
+<main class="runpage">
+  <p class="note {{ 'ok' if status.state == 'complete' else 'warn' if active else 'err' }}">
+    State: <b>{{ status.state }}</b>
+    {% if active %}&middot; this page refreshes every 3 seconds{% endif %}
+  </p>
+  {% if status.error %}<p class="note err">{{ status.error }}</p>{% endif %}
+
+  <table>
+    <tr><th>Case</th><th>State</th><th>Solver rc</th><th>Extract rc</th><th>Detail</th></tr>
+    {% for c in status.cases %}
+    <tr>
+      <td>{{ c.name }}</td>
+      <td>{{ c.state }}</td>
+      <td>{{ c.get('solver_return_code', '') }}</td>
+      <td>{{ c.get('extract_return_code', '') }}</td>
+      <td class="muted">{{ c.get('error', '') }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">No cases reported yet.</td></tr>
+    {% endfor %}
+  </table>
+
+  {% for c in status.cases %}{% if c.get('log_tail') %}
+    <h3>{{ c.name }} &mdash; last log lines</h3>
+    <pre>{{ c.log_tail }}</pre>
+  {% endif %}{% endfor %}
+
+  <h3>Raw status</h3>
+  <pre>{{ status_json }}</pre>
+
+  <p class="row">
+    <a class="btn" href="/">Back to project</a>
+    <a class="btn" href="/download/{{ generation_id }}">Download package</a>
+  </p>
+</main>
+</body>
+</html>

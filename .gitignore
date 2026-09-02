@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Application workspace (uploads, generated packages, saved project)
+abaqus_web_automation/workspace/

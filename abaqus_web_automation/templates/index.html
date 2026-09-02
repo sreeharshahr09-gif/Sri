@@ -1,0 +1,182 @@
+{% import "_macros.html" as m %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>STEP &rarr; Abaqus Automation</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div>
+    <h1>STEP &rarr; Abaqus Automation</h1>
+    <p>Pick geometry in the viewer; Python does the rest.</p>
+  </div>
+  <div class="status">v{{ version }}</div>
+</header>
+
+{% if notices.error or notices.warning or notices.info or errors %}
+<div class="notices">
+  {% for msg in notices.error %}<p class="note err">{{ msg }}</p>{% endfor %}
+  {% for msg in errors %}<p class="note err">{{ msg }}</p>{% endfor %}
+  {% for msg in notices.warning %}<p class="note warn">{{ msg }}</p>{% endfor %}
+  {% for msg in warnings %}<p class="note warn">{{ msg }}</p>{% endfor %}
+  {% for msg in notices.info %}<p class="note ok">{{ msg }}</p>{% endfor %}
+</div>
+{% endif %}
+
+<main class="layout">
+
+<aside class="panel">
+  <section>
+    <h2>1. Geometry</h2>
+    <form method="post" action="/step" enctype="multipart/form-data">
+      <input type="file" name="file" accept=".step,.stp" required>
+      <button class="primary" type="submit">Upload STEP</button>
+    </form>
+    <p class="muted">
+      {% if p.uploaded_name %}
+        <b>{{ p.uploaded_name }}</b><br>
+        {{ p.cad_metadata.bodies|length }} bodies &middot;
+        {{ p.cad_metadata.faces|length }} faces &middot;
+        {{ p.cad_metadata.edges|length }} edges
+      {% else %}No STEP loaded.{% endif %}
+    </p>
+  </section>
+
+  <section>
+    <h2>2. Named sets</h2>
+    <div class="seg">
+      <button type="button" class="mode active" data-mode="face">Faces</button>
+      <button type="button" class="mode" data-mode="edge">Edges</button>
+      <button type="button" class="mode" data-mode="body">Bodies</button>
+    </div>
+    <p class="muted" id="selInfo">Click geometry in the viewer to select.</p>
+    <form method="post" action="/sets">
+      <input type="hidden" name="kind" id="setKind" value="face">
+      <input type="hidden" name="entity_ids" id="setIds" value="">
+      <label class="fld"><span>Set name</span>
+        <input name="name" id="setName" placeholder="e.g. TREAD_ROAD_CONTACT" required></label>
+      <button class="primary" type="submit">Create / update set</button>
+      <button type="button" id="clearSel">Clear selection</button>
+    </form>
+    <div class="setlist">
+      {% for s in p.sets %}
+      <div class="setrow {{ 'auto' if s.source == 'auto_sipe' else '' }}">
+        <div><b>{{ s.name }}</b><br><span class="muted">{{ s.kind }} &middot; {{ s.entity_ids|length }} entities</span></div>
+        <div class="row">
+          <button type="button" class="pickSet" data-kind="{{ s.kind }}"
+                  data-ids="{{ s.entity_ids|join(',') }}" data-name="{{ s.name }}">Select</button>
+          <form method="post" action="/sets/delete">
+            <input type="hidden" name="name" value="{{ s.name }}">
+            <button class="danger" type="submit">Delete</button>
+          </form>
+        </div>
+      </div>
+      {% else %}<p class="muted">No sets yet.</p>{% endfor %}
+    </div>
+  </section>
+
+  <section>
+    <h2>3. Sipe wall detection</h2>
+    <form method="post" action="/sipes/detect">
+      {{ m.group('sipe', groups.sipe, p.sipe, options) }}
+      <button class="primary" type="submit">Detect sipes</button>
+    </form>
+    {% set det = p.sipe_detection.result %}
+    {% if det and det.sipes %}
+      <p class="muted">Detected <b>{{ det.sipes|length }}</b> sipe(s), {{ det.all_wall_ids|length }} wall faces
+        (shown in purple).</p>
+      <ul class="muted">
+        {% for s in det.sipes %}
+        <li>{{ s.name }} &middot; gap {{ '%.3f'|format(s.gap_estimate) }} &middot;
+            depth {{ '%.3f'|format(s.depth_estimate) }} &middot;
+            confidence {{ '%.0f'|format(100 * s.confidence) }}%</li>
+        {% endfor %}
+      </ul>
+      <form method="post" action="/sipes/apply">
+        <button type="submit">Apply detected sets + self-contact</button>
+      </form>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>Project file</h2>
+    <div class="row">
+      <a class="btn" href="/project.json">Download settings</a>
+      <form method="post" action="/project/reset"><button class="danger" type="submit">Reset</button></form>
+    </div>
+    <form method="post" action="/project/load" enctype="multipart/form-data">
+      <input type="file" name="file" accept=".json" required>
+      <button type="submit">Load settings</button>
+    </form>
+  </section>
+</aside>
+
+<section class="viewer">
+  <canvas id="glcanvas"></canvas>
+  <div class="hint">Drag: rotate &middot; Wheel: zoom &middot; Shift+drag: pan &middot; Click: select</div>
+</section>
+
+<aside class="panel">
+  {# One form for every setting. Save posts to /project; Generate posts the same
+     fields to /generate, so nothing can be left unsaved at generation time. #}
+  <form method="post" action="/project">
+    <h2>Model &amp; solver</h2>
+    {{ m.group('model', groups.model, p.model, options) }}
+    {{ m.group('analysis', groups.analysis, p.analysis, options) }}
+    {{ m.group('mesh', groups.mesh, p.mesh, options) }}
+
+    <h2>Material include library</h2>
+    <p class="muted">
+      {% if p.material_library.uploaded_name %}
+        <b>{{ p.material_library.uploaded_name }}</b>
+        {% if p.material_library.available_codes %}
+          &middot; {{ p.material_library.available_codes|length }} code(s) readable
+        {% else %}&middot; no plaintext codes (encrypted library){% endif %}
+      {% else %}No material library uploaded &mdash; required to generate.{% endif %}
+    </p>
+    {{ m.group('material_library', groups.material_library, p.material_library, options) }}
+
+    <h2>Analytical rigid road</h2>
+    {{ m.group('road', groups.road, p.road, options) }}
+
+    {{ m.rows('steps', sections.steps, p.steps, options) }}
+    {{ m.rows('reference_points', sections.reference_points, p.reference_points, options) }}
+    {{ m.rows('interactions', sections.interactions, p.interactions, options) }}
+    {{ m.rows('self_contacts', sections.self_contacts, p.self_contacts, options) }}
+    {{ m.rows('boundary_conditions', sections.boundary_conditions, p.boundary_conditions, options) }}
+    {{ m.rows('loads', sections.loads, p.loads, options) }}
+    {{ m.rows('outputs', sections.outputs, p.outputs, options) }}
+    {{ m.rows('parametric', sections.parametric, p.parametric, options) }}
+
+    <div class="sticky-actions">
+      <button class="primary" type="submit">Save settings</button>
+      <button type="submit" formaction="/generate">Generate analysis package</button>
+    </div>
+  </form>
+
+  <section>
+    <h2>Generate / Run</h2>
+    {% if p.generation_id %}
+      <p class="note ok">Package <code>{{ p.generation_id }}</code> is ready.
+        <a href="/download/{{ p.generation_id }}">Download zip</a></p>
+      <form method="post" action="/run">
+        <label class="fld"><span>Abaqus command</span>
+          <input name="abaqus_command" value="{{ p.get('abaqus_command') or 'abaqus' }}"
+                 placeholder="abaqus or full launcher path"></label>
+        <button class="primary" type="submit">Run in Abaqus</button>
+      </form>
+      <p class="muted"><a href="/run/{{ p.generation_id }}">Open run status</a></p>
+    {% else %}
+      <p class="muted">Nothing generated yet. Fix any red messages above, then press
+        <b>Generate analysis package</b>.</p>
+    {% endif %}
+  </section>
+</aside>
+</main>
+
+<script>window.SETS = {{ sets_json|safe }}; window.SIPE_PREVIEW = {{ sipe_preview_json|safe }};</script>
+<script src="/static/viewer.js"></script>
+</body>
+</html>

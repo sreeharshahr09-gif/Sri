@@ -1,0 +1,56 @@
+{# One renderer for every field, driven by core/project.py's schema. #}
+{% macro field(f, value, name, options) %}
+<label class="fld {{ 'check' if f.type == 'bool' else '' }}">
+  {% if f.type == 'bool' %}
+    <input type="checkbox" name="{{ name }}" {{ 'checked' if value else '' }}> {{ f.label }}
+  {% else %}
+    <span>{{ f.label }}</span>
+    {% if f.type == 'select' and f.get('free_text') %}
+      <input name="{{ name }}" value="{{ value if value is not none else '' }}" list="dl-{{ name }}">
+      <datalist id="dl-{{ name }}">
+        {% for opt in options %}<option value="{{ opt[0] }}"></option>{% endfor %}
+      </datalist>
+    {% elif f.type == 'select' %}
+      <select name="{{ name }}">
+        {% if f.get('blank') %}<option value="">&mdash;</option>{% endif %}
+        {% for opt in options %}
+          <option value="{{ opt[0] }}" {{ 'selected' if opt[0] == value else '' }}>{{ opt[1] }}</option>
+        {% endfor %}
+      </select>
+    {% elif f.type in ('num', 'int') %}
+      <input type="number" step="{{ '1' if f.type == 'int' else 'any' }}" name="{{ name }}"
+             value="{{ '' if value is none else value }}">
+    {% else %}
+      <input type="text" name="{{ name }}" value="{{ value if value is not none else '' }}">
+    {% endif %}
+  {% endif %}
+</label>
+{% endmacro %}
+
+{% macro group(key, spec, data, options) %}
+<div class="grid">
+  {% for f in spec.fields %}
+    {{ field(f, data.get(f.key), key ~ '-' ~ f.key,
+             options(f.source, data) if f.get('source') else f.get('options', [])) }}
+  {% endfor %}
+</div>
+{% endmacro %}
+
+{% macro rows(key, spec, items, options) %}
+<div class="section-head">
+  <h3>{{ spec.title }}</h3>
+  <button name="action" value="add:{{ key }}">+ Add {{ spec.singular }}</button>
+</div>
+{% if not items %}<p class="muted">No {{ spec.singular }} defined.</p>{% endif %}
+{% for row in items %}
+<div class="card">
+  <div class="grid">
+    {% for f in spec.fields %}
+      {{ field(f, row.get(f.key), key ~ '-' ~ loop.index0 ~ '-' ~ f.key,
+               options(f.source, row) if f.get('source') else f.get('options', [])) }}
+    {% endfor %}
+  </div>
+  <button class="danger" name="action" value="del:{{ key }}:{{ loop.index0 }}">Remove</button>
+</div>
+{% endfor %}
+{% endmacro %}
