@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Abaqus INP Editor</title>
+<link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark">*INP</span>
+      <span>Abaqus Input Editor</span>
+      <span class="sub">read · inspect · edit · export</span>
+    </div>
+
+    <div class="file-info">
+      <div id="file-name">no file loaded</div>
+      <div id="file-meta"></div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <span id="dirty-badge" class="badge">unchanged</span>
+    <button id="open-btn" class="btn" title="Open an .inp file (Ctrl+O)">Open .inp</button>
+    <button id="export-btn" class="btn primary" title="Export the edited model (Ctrl+E)">Export INP</button>
+    <input id="file-input" type="file" accept=".inp,.txt,.dat,text/plain" hidden>
+  </header>
+
+  <div class="main">
+
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">
+        <input id="tree-search" type="search" placeholder="Find a section…" spellcheck="false">
+      </div>
+      <nav id="tree"></nav>
+    </aside>
+
+    <div class="splitter" data-target="sidebar" data-dir="left"></div>
+
+    <main class="content" id="content"></main>
+
+    <div class="splitter" data-target="viewer-pane" data-dir="right"></div>
+
+    <section class="viewer-pane" id="viewer-pane">
+      <div class="viewer-toolbar">
+        <button class="view-btn" data-view="iso" title="Isometric view">ISO</button>
+        <button class="view-btn" data-view="front" title="Front view (-Z)">F</button>
+        <button class="view-btn" data-view="back" title="Back view">B</button>
+        <button class="view-btn" data-view="left" title="Left view">L</button>
+        <button class="view-btn" data-view="right" title="Right view">R</button>
+        <button class="view-btn" data-view="top" title="Top view">T</button>
+        <button class="view-btn" data-view="bottom" title="Bottom view">Bo</button>
+        <button class="view-btn" id="fit-btn" title="Fit the model in the viewport">Fit</button>
+
+        <span class="group-sep"></span>
+
+        <label class="opt" title="Draw shaded faces">
+          <input type="checkbox" id="opt-shaded" checked> Shaded
+        </label>
+        <label class="opt" title="Which edges to draw">
+          Edges
+          <select id="opt-edges">
+            <option value="none">none</option>
+            <option value="feature" selected>feature</option>
+            <option value="mesh">mesh</option>
+          </select>
+        </label>
+        <label class="opt" title="Draw every node as a point">
+          <input type="checkbox" id="opt-nodes"> Nodes
+        </label>
+        <label class="opt" title="Draw analytical rigid surfaces">
+          <input type="checkbox" id="opt-analytical" checked> Analytical
+        </label>
+
+        <span class="group-sep"></span>
+
+        <label class="opt" title="Surface opacity">
+          Opacity
+          <input type="range" id="opt-opacity" min="0.15" max="1" step="0.05" value="1">
+        </label>
+        <label class="opt" title="Which global axis points up">
+          Up
+          <select id="opt-up">
+            <option value="0">X</option>
+            <option value="1" selected>Y</option>
+            <option value="2">Z</option>
+          </select>
+        </label>
+        <label class="opt" title="Perspective or parallel projection">
+          <input type="checkbox" id="opt-perspective" checked> Persp
+        </label>
+
+        <span class="group-sep"></span>
+        <button class="view-btn" id="clear-sel-btn" title="Clear the current highlight">Clear sel</button>
+      </div>
+
+      <div class="stale-bar" id="stale-bar">
+        <span>Mesh edits are not in the view yet.</span>
+        <button class="view-btn" id="rebuild-btn">Rebuild view</button>
+      </div>
+
+      <div class="canvas-wrap">
+        <canvas id="gl"></canvas>
+        <div class="vis-panel">
+          <h4>Visible geometry</h4>
+          <div id="vis-list"></div>
+        </div>
+      </div>
+
+      <div class="viewer-foot" id="pick-info">
+        <span class="hint">Click geometry to inspect an element.</span>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<div class="drop-zone" id="drop-zone">
+  <div class="drop-inner">
+    <h1>Abaqus INP Editor</h1>
+    <p>
+      Drop an Abaqus <code>.inp</code> file here to break it into readable sections,
+      draw the model, edit any card, and write it back out as a valid input file.
+    </p>
+    <div class="drop-actions">
+      <button class="btn primary" onclick="document.getElementById('file-input').click()">Choose a file…</button>
+      <button class="btn" id="load-sample">Load a demo model</button>
+    </div>
+  </div>
+  <div class="feature-list">
+    <div class="feature">
+      <b>Every card, grouped</b>
+      Parts, assembly and instances, materials, interactions, boundary conditions and steps —
+      each with its parameters and data laid out as a table.
+    </div>
+    <div class="feature">
+      <b>The model, drawn</b>
+      Exterior surfaces, feature edges, beams and rigid surfaces, with click-to-inspect
+      elements and set highlighting.
+    </div>
+    <div class="feature">
+      <b>Editable throughout</b>
+      Change a parameter, a coordinate, a connectivity row or a whole card as raw text.
+      Unknown keywords stay editable rather than being dropped.
+    </div>
+    <div class="feature">
+      <b>Faithful export</b>
+      Cards you did not touch are written back byte for byte, so the diff against the
+      original shows only your edits.
+    </div>
+  </div>
+</div>
+
+<div class="busy" id="busy"></div>
+
+<script src="src/parser.js"></script>
+<script src="src/model.js"></script>
+<script src="src/geometry.js"></script>
+<script src="src/writer.js"></script>
+<script src="src/gl.js"></script>
+<script src="src/viewer.js"></script>
+<script src="src/ui.js"></script>
+<script src="src/panels.js"></script>
+<script src="src/demo.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>
