@@ -1,24 +1,37 @@
 :root{--bg:#eef2f6;--panel:#fff;--ink:#172033;--muted:#667085;--line:#d9e0e8;--accent:#176b87;--danger:#b42318}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:14px Inter,"Segoe UI",Arial,sans-serif}
-header{padding:12px 18px;background:#102a43;color:#fff;display:flex;align-items:center;justify-content:space-between}
+/* The shell is a flex column pinned to the viewport, so the page itself never
+   scrolls on a desktop layout. A scrolling page was the real problem: the wheel
+   over the canvas is captured for zoom, so a user trying to scroll the page
+   zoomed the model instead. */
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px Inter,"Segoe UI",Arial,sans-serif;
+  display:flex;flex-direction:column;overflow:hidden}
+header{flex:0 0 auto;padding:12px 18px;background:#102a43;color:#fff;display:flex;align-items:center;justify-content:space-between}
 header h1{font-size:19px;margin:0 0 2px}
 header p{margin:0;color:#c9d7e3;font-size:12px}
 .status{padding:6px 10px;border-radius:8px;background:#173f5f;font-size:12px}
 
-.notices{padding:8px 12px 0}
+.notices{flex:0 0 auto;padding:8px 12px 0;max-height:22vh;overflow:auto}
 .note{margin:0 0 6px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:#fff;font-size:13px}
 .note.err{background:#fef3f2;border-color:#f0c1bb;color:#912018}
 .note.warn{background:#fffaeb;border-color:#f0d9a0;color:#8a5a08}
 .note.ok{background:#effaf5;border-color:#a7dcc5;color:#146c4e}
+details.note summary{cursor:pointer;font-weight:600}
+details.note ul{margin:6px 0 0;padding-left:20px}
+details.note li{margin:2px 0}
 
-.layout{display:grid;grid-template-columns:330px minmax(360px,1fr) 460px;gap:8px;padding:8px;
-  height:calc(100vh - 78px)}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;overflow:auto}
-.viewer{position:relative;background:#dfe7ee;border:1px solid var(--line);border-radius:10px;overflow:hidden;min-width:0}
+.layout{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:330px minmax(360px,1fr) 460px;
+  gap:8px;padding:8px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;
+  overflow:auto;min-height:0}
+.viewer{position:relative;background:#dfe7ee;border:1px solid var(--line);border-radius:10px;
+  overflow:hidden;min-width:0;min-height:0}
 #glcanvas{width:100%;height:100%;display:block}
 .hint{position:absolute;left:10px;bottom:10px;background:rgba(16,42,67,.86);color:#fff;
   border-radius:7px;padding:6px 9px;font-size:12px}
+.viewbar{position:absolute;right:10px;top:10px;display:flex;gap:4px}
+.viewbar button{padding:5px 9px;font-size:12px;background:rgba(255,255,255,.92)}
 
 section{border-bottom:1px solid #edf0f3;padding-bottom:12px;margin-bottom:12px}
 section:last-child{border-bottom:0}
@@ -66,4 +79,10 @@ th{background:#f4f7fa}
 pre{background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;font-size:12px}
 code{background:#eef2f6;padding:1px 4px;border-radius:4px}
 
-@media(max-width:1200px){.layout{grid-template-columns:1fr;height:auto}.viewer{height:460px}}
+/* Stacked layout: here the page must scroll, so it is allowed to. */
+@media(max-width:1200px){
+  body{overflow:auto}
+  .layout{grid-template-columns:1fr}
+  .panel{overflow:visible}
+  .viewer{height:70vh;min-height:420px}
+}

@@ -158,12 +158,26 @@ function draw() {
   gl.enable(gl.DEPTH_TEST);
 }
 
+function modelDiagonal() {
+  const b = view.bbox;
+  return b ? (Math.hypot(b[3] - b[0], b[4] - b[1], b[5] - b[2]) || 1) : 1;
+}
+
 function fitView() {
   const b = view.bbox;
   if (!b) return;
   camera.target = [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2];
   camera.pan = [0, 0, 0];
-  camera.dist = (Math.hypot(b[3] - b[0], b[4] - b[1], b[5] - b[2]) || 1) * 1.5;
+  camera.dist = modelDiagonal() * 1.5;
+  draw();
+}
+
+/* Keep the camera within a sensible range of the model so a fast wheel or
+   trackpad gesture cannot bury the camera inside the geometry or fling it so
+   far away that the model disappears. */
+function clampDistance(d) {
+  const diag = modelDiagonal();
+  return Math.min(Math.max(d, diag * 0.05), diag * 50);
 }
 
 function resize() {
@@ -244,21 +258,35 @@ document.querySelectorAll('.pickSet').forEach(b => b.onclick = () => {
   syncForm();
 });
 
-canvas.addEventListener('mousedown', e => {
-  drag = { x: e.clientX, y: e.clientY, shift: e.shiftKey, moved: false };
+canvas.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  // Pointer capture keeps the drag bound to this element, so a release outside
+  // the window still reaches us. Without it a button released off-window left
+  // the drag active and the model followed the mouse with no button held.
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  drag = { id: e.pointerId, x: e.clientX, y: e.clientY, shift: e.shiftKey, moved: false };
 });
-window.addEventListener('mouseup', e => {
+function endDrag(e) {
   if (!drag) return;
-  const moved = drag.moved; drag = null;
-  if (moved || e.target !== canvas) return;
+  const moved = drag.moved;
+  try { canvas.releasePointerCapture(drag.id); } catch (_) {}
+  drag = null;
+  if (moved || e.type !== 'pointerup') return;
   const r = canvas.getBoundingClientRect();
-  const id = pick(e.clientX - r.left, e.clientY - r.top);
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  if (x < 0 || y < 0 || x > r.width || y > r.height) return;
+  const id = pick(x, y);
   if (!id) return;
   view.selection.has(id) ? view.selection.delete(id) : view.selection.add(id);
   syncForm();
-});
-window.addEventListener('mousemove', e => {
+}
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+window.addEventListener('blur', () => { drag = null; });
+window.addEventListener('pointermove', e => {
   if (!drag) return;
+  // Belt and braces: if no button is held any more, the release was missed.
+  if (e.buttons === 0) { drag = null; return; }
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
   if (Math.hypot(dx, dy) > 2) drag.moved = true;
   drag.x = e.clientX; drag.y = e.clientY;
@@ -273,18 +301,47 @@ window.addEventListener('mousemove', e => {
   }
   draw();
 });
+function pageCanScroll() {
+  return document.documentElement.scrollHeight > window.innerHeight + 1;
+}
+
 canvas.addEventListener('wheel', e => {
+  // On the desktop layout the page cannot scroll, so a plain wheel zooms. On the
+  // narrow stacked layout the page does scroll, and swallowing the wheel there
+  // would zoom the model while the user was only trying to scroll the page --
+  // so the gesture only zooms with Ctrl held.
+  if (pageCanScroll() && !e.ctrlKey && !e.metaKey) return;
   e.preventDefault();
-  // Clamp the distance itself. v0.6 wrote Math.max(camera.dist * 0.2, 1e-5),
-  // which multiplied the distance by 0.2 on every wheel event and shot the
-  // camera into the model.
-  camera.dist = Math.max(camera.dist * Math.exp(e.deltaY * 0.001), 1e-5);
+  // deltaY is reported in pixels, lines or pages depending on the device.
+  // Normalising first keeps one wheel notch feeling the same everywhere; v0.6
+  // scaled the raw value and also multiplied the distance by 0.2 every event.
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+  const steps = Math.max(-4, Math.min(4, (e.deltaY * unit) / 120));
+  camera.dist = clampDistance(camera.dist * Math.exp(steps * 0.12));
   draw();
 }, { passive: false });
+
+// Tell the user which rule is in force right now.
+function updateHint() {
+  const hint = document.querySelector('.hint');
+  if (!hint) return;
+  hint.textContent = 'Drag: rotate \u00b7 ' + (pageCanScroll() ? 'Ctrl+Wheel' : 'Wheel') +
+    ': zoom \u00b7 Shift+drag: pan \u00b7 Click: select \u00b7 Fit resets the view';
+}
+window.addEventListener('resize', updateHint);
+
+const views = {
+  fit: () => fitView(),
+  front: () => { camera.yaw = -Math.PI / 2; camera.pitch = 0; draw(); },
+  right: () => { camera.yaw = 0; camera.pitch = 0; draw(); },
+  top: () => { camera.pitch = Math.PI / 2 - 0.001; draw(); }
+};
+document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => views[b.dataset.view]());
 
 initGL();
 new ResizeObserver(resize).observe(canvas);
 resize();
+updateHint();
 
 fetch('/api/mesh')
   .then(r => r.ok ? r.json() : null)

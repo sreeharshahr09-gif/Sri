@@ -15,13 +15,27 @@
   <div class="status">v{{ version }}</div>
 </header>
 
-{% if notices.error or notices.warning or notices.info or errors %}
+{% if notices.error or notices.warning or notices.info or errors or warnings %}
 <div class="notices">
+  {# Messages from the action just taken. #}
   {% for msg in notices.error %}<p class="note err">{{ msg }}</p>{% endfor %}
-  {% for msg in errors %}<p class="note err">{{ msg }}</p>{% endfor %}
   {% for msg in notices.warning %}<p class="note warn">{{ msg }}</p>{% endfor %}
-  {% for msg in warnings %}<p class="note warn">{{ msg }}</p>{% endfor %}
   {% for msg in notices.info %}<p class="note ok">{{ msg }}</p>{% endfor %}
+
+  {# Standing validation state, collapsed so it cannot push the viewer around
+     as items appear and disappear. #}
+  {% if errors %}
+  <details class="note err">
+    <summary><b>{{ errors|length }}</b> item(s) must be fixed before generating</summary>
+    <ul>{% for msg in errors %}<li>{{ msg }}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+  {% if warnings %}
+  <details class="note warn">
+    <summary><b>{{ warnings|length }}</b> warning(s)</summary>
+    <ul>{% for msg in warnings %}<li>{{ msg }}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -115,7 +129,13 @@
 
 <section class="viewer">
   <canvas id="glcanvas"></canvas>
-  <div class="hint">Drag: rotate &middot; Wheel: zoom &middot; Shift+drag: pan &middot; Click: select</div>
+  <div class="viewbar">
+    <button type="button" data-view="fit">Fit</button>
+    <button type="button" data-view="front">Front</button>
+    <button type="button" data-view="top">Top</button>
+    <button type="button" data-view="right">Right</button>
+  </div>
+  <div class="hint">Drag: rotate &middot; Wheel: zoom &middot; Shift+drag: pan &middot; Click: select &middot; Fit resets the view</div>
 </section>
 
 <aside class="panel">
