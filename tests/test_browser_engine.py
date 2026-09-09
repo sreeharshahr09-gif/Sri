@@ -1758,15 +1758,23 @@ def test_every_setup_section_has_a_heading_a_purpose_and_its_own_colour():
         assert len(sub) > 25, f"section {n} does not say what it is for"
     assert "<div class=\"title\">" not in setup, "the old bare titles must be gone"
 
+    # One section is NOT a step in that workflow: the STEP reader measures land
+    # and sea off a 3D model on its own, needing neither a drawing nor a Run.
+    # It carries a badge rather than a number, so the 0..7 sequence above still
+    # describes a sequence.
+    badges = re.findall(r'<div class="ghead"><span class="gnum">([^<]+)</span>', setup)
+    odd = [b for b in badges if not b.isdigit()]
+    assert odd == ["3D"], f"exactly one section is un-numbered, and it is the STEP one: {badges}"
+
     # every section id has a hue, in both themes
     ids = re.findall(r'id="(grp-[a-z]+)"', setup)
-    assert len(ids) == 8
+    assert len(ids) == 9
     for gid in ids:
         assert re.search(r"#" + gid + r"\s*{[^}]*--g:", css), f"{gid} has no colour"
         assert f':root[data-theme="light"] #{gid}' in css, f"{gid} has no light-theme colour"
     # the hues must be distinct, or colour-coding conveys nothing
     hues = re.findall(r"#grp-[a-z]+\s*{ --g: (#[0-9a-f]{6}); }", css)
-    assert len(hues) == 8 and len(set(hues)) == 8, hues
+    assert len(hues) == 9 and len(set(hues)) == 9, hues
 
     # Each section is opened by exactly one tab, in the same order and in the
     # same hue, so the tab and the card it opens read as the same thing.
@@ -2830,3 +2838,194 @@ def test_the_new_read_outs_do_not_grow_the_payload():
     rc = ui[ui.index("function renderCompare("):ui.index("  // Every held design")]
     assert "metricSeries(r, metric)" in rc
     assert "r[metric]" not in rc, "a raw lookup would skip the derived metrics"
+
+
+# ---------------------------------------------------------------------------
+# STEP import: land and sea measured off the 3D model
+# ---------------------------------------------------------------------------
+
+
+def test_step_audit_passes():
+    """The full audit of the STEP reader.
+
+    Part 21 grammar (escaped quotes, comments, complex instances), the closed
+    forms the reader claims to be exact in, every fixture against an area
+    computed on paper, the same areas again by point sampling, and the negative
+    controls that show those checks can fail.
+    """
+    node = _node()
+    proc = subprocess.run([node, os.path.join(APP, "stepaudit.js")],
+                          capture_output=True, text=True, cwd=REPO, timeout=900)
+    assert proc.returncode == 0, proc.stdout[-8000:] + proc.stderr[-2000:]
+    assert "checks passed" in proc.stdout
+
+
+def test_the_land_area_agrees_with_a_python_calculation_of_the_same_solid():
+    """The JS reader against arithmetic done here, in another language.
+
+    ``data/step_plate_holes.step`` is a 100 x 60 plate with two 20 x 10 voids
+    and a round hole of radius 5.  Its land area is a thing anyone can work out
+    on paper, and the point of the fixture is that this test does exactly that
+    rather than trusting the reader to check itself.
+    """
+    node = _node()
+    script = f"""
+const S = require({json.dumps(os.path.join(APP, 'stepio.js'))});
+const fs = require("fs");
+const m = S.readModel(fs.readFileSync({json.dumps(os.path.join(REPO, 'data', 'step_plate_holes.step'))}, "utf8"));
+const t = S.suggestTread(m.groups), f = S.suggestFloor(m.groups, t);
+const r = S.measure(m.groups, [t.key], {{floorKey: f.key}});
+process.stdout.write(JSON.stringify({{
+  land: r.land_mm2, sea: r.sea_mm2, env: r.envelope_mm2, ratio: r.land_ratio,
+  edge: r.edge_length_mm, depth: r.groove_depth_mm, holes: r.n_holes,
+  faces: r.n_faces, unmeasured: m.n_unmeasured, unit: m.unit.mm,
+}}));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
+    assert res.returncode == 0, res.stderr[:2000]
+    got = json.loads(res.stdout)
+
+    land = 100 * 60 - 2 * (20 * 10) - np.pi * 5 ** 2
+    perimeter = 2 * (100 + 60) + 2 * 2 * (20 + 10) + 2 * np.pi * 5
+    assert got["land"] == pytest.approx(land, rel=1e-12)
+    assert got["env"] == pytest.approx(6000.0, rel=1e-12)
+    assert got["sea"] == pytest.approx(6000.0 - land, rel=1e-12)
+    assert got["ratio"] == pytest.approx(land / 6000.0, rel=1e-12)
+    # A hole adds wall, so the perimeter counts it -- biting edge is edge.
+    assert got["edge"] == pytest.approx(perimeter, rel=1e-12)
+    assert got["holes"] == 3 and got["faces"] == 1
+    assert got["depth"] == pytest.approx(8.0, rel=1e-12), "10 mm top over a 2 mm floor"
+    assert got["unmeasured"] == 0 and got["unit"] == 1.0
+
+
+def test_a_cylindrical_tread_is_developed_not_projected():
+    """A tread band on the tyre is a cylinder.  Projecting it onto a plane
+    shortens every circumferential length by the chord-to-arc ratio and quietly
+    under-reports the land; a cylinder develops exactly, so the flattened area
+    IS the surface area, and that is what must come out.
+    """
+    node = _node()
+    script = f"""
+const S = require({json.dumps(os.path.join(APP, 'stepio.js'))});
+const fs = require("fs");
+const m = S.readModel(fs.readFileSync({json.dumps(os.path.join(REPO, 'data', 'step_band_cyl.step'))}, "utf8"));
+const t = S.suggestTread(m.groups);
+const r = S.measure(m.groups, [t.key], {{}});
+process.stdout.write(JSON.stringify({{land: r.land_mm2, w: r.bbox.w, h: r.bbox.h,
+  kind: t.kind, radius: t.info.radius}}));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
+    assert res.returncode == 0, res.stderr[:2000]
+    got = json.loads(res.stdout)
+
+    arc = 300.0 * np.radians(30.0)                    # R * theta, the developed length
+    chord = 2 * 300.0 * np.sin(np.radians(15.0))      # what a projection would give
+    assert got["kind"] == "cylinder" and got["radius"] == pytest.approx(300.0)
+    assert got["w"] == pytest.approx(arc, rel=1e-9)
+    assert got["land"] == pytest.approx((30 + 35 + 45 + 48) * arc, rel=1e-9)
+    assert got["h"] == pytest.approx(200.0, rel=1e-9)
+    # The distinction is worth 1.1% here and grows with the arc, so a test that
+    # could not tell the two apart would not be testing anything.
+    assert abs(arc - chord) / arc > 0.01
+
+
+def test_a_surface_that_cannot_be_measured_is_reported_not_dropped():
+    """A face silently missing from a land ratio is a wrong answer that looks
+    like a right one.  Only planes and cylinders develop without distortion, so
+    a torus face must be counted, named and excluded -- loudly.
+    """
+    node = _node()
+    script = f"""
+const S = require({json.dumps(os.path.join(APP, 'stepio.js'))});
+const fs = require("fs");
+const m = S.readModel(fs.readFileSync({json.dumps(os.path.join(REPO, 'data', 'step_toroidal.step'))}, "utf8"));
+const r = S.measure(m.groups, [S.suggestTread(m.groups).key], {{}});
+process.stdout.write(JSON.stringify({{land: r.land_mm2, faces: m.faces.length,
+  unmeasured: m.n_unmeasured, warnings: m.warnings}}));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
+    assert res.returncode == 0, res.stderr[:2000]
+    got = json.loads(res.stdout)
+    assert got["land"] == pytest.approx(2000.0, rel=1e-12)
+    assert got["faces"] == 2 and got["unmeasured"] == 1
+    joined = " ".join(got["warnings"])
+    assert "TOROIDAL_SURFACE" in joined, "the reader must name what it could not measure"
+    assert "NOT counted" in joined
+
+
+def test_a_model_in_inches_is_converted_not_measured_raw():
+    """The same solid written in inches must give the same millimetre area.
+    Read raw it would be out by 25.4^2 = 645 -- a number with nothing about it
+    to say it is wrong.
+    """
+    node = _node()
+    script = f"""
+const S = require({json.dumps(os.path.join(APP, 'stepio.js'))});
+const fs = require("fs");
+const land = (f) => {{
+  const m = S.readModel(fs.readFileSync(f, "utf8"));
+  const t = S.suggestTread(m.groups), fl = S.suggestFloor(m.groups, t);
+  const r = S.measure(m.groups, [t.key], {{floorKey: fl.key}});
+  return {{land: r.land_mm2, depth: r.groove_depth_mm, unit: m.unit.mm, name: m.unit.name}};
+}};
+process.stdout.write(JSON.stringify([
+  land({json.dumps(os.path.join(REPO, 'data', 'step_inch.step'))}),
+  land({json.dumps(os.path.join(REPO, 'data', 'step_plate_holes.step'))})]));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
+    assert res.returncode == 0, res.stderr[:2000]
+    inch, mm = json.loads(res.stdout)
+    assert inch["unit"] == pytest.approx(25.4) and "INCH" in inch["name"]
+    assert inch["land"] == pytest.approx(mm["land"], rel=1e-12)
+    assert inch["depth"] == pytest.approx(8.0, rel=1e-9), "the depth comes back in mm"
+
+
+def test_the_step_reader_reaches_the_built_page():
+    """A module that is not inlined is a feature that works in the tests and
+    not in the file the engineer opens."""
+    build = open(os.path.join(REPO, "build_app.py"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert '"/*__STEPIO__*/"' in build and 'APP, "stepio.js"' in build
+    assert "/*__STEPIO__*/" in tpl
+    # Before the UI, or the UI's `window.TreadStep` is undefined at load.
+    assert tpl.index("/*__STEPIO__*/") < tpl.index("/*__UI__*/")
+
+
+def test_the_step_tab_offers_the_pick_the_ratio_depends_on():
+    """A land ratio is land over an envelope, measured on surfaces the engineer
+    chose.  All three have to be on the page: what was ticked, what it was
+    divided by, and what came out.
+    """
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    setup = _setup_markup(tpl)
+
+    # It is a setup tab: geometry you supply, needing no Run.
+    assert '<section id="panel-step" class="panel setup">' in tpl
+    assert '<section id="panel-step"' in setup, "the STEP panel sits in the setup row"
+    assert 'data-tab="step" data-grp="grp-step"' in tpl
+    for el in ["stepInput", "stepFamilies", "stepEnvW", "stepEnvH", "stepCards",
+               "stepPlot", "stepNotes", "stepUseNsd", "stepExportCsv"]:
+        assert f'id="{el}"' in tpl, f"the STEP tab has no {el}"
+
+    fn = ui[ui.index("function refreshStepMeasurement("):ui.index("function renderStepCards(")]
+    assert "floorKey" in fn and "width:" in fn and "height:" in fn
+    cards = ui[ui.index("function renderStepCards("):ui.index("  // The picked faces")]
+    for label in ["Land ratio", "Sea ratio", "Land area", "Envelope",
+                  "Biting edge", "Groove depth"]:
+        assert label in cards, f"the dashboard does not report {label}"
+    # The envelope is never left implicit: a ratio against an unstated
+    # denominator is the one way to be confidently wrong here.
+    assert "envelope_source" in cards and "bounding box of the ticked faces" in cards
+
+
+def test_the_measured_depth_is_offered_as_the_nsd():
+    """NSD is the most influential number on the compound panel and a 2D plan
+    cannot carry it, so it is normally typed in.  A STEP model has it, and
+    handing it over is the one place these two halves of the tool meet."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    fn = ui[ui.index("function stepUseNsd("):ui.index("function exportStepCsv(")]
+    assert '$("nsd").value' in fn
+    assert 'dispatchEvent(new Event("input"))' in fn, \
+        "setting the box without the event would leave every dependent readout stale"
+    assert "groove_depth_mm > 0" in fn, "a missing or inverted depth must not be offered"

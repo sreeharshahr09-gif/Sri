@@ -1059,6 +1059,94 @@ const fs = require("fs");
     await fill("#wear", "0");
   }
 
+  // ---------------------------------------------------------------------
+  // The STEP tab: land / sea straight off a 3D model.
+  //
+  // The fixtures have hand-computed areas (data/make_step.py prints them), so
+  // this checks the number on the SCREEN against paper, not just that the panel
+  // rendered something. That distinction matters here more than anywhere else
+  // in the tool: a land ratio is a plausible-looking number whatever the reader
+  // got wrong.
+  {
+    const stepFile = (n) => path.join(__dirname, "..", "data", n);
+    await openTab("step");
+    await setInputFiles("#stepInput", stepFile("step_plate_holes.step"));
+    await page.waitForFunction(() => document.getElementById("stepBody").style.display === "", { timeout: 20000 });
+    await page.waitForTimeout(300);
+
+    const status = (await page.textContent("#stepStatus")).replace(/\s+/g, " ");
+    console.log("STEP:", status.slice(0, 120));
+    if (!/mm/.test(status)) errors.push("the STEP panel does not state the file's length unit");
+
+    const rows = await page.$$eval("#stepFamilies tr", (tr) => tr.length);
+    if (rows !== 2) errors.push(`the plate fixture should list 2 surface families, listed ${rows}`);
+    const ticked = await page.$$eval(".step-tread:checked", (e) => e.length);
+    if (ticked !== 1) errors.push(`exactly one surface should be pre-ticked, ${ticked} were`);
+
+    const cardText = () => page.$eval("#stepCards", (el) => el.textContent.replace(/\s+/g, " "));
+    let cards = await cardText();
+    console.log("STEP cards:", cards.slice(0, 200));
+    // 6000 - 2x200 - pi*25 = 5521.4602 mm^2 on a 100 x 60 envelope.
+    if (!/5521\.5/.test(cards)) errors.push("the measured land area is not the hand-computed 5521.5 mm²");
+    if (!/92\.02/.test(cards)) errors.push("the land ratio is not the hand-computed 92.02%");
+    if (!/8\.000/.test(cards)) errors.push("the groove depth is not the modelled 8 mm");
+
+    const drawn = await page.$eval("#stepPlot", (el) => !!el.querySelector(".plot-container"));
+    if (!drawn) errors.push("the STEP tab drew no chart");
+    const traces = await page.evaluate(() => {
+      const gd = document.getElementById("stepPlot");
+      return gd.data.map((d) => ({ name: d.name, n: d.x.length }));
+    });
+    console.log("STEP plot traces:", JSON.stringify(traces));
+    if (!traces.some((t) => t.name === "holes" && t.n > 0))
+      errors.push("the plate's three holes were not drawn as holes");
+
+    // The measured depth is the NSD the rest of the tool otherwise makes you
+    // guess. Offering it is the one place these two halves meet.
+    await click("#stepUseNsd");
+    await page.waitForTimeout(200);
+    const nsd = await page.inputValue("#nsd");
+    if (Math.abs(parseFloat(nsd) - 8) > 1e-6) errors.push(`"use depth as NSD" set NSD to ${nsd}, not 8`);
+    console.log("NSD from the model:", nsd);
+
+    // A stated envelope must change the ratio and nothing else.
+    await fill("#stepEnvW", "120");
+    await fill("#stepEnvH", "80");
+    await page.waitForTimeout(250);
+    cards = await cardText();
+    if (!/5521\.5/.test(cards)) errors.push("stating an envelope changed the measured land area");
+    if (!/57\.5/.test(cards)) errors.push("stating a 120 x 80 envelope did not give 57.5% land");
+    await fill("#stepEnvW", "");
+    await fill("#stepEnvH", "");
+    await page.waitForTimeout(200);
+
+    // A cylindrical band: the area only comes out right if the face is rolled
+    // out rather than projected.
+    await setInputFiles("#stepInput", stepFile("step_band_cyl.step"));
+    await page.waitForTimeout(600);
+    cards = await cardText();
+    if (!/24818\.6/.test(cards))
+      errors.push("the cylindrical band did not develop to its hand-computed 24818.6 mm²");
+    const axis = await page.evaluate(() => document.getElementById("stepPlot").layout.xaxis.title.text);
+    if (!/developed/.test(axis)) errors.push("the developed cylinder is not labelled as developed");
+    await page.screenshot({ path: path.join(outDir, "tab-step.png"), fullPage: false });
+
+    // A model carrying a surface this reader cannot measure must say so rather
+    // than quietly report the rest as the whole.
+    await setInputFiles("#stepInput", stepFile("step_toroidal.step"));
+    await page.waitForTimeout(500);
+    const notes = (await page.textContent("#stepNotes")).replace(/\s+/g, " ");
+    if (!/TOROIDAL_SURFACE/.test(notes)) errors.push("the unmeasurable torus face was not reported");
+
+    // And something that is not a STEP file at all.
+    await setInputFiles("#stepInput", stepFile("hatch_only.dxf"));
+    await page.waitForTimeout(400);
+    const bad = (await page.textContent("#stepStatus")).replace(/\s+/g, " ");
+    if (!/DATA section/.test(bad)) errors.push("a non-STEP file was not refused with a reason");
+    console.log("STEP refusal:", bad.slice(0, 90));
+    await openTab("plan");
+  }
+
   console.log(errors.length ? "ERRORS:\n" + errors.join("\n") : "no page errors");
   await browser.close();
   process.exitCode = errors.length ? 1 : 0;

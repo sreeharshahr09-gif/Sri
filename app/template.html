@@ -20,6 +20,7 @@
       <div class="tabs" id="setupTabs">
         <button data-tab="project" data-grp="grp-project">Project</button>
         <button class="on" data-tab="plan" data-grp="grp-plan">Tread plan</button>
+        <button data-tab="step" data-grp="grp-step">STEP model</button>
         <button data-tab="compound" data-grp="grp-compound">Depth &amp; compound</button>
         <button data-tab="cpatch" data-grp="grp-patch">Contact patch</button>
         <button data-tab="ribs" data-grp="grp-divisions">Ribs</button>
@@ -118,6 +119,48 @@
           </div>
           <div class="field" title="Competitor patterns digitised from a photograph often do not quite tile: the geometry at one pitch boundary is a few tenths out from the other. Leave at 0 to be told about it and stop. Set a limit to have the tool pull the two edges together — the tread is then not exactly the drawing, and it says so."><label>Boundary snap limit (mm)</label><input id="pitchSnap" type="number" value="0" step="0.05" min="0" /></div>
           <div id="pitchInfo" class="hint" style="margin:2px 0 6px;padding:6px 9px;background:var(--panel-2);border:1px solid var(--edge);border-radius:6px;line-height:1.55"></div>
+        </div>
+      </div>
+
+      </section>
+
+      <section id="panel-step" class="panel setup">
+      <div class="group" id="grp-step">
+        <div class="ghead"><span class="gnum">3D</span><span class="gtext"><span class="gtitle">STEP model — land / sea</span><span class="gsub">Measure the land–sea ratio straight off the 3D model, on the tread surfaces you pick. Independent of the sweep: nothing here needs a DXF or a Run.</span></span></div>
+        <div class="filerow">
+          <label class="btn secondary" for="stepInput" title="Read an ISO 10303-21 STEP file (.step / .stp), AP203 or AP214. It is read here in the browser; nothing is uploaded.">Load STEP…</label>
+          <input id="stepInput" type="file" accept=".step,.stp,.STEP,.STP" style="display:none" />
+          <span id="stepFileName" class="hint"></span>
+        </div>
+        <div class="hint">A STEP model is a set of trimmed faces. This reads the faces, groups them by the <b>surface</b> they lie on — one plane, one cylinder — and measures the area of the ones you tick. The tread top of a blocked pattern is hundreds of faces on <em>one</em> surface, so it is a single tick. Areas on a plane or a cylinder are exact: a cylinder unrolls without stretching, and straight and circular edges are integrated in closed form rather than polygonised. Anything else — a torus, a general spline surface — is reported as unmeasurable rather than quietly left out.</div>
+        <div id="stepStatus" class="hint" style="margin:8px 0;padding:7px 9px;background:var(--panel-2);border:1px solid var(--edge);border-radius:6px;line-height:1.6;display:none"></div>
+
+        <div id="stepBody" style="display:none">
+          <div class="rowbar" style="margin-top:10px"><span class="rowbar-lead">Surfaces</span><span class="hint">Tick the tread surface(s). The <b>floor</b> column marks the groove bottom, which gives the depth.</span></div>
+          <div class="tb-scroll" style="max-height:280px">
+            <table class="metrics"><thead><tr>
+              <th>Tread</th><th>Floor</th><th>Surface</th><th class="num">Faces</th>
+              <th class="num">Area (mm²)</th><th class="num">Holes</th><th class="num">Extent (mm)</th>
+            </tr></thead><tbody id="stepFamilies"></tbody></table>
+          </div>
+
+          <div class="field" title="The reference area the ratio is taken against. Leave both blank and the tool uses the bounding box of what you ticked, which is right when the pick covers a whole rectangular patch and wrong when it does not. Type the width and length of the region you actually mean — a rib, a shoulder block row, one pitch — and the ratio is taken against that instead."><label>Reference envelope (mm)</label>
+            <input id="stepEnvW" type="number" step="0.1" min="0" placeholder="width" style="width:110px" />
+            <span class="hint">×</span>
+            <input id="stepEnvH" type="number" step="0.1" min="0" placeholder="length" style="width:110px" />
+          </div>
+          <div id="stepEnvNote" class="hint" style="margin:-2px 0 8px"></div>
+
+          <div id="stepCards" class="cards" style="margin-top:12px"></div>
+          <div id="stepNotes" class="hint" style="margin:0 0 10px;line-height:1.6"></div>
+
+          <div class="plot-host"><div id="stepPlot" style="height:420px"></div></div>
+          <div class="hint">The ticked faces, flattened — rolled out along the cylinder for a cylindrical tread, in-plane for a flat one. Rubber is filled; the gaps between the fills are the sea. Holes inside a face are cut out.</div>
+
+          <div class="filerow" style="margin-top:10px">
+            <button id="stepUseNsd" class="btn secondary" disabled title="Put the measured groove depth into the NSD box in 2 · Block depth &amp; compound. That number is normally typed in from the drawing; here it is measured off the model.">Use depth as NSD</button>
+            <button id="stepExportCsv" class="btn secondary" disabled title="One row per measured face — surface family, area, perimeter, holes — plus a header carrying the totals and the envelope they were taken against.">Face CSV</button>
+          </div>
         </div>
       </div>
 
@@ -543,6 +586,10 @@
   <script id="plotly-src">/*__PLOTLY__*/</script>
   <script>/*__JSPDF__*/</script>
   <script id="engine-src">/*__ENGINE__*/</script>
+  <!-- The STEP reader runs on the page, not in the worker: reading a model is a
+       one-off the engineer waits on, and the faces it produces are drawn
+       directly rather than fed to the sweep. -->
+  <script id="stepio-src">/*__STEPIO__*/</script>
   <script type="text/plain" id="worker-src">/*__WORKER__*/</script>
   <script>/*__UI__*/</script>
 </body>

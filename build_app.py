@@ -56,6 +56,7 @@ def build(out_path: str | None = None) -> str:
         "/*__PLOTLY__*/": _find_plotly(),
         "/*__JSPDF__*/": _read(os.path.join(APP, "vendor_jspdf.js")),
         "/*__ENGINE__*/": _read(os.path.join(APP, "engine.js")),
+        "/*__STEPIO__*/": _read(os.path.join(APP, "stepio.js")),
         "/*__WORKER__*/": _read(os.path.join(APP, "worker.js")),
         "/*__UI__*/": _read(os.path.join(APP, "ui.js")),
         "<!--__GUIDE__-->": guide_html,

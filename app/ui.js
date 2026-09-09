@@ -30,6 +30,7 @@
     stackRows: {},       // sweep rows switched off by the user (key -> false)
     pinStrip: true,      // keep the rolled-out pattern at the foot of the window
     compareMetric: "kz",
+    step: null,          // the imported STEP model, its surface families and the pick
   };
 
   var DEFAULT_LEANS = [0, 5, 10, 15, 20, 25, 30, 35, 40];
@@ -119,6 +120,7 @@
     $("themeToggle").textContent = theme === "light" ? "☾ Dark" : "☀ Light";
     drawEditor();
     if (state.results) renderAll();
+    if (state.step && state.step.measure) drawStepPlot(state.step.measure);
   }
   function initTheme() {
     var saved = null;
@@ -4208,6 +4210,291 @@
     renderReportChips();
   }
 
+  // ---- STEP model: land / sea straight off the 3D geometry --------------
+  //
+  // This is a separate question from the sweep, asked of a separate file, and
+  // it deliberately shares nothing with it: no pattern, no run, no results. An
+  // engineer with a STEP model and a ruler wants ONE number -- how much of this
+  // surface is rubber -- and the honest way to give it is to measure the faces
+  // they point at rather than infer a tread from the whole solid.
+  //
+  // The one place the two meet is groove depth. NSD is the single most
+  // influential number on the compound panel and a 2D plan cannot carry it, so
+  // it is normally typed in from the drawing; here it is measured, and offered.
+
+  var S = window.TreadStep;
+
+  function stepStatus(html, bad) {
+    var box = $("stepStatus");
+    if (!box) return;
+    box.style.display = html ? "" : "none";
+    box.innerHTML = bad ? "<b style='color:var(--bad)'>" + html + "</b>" : html;
+  }
+
+  function loadStepFile(file) {
+    var reader = new FileReader();
+    $("stepFileName").textContent = file.name;
+    stepStatus("Reading " + escapeHtml(file.name) + "…");
+    // The read is synchronous and a big model takes a moment; yield first so
+    // the "Reading…" line actually paints before the page blocks on it.
+    reader.onload = function () {
+      setTimeout(function () {
+        var t0 = performance.now();
+        try {
+          var read = S.readModel(String(reader.result));
+          var tread = S.suggestTread(read.groups);
+          state.step = {
+            name: file.name,
+            read: read,
+            groups: read.groups,
+            tread: tread ? [tread.key] : [],
+            floorKey: tread ? (S.suggestFloor(read.groups, tread) || {}).key || null : null,
+            ms: performance.now() - t0,
+          };
+          $("stepBody").style.display = "";
+          renderStepFamilies();
+          refreshStepMeasurement();
+          stepStatus(stepHeaderHtml());
+        } catch (err) {
+          state.step = null;
+          $("stepBody").style.display = "none";
+          stepStatus("Could not read " + escapeHtml(file.name) + ": " + escapeHtml(err.message), true);
+        }
+      }, 0);
+    };
+    reader.onerror = function () { stepStatus("Could not read " + escapeHtml(file.name), true); };
+    reader.readAsText(file);
+  }
+
+  // What the file was, in its own terms. The unit line matters more than it
+  // looks: a model in inches measured as millimetres is out by 645 in area and
+  // nothing about the number itself says so.
+  function stepHeaderHtml() {
+    var st = state.step, r = st.read;
+    var html = "<b>" + escapeHtml(st.name) + "</b> — " + r.n_entities.toLocaleString() +
+      " entities, " + r.faces.length.toLocaleString() + " face(s) in " +
+      r.groups.length + " surface famil" + (r.groups.length === 1 ? "y" : "ies") +
+      ", read in " + st.ms.toFixed(0) + " ms." +
+      "<br>Length unit: <b>" + escapeHtml(r.unit.name) + "</b> (×" + r.unit.mm +
+      " to mm, from the " + escapeHtml(r.unit.source) + ").";
+    return html;
+  }
+
+  function renderStepFamilies() {
+    var st = state.step, body = $("stepFamilies");
+    if (!st || !body) return;
+    var html = "";
+    for (var i = 0; i < st.groups.length; i++) {
+      var g = st.groups[i];
+      var picked = st.tread.indexOf(g.key) >= 0;
+      var b = g.bbox;
+      html += "<tr" + (picked ? " class='engaged'" : "") + ">" +
+        "<td><input type='checkbox' class='step-tread' data-key='" + escapeHtml(g.key) + "'" +
+        (picked ? " checked" : "") + " /></td>" +
+        "<td><input type='radio' name='stepFloor' class='step-floor' data-key='" + escapeHtml(g.key) + "'" +
+        (st.floorKey === g.key ? " checked" : "") + " /></td>" +
+        "<td>" + escapeHtml(g.label) + "</td>" +
+        "<td class='num'>" + g.n + "</td>" +
+        "<td class='num'>" + g.area.toFixed(2) + "</td>" +
+        "<td class='num'>" + g.holes + "</td>" +
+        "<td class='num'>" + (b ? b.w.toFixed(1) + " × " + b.h.toFixed(1) : "—") + "</td>" +
+        "</tr>";
+    }
+    body.innerHTML = html;
+  }
+
+  function refreshStepMeasurement() {
+    var st = state.step;
+    if (!st) return;
+    var m = st.tread.length
+      ? S.measure(st.groups, st.tread, {
+          width: parseFloat($("stepEnvW").value),
+          height: parseFloat($("stepEnvH").value),
+          floorKey: st.floorKey,
+        })
+      : null;
+    st.measure = m;
+    renderStepCards(m);
+    drawStepPlot(m);
+    $("stepUseNsd").disabled = !(m && m.groove_depth_mm > 0);
+    $("stepExportCsv").disabled = !m;
+    var note = $("stepEnvNote");
+    if (note) note.innerHTML = m
+      ? "Envelope: " + m.envelope_w.toFixed(2) + " × " + m.envelope_h.toFixed(2) + " mm = " +
+        m.envelope_mm2.toFixed(1) + " mm², taken from the <b>" + escapeHtml(m.envelope_source) + "</b>."
+      : "Tick at least one surface.";
+  }
+
+  function renderStepCards(m) {
+    var host = $("stepCards");
+    if (!host) return;
+    if (!m) { host.innerHTML = ""; $("stepNotes").innerHTML = ""; return; }
+    var cards = [
+      ["Land ratio", (100 * m.land_ratio).toFixed(2), "% of the envelope is rubber"],
+      ["Sea ratio", (100 * m.sea_ratio).toFixed(2), "% is groove"],
+      ["Land area", m.land_mm2.toFixed(1), "mm² measured"],
+      ["Sea area", m.sea_mm2.toFixed(1), "mm² = envelope − land"],
+      ["Envelope", m.envelope_mm2.toFixed(1), "mm² — " + m.envelope_source],
+      ["Faces measured", String(m.n_faces), m.n_holes ? m.n_holes + " hole(s) cut out" : "no holes"],
+      // Two patterns of the same land ratio can differ several-fold here, and
+      // biting edge is what wet grip trades the land ratio against.
+      ["Biting edge", m.edge_length_mm.toFixed(1), "mm — " + m.edge_density.toFixed(4) + " mm per mm²"],
+      ["Groove depth", m.groove_depth_mm == null ? "–" : m.groove_depth_mm.toFixed(3),
+       m.groove_depth_mm == null ? "no floor surface picked" : "mm below the tread surface"],
+    ];
+    if (m.groove_volume_mm3 != null)
+      cards.push(["Void volume", m.groove_volume_mm3.toFixed(0),
+                  "mm³ upper bound — sea × depth, no draft"]);
+    var html = "";
+    for (var i = 0; i < cards.length; i++)
+      html += "<div class='card'><div class='k'>" + cards[i][0] + "</div><div class='v'>" +
+              cards[i][1] + "</div><div class='u'>" + cards[i][2] + "</div></div>";
+    host.innerHTML = html;
+
+    // Everything the numbers above depend on but do not show. A land ratio
+    // against a bounding box that is not the region the engineer meant is the
+    // easiest way to be confidently wrong here, so it is said out loud.
+    var notes = [];
+    if (m.envelope_source !== "stated")
+      notes.push("The ratio is against the <b>bounding box of the ticked faces</b>. That is the whole " +
+        "answer only if the pick fills a rectangle. For a rib, a block row or one pitch, type the " +
+        "width and length you mean above.");
+    if (m.groove_depth_note)
+      notes.push("<span style='color:var(--warn)'>" + escapeHtml(m.groove_depth_note) + "</span>");
+    if (m.groove_volume_mm3 != null)
+      notes.push("Void volume treats every groove as a prism of the measured depth. A real groove has " +
+        "draft and radiused corners, so the true void is smaller — this is an upper bound.");
+    (state.step.read.warnings || []).forEach(function (w) {
+      notes.push("<span style='color:var(--warn)'>" + escapeHtml(w) + "</span>");
+    });
+    $("stepNotes").innerHTML = notes.length ? "<ul style='margin:6px 0 0;padding-left:18px'><li>" +
+      notes.join("</li><li>") + "</li></ul>" : "";
+  }
+
+  // The picked faces, flattened. Two traces, not two thousand: Plotly fills
+  // each null-separated run of a single "toself" trace as its own polygon, so
+  // the whole tread is one land trace and one hole trace however many faces it
+  // has -- which is what keeps a 4000-face model interactive.
+  function drawStepPlot(m) {
+    var host = $("stepPlot");
+    if (!host) return;
+    if (!m) { Plotly.purge(host); return; }
+    var th = plotTheme();
+    var lx = [], ly = [], hx = [], hy = [];
+    for (var i = 0; i < m.selected.length; i++) {
+      var faces = m.selected[i].faces;
+      for (var f = 0; f < faces.length; f++) {
+        var ls = faces[f].loops;
+        for (var L = 0; L < ls.length; L++) {
+          var pts = ls[L].pts, X = ls[L].outer ? lx : hx, Y = ls[L].outer ? ly : hy;
+          for (var p = 0; p < pts.length; p++) { X.push(pts[p][0]); Y.push(pts[p][1]); }
+          if (pts.length) { X.push(pts[0][0]); Y.push(pts[0][1]); }
+          X.push(null); Y.push(null);
+        }
+      }
+    }
+    var data = [{
+      x: lx, y: ly, type: "scatter", mode: "lines", fill: "toself",
+      fillcolor: th.accent, opacity: 0.85, name: "land",
+      line: { color: th.accent, width: 1 }, hoverinfo: "skip",
+    }];
+    if (hx.length) data.push({
+      x: hx, y: hy, type: "scatter", mode: "lines", fill: "toself",
+      fillcolor: th.paper_bgcolor, name: "holes",
+      line: { color: th.inkDim, width: 1 }, hoverinfo: "skip",
+    });
+    // The stated envelope, drawn where it actually sits, because a ratio taken
+    // against a rectangle nobody can see is a ratio nobody can check.
+    var shapes = [];
+    if (m.envelope_source === "stated" && m.bbox)
+      shapes.push({
+        type: "rect", x0: m.bbox.x0, y0: m.bbox.y0,
+        x1: m.bbox.x0 + m.envelope_w, y1: m.bbox.y0 + m.envelope_h,
+        line: { color: th.warn, width: 1.5, dash: "dot" }, fillcolor: "rgba(0,0,0,0)",
+      });
+    var cyl = m.selected.some(function (g) { return g.kind === "cylinder"; });
+    Plotly.react(host, data, Object.assign({
+      margin: { l: 55, r: 12, t: 26, b: 44 },
+      xaxis: { title: { text: cyl ? "developed circumference R·θ (mm)" : "x (mm)" },
+               gridcolor: th.grid, zeroline: false },
+      yaxis: { title: { text: cyl ? "axial (mm)" : "y (mm)" },
+               gridcolor: th.grid, zeroline: false, scaleanchor: "x", scaleratio: 1 },
+      showlegend: false, shapes: shapes,
+      title: { text: m.land_mm2.toFixed(1) + " mm² land · " + (100 * m.land_ratio).toFixed(2) + "% of envelope",
+               font: { size: 13 } },
+    }, { paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font }),
+      { responsive: true, displaylogo: false });
+  }
+
+  function stepUseNsd() {
+    var m = state.step && state.step.measure;
+    if (!m || !(m.groove_depth_mm > 0)) return;
+    $("nsd").value = m.groove_depth_mm.toFixed(2);
+    // Go through the input event so every listener that depends on NSD -- the
+    // compound readout, the tie-bar heights, the staleness flag -- runs exactly
+    // as it would if the number had been typed.
+    $("nsd").dispatchEvent(new Event("input"));
+    stepStatus(stepHeaderHtml() + "<br><b style='color:var(--good)'>NSD set to " +
+      m.groove_depth_mm.toFixed(2) + " mm</b> in 2 · Block depth &amp; compound, measured between the " +
+      "two surfaces picked above.");
+  }
+
+  function exportStepCsv() {
+    var st = state.step, m = st && st.measure;
+    if (!m) return;
+    var L = [
+      "# Tread Pattern Evaluation Tool — STEP surface measurement",
+      "# file," + st.name,
+      "# length unit," + st.read.unit.name + ",x" + st.read.unit.mm + " to mm",
+      "# land_mm2," + m.land_mm2.toFixed(4),
+      "# sea_mm2," + m.sea_mm2.toFixed(4),
+      "# envelope_mm2," + m.envelope_mm2.toFixed(4) + "," + m.envelope_source,
+      "# envelope_w_mm," + m.envelope_w.toFixed(4) + ",envelope_h_mm," + m.envelope_h.toFixed(4),
+      "# land_ratio," + m.land_ratio.toFixed(6),
+      "# edge_length_mm," + m.edge_length_mm.toFixed(4),
+      "# groove_depth_mm," + (m.groove_depth_mm == null ? "" : m.groove_depth_mm.toFixed(4)),
+      "# faces," + m.n_faces + ",holes," + m.n_holes,
+      "surface,step_entity_id,area_mm2,perimeter_mm,holes",
+    ];
+    for (var i = 0; i < m.selected.length; i++) {
+      var g = m.selected[i];
+      for (var f = 0; f < g.faces.length; f++) {
+        var r = g.faces[f];
+        L.push('"' + g.label + '",#' + r.id + "," + r.area.toFixed(6) + "," +
+               r.perimeter.toFixed(6) + "," + r.holes);
+      }
+    }
+    download(safeName() + "_step_faces.csv", L.join("\n") + "\n", "text/csv;charset=utf-8");
+  }
+
+  function initStep() {
+    if (!$("stepInput")) return;
+    on($("stepInput"), "change", function (e) {
+      if (e.target.files[0]) loadStepFile(e.target.files[0]);
+      // Re-selecting the same file must re-read it; without this the change
+      // event never fires a second time.
+      e.target.value = "";
+    });
+    on($("stepFamilies"), "change", function (ev) {
+      var el = ev.target, st = state.step;
+      if (!st || !el.dataset || !el.dataset.key) return;
+      if (el.classList.contains("step-tread")) {
+        var ix = st.tread.indexOf(el.dataset.key);
+        if (el.checked && ix < 0) st.tread.push(el.dataset.key);
+        else if (!el.checked && ix >= 0) st.tread.splice(ix, 1);
+        renderStepFamilies();
+      } else if (el.classList.contains("step-floor")) {
+        st.floorKey = el.dataset.key;
+      }
+      refreshStepMeasurement();
+    });
+    ["stepEnvW", "stepEnvH"].forEach(function (id) {
+      on($(id), "input", function () { if (state.step) refreshStepMeasurement(); });
+    });
+    on($("stepUseNsd"), "click", stepUseNsd);
+    on($("stepExportCsv"), "click", exportStepCsv);
+  }
+
   // ---- tabs ------------------------------------------------------------
   //
   // One bar, two rows: what you supply and what came out. They are one tab set
@@ -4233,6 +4520,11 @@
     panel.querySelectorAll(".js-plotly-plot").forEach(function (gd) {
       try { Plotly.Plots.resize(gd); } catch (e) { /* not plotted yet */ }
     });
+    // The "load a tread plan, then press Run" hint is about the sweep. The STEP
+    // tab needs neither, so on that tab the hint would be the first thing read
+    // and the one thing that does not apply.
+    var hint = $("emptyHint");
+    if (hint && !state.pattern) hint.style.display = tab === "step" ? "none" : "";
     if (tab === "cpatch" || tab === "wear") drawEditor();
     // The band belongs to whichever tab is open; it has to be laid out against
     // the figures that are actually on screen.
@@ -4267,6 +4559,7 @@
   function init() {
     initTheme();
     initTabs();
+    initStep();
     editorSetup();
     if ($("pinStrip")) state.pinStrip = $("pinStrip").checked;
     applyStripPin();

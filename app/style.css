@@ -107,7 +107,10 @@ header .spacer { flex: 1; }
   border-bottom: 1px solid color-mix(in srgb, var(--g) 28%, var(--edge));
 }
 .ghead .gnum {
-  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 7px;
+  /* Most badges are one digit of the numbered workflow; the STEP reader is not
+     a step in it and carries "3D", so the badge grows sideways rather than
+     clipping. */
+  flex: 0 0 auto; min-width: 26px; padding: 0 5px; height: 26px; border-radius: 7px;
   background: var(--g); color: #fff; font-weight: 700; font-size: 14px;
   display: flex; align-items: center; justify-content: center;
   font-variant-numeric: tabular-nums;
@@ -125,6 +128,7 @@ header .spacer { flex: 1; }
 /* Section hues. Bright enough for the dark default; deepened for light below. */
 #grp-project   { --g: #8b7bff; }
 #grp-plan      { --g: #4ea1ff; }
+#grp-step      { --g: #6fd0ff; }
 #grp-compound  { --g: #21c2b8; }
 #grp-patch     { --g: #4fc47a; }
 #grp-divisions { --g: #e0b13c; }
@@ -136,6 +140,7 @@ header .spacer { flex: 1; }
    list above by sharing the light-theme variables below. */
 [data-grp="grp-project"]   { --g: #8b7bff; }
 [data-grp="grp-plan"]      { --g: #4ea1ff; }
+[data-grp="grp-step"]      { --g: #6fd0ff; }
 [data-grp="grp-compound"]  { --g: #21c2b8; }
 [data-grp="grp-patch"]     { --g: #4fc47a; }
 [data-grp="grp-divisions"] { --g: #e0b13c; }
@@ -143,13 +148,13 @@ header .spacer { flex: 1; }
 [data-grp="grp-wear"]      { --g: #ef7aa8; }
 [data-grp="grp-export"]    { --g: #93a4b8; }
 :root[data-theme="light"] {
-  --g-project: #6247d6; --g-plan: #1f6feb; --g-compound: #0a8f88;
+  --g-project: #6247d6; --g-plan: #1f6feb; --g-step: #0e7490; --g-compound: #0a8f88;
   --g-patch: #2f8f52; --g-divisions: #a97c06; --g-load: #c26516;
   --g-wear: #c2437a; --g-export: #5b6b7b;
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --g-project: #6247d6; --g-plan: #1f6feb; --g-compound: #0a8f88;
+    --g-project: #6247d6; --g-plan: #1f6feb; --g-step: #0e7490; --g-compound: #0a8f88;
     --g-patch: #2f8f52; --g-divisions: #a97c06; --g-load: #c26516;
     --g-wear: #c2437a; --g-export: #5b6b7b;
   }
@@ -157,6 +162,8 @@ header .spacer { flex: 1; }
 :root:not([data-theme="dark"]) [data-grp="grp-project"]   { --g: var(--g-project); }
   :root:not([data-theme="dark"]) #grp-plan      { --g: var(--g-plan); }
 :root:not([data-theme="dark"]) [data-grp="grp-plan"]      { --g: var(--g-plan); }
+  :root:not([data-theme="dark"]) #grp-step      { --g: var(--g-step); }
+:root:not([data-theme="dark"]) [data-grp="grp-step"]      { --g: var(--g-step); }
   :root:not([data-theme="dark"]) #grp-compound  { --g: var(--g-compound); }
 :root:not([data-theme="dark"]) [data-grp="grp-compound"]  { --g: var(--g-compound); }
   :root:not([data-theme="dark"]) #grp-patch     { --g: var(--g-patch); }
@@ -174,6 +181,8 @@ header .spacer { flex: 1; }
 :root[data-theme="light"] [data-grp="grp-project"]   { --g: var(--g-project); }
 :root[data-theme="light"] #grp-plan      { --g: var(--g-plan); }
 :root[data-theme="light"] [data-grp="grp-plan"]      { --g: var(--g-plan); }
+:root[data-theme="light"] #grp-step      { --g: var(--g-step); }
+:root[data-theme="light"] [data-grp="grp-step"]      { --g: var(--g-step); }
 :root[data-theme="light"] #grp-compound  { --g: var(--g-compound); }
 :root[data-theme="light"] [data-grp="grp-compound"]  { --g: var(--g-compound); }
 :root[data-theme="light"] #grp-patch     { --g: var(--g-patch); }

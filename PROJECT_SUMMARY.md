@@ -324,6 +324,58 @@ the solve cost, an element ceiling falling from 800 to ~530, and changed numbers
 for any pattern with off-centre bars. Whether it is worth it is answerable from
 Cxy: a few tenths of a percent says no.
 
+### Land and sea from a STEP model
+
+The rest of the tool starts from a 2D tread plan. Sometimes the design only
+exists as a 3D model and the question is just *how much of this surface is
+rubber* — so the **STEP model** tab answers that off the model, with no DXF, no
+contact patch and no Run. It is a setup tab badged `3D` rather than numbered,
+because it is a geometry import beside the other geometry import but not a step
+in the numbered workflow.
+
+- **A real Part 21 reader** (`app/stepio.js`, ~1050 lines, no dependencies):
+  single-scan tokeniser handling strings with escaped quotes and semicolons in
+  them, block comments, complex instances, `$` and `*` slots; then the B-rep
+  walk `ADVANCED_FACE → FACE_BOUND → EDGE_LOOP → ORIENTED_EDGE → EDGE_CURVE →
+  curve + VERTEX_POINT`. Units come from the file: SI prefixes and
+  `CONVERSION_BASED_UNIT` alike, lengths ×k and areas ×k².
+- **Faces grouped by surface.** A blocked tread top is hundreds of faces on one
+  plane or one cylinder, so picking the tread is one tick, not two hundred. The
+  suggestion is the **outermost** surface of the commonest kind, not the
+  largest — a floor plate under a blocked tread is one big face while the tread
+  is hundreds of small ones, and picking by area gets it exactly backwards.
+- **Exact areas where a closed form exists.** Green's theorem with an arc term,
+  so a circular groove opening or a round stone ejector is measured exactly
+  rather than polygonised; a cylinder develops to (R·θ, axial) without
+  stretching, so the flattened area *is* the surface area. Only B-splines are
+  sampled (de Boor, rational weights supported).
+- **Anything else is reported, never dropped.** A torus or a general spline
+  surface has no distortion-free development; those faces are counted, named
+  and excluded, because a face silently missing from a land ratio is a wrong
+  answer that looks like a right one.
+- **The envelope is always stated.** A ratio is land over *something*; left
+  blank that something is the bounding box of the pick, and typing the width and
+  length of the region you actually mean (a rib, a block row, one pitch) is the
+  difference between an answer and a plausible number. The stated rectangle is
+  drawn on the chart.
+- **Groove depth is the NSD, measured.** The one place the two halves of the
+  tool meet: the depth between the tread surface and the surface marked as
+  floor goes straight into the compound panel, where the whole stiffness model
+  depends on it. Pick two non-parallel surfaces and it says there is no single
+  depth; pick them the wrong way round and it says so, rather than reporting a
+  plausible number of the right size and the wrong meaning.
+- **Also on the dashboard:** biting edge (total and per mm² — two patterns at
+  the same land ratio can differ several-fold, and it is what wet grip trades
+  against), face and hole counts, void volume stated as the upper bound it is,
+  and a per-face CSV.
+
+Six fixtures with hand-computed areas (`data/make_step.py`) pin it: a plate with
+rectangular voids and a round hole (5521.4602 mm²), block bands (4400.0000), a
+cylindrical band (24818.5820), a B-spline edge through collinear controls
+(1000.0000), the plate again in inches, and a model carrying a torus face. All
+six measure exactly, and the same areas come out again from point sampling,
+which shares no code with the contour integral that produced them.
+
 ---
 
 ## 5. How the numbers are kept honest
@@ -336,7 +388,7 @@ v6.4 reference JS  ──(~1e-9)──  Python engine  ──(<2e-3)──  Brow
   verify/tool_v64_reference.js   tread_eval/*.py              app/engine.js
 ```
 
-- **346 tests** (from 153 at the start of the audit).
+- **354 tests** (from 153 at the start of the audit).
 - `tests/test_physics.py` checks every equation against a **closed form worked
   out by hand**, not against a previous run — a golden-value test would have
   blessed the bugs above.
@@ -453,6 +505,8 @@ source of truth.
 | `6c1f195` | Compare designs on Kxy, the cross stiffness |
 | `e44e00e` | Stack every compared design's tread |
 | `9a7c52c` | The patch band on the coupling and compare tabs |
+| `94e4cc9` | Read the 2×2 rather than staring at Kxy |
+| `ed5e09c` | **Land and sea from a STEP model** |
 
 ---
 
@@ -465,6 +519,7 @@ build_report.py          command-line report generator
 
 app/
   engine.js              the JS compute core (DXF, raster, FFT sweep, stiffness, shapes)
+  stepio.js              the STEP (ISO 10303-21) reader and surface measurement
   worker.js              Web Worker glue
   ui.js                  main-thread application logic
   template.html          page skeleton
@@ -477,6 +532,7 @@ app/
   pitchaudit.js          pitch replication and closure audit
   crownaudit.js          crown arcs, drops and the solver between them
   hatchaudit.js          HATCH tie bars, holes and the DXF round trip
+  stepaudit.js           STEP parsing, exact areas and the land/sea measurement
   browsertest.js         Playwright smoke test
   casecheck.js           two complete tyres end to end through the built page
   parity.js              JS↔Python parity harness
@@ -484,9 +540,9 @@ app/
 tread_eval/              the Python pipeline (schema, stiffness, dxf, raster,
                          sweep, metrics, contact_patch, cp_shapes, report, config)
 verify/                  v6.4 functions extracted verbatim, the reference oracle
-tests/                   346 tests
+tests/                   354 tests
 data/                    the Tramplr sample DXF, tie-bar and pitch fixtures,
-                         hatch fixtures and their generators, footprints
+                         hatch and STEP fixtures and their generators, footprints
 GUIDE.md                 plain-language guide, embedded in the app as a tab
 README.md                how to run both paths
 ```
