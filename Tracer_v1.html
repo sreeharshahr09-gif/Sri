@@ -913,6 +913,148 @@
         }
         .color-chip button:hover { color: #ef4444; }
 
+
+        /* ─────────────────────────────────────────────────────────────
+           TIRE TREAD ANALYSIS — namespaced .tta-* so it cannot affect
+           any existing Tracer styling.
+        ───────────────────────────────────────────────────────────── */
+        .tta-modal {
+            position: fixed; inset: 0; z-index: 4100; display: none;
+            background: rgba(0,0,0,.72); backdrop-filter: blur(4px);
+            align-items: center; justify-content: center; padding: 18px;
+        }
+        .tta-modal.active { display: flex; }
+        .tta-shell {
+            background: var(--bg-secondary); border: 1px solid var(--border);
+            border-radius: 14px; width: min(1720px, 100%); height: min(960px, 100%);
+            display: flex; flex-direction: column; overflow: hidden;
+            box-shadow: 0 30px 80px rgba(0,0,0,.5);
+        }
+        .tta-head {
+            display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+            padding: 10px 14px; background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border); flex-shrink: 0;
+        }
+        .tta-title {
+            font-size: 14px; font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .tta-status {
+            font-size: 10px; font-weight: 700; color: #fff; padding: 3px 9px;
+            border-radius: 999px; background: #94a3b8; white-space: nowrap;
+        }
+        .tta-imginfo { font-size: 10px; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; }
+        .tta-spacer { margin-left: auto; }
+        .tta-inline { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--text-secondary); cursor: pointer; }
+
+        .tta-progresswrap { height: 3px; background: var(--bg-tertiary); flex-shrink: 0; }
+        .tta-progress { height: 100%; width: 0; background: var(--accent-primary); transition: width .2s; }
+        .tta-progresstext { font-size: 10px; color: var(--text-secondary); padding: 3px 14px; flex-shrink: 0; }
+        .tta-note { font-size: 11px; color: var(--accent-primary); padding: 5px 14px 0; min-height: 16px; flex-shrink: 0; }
+        .tta-note.warn { color: var(--accent-warning); }
+        .tta-gate {
+            display: none; margin: 10px 14px; padding: 12px; border-radius: 8px;
+            background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.4);
+            color: var(--accent-warning); font-size: 11px; line-height: 1.6;
+        }
+
+        .tta-body { flex: 1; display: grid; grid-template-columns: minmax(0,1fr) 430px; min-height: 0; }
+        .tta-visual { overflow-y: auto; padding: 12px; border-right: 1px solid var(--border); min-width: 0; }
+        .tta-side { overflow-y: auto; padding: 10px; min-width: 0; }
+
+        .tta-previews { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
+        .tta-prev { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; padding: 6px; min-width: 0; }
+        .tta-prev h5 {
+            font-size: 9px; text-transform: uppercase; letter-spacing: .6px; font-weight: 800;
+            color: var(--accent-primary); margin-bottom: 5px; display: flex; align-items: center;
+            justify-content: space-between; gap: 6px;
+        }
+        .tta-prev h5 select {
+            background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border);
+            border-radius: 5px; font-size: 9px; padding: 2px 4px; text-transform: none; letter-spacing: 0;
+        }
+        .tta-prev canvas { width: 100%; height: auto; display: block; image-rendering: pixelated; border-radius: 4px; background: #000; }
+        .tta-previewstats { font-size: 10px; color: var(--text-secondary); margin: 8px 2px; font-family: 'JetBrains Mono', monospace; }
+
+        .tta-charts { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; margin-bottom: 10px; }
+        .tta-chart { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; padding: 4px; min-width: 0; }
+        .tta-chart canvas { width: 100%; display: block; }
+        .tta-chart-wide { grid-column: span 3; }
+
+        .tta-visual details, .tta-side details {
+            background: var(--bg-primary); border: 1px solid var(--border);
+            border-radius: 9px; margin-bottom: 8px; overflow: hidden;
+        }
+        .tta-visual summary, .tta-side summary {
+            cursor: pointer; padding: 9px 11px; font-size: 10px; font-weight: 800;
+            letter-spacing: .7px; text-transform: uppercase; color: var(--accent-primary);
+            user-select: none; list-style: none;
+        }
+        .tta-side summary::-webkit-details-marker, .tta-visual summary::-webkit-details-marker { display: none; }
+        .tta-side summary::before, .tta-visual summary::before { content: '▸ '; }
+        .tta-side details[open] > summary::before, .tta-visual details[open] > summary::before { content: '▾ '; }
+        .tta-sec { padding: 4px 11px 12px; }
+
+        .tta-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+        .tta-row > label { font-size: 10.5px; color: var(--text-secondary); flex: 1; min-width: 0; }
+        .tta-row input[type=range] { flex: 1.2; min-width: 0; }
+        .tta-row select, .tta-row input[type=number], .tta-row input[type=text] {
+            flex: 1.2; min-width: 0; background: var(--bg-tertiary); color: var(--text-primary);
+            border: 1px solid var(--border); border-radius: 6px; padding: 5px 7px;
+            font-size: 10.5px; font-family: 'JetBrains Mono', monospace;
+        }
+        .tta-val { font-family: 'JetBrains Mono', monospace; font-size: 10px; min-width: 34px; text-align: right; }
+        .tta-chk { display: flex; align-items: center; gap: 7px; font-size: 10.5px; color: var(--text-secondary); cursor: pointer; margin-bottom: 7px; }
+        .tta-btnrow { display: flex; flex-wrap: wrap; gap: 5px; }
+        .tta-btnrow .btn { font-size: 10px; padding: 7px 9px; flex: 1 1 auto; }
+        .tta-subhead {
+            font-size: 9px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase;
+            color: var(--accent-secondary); margin: 11px 0 7px;
+        }
+        .tta-hint { font-size: 9.5px; color: var(--text-secondary); line-height: 1.5; margin-top: 5px; }
+
+        .tta-kv {
+            display: flex; justify-content: space-between; gap: 10px; font-size: 11px;
+            padding: 4px 0; border-bottom: 1px dashed var(--border);
+        }
+        .tta-kv:last-child { border-bottom: none; }
+        .tta-kv span { color: var(--text-secondary); }
+        .tta-kv strong { font-family: 'JetBrains Mono', monospace; color: var(--text-primary); text-align: right; }
+        .tta-kv strong.hi { color: var(--accent-primary); }
+
+        .tta-headline { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+        .tta-big { font-size: 34px; font-weight: 800; color: var(--accent-primary); font-family: 'JetBrains Mono', monospace; line-height: 1; }
+        .tta-big span { font-size: 16px; margin-left: 2px; }
+        .tta-big-label { font-size: 10px; color: var(--text-secondary); line-height: 1.5; }
+        .tta-big-label em { font-style: normal; opacity: .8; }
+
+        .tta-warn {
+            margin-top: 7px; font-size: 10px; line-height: 1.5; color: var(--accent-warning);
+            background: rgba(245,158,11,.10); border: 1px solid rgba(245,158,11,.35);
+            border-radius: 6px; padding: 6px 8px;
+        }
+        .tta-ok { margin-top: 7px; font-size: 10px; color: var(--accent-primary); }
+        .tta-disclaimer {
+            margin-top: 10px; font-size: 9.5px; line-height: 1.55; color: var(--text-secondary);
+            border-left: 3px solid var(--accent-warning); padding: 6px 9px; background: var(--bg-tertiary); border-radius: 0 6px 6px 0;
+        }
+
+        .tta-tablewrap { max-height: 300px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+        .tta-table { border-collapse: collapse; width: 100%; font-size: 9.5px; font-family: 'JetBrains Mono', monospace; }
+        .tta-table th {
+            position: sticky; top: 0; background: var(--bg-tertiary); color: var(--accent-primary);
+            padding: 5px 6px; text-align: right; cursor: pointer; white-space: nowrap; border-bottom: 1px solid var(--border);
+        }
+        .tta-table td { padding: 3px 6px; text-align: right; white-space: nowrap; border-bottom: 1px solid rgba(148,163,184,.12); }
+        .tta-table tr:hover td { background: rgba(16,185,129,.08); }
+
+        @media (max-width: 1400px) {
+            .tta-body { grid-template-columns: minmax(0,1fr) 360px; }
+            .tta-charts { grid-template-columns: repeat(2, minmax(0,1fr)); }
+            .tta-chart-wide { grid-column: span 2; }
+        }
+
         /* ─────────────────────────────────────────────────────────────
            DXF STUDIO — viewer + profile smoother (additive module)
            Namespaced under .dxfs- so it cannot affect tracer styling.
@@ -1978,6 +2120,18 @@
             </div>
             
             <div class="panel-section">
+                <div class="section-header">🛞 Tire Tread Analysis</div>
+                <button class="btn btn-primary" onclick="TTA.open()" style="width:100%;font-size:11px;padding:10px;">
+                    🛞 Open Tread Analysis
+                </button>
+                <div class="manual-trace-note">
+                    Measures projected land area, void/groove area, tread fill ratio, block properties, groove-width
+                    statistics and tread zoning from the image already loaded here — reusing its calibration and ROI.
+                    A tread image gives projected geometry only, not a loaded contact ratio.
+                </div>
+            </div>
+
+            <div class="panel-section">
                 <div class="section-header">
                     🎨 Colour Filter
                     <span id="colorActiveBadge" style="display:none;background:var(--accent-primary);color:#fff;font-size:9px;padding:2px 6px;border-radius:99px;letter-spacing:0;">ACTIVE</span>
@@ -2638,6 +2792,10 @@
         document.addEventListener('mousemove', movePanelPan);
         document.addEventListener('mouseup', stopPanelPan);
         document.addEventListener('keydown', e => {
+            if (e.key === 'Enter' && typeof TTA !== 'undefined' && TTA.closePolygon && TTA.closePolygon()) {
+                e.preventDefault();
+                return;
+            }
             if (e.code === 'Space' && img && !panMode) {
                 panMode = true;
                 document.body.classList.add('pan-active');
@@ -3383,6 +3541,8 @@
             const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
             const my = (e.clientY - rect.top) * (canvas.height / rect.height);
 
+            if (typeof TTA !== 'undefined' && TTA.wantsPointer() && TTA.onDown(mx, my)) { ttaDragging = true; return; }
+
             if (zoomBoxMode && e.button === 0) {
                 zoomBoxStart = { x: mx, y: my };
                 zoomBoxEnd = { x: mx, y: my };
@@ -3443,6 +3603,8 @@
             const rect = canvas.getBoundingClientRect();
             const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
             const my = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+            if (typeof TTA !== 'undefined' && TTA.wantsPointer() && TTA.onMove(mx, my, ttaDragging)) return;
 
             // Live rubber-band line while placing a measurement.
             if (measureMode && measurePts.length === 1) {
@@ -3506,6 +3668,7 @@
         }
         
         function handleMouseUp(e) {
+            if (typeof TTA !== 'undefined' && ttaDragging) { ttaDragging = false; if (TTA.onUp()) return; }
             if (zoomBoxMode && zoomBoxStart && zoomBoxEnd) {
                 zoomToBox();
                 return;
@@ -3991,6 +4154,7 @@
                     lastMaskStats = null;
                     if (colorMaskMat) { colorMaskMat.delete(); colorMaskMat = null; }
                     captureSourcePixels(img);
+                    if (typeof TTA !== 'undefined' && TTA.reset) { try { TTA.reset(); } catch (e) {} }
 
                     if (ready) {
                         if (imgMat) imgMat.delete();
@@ -4117,6 +4281,9 @@
             const rect = canvas.getBoundingClientRect();
             let x = Math.round((e.clientX - rect.left) * (canvas.width / rect.width));
             let y = Math.round((e.clientY - rect.top) * (canvas.height / rect.height));
+
+            // Tread-analysis ROI polygon picking.
+            if (typeof TTA !== 'undefined' && TTA.wantsPointer() && TTA.onClick(x, y)) return;
 
             // Colour picking takes priority over all other click handling.
             if (colorPickMode) {
@@ -5072,6 +5239,9 @@
 
             // Free distance measurements (independent overlay)
             drawMeasurements(ctx);
+
+            // Tread-analysis overlay (guarded internally; never throws)
+            if (typeof TTA !== 'undefined' && TTA.drawOverlay) TTA.drawOverlay(ctx);
 
             // Keep the live calibration-angle readout in sync.
             updateCalibInfo();
@@ -6217,6 +6387,2155 @@
         }
 
 
+        /* ===== TIRE TREAD ANALYSIS — CORE ====================================
+           Image-based tread geometry: land / void segmentation, block and groove
+           statistics, tread zoning.
+
+           Deliberately additive. It reads the Tracer's image, calibration and ROI
+           state but never writes to them; results live in their own data model and
+           the source image is never modified. All heavy work is OpenCV-backed and
+           guarded so a missing/late OpenCV degrades to a clear message rather than
+           an exception.
+
+           IMPORTANT: a tread-design or footprint image yields PROJECTED geometry
+           only. Nothing here is a loaded tire-road contact ratio.
+        ==================================================================== */
+        var TTACore = (function () {
+            'use strict';
+
+            const ZONE_NAMES = ['Left shoulder', 'Left intermediate', 'Centre',
+                                'Right intermediate', 'Right shoulder'];
+
+            // ── small numeric helpers ────────────────────────────────────────
+            function percentile(sorted, p) {
+                if (!sorted.length) return 0;
+                if (sorted.length === 1) return sorted[0];
+                const i = (sorted.length - 1) * p;
+                const lo = Math.floor(i), hi = Math.ceil(i);
+                return lo === hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
+            }
+            function stats(arr) {
+                if (!arr || !arr.length) {
+                    return { n: 0, mean: 0, median: 0, sd: 0, min: 0, max: 0,
+                             p5: 0, p25: 0, p75: 0, p95: 0 };
+                }
+                const s = Float64Array.from(arr).sort();
+                let sum = 0;
+                for (let i = 0; i < s.length; i++) sum += s[i];
+                const mean = sum / s.length;
+                let v = 0;
+                for (let i = 0; i < s.length; i++) v += (s[i] - mean) * (s[i] - mean);
+                return {
+                    n: s.length, mean, sd: Math.sqrt(v / s.length),
+                    median: percentile(s, 0.5), min: s[0], max: s[s.length - 1],
+                    p5: percentile(s, 0.05), p25: percentile(s, 0.25),
+                    p75: percentile(s, 0.75), p95: percentile(s, 0.95)
+                };
+            }
+
+            // ── ROI masks ────────────────────────────────────────────────────
+            function blankMask(w, h) { return new Uint8Array(w * h); }
+
+            function fillRect(mask, w, h, r, value) {
+                const x0 = Math.max(0, Math.floor(r.x)), y0 = Math.max(0, Math.floor(r.y));
+                const x1 = Math.min(w, Math.ceil(r.x + r.w)), y1 = Math.min(h, Math.ceil(r.y + r.h));
+                for (let y = y0; y < y1; y++) {
+                    const row = y * w;
+                    for (let x = x0; x < x1; x++) mask[row + x] = value;
+                }
+            }
+
+            // Scanline polygon fill (even-odd), used for polygon ROIs and for
+            // closed traced shapes taken straight from the Tracer.
+            function fillPolygon(mask, w, h, pts, value) {
+                if (!pts || pts.length < 3) return;
+                let minY = Infinity, maxY = -Infinity;
+                for (const p of pts) { if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y; }
+                const y0 = Math.max(0, Math.floor(minY)), y1 = Math.min(h - 1, Math.ceil(maxY));
+                const xs = [];
+                for (let y = y0; y <= y1; y++) {
+                    xs.length = 0;
+                    const cy = y + 0.5;
+                    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+                        const a = pts[j], b = pts[i];
+                        if ((a.y > cy) !== (b.y > cy)) {
+                            xs.push(a.x + ((cy - a.y) / (b.y - a.y)) * (b.x - a.x));
+                        }
+                    }
+                    if (!xs.length) continue;
+                    xs.sort((p, q) => p - q);
+                    const row = y * w;
+                    for (let k = 0; k + 1 < xs.length; k += 2) {
+                        const sx = Math.max(0, Math.ceil(xs[k] - 0.5));
+                        const ex = Math.min(w - 1, Math.floor(xs[k + 1] - 0.5));
+                        for (let x = sx; x <= ex; x++) mask[row + x] = value;
+                    }
+                }
+            }
+
+            function maskBBox(mask, w, h) {
+                let minX = w, minY = h, maxX = -1, maxY = -1;
+                for (let y = 0; y < h; y++) {
+                    const row = y * w;
+                    for (let x = 0; x < w; x++) {
+                        if (mask[row + x]) {
+                            if (x < minX) minX = x;
+                            if (x > maxX) maxX = x;
+                            if (y < minY) minY = y;
+                            if (y > maxY) maxY = y;
+                        }
+                    }
+                }
+                if (maxX < 0) return null;
+                return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+            }
+
+            function countMask(mask) {
+                let n = 0;
+                for (let i = 0; i < mask.length; i++) if (mask[i]) n++;
+                return n;
+            }
+
+            // ── tread zones ──────────────────────────────────────────────────
+            // Five lateral bands across the ROI. Fractions are cumulative edges
+            // measured from the left edge of the ROI bounding box.
+            function zoneIndex(x, bbox, edges) {
+                const f = bbox.w > 0 ? (x - bbox.x) / bbox.w : 0;
+                for (let i = 0; i < edges.length; i++) if (f < edges[i]) return i;
+                return edges.length;
+            }
+
+            // ── shape descriptors from raw second moments ────────────────────
+            // Same convention as scikit-image regionprops, so numbers are
+            // comparable with the literature rather than being ad-hoc.
+            function shapeFromMoments(m00, m10, m01, m20, m02, m11) {
+                if (m00 <= 0) return null;
+                const cx = m10 / m00, cy = m01 / m00;
+                const u20 = m20 / m00 - cx * cx;
+                const u02 = m02 / m00 - cy * cy;
+                const u11 = m11 / m00 - cx * cy;
+                const common = Math.sqrt(Math.max(0, 4 * u11 * u11 + (u20 - u02) * (u20 - u02)));
+                const l1 = (u20 + u02) / 2 + common / 2;
+                const l2 = Math.max(0, (u20 + u02) / 2 - common / 2);
+                const major = 4 * Math.sqrt(Math.max(l1, 0));
+                const minor = 4 * Math.sqrt(l2);
+                let orientation = 0.5 * Math.atan2(2 * u11, u20 - u02) * 180 / Math.PI;
+                // Report as a bearing in [0,180) measured from the +x axis, with
+                // image-y flipped so the angle reads the way it looks on screen.
+                orientation = -orientation;
+                while (orientation < 0) orientation += 180;
+                while (orientation >= 180) orientation -= 180;
+                const ecc = l1 > 1e-12 ? Math.sqrt(Math.max(0, 1 - l2 / l1)) : 0;
+                return { cx, cy, major, minor, orientation, eccentricity: ecc };
+            }
+
+            // ── Zhang-Suen thinning (medial axis of the void mask) ───────────
+            // Plain JS so it is independent of which OpenCV build is loaded
+            // (ximgproc.thinning is not in the standard opencv.js).
+            function thinZhangSuen(src, w, h, maxIter) {
+                const img = Uint8Array.from(src);
+                const remove = [];
+                const lim = maxIter || 200;
+                for (let iter = 0; iter < lim; iter++) {
+                    let changed = false;
+                    for (let step = 0; step < 2; step++) {
+                        remove.length = 0;
+                        for (let y = 1; y < h - 1; y++) {
+                            const r = y * w;
+                            for (let x = 1; x < w - 1; x++) {
+                                if (!img[r + x]) continue;
+                                const p2 = img[r - w + x], p3 = img[r - w + x + 1], p4 = img[r + x + 1],
+                                      p5 = img[r + w + x + 1], p6 = img[r + w + x], p7 = img[r + w + x - 1],
+                                      p8 = img[r + x - 1], p9 = img[r - w + x - 1];
+                                const B = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9;
+                                if (B < 2 || B > 6) continue;
+                                let A = 0;
+                                const seq = [p2, p3, p4, p5, p6, p7, p8, p9, p2];
+                                for (let i = 0; i < 8; i++) if (seq[i] === 0 && seq[i + 1] === 1) A++;
+                                if (A !== 1) continue;
+                                if (step === 0) {
+                                    if (p2 * p4 * p6) continue;
+                                    if (p4 * p6 * p8) continue;
+                                } else {
+                                    if (p2 * p4 * p8) continue;
+                                    if (p2 * p6 * p8) continue;
+                                }
+                                remove.push(r + x);
+                            }
+                        }
+                        if (remove.length) {
+                            changed = true;
+                            for (let i = 0; i < remove.length; i++) img[remove[i]] = 0;
+                        }
+                    }
+                    if (!changed) break;
+                }
+                return img;
+            }
+
+            // Skeleton length with diagonal weighting, plus direction split.
+            function skeletonLength(skel, w, h) {
+                let total = 0, horiz = 0, vert = 0, diag = 0;
+                for (let y = 0; y < h; y++) {
+                    for (let x = 0; x < w; x++) {
+                        if (!skel[y * w + x]) continue;
+                        // count each 8-neighbour link once (only forward neighbours)
+                        const links = [[1, 0], [0, 1], [1, 1], [-1, 1]];
+                        for (const [dx, dy] of links) {
+                            const nx = x + dx, ny = y + dy;
+                            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                            if (!skel[ny * w + nx]) continue;
+                            const len = (dx && dy) ? Math.SQRT2 : 1;
+                            total += len;
+                            if (dx && dy) diag += len;
+                            else if (dx) horiz += len;
+                            else vert += len;
+                        }
+                    }
+                }
+                return { total, horizontal: horiz, vertical: vert, diagonal: diag };
+            }
+
+            // ── basic land / void metrics ────────────────────────────────────
+            function basicMetrics(land, voidM, valid, pxPerMm) {
+                let validN = 0, landN = 0, voidN = 0;
+                for (let i = 0; i < valid.length; i++) {
+                    if (!valid[i]) continue;
+                    validN++;
+                    if (land[i]) landN++;
+                    else if (voidM[i]) voidN++;
+                }
+                const unclassified = validN - landN - voidN;
+                const landFraction = validN ? landN / validN : 0;
+                const voidFraction = validN ? voidN / validN : 0;
+                const mm2 = pxPerMm ? 1 / (pxPerMm * pxPerMm) : null;
+                return {
+                    validPixels: validN,
+                    landPixels: landN,
+                    voidPixels: voidN,
+                    unclassifiedPixels: unclassified,
+                    unclassifiedFraction: validN ? unclassified / validN : 0,
+                    landFraction, voidFraction,
+                    projectedTreadFillRatioPercent: 100 * landFraction,
+                    voidRatioPercent: 100 * voidFraction,
+                    landToVoidRatio: voidN > 0 ? landN / voidN : null,
+                    sumCheck: landFraction + voidFraction,   // must be ~1
+                    calibrated: !!pxPerMm,
+                    pxPerMm: pxPerMm || null,
+                    mmPerPx: pxPerMm ? 1 / pxPerMm : null,
+                    validAreaMm2: mm2 ? validN * mm2 : null,
+                    landAreaMm2: mm2 ? landN * mm2 : null,
+                    voidAreaMm2: mm2 ? voidN * mm2 : null
+                };
+            }
+
+            // ── mask validation ──────────────────────────────────────────────
+            function validateMasks(m, landComponents, voidComponents, borderTouching, roiTouchesBorderFrac, roiMode) {
+                const warn = [];
+                const pct = m.projectedTreadFillRatioPercent;
+                if (m.validPixels === 0) warn.push('The ROI contains no valid pixels.');
+                if (pct < 2) warn.push(`Land is only ${pct.toFixed(1)}% of the ROI — the mask may be inverted, or the threshold is too aggressive.`);
+                if (pct > 98) warn.push(`Land is ${pct.toFixed(1)}% of the ROI — almost nothing is being classed as void. Check the threshold and polarity.`);
+                if (landComponents === 0) warn.push('No land objects were detected.');
+                if (voidComponents === 0 && pct < 99) warn.push('No separate void objects were detected.');
+                if (Math.abs(m.sumCheck - 1) > 1e-6 && m.unclassifiedPixels > 0) {
+                    warn.push(`${m.unclassifiedPixels.toLocaleString()} ROI pixels (${(m.unclassifiedFraction * 100).toFixed(2)}%) are neither land nor void and are reported separately.`);
+                }
+                if (borderTouching > 0) warn.push(`${borderTouching} component(s) touch the ROI boundary and may be cut off.`);
+                // Only meaningful when the user cropped: with "Full image" the ROI
+                // edge IS the picture edge by definition, so the warning is noise.
+                if (roiMode !== 'full' && roiTouchesBorderFrac > 0.25) {
+                    warn.push(`${(roiTouchesBorderFrac * 100).toFixed(0)}% of the ROI edge lies on the image border — parts of the tread may be outside the picture.`);
+                }
+                return warn;
+            }
+
+            const LIMITATIONS_TEXT =
+                'A tread-design image provides projected geometry only. Actual tire-road ' +
+                'contact depends on load, inflation pressure, tire deformation, camber, slip, ' +
+                'speed, temperature, road texture, and other operating conditions.';
+
+            return {
+                ZONE_NAMES, LIMITATIONS_TEXT,
+                percentile, stats,
+                blankMask, fillRect, fillPolygon, maskBBox, countMask,
+                zoneIndex, shapeFromMoments, thinZhangSuen, skeletonLength,
+                basicMetrics, validateMasks
+            };
+        })();
+
+        /* ===== TIRE TREAD ANALYSIS — PIPELINE =================================
+           OpenCV-backed stages: preprocessing, land/void segmentation, mask
+           cleanup, connected-component block properties, groove/void statistics.
+
+           Never mutates the Tracer's Mats. Every stage clones its input and every
+           Mat allocated here is released in a finally block.
+        ==================================================================== */
+        var TTAPipe = (function () {
+            'use strict';
+
+            const Core = TTACore;
+
+            function haveCv() { return !!(typeof ready !== 'undefined' && ready && typeof cv !== 'undefined' && cv && cv.Mat); }
+
+            // Otsu computed over the ROI only. Using cv's global Otsu would let
+            // dark sidewalls, borders and background outside the tread bias the
+            // threshold, which is exactly the failure the spec warns about.
+            function otsuWithinMask(gray, valid) {
+                const hist = new Float64Array(256);
+                let total = 0;
+                const d = gray.data;
+                for (let i = 0; i < valid.length; i++) {
+                    if (!valid[i]) continue;
+                    hist[d[i]]++; total++;
+                }
+                if (!total) return 128;
+                let sum = 0;
+                for (let t = 0; t < 256; t++) sum += t * hist[t];
+                let sumB = 0, wB = 0, best = -1, bestT = 128;
+                for (let t = 0; t < 256; t++) {
+                    wB += hist[t];
+                    if (!wB) continue;
+                    const wF = total - wB;
+                    if (!wF) break;
+                    sumB += t * hist[t];
+                    const mB = sumB / wB, mF = (sum - sumB) / wF;
+                    const between = wB * wF * (mB - mF) * (mB - mF);
+                    if (between > best) { best = between; bestT = t; }
+                }
+                return bestT;
+            }
+
+            // Sauvola local thresholding via integral images — the proper
+            // "local threshold" option for unevenly lit scans.
+            function sauvola(gray, w, h, window, k) {
+                const win = Math.max(3, window | 1);
+                const r = win >> 1;
+                const R = 128;
+                const n = (w + 1) * (h + 1);
+                const I = new Float64Array(n), I2 = new Float64Array(n);
+                const d = gray.data;
+                for (let y = 0; y < h; y++) {
+                    let rs = 0, rs2 = 0;
+                    for (let x = 0; x < w; x++) {
+                        const v = d[y * w + x];
+                        rs += v; rs2 += v * v;
+                        I[(y + 1) * (w + 1) + (x + 1)] = I[y * (w + 1) + (x + 1)] + rs;
+                        I2[(y + 1) * (w + 1) + (x + 1)] = I2[y * (w + 1) + (x + 1)] + rs2;
+                    }
+                }
+                const out = new Uint8Array(w * h);
+                const rect = (A, x0, y0, x1, y1) =>
+                    A[(y1 + 1) * (w + 1) + (x1 + 1)] - A[y0 * (w + 1) + (x1 + 1)]
+                    - A[(y1 + 1) * (w + 1) + x0] + A[y0 * (w + 1) + x0];
+                for (let y = 0; y < h; y++) {
+                    const y0 = Math.max(0, y - r), y1 = Math.min(h - 1, y + r);
+                    for (let x = 0; x < w; x++) {
+                        const x0 = Math.max(0, x - r), x1 = Math.min(w - 1, x + r);
+                        const area = (x1 - x0 + 1) * (y1 - y0 + 1);
+                        const s = rect(I, x0, y0, x1, y1);
+                        const s2 = rect(I2, x0, y0, x1, y1);
+                        const mean = s / area;
+                        const varr = Math.max(0, s2 / area - mean * mean);
+                        const sd = Math.sqrt(varr);
+                        const T = mean * (1 + k * (sd / R - 1));
+                        out[y * w + x] = d[y * w + x] > T ? 255 : 0;
+                    }
+                }
+                return out;
+            }
+
+            // ── preprocessing ────────────────────────────────────────────────
+            // Returns a NEW Mat; the caller owns it. `src` is never modified.
+            function preprocess(src, o) {
+                let cur = src.clone();
+                const swap = next => { cur.delete(); cur = next; };
+                try {
+                    if (o.illumination) {
+                        // Estimate slow background variation by a large opening and
+                        // subtract it, so a vignette or uneven lamp does not tilt
+                        // the threshold across the tread.
+                        let bg = new cv.Mat(), k = null, tmp = new cv.Mat();
+                        try {
+                            const s = Math.max(3, o.illuminationSize | 1);
+                            k = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(s, s));
+                            cv.morphologyEx(cur, bg, cv.MORPH_OPEN, k);
+                            cv.subtract(cur, bg, tmp);
+                            cv.normalize(tmp, tmp, 0, 255, cv.NORM_MINMAX);
+                            swap(tmp.clone());
+                        } finally { bg.delete(); tmp.delete(); if (k) k.delete(); }
+                    }
+                    if (o.clahe) {
+                        let dst = new cv.Mat(), c = null;
+                        try {
+                            const t = Math.max(2, o.claheTile | 0 || 8);
+                            c = new cv.CLAHE(Math.max(0.1, o.claheClip || 2), new cv.Size(t, t));
+                            c.apply(cur, dst);
+                            swap(dst.clone());
+                        } finally { dst.delete(); if (c && c.delete) c.delete(); }
+                    }
+                    if (o.gaussian) {
+                        let dst = new cv.Mat();
+                        const k = Math.max(1, o.gaussianSize | 1);
+                        cv.GaussianBlur(cur, dst, new cv.Size(k, k), 0);
+                        swap(dst);
+                    }
+                    if (o.median) {
+                        let dst = new cv.Mat();
+                        cv.medianBlur(cur, dst, Math.max(3, o.medianSize | 1));
+                        swap(dst);
+                    }
+                    if (o.bilateral) {
+                        let dst = new cv.Mat();
+                        cv.bilateralFilter(cur, dst, Math.max(1, o.bilateralD | 0 || 5),
+                            o.bilateralSigma || 50, o.bilateralSigma || 50, cv.BORDER_DEFAULT);
+                        swap(dst);
+                    }
+                    if (o.sharpen) {
+                        let blur = new cv.Mat(), dst = new cv.Mat();
+                        try {
+                            cv.GaussianBlur(cur, blur, new cv.Size(0, 0), Math.max(0.3, o.sharpenSigma || 1.5));
+                            const a = 1 + (o.sharpenAmount || 1);
+                            cv.addWeighted(cur, a, blur, -(o.sharpenAmount || 1), 0, dst);
+                            swap(dst.clone());
+                        } finally { blur.delete(); dst.delete(); }
+                    }
+                    if (o.invert) {
+                        let dst = new cv.Mat();
+                        cv.bitwise_not(cur, dst);
+                        swap(dst);
+                    }
+                    return cur;
+                } catch (err) {
+                    cur.delete();
+                    throw err;
+                }
+            }
+
+            // ── segmentation → raw land mask (Uint8Array 0/1) ────────────────
+            function segment(pre, valid, w, h, o) {
+                const n = w * h;
+                let bin = null;      // Uint8Array 0/255 "bright" selection
+                let usedThreshold = null;
+
+                if (o.method === 'otsu' || o.method === 'manual') {
+                    const T = o.method === 'otsu' ? otsuWithinMask(pre, valid) : (o.threshold | 0);
+                    usedThreshold = T;
+                    bin = new Uint8Array(n);
+                    const d = pre.data;
+                    for (let i = 0; i < n; i++) bin[i] = d[i] > T ? 255 : 0;
+
+                } else if (o.method === 'adaptive_mean' || o.method === 'adaptive_gauss') {
+                    let dst = new cv.Mat();
+                    try {
+                        const blk = Math.max(3, o.blockSize | 1);
+                        cv.adaptiveThreshold(pre, dst, 255,
+                            o.method === 'adaptive_mean' ? cv.ADAPTIVE_THRESH_MEAN_C : cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+                            cv.THRESH_BINARY, blk, o.adaptiveC || 0);
+                        bin = Uint8Array.from(dst.data);
+                    } finally { dst.delete(); }
+
+                } else if (o.method === 'local') {
+                    bin = sauvola(pre, w, h, o.blockSize | 1, o.sauvolaK != null ? o.sauvolaK : 0.2);
+
+                } else if (o.method === 'edge') {
+                    // Edge-assisted: close the Canny edges into regions and fill,
+                    // useful when land and void have similar mean brightness.
+                    let e = new cv.Mat(), k = null, filled = null, cts = null, hier = null;
+                    try {
+                        cv.Canny(pre, e, o.cannyLow || 30, o.cannyHigh || 100);
+                        const s = Math.max(1, o.edgeClose | 0 || 3);
+                        k = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(2 * s + 1, 2 * s + 1));
+                        cv.morphologyEx(e, e, cv.MORPH_CLOSE, k);
+                        filled = e.clone();
+                        cts = new cv.MatVector(); hier = new cv.Mat();
+                        cv.findContours(filled, cts, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+                        for (let i = 0; i < cts.size(); i++) cv.drawContours(filled, cts, i, new cv.Scalar(255), -1);
+                        bin = Uint8Array.from(filled.data);
+                    } finally {
+                        e.delete(); if (k) k.delete(); if (filled) filled.delete();
+                        if (cts) cts.delete(); if (hier) hier.delete();
+                    }
+
+                } else if (o.method === 'kmeans') {
+                    bin = kmeansSplit(pre, valid, n, Math.max(2, Math.min(8, o.kClusters | 0 || 2)),
+                                      Math.max(1, o.kLandClusters | 0 || 1));
+
+                } else if (o.method === 'import' && o.importedMask) {
+                    bin = new Uint8Array(n);
+                    for (let i = 0; i < n; i++) bin[i] = o.importedMask[i] > 127 ? 255 : 0;
+
+                } else {
+                    // Unknown method: fall back to Otsu rather than failing.
+                    const T = otsuWithinMask(pre, valid);
+                    usedThreshold = T;
+                    bin = new Uint8Array(n);
+                    const d = pre.data;
+                    for (let i = 0; i < n; i++) bin[i] = d[i] > T ? 255 : 0;
+                }
+
+                // Polarity + explicit invert, then clip to the ROI.
+                const landBright = o.polarity !== 'dark';
+                const inv = !!o.invertMask;
+                const land = new Uint8Array(n);
+                for (let i = 0; i < n; i++) {
+                    if (!valid[i]) continue;
+                    let isLand = bin[i] ? landBright : !landBright;
+                    if (inv) isLand = !isLand;
+                    land[i] = isLand ? 1 : 0;
+                }
+                return { land, threshold: usedThreshold };
+            }
+
+            // 1-D k-means over ROI intensities; the brightest `landK` clusters
+            // become the bright class.
+            function kmeansSplit(pre, valid, n, k, landK) {
+                const d = pre.data;
+                let lo = 255, hi = 0;
+                for (let i = 0; i < n; i++) {
+                    if (!valid[i]) continue;
+                    const v = d[i];
+                    if (v < lo) lo = v;
+                    if (v > hi) hi = v;
+                }
+                if (hi <= lo) return new Uint8Array(n);
+                let centres = [];
+                for (let c = 0; c < k; c++) centres.push(lo + ((hi - lo) * c) / (k - 1 || 1));
+                const hist = new Float64Array(256);
+                for (let i = 0; i < n; i++) if (valid[i]) hist[d[i]]++;
+                for (let iter = 0; iter < 40; iter++) {
+                    const sum = new Float64Array(k), cnt = new Float64Array(k);
+                    for (let v = 0; v < 256; v++) {
+                        if (!hist[v]) continue;
+                        let bi = 0, bd = Infinity;
+                        for (let c = 0; c < k; c++) {
+                            const dd = Math.abs(v - centres[c]);
+                            if (dd < bd) { bd = dd; bi = c; }
+                        }
+                        sum[bi] += v * hist[v]; cnt[bi] += hist[v];
+                    }
+                    let moved = 0;
+                    for (let c = 0; c < k; c++) {
+                        if (!cnt[c]) continue;
+                        const nc = sum[c] / cnt[c];
+                        moved = Math.max(moved, Math.abs(nc - centres[c]));
+                        centres[c] = nc;
+                    }
+                    if (moved < 0.25) break;
+                }
+                const order = centres.map((v, i) => ({ v, i })).sort((a, b) => a.v - b.v);
+                const brightSet = new Set(order.slice(Math.max(0, k - landK)).map(o => o.i));
+                const out = new Uint8Array(n);
+                for (let i = 0; i < n; i++) {
+                    if (!valid[i]) continue;
+                    let bi = 0, bd = Infinity;
+                    for (let c = 0; c < k; c++) {
+                        const dd = Math.abs(d[i] - centres[c]);
+                        if (dd < bd) { bd = dd; bi = c; }
+                    }
+                    out[i] = brightSet.has(bi) ? 255 : 0;
+                }
+                return out;
+            }
+
+            // ── mask cleanup ─────────────────────────────────────────────────
+            // 0/1 (or 0/255) typed array -> CV_8UC1 Mat with 0/255 values.
+            function u8ToMat(arr, w, h) {
+                const m = new cv.Mat(h, w, cv.CV_8UC1);
+                const d = m.data;
+                for (let i = 0; i < arr.length; i++) d[i] = arr[i] ? 255 : 0;
+                return m;
+            }
+
+            function cleanup(landArr, valid, w, h, o) {
+                const n = w * h;
+                let m = u8ToMat(landArr, w, h);
+                const steps = { removedSmallLand: 0, removedSmallVoid: 0, removedBorder: 0 };
+                try {
+                    const seShape = o.seShape === 'rect' ? cv.MORPH_RECT
+                                  : (o.seShape === 'cross' ? cv.MORPH_CROSS : cv.MORPH_ELLIPSE);
+                    if (o.open > 0) {
+                        const k = cv.getStructuringElement(seShape, new cv.Size(2 * o.open + 1, 2 * o.open + 1));
+                        cv.morphologyEx(m, m, cv.MORPH_OPEN, k); k.delete();
+                    }
+                    if (o.close > 0) {
+                        const k = cv.getStructuringElement(seShape, new cv.Size(2 * o.close + 1, 2 * o.close + 1));
+                        cv.morphologyEx(m, m, cv.MORPH_CLOSE, k); k.delete();
+                    }
+
+                    let land = new Uint8Array(n);
+                    for (let i = 0; i < n; i++) land[i] = (valid[i] && m.data[i]) ? 1 : 0;
+
+                    if (o.minLandArea > 0) {
+                        const r = filterComponents(land, w, h, o.minLandArea, false);
+                        land = r.mask; steps.removedSmallLand = r.removed;
+                    }
+                    if (o.minVoidArea > 0) {
+                        // Small voids inside land are holes: removing them fills them.
+                        const voidArr = new Uint8Array(n);
+                        for (let i = 0; i < n; i++) voidArr[i] = (valid[i] && !land[i]) ? 1 : 0;
+                        const r = filterComponents(voidArr, w, h, o.minVoidArea, false);
+                        steps.removedSmallVoid = r.removed;
+                        for (let i = 0; i < n; i++) if (valid[i] && !r.mask[i]) land[i] = 1;
+                    }
+                    if (o.fillHoles) {
+                        land = fillEnclosedHoles(land, valid, w, h);
+                    }
+                    if (o.removeBorder) {
+                        const r = removeBorderTouching(land, valid, w, h);
+                        land = r.mask; steps.removedBorder = r.removed;
+                    }
+                    if (o.keepLargest) {
+                        land = keepLargestComponent(land, w, h);
+                    }
+                    return { land, steps };
+                } finally { m.delete(); }
+            }
+
+            // Connected-component pass in plain JS (iterative flood fill, so no
+            // recursion limits on large blobs).
+            function labelComponents(mask, w, h) {
+                const labels = new Int32Array(w * h).fill(0);
+                const sizes = [0];
+                const stack = new Int32Array(w * h);
+                let next = 1;
+                for (let i = 0; i < mask.length; i++) {
+                    if (!mask[i] || labels[i]) continue;
+                    let sp = 0;
+                    stack[sp++] = i;
+                    labels[i] = next;
+                    let count = 0;
+                    while (sp > 0) {
+                        const p = stack[--sp];
+                        count++;
+                        const x = p % w, y = (p / w) | 0;
+                        for (let dy = -1; dy <= 1; dy++) {
+                            const ny = y + dy;
+                            if (ny < 0 || ny >= h) continue;
+                            for (let dx = -1; dx <= 1; dx++) {
+                                if (!dx && !dy) continue;
+                                const nx = x + dx;
+                                if (nx < 0 || nx >= w) continue;
+                                const q = ny * w + nx;
+                                if (mask[q] && !labels[q]) { labels[q] = next; stack[sp++] = q; }
+                            }
+                        }
+                    }
+                    sizes.push(count);
+                    next++;
+                }
+                return { labels, sizes, count: next - 1 };
+            }
+
+            function filterComponents(mask, w, h, minArea, keepSmall) {
+                const { labels, sizes } = labelComponents(mask, w, h);
+                const out = new Uint8Array(mask.length);
+                let removed = 0;
+                const keep = new Uint8Array(sizes.length);
+                for (let l = 1; l < sizes.length; l++) {
+                    const ok = keepSmall ? sizes[l] < minArea : sizes[l] >= minArea;
+                    keep[l] = ok ? 1 : 0;
+                    if (!ok) removed++;
+                }
+                for (let i = 0; i < mask.length; i++) if (labels[i] && keep[labels[i]]) out[i] = 1;
+                return { mask: out, removed };
+            }
+
+            function keepLargestComponent(mask, w, h) {
+                const { labels, sizes } = labelComponents(mask, w, h);
+                let best = 0, bestN = -1;
+                for (let l = 1; l < sizes.length; l++) if (sizes[l] > bestN) { bestN = sizes[l]; best = l; }
+                const out = new Uint8Array(mask.length);
+                if (!best) return out;
+                for (let i = 0; i < mask.length; i++) if (labels[i] === best) out[i] = 1;
+                return out;
+            }
+
+            // Fill voids that do not connect to the ROI edge (true holes).
+            function fillEnclosedHoles(land, valid, w, h) {
+                const n = w * h;
+                const voidArr = new Uint8Array(n);
+                for (let i = 0; i < n; i++) voidArr[i] = (valid[i] && !land[i]) ? 1 : 0;
+                const { labels } = labelComponents(voidArr, w, h);
+                const edgeLabel = new Set([0]);
+                for (let i = 0; i < n; i++) {
+                    if (!voidArr[i]) continue;
+                    const x = i % w, y = (i / w) | 0;
+                    let onEdge = (x === 0 || y === 0 || x === w - 1 || y === h - 1);
+                    if (!onEdge) {
+                        // touching a non-valid pixel counts as reaching the ROI edge
+                        if ((x > 0 && !valid[i - 1]) || (x < w - 1 && !valid[i + 1]) ||
+                            (y > 0 && !valid[i - w]) || (y < h - 1 && !valid[i + w])) onEdge = true;
+                    }
+                    if (onEdge) edgeLabel.add(labels[i]);
+                }
+                const out = Uint8Array.from(land);
+                for (let i = 0; i < n; i++) if (voidArr[i] && !edgeLabel.has(labels[i])) out[i] = 1;
+                return out;
+            }
+
+            function removeBorderTouching(land, valid, w, h) {
+                const { labels } = labelComponents(land, w, h);
+                const bad = new Set();
+                for (let i = 0; i < land.length; i++) {
+                    if (!land[i]) continue;
+                    const x = i % w, y = (i / w) | 0;
+                    let edge = (x === 0 || y === 0 || x === w - 1 || y === h - 1);
+                    if (!edge) {
+                        if ((x > 0 && !valid[i - 1]) || (x < w - 1 && !valid[i + 1]) ||
+                            (y > 0 && !valid[i - w]) || (y < h - 1 && !valid[i + w])) edge = true;
+                    }
+                    if (edge) bad.add(labels[i]);
+                }
+                const out = new Uint8Array(land.length);
+                for (let i = 0; i < land.length; i++) if (land[i] && !bad.has(labels[i])) out[i] = 1;
+                return { mask: out, removed: bad.size };
+            }
+
+            function countBorderTouching(mask, valid, w, h) {
+                const { labels } = labelComponents(mask, w, h);
+                const bad = new Set();
+                for (let i = 0; i < mask.length; i++) {
+                    if (!mask[i]) continue;
+                    const x = i % w, y = (i / w) | 0;
+                    let edge = (x === 0 || y === 0 || x === w - 1 || y === h - 1);
+                    if (!edge) {
+                        if ((x > 0 && !valid[i - 1]) || (x < w - 1 && !valid[i + 1]) ||
+                            (y > 0 && !valid[i - w]) || (y < h - 1 && !valid[i + w])) edge = true;
+                    }
+                    if (edge) bad.add(labels[i]);
+                }
+                return bad.size;
+            }
+
+            // ── region properties ────────────────────────────────────────────
+            // One pass over the label image accumulates exact region moments,
+            // which are then turned into the standard descriptors.
+            function regionProps(mask, w, h, pxPerMm, bbox, zoneEdges, filters) {
+                const { labels, sizes, count } = labelComponents(mask, w, h);
+                if (!count) return { blocks: [], labels, count: 0 };
+
+                const m00 = new Float64Array(count + 1), m10 = new Float64Array(count + 1),
+                      m01 = new Float64Array(count + 1), m20 = new Float64Array(count + 1),
+                      m02 = new Float64Array(count + 1), m11 = new Float64Array(count + 1);
+                const minX = new Int32Array(count + 1).fill(w), minY = new Int32Array(count + 1).fill(h),
+                      maxX = new Int32Array(count + 1).fill(-1), maxY = new Int32Array(count + 1).fill(-1);
+                let perim = new Float64Array(count + 1);
+
+                for (let y = 0; y < h; y++) {
+                    const row = y * w;
+                    for (let x = 0; x < w; x++) {
+                        const l = labels[row + x];
+                        if (!l) continue;
+                        m00[l]++; m10[l] += x; m01[l] += y;
+                        m20[l] += x * x; m02[l] += y * y; m11[l] += x * y;
+                        if (x < minX[l]) minX[l] = x;
+                        if (x > maxX[l]) maxX[l] = x;
+                        if (y < minY[l]) minY[l] = y;
+                        if (y > maxY[l]) maxY[l] = y;
+                        // boundary pixel? (4-neighbour test) → perimeter estimate
+                        const up = y > 0 ? labels[row - w + x] : 0;
+                        const dn = y < h - 1 ? labels[row + w + x] : 0;
+                        const lf = x > 0 ? labels[row + x - 1] : 0;
+                        const rt = x < w - 1 ? labels[row + x + 1] : 0;
+                        if (up !== l || dn !== l || lf !== l || rt !== l) perim[l]++;
+                    }
+                }
+
+                const mmPerPx = pxPerMm ? 1 / pxPerMm : null;
+                const areaMm = pxPerMm ? 1 / (pxPerMm * pxPerMm) : null;
+                const cxAll = bbox.x + bbox.w / 2, cyAll = bbox.y + bbox.h / 2;
+                const blocks = [];
+                for (let l = 1; l <= count; l++) {
+                    const area = m00[l];
+                    if (!area) continue;
+                    if (filters && filters.minArea && area < filters.minArea) continue;
+                    if (filters && filters.maxArea && filters.maxArea > 0 && area > filters.maxArea) continue;
+                    const s = Core.shapeFromMoments(m00[l], m10[l], m01[l], m20[l], m02[l], m11[l]);
+                    if (!s) continue;
+                    const bw = maxX[l] - minX[l] + 1, bh = maxY[l] - minY[l] + 1;
+                    // Fallback perimeter = count of boundary pixels. attachContourProps
+                    // replaces this with cv.arcLength, which handles diagonal runs
+                    // properly; this value only stands in if contours are unavailable.
+                    const perimeter = perim[l];
+                    const aspect = s.minor > 1e-9 ? s.major / s.minor : (bh > 0 ? bw / bh : 1);
+                    if (filters && filters.maxAspect && filters.maxAspect > 0 && aspect > filters.maxAspect) continue;
+                    const circ = perimeter > 0 ? (4 * Math.PI * area) / (perimeter * perimeter) : 0;
+                    const zi = Core.zoneIndex(s.cx, bbox, zoneEdges);
+                    blocks.push({
+                        id: blocks.length + 1, label: l,
+                        areaPx: area,
+                        areaMm2: areaMm ? area * areaMm : null,
+                        perimeterPx: perimeter,
+                        perimeterMm: mmPerPx ? perimeter * mmPerPx : null,
+                        cx: s.cx, cy: s.cy,
+                        bboxX: minX[l], bboxY: minY[l], bboxW: bw, bboxH: bh,
+                        bboxWMm: mmPerPx ? bw * mmPerPx : null,
+                        bboxHMm: mmPerPx ? bh * mmPerPx : null,
+                        equivDiameterPx: Math.sqrt(4 * area / Math.PI),
+                        equivDiameterMm: mmPerPx ? Math.sqrt(4 * area / Math.PI) * mmPerPx : null,
+                        majorAxisPx: s.major, minorAxisPx: s.minor,
+                        majorAxisMm: mmPerPx ? s.major * mmPerPx : null,
+                        minorAxisMm: mmPerPx ? s.minor * mmPerPx : null,
+                        aspectRatio: aspect,
+                        orientationDeg: s.orientation,
+                        eccentricity: s.eccentricity,
+                        extent: (bw * bh) > 0 ? area / (bw * bh) : 0,
+                        circularity: Math.min(circ, 1.5),
+                        distFromCentrePx: Math.hypot(s.cx - cxAll, s.cy - cyAll),
+                        distFromCentreMm: mmPerPx ? Math.hypot(s.cx - cxAll, s.cy - cyAll) * mmPerPx : null,
+                        zone: Core.ZONE_NAMES[zi], zoneIndex: zi,
+                        solidity: null, convexAreaPx: null, eulerNumber: null
+                    });
+                }
+                return { blocks, labels, count };
+            }
+
+            // Convex hull area + Euler number need contours; done in one OpenCV
+            // pass and matched back to components by the label under each contour.
+            function attachContourProps(blocks, labelsArr, mask, w, h) {
+                if (!blocks.length || !haveCv()) return;
+                const byLabel = new Map();
+                blocks.forEach(b => byLabel.set(b.label, b));
+                let m = null, cts = null, hier = null;
+                try {
+                    m = u8ToMat(mask, w, h);
+                    cts = new cv.MatVector(); hier = new cv.Mat();
+                    cv.findContours(m, cts, hier, cv.RETR_CCOMP, cv.CHAIN_APPROX_SIMPLE);
+                    const holes = new Map();
+                    for (let i = 0; i < cts.size(); i++) {
+                        const parent = hier.data32S[i * 4 + 3];
+                        if (parent !== -1) {
+                            holes.set(parent, (holes.get(parent) || 0) + 1);
+                        }
+                    }
+                    for (let i = 0; i < cts.size(); i++) {
+                        if (hier.data32S[i * 4 + 3] !== -1) continue;   // holes handled above
+                        const c = cts.get(i);
+                        if (c.rows < 1) continue;
+                        const px = c.data32S[0], py = c.data32S[1];
+                        const l = labelsArr[py * w + px];
+                        const b = byLabel.get(l);
+                        if (!b) continue;
+                        let hull = new cv.Mat();
+                        try {
+                            cv.convexHull(c, hull, false, true);
+                            const ha = Math.abs(cv.contourArea(hull));
+                            b.convexAreaPx = ha;
+                            b.solidity = ha > 0 ? Math.min(1, b.areaPx / ha) : null;
+                        } finally { hull.delete(); }
+                        b.perimeterPx = cv.arcLength(c, true) || b.perimeterPx;
+                        b.circularity = b.perimeterPx > 0
+                            ? Math.min(1.5, (4 * Math.PI * b.areaPx) / (b.perimeterPx * b.perimeterPx)) : 0;
+                        b.eulerNumber = 1 - (holes.get(i) || 0);
+                    }
+                } catch (err) {
+                    /* descriptors that need contours simply stay null */
+                } finally {
+                    if (m) m.delete(); if (cts) cts.delete(); if (hier) hier.delete();
+                }
+            }
+
+            // ── groove / void width ──────────────────────────────────────────
+            function grooveAnalysis(voidArr, valid, w, h, pxPerMm, maxThinPixels) {
+                const res = {
+                    widthsPx: [], widthStatsPx: null, widthStatsMm: null,
+                    skeletonLengthPx: 0, skeletonLengthMm: null,
+                    lengthByDirection: null, skeleton: null, downscale: 1
+                };
+                let count = 0;
+                for (let i = 0; i < voidArr.length; i++) if (voidArr[i]) count++;
+                if (!count) return res;
+
+                // Thinning is the expensive step; on very large void areas we
+                // skeletonise a halved copy and scale the widths back up.
+                let sw = w, sh = h, src = voidArr, ds = 1;
+                const cap = maxThinPixels || 1500000;
+                while (count / (ds * ds) > cap && ds < 4) ds *= 2;
+                if (ds > 1) {
+                    sw = Math.floor(w / ds); sh = Math.floor(h / ds);
+                    src = new Uint8Array(sw * sh);
+                    for (let y = 0; y < sh; y++) {
+                        for (let x = 0; x < sw; x++) src[y * sw + x] = voidArr[(y * ds) * w + (x * ds)] ? 1 : 0;
+                    }
+                }
+                res.downscale = ds;
+
+                let dtMat = null, srcMat = null;
+                let dt = null;
+                try {
+                    srcMat = u8ToMat(src, sw, sh);
+                    dtMat = new cv.Mat();
+                    cv.distanceTransform(srcMat, dtMat, cv.DIST_L2, 5);
+                    dt = Float32Array.from(dtMat.data32F);
+                } catch (err) {
+                    dt = null;
+                } finally {
+                    if (dtMat) dtMat.delete();
+                    if (srcMat) srcMat.delete();
+                }
+
+                const skel = Core.thinZhangSuen(src, sw, sh);
+                res.skeleton = { data: skel, w: sw, h: sh, ds };
+                const L = Core.skeletonLength(skel, sw, sh);
+                res.skeletonLengthPx = L.total * ds;
+                res.lengthByDirection = {
+                    horizontal: L.horizontal * ds, vertical: L.vertical * ds, diagonal: L.diagonal * ds
+                };
+
+                if (dt) {
+                    const widths = [];
+                    for (let i = 0; i < skel.length; i++) {
+                        if (!skel[i]) continue;
+                        widths.push(2 * dt[i] * ds);
+                    }
+                    res.widthsPx = widths;
+                    res.widthStatsPx = Core.stats(widths);
+                    if (pxPerMm) {
+                        res.widthStatsMm = Core.stats(widths.map(v => v / pxPerMm));
+                        res.skeletonLengthMm = res.skeletonLengthPx / pxPerMm;
+                    }
+                }
+                return res;
+            }
+
+            return {
+                haveCv, otsuWithinMask, sauvola, preprocess, segment, cleanup,
+                labelComponents, filterComponents, keepLargestComponent,
+                fillEnclosedHoles, removeBorderTouching, countBorderTouching,
+                regionProps, attachContourProps, grooveAnalysis, u8ToMat
+            };
+        })();
+
+        /* ===== TIRE TREAD ANALYSIS — UI ======================================
+           Panel, ROI tools, live preview, results, charts, export and the
+           canvas overlay. Reads Tracer state, never writes it (the only shared
+           thing it draws to is the overlay layer inside draw()).
+        ==================================================================== */
+        var TTA = (function () {
+            'use strict';
+
+            const Core = TTACore, Pipe = TTAPipe;
+            const $ = id => document.getElementById(id);
+
+            const DEFAULTS = {
+                roiMode: 'full',
+                zoneEdges: [0.15, 0.35, 0.65, 0.85],
+                pre: {
+                    illumination: false, illuminationSize: 51,
+                    clahe: false, claheClip: 2, claheTile: 8,
+                    gaussian: false, gaussianSize: 3,
+                    median: false, medianSize: 3,
+                    bilateral: false, bilateralD: 5, bilateralSigma: 50,
+                    sharpen: false, sharpenAmount: 1, sharpenSigma: 1.5,
+                    invert: false
+                },
+                seg: {
+                    method: 'otsu', threshold: 128, polarity: 'bright', invertMask: false,
+                    blockSize: 51, adaptiveC: 5, sauvolaK: 0.2,
+                    cannyLow: 30, cannyHigh: 100, edgeClose: 3,
+                    kClusters: 2, kLandClusters: 1,
+                    open: 1, close: 1, seShape: 'ellipse',
+                    minLandArea: 50, minVoidArea: 30,
+                    fillHoles: false, removeBorder: false, keepLargest: false
+                },
+                blocks: { minArea: 50, maxArea: 0, maxAspect: 0 }
+            };
+
+            const S = {
+                status: 'notrun',
+                roiMode: DEFAULTS.roiMode,
+                roiRect: null, roiPoly: null, exclusions: [],
+                valid: null, validBBox: null, validCount: 0,
+                pre: Object.assign({}, DEFAULTS.pre),
+                seg: Object.assign({}, DEFAULTS.seg),
+                blocks: Object.assign({}, DEFAULTS.blocks),
+                zoneEdges: DEFAULTS.zoneEdges.slice(),
+                importedMask: null,
+                results: null,
+                masks: null,               // {land, void} at full resolution
+                rawLand: null,             // pre-cleanup, for the difference view
+                overlay: false,
+                showBlockIds: false, showBBoxes: false,
+                previewCanvasKey: null,
+                drawMode: null,            // 'rect' | 'poly' | 'exclude' | 'brush+' | 'brush-'
+                tmpRect: null, tmpPoly: [],
+                brushSize: 24,
+                maskUndo: [], maskRedo: [],
+                cancel: false,
+                lastPreview: null
+            };
+
+            function open() {
+                const m = $('ttaModal');
+                if (!m) return;
+                m.classList.add('active');
+                syncControls();
+                refreshContext();
+                requestAnimationFrame(() => { schedulePreview(); });
+            }
+            function close() {
+                const m = $('ttaModal');
+                if (m) m.classList.remove('active');
+                if (S.drawMode) setDrawMode(null);
+            }
+
+            function setStatus(st, extra) {
+                S.status = st;
+                const el = $('ttaStatus');
+                if (!el) return;
+                const map = {
+                    notrun: ['Not run', '#94a3b8'], preview: ['Preview ready', '#3b82f6'],
+                    running: ['Running…', '#f59e0b'], complete: ['Complete', '#10b981'],
+                    failed: ['Failed', '#ef4444'], needsinput: ['Needs user input', '#f59e0b']
+                };
+                const [txt, col] = map[st] || ['Not run', '#94a3b8'];
+                el.textContent = txt + (extra ? ' · ' + extra : '');
+                el.style.background = col;
+            }
+
+            function note(msg, warn) {
+                const el = $('ttaNote');
+                if (!el) return;
+                el.textContent = msg || '';
+                el.className = 'tta-note' + (warn ? ' warn' : '');
+            }
+
+            // ── context: image + calibration, straight from the Tracer ───────
+            function ctxInfo() {
+                const has = typeof img !== 'undefined' && !!img;
+                const sc = (typeof scale !== 'undefined' && scale && isFinite(scale) && scale > 0) ? scale : null;
+                return {
+                    hasImage: has,
+                    w: has ? canvas.width : 0,
+                    h: has ? canvas.height : 0,
+                    pxPerMm: sc,
+                    cvReady: Pipe.haveCv()
+                };
+            }
+
+            function refreshContext() {
+                const c = ctxInfo();
+                const gate = $('ttaGate');
+                const body = $('ttaBody');
+                if (gate) gate.style.display = c.hasImage ? 'none' : 'block';
+                if (body) body.style.opacity = c.hasImage ? '1' : '0.35';
+                document.querySelectorAll('.tta-needs-image').forEach(b => { b.disabled = !c.hasImage; });
+
+                const cal = $('ttaCalib');
+                if (cal) {
+                    cal.innerHTML = c.pxPerMm
+                        ? `<div class="tta-kv"><span>Source</span><strong>Tracer calibration</strong></div>
+                           <div class="tta-kv"><span>Scale</span><strong>${c.pxPerMm.toFixed(4)} px/mm</strong></div>
+                           <div class="tta-kv"><span>Pixel size</span><strong>${(1 / c.pxPerMm).toFixed(5)} mm/px</strong></div>`
+                        : `<div class="tta-warn">No spatial calibration is active. Dimensions are reported in pixels.
+                           Calibrate in the Tracer's Calibration panel and reopen this tab to get mm.</div>`;
+                }
+                const imgInfo = $('ttaImageInfo');
+                if (imgInfo) {
+                    imgInfo.textContent = c.hasImage
+                        ? `${c.w} × ${c.h} px${c.cvReady ? '' : ' · waiting for OpenCV…'}`
+                        : 'No image loaded';
+                }
+            }
+
+            // ── ROI ──────────────────────────────────────────────────────────
+            function buildValidMask() {
+                const c = ctxInfo();
+                if (!c.hasImage) return null;
+                const w = c.w, h = c.h;
+                const mask = Core.blankMask(w, h);
+
+                if (S.roiMode === 'full') {
+                    mask.fill(1);
+                } else if (S.roiMode === 'rect' && S.roiRect) {
+                    Core.fillRect(mask, w, h, S.roiRect, 1);
+                } else if (S.roiMode === 'poly' && S.roiPoly && S.roiPoly.length >= 3) {
+                    Core.fillPolygon(mask, w, h, S.roiPoly, 1);
+                } else if (S.roiMode === 'tracer') {
+                    const r = (typeof getCurrentVisibleImageRect === 'function')
+                        ? getCurrentVisibleImageRect(0) : { x: 0, y: 0, w, h };
+                    Core.fillRect(mask, w, h, r, 1);
+                } else if (S.roiMode === 'shape') {
+                    const pts = (typeof finalPts !== 'undefined' && finalPts.length >= 3) ? finalPts : null;
+                    if (!pts) return null;
+                    Core.fillPolygon(mask, w, h, pts, 1);
+                } else if (S.roiMode === 'auto') {
+                    autoProposeInto(mask, w, h);
+                } else {
+                    mask.fill(1);
+                }
+
+                // subtract user exclusions (sidewalls, rims, labels, shadows…)
+                for (const ex of S.exclusions) {
+                    if (ex.type === 'rect') Core.fillRect(mask, w, h, ex.rect, 0);
+                    else if (ex.type === 'poly') Core.fillPolygon(mask, w, h, ex.poly, 0);
+                }
+                return mask;
+            }
+
+            // Automatic tread-region proposal: threshold the grayscale, keep the
+            // largest bright region and use its filled bounding region. Purely a
+            // starting point the user can then edit.
+            function autoProposeInto(mask, w, h) {
+                try {
+                    if (!Pipe.haveCv() || typeof baseGrayMat === 'undefined' || !baseGrayMat) { mask.fill(1); return; }
+                    const all = new Uint8Array(w * h).fill(1);
+                    const T = Pipe.otsuWithinMask(baseGrayMat, all);
+                    const bright = new Uint8Array(w * h);
+                    for (let i = 0; i < w * h; i++) bright[i] = baseGrayMat.data[i] > T * 0.6 ? 1 : 0;
+                    const big = Pipe.keepLargestComponent(bright, w, h);
+                    const filled = Pipe.fillEnclosedHoles(big, all, w, h);
+                    const bb = Core.maskBBox(filled, w, h);
+                    if (bb) Core.fillRect(mask, w, h, bb, 1);
+                    else mask.fill(1);
+                } catch (e) { mask.fill(1); }
+            }
+
+            function setRoiMode(m) {
+                S.roiMode = m;
+                document.querySelectorAll('[data-ttaroi]').forEach(b =>
+                    b.classList.toggle('active', b.dataset.ttaroi === m));
+                const needShape = m === 'shape';
+                if (needShape && !(typeof finalPts !== 'undefined' && finalPts.length >= 3)) {
+                    note('No closed traced shape is available — trace one in the Tracer first.', true);
+                    setStatus('needsinput');
+                }
+                if (m === 'rect') { setDrawMode('rect'); note('Drag on the image to set the tread ROI.'); }
+                else if (m === 'poly') { setDrawMode('poly'); note('Click points on the image; double-click or press Enter to close the polygon.'); }
+                else setDrawMode(null);
+                schedulePreview();
+            }
+
+            function setDrawMode(m) {
+                S.drawMode = m;
+                S.tmpRect = null; S.tmpPoly = [];
+                document.querySelectorAll('[data-ttadraw]').forEach(b =>
+                    b.classList.toggle('active', b.dataset.ttadraw === m));
+                if (typeof draw === 'function') draw();
+            }
+
+            function addExclusionMode() { setDrawMode('exclude'); note('Drag a box over anything to exclude (sidewall, rim, label, shadow).'); }
+            function clearExclusions() { S.exclusions = []; note('Exclusions cleared.'); schedulePreview(); }
+
+            // ── canvas interaction (delegated from the Tracer's handlers) ────
+            function wantsPointer() { return !!S.drawMode && !!$('ttaModal') ; }
+
+            function onDown(x, y) {
+                if (!S.drawMode) return false;
+                if (S.drawMode === 'rect' || S.drawMode === 'exclude') {
+                    S.tmpRect = { x0: x, y0: y, x1: x, y1: y };
+                    return true;
+                }
+                if (S.drawMode === 'brush+' || S.drawMode === 'brush-') {
+                    pushMaskUndo();
+                    paint(x, y);
+                    return true;
+                }
+                return false;
+            }
+            function onMove(x, y, down) {
+                if (!S.drawMode) return false;
+                if ((S.drawMode === 'rect' || S.drawMode === 'exclude') && S.tmpRect) {
+                    S.tmpRect.x1 = x; S.tmpRect.y1 = y;
+                    if (typeof draw === 'function') draw();
+                    return true;
+                }
+                if ((S.drawMode === 'brush+' || S.drawMode === 'brush-') && down) { paint(x, y); return true; }
+                return false;
+            }
+            function onUp() {
+                if (!S.drawMode) return false;
+                if (S.drawMode === 'brush+' || S.drawMode === 'brush-') {
+                    // Recompute once per stroke rather than per painted pixel.
+                    if (S.painted) {
+                        S.painted = false;
+                        invalidateOverlay();
+                        try { recomputeFromMasks(); } catch (e) { note('Could not update results: ' + e.message, true); }
+                        note('Mask edited manually — results updated.');
+                    }
+                    return true;
+                }
+                if ((S.drawMode === 'rect' || S.drawMode === 'exclude') && S.tmpRect) {
+                    const r = {
+                        x: Math.min(S.tmpRect.x0, S.tmpRect.x1), y: Math.min(S.tmpRect.y0, S.tmpRect.y1),
+                        w: Math.abs(S.tmpRect.x1 - S.tmpRect.x0), h: Math.abs(S.tmpRect.y1 - S.tmpRect.y0)
+                    };
+                    S.tmpRect = null;
+                    if (r.w > 4 && r.h > 4) {
+                        if (S.drawMode === 'rect') { S.roiRect = r; S.roiMode = 'rect'; note(`Tread ROI set: ${Math.round(r.w)} × ${Math.round(r.h)} px`); }
+                        else { S.exclusions.push({ type: 'rect', rect: r }); note(`Excluded region added (${S.exclusions.length} total).`); }
+                        schedulePreview();
+                    }
+                    if (typeof draw === 'function') draw();
+                    return true;
+                }
+                return false;
+            }
+            function onClick(x, y) {
+                if (S.drawMode === 'poly') {
+                    S.tmpPoly.push({ x, y });
+                    if (typeof draw === 'function') draw();
+                    return true;
+                }
+                return false;
+            }
+            function closePolygon() {
+                if (S.drawMode === 'poly' && S.tmpPoly.length >= 3) {
+                    S.roiPoly = S.tmpPoly.slice();
+                    S.roiMode = 'poly';
+                    S.tmpPoly = [];
+                    setDrawMode(null);
+                    note(`Polygon ROI set with ${S.roiPoly.length} points.`);
+                    schedulePreview();
+                    return true;
+                }
+                return false;
+            }
+
+            // ── manual mask brush ────────────────────────────────────────────
+            function pushMaskUndo() {
+                if (!S.masks) return;
+                S.maskUndo.push(Uint8Array.from(S.masks.land));
+                if (S.maskUndo.length > 25) S.maskUndo.shift();
+                S.maskRedo.length = 0;
+            }
+            function paint(cx, cy) {
+                if (!S.masks) { note('Run the analysis first, then edit the mask.', true); return; }
+                const c = ctxInfo(), r = S.brushSize / 2, add = S.drawMode === 'brush+';
+                const x0 = Math.max(0, Math.floor(cx - r)), x1 = Math.min(c.w - 1, Math.ceil(cx + r));
+                const y0 = Math.max(0, Math.floor(cy - r)), y1 = Math.min(c.h - 1, Math.ceil(cy + r));
+                for (let y = y0; y <= y1; y++) {
+                    for (let x = x0; x <= x1; x++) {
+                        if ((x - cx) * (x - cx) + (y - cy) * (y - cy) > r * r) continue;
+                        const i = y * c.w + x;
+                        if (!S.valid[i]) continue;
+                        S.masks.land[i] = add ? 1 : 0;
+                        S.masks.void[i] = add ? 0 : 1;
+                    }
+                }
+                S.manualEdited = true;
+                S.painted = true;
+                invalidateOverlay();
+                if (typeof draw === 'function') draw();
+            }
+            function maskUndo() {
+                if (!S.maskUndo.length || !S.masks) { note('Nothing to undo.', true); return; }
+                S.maskRedo.push(Uint8Array.from(S.masks.land));
+                applyLand(S.maskUndo.pop());
+            }
+            function maskRedo() {
+                if (!S.maskRedo.length || !S.masks) { note('Nothing to redo.', true); return; }
+                S.maskUndo.push(Uint8Array.from(S.masks.land));
+                applyLand(S.maskRedo.pop());
+            }
+            function applyLand(land) {
+                S.masks.land = land;
+                invalidateOverlay();
+                S.masks.void = new Uint8Array(land.length);
+                for (let i = 0; i < land.length; i++) S.masks.void[i] = (S.valid[i] && !land[i]) ? 1 : 0;
+                recomputeFromMasks();
+                if (typeof draw === 'function') draw();
+            }
+
+            // ── options from the DOM ─────────────────────────────────────────
+            function readOpts() {
+                const num = (id, d) => { const e = $(id); const v = e ? parseFloat(e.value) : NaN; return Number.isFinite(v) ? v : d; };
+                const chk = (id, d) => { const e = $(id); return e ? !!e.checked : d; };
+                const val = (id, d) => { const e = $(id); return e ? e.value : d; };
+                S.pre = {
+                    illumination: chk('ttaIllum', false), illuminationSize: num('ttaIllumSize', 51) | 1,
+                    clahe: chk('ttaClahe', false), claheClip: num('ttaClaheClip', 2), claheTile: num('ttaClaheTile', 8),
+                    gaussian: chk('ttaGauss', false), gaussianSize: num('ttaGaussSize', 3) | 1,
+                    median: chk('ttaMedian', false), medianSize: num('ttaMedianSize', 3) | 1,
+                    bilateral: chk('ttaBilat', false), bilateralD: num('ttaBilatD', 5), bilateralSigma: num('ttaBilatSigma', 50),
+                    sharpen: chk('ttaSharp', false), sharpenAmount: num('ttaSharpAmt', 1), sharpenSigma: num('ttaSharpSigma', 1.5),
+                    invert: chk('ttaInvert', false)
+                };
+                S.seg = {
+                    method: val('ttaSegMethod', 'otsu'),
+                    threshold: num('ttaThreshold', 128),
+                    polarity: val('ttaPolarity', 'bright'),
+                    invertMask: chk('ttaInvertMask', false),
+                    blockSize: Math.max(3, num('ttaBlockSize', 51) | 1),
+                    adaptiveC: num('ttaAdaptiveC', 5),
+                    sauvolaK: num('ttaSauvolaK', 0.2),
+                    cannyLow: num('ttaCannyLow', 30), cannyHigh: num('ttaCannyHigh', 100),
+                    edgeClose: num('ttaEdgeClose', 3),
+                    kClusters: num('ttaK', 2), kLandClusters: num('ttaKLand', 1),
+                    open: num('ttaOpen', 1), close: num('ttaClose', 1),
+                    seShape: val('ttaSE', 'ellipse'),
+                    minLandArea: num('ttaMinLand', 50), minVoidArea: num('ttaMinVoid', 30),
+                    fillHoles: chk('ttaFillHoles', false),
+                    removeBorder: chk('ttaRemoveBorder', false),
+                    keepLargest: chk('ttaKeepLargest', false),
+                    importedMask: S.importedMask
+                };
+                S.blocks = {
+                    minArea: num('ttaBlkMin', 50), maxArea: num('ttaBlkMax', 0), maxAspect: num('ttaBlkAspect', 0)
+                };
+                const z = (val('ttaZones', '15,35,65,85') || '').split(',').map(v => parseFloat(v) / 100)
+                    .filter(v => Number.isFinite(v) && v > 0 && v < 1).sort((a, b) => a - b);
+                S.zoneEdges = z.length === 4 ? z : DEFAULTS.zoneEdges.slice();
+            }
+
+            function syncControls() {
+                const setV = (id, v) => { const e = $(id); if (e) e.value = v; };
+                const setC = (id, v) => { const e = $(id); if (e) e.checked = v; };
+                setV('ttaSegMethod', S.seg.method); setV('ttaPolarity', S.seg.polarity);
+                setV('ttaThreshold', S.seg.threshold); setC('ttaInvertMask', S.seg.invertMask);
+                syncMethodVisibility();
+                syncSliderLabels();
+            }
+
+            function syncMethodVisibility() {
+                const m = ($('ttaSegMethod') || {}).value || 'otsu';
+                const show = (id, on) => { const e = $(id); if (e) e.style.display = on ? '' : 'none'; };
+                show('ttaRowThreshold', m === 'manual');
+                show('ttaRowBlock', m === 'adaptive_mean' || m === 'adaptive_gauss' || m === 'local');
+                show('ttaRowAdaptiveC', m === 'adaptive_mean' || m === 'adaptive_gauss');
+                show('ttaRowSauvola', m === 'local');
+                show('ttaRowEdge', m === 'edge');
+                show('ttaRowK', m === 'kmeans');
+                show('ttaRowImport', m === 'import');
+            }
+
+            function syncSliderLabels() {
+                document.querySelectorAll('[data-ttalabel]').forEach(sl => {
+                    const t = $(sl.dataset.ttalabel);
+                    if (t) t.textContent = sl.value;
+                });
+            }
+
+            // ── preview (downscaled) and full run ────────────────────────────
+            let previewTimer = null;
+            function schedulePreview() {
+                clearTimeout(previewTimer);
+                previewTimer = setTimeout(() => { try { runPreview(); } catch (e) { note('Preview failed: ' + e.message, true); } }, 180);
+            }
+
+            function makeDownscaled(gray, valid, w, h, maxDim) {
+                const f = Math.max(1, Math.ceil(Math.max(w, h) / maxDim));
+                if (f === 1) return { gray, valid, w, h, f: 1, owned: false };
+                const sw = Math.max(1, Math.floor(w / f)), sh = Math.max(1, Math.floor(h / f));
+                const g = new cv.Mat(sh, sw, cv.CV_8UC1);
+                const v = new Uint8Array(sw * sh);
+                for (let y = 0; y < sh; y++) {
+                    for (let x = 0; x < sw; x++) {
+                        const si = (y * f) * w + (x * f);
+                        g.data[y * sw + x] = gray.data[si];
+                        v[y * sw + x] = valid[si];
+                    }
+                }
+                return { gray: g, valid: v, w: sw, h: sh, f, owned: true };
+            }
+
+            function runPreview() {
+                const c = ctxInfo();
+                if (!c.hasImage) { refreshContext(); return; }
+                if (!c.cvReady) { note('Waiting for OpenCV to finish loading…', true); return; }
+                readOpts();
+                const valid = buildValidMask();
+                if (!valid) { setStatus('needsinput'); note('Select a valid analysis region.', true); return; }
+                S.valid = valid;
+                S.validBBox = Core.maskBBox(valid, c.w, c.h) || { x: 0, y: 0, w: c.w, h: c.h };
+                S.validCount = Core.countMask(valid);
+
+                const small = makeDownscaled(baseGrayMat, valid, c.w, c.h, 760);
+                let pre = null;
+                try {
+                    pre = Pipe.preprocess(small.gray, S.pre);
+                    const seg = Pipe.segment(pre, small.valid, small.w, small.h, S.seg);
+                    const cl = Pipe.cleanup(seg.land, small.valid, small.w, small.h, S.seg);
+                    const voidArr = new Uint8Array(small.w * small.h);
+                    for (let i = 0; i < voidArr.length; i++) voidArr[i] = (small.valid[i] && !cl.land[i]) ? 1 : 0;
+                    const m = Core.basicMetrics(cl.land, voidArr, small.valid, null);
+                    S.lastPreview = { w: small.w, h: small.h, land: cl.land, valid: small.valid,
+                                      pre: Uint8Array.from(pre.data), gray: Uint8Array.from(small.gray.data),
+                                      raw: seg.land, threshold: seg.threshold };
+                    drawPreviewPanels();
+                    const el = $('ttaPreviewStats');
+                    if (el) {
+                        el.innerHTML = `Preview at ${small.w}×${small.h}` +
+                            (seg.threshold != null ? ` · threshold ${seg.threshold}` : '') +
+                            ` · land <strong>${m.projectedTreadFillRatioPercent.toFixed(1)}%</strong>` +
+                            ` · void <strong>${m.voidRatioPercent.toFixed(1)}%</strong>`;
+                    }
+                    if (S.status !== 'complete') setStatus('preview');
+                    note('');
+                } finally {
+                    if (pre) pre.delete();
+                    if (small.owned) small.gray.delete();
+                }
+                if (typeof draw === 'function') draw();
+            }
+
+            function drawPreviewPanels() {
+                const p = S.lastPreview;
+                if (!p) return;
+                const paint = (id, fn) => {
+                    const cv2 = $(id);
+                    if (!cv2) return;
+                    cv2.width = p.w; cv2.height = p.h;
+                    const g = cv2.getContext('2d');
+                    const im = g.createImageData(p.w, p.h);
+                    fn(im.data);
+                    g.putImageData(im, 0, 0);
+                };
+                paint('ttaCanvasOrig', d => {
+                    for (let i = 0, j = 0; i < p.gray.length; i++, j += 4) {
+                        const v = p.valid[i] ? p.gray[i] : Math.round(p.gray[i] * 0.25);
+                        d[j] = d[j + 1] = d[j + 2] = v; d[j + 3] = 255;
+                    }
+                });
+                paint('ttaCanvasPre', d => {
+                    for (let i = 0, j = 0; i < p.pre.length; i++, j += 4) {
+                        const v = p.valid[i] ? p.pre[i] : Math.round(p.pre[i] * 0.25);
+                        d[j] = d[j + 1] = d[j + 2] = v; d[j + 3] = 255;
+                    }
+                });
+                const view = ($('ttaMaskView') || {}).value || 'overlay';
+                paint('ttaCanvasMask', d => {
+                    for (let i = 0, j = 0; i < p.land.length; i++, j += 4) {
+                        const inside = p.valid[i];
+                        let r = 12, g2 = 12, b = 14;
+                        if (inside) {
+                            const land = !!p.land[i], raw = !!p.raw[i];
+                            if (view === 'land') { r = g2 = b = land ? 255 : 0; }
+                            else if (view === 'void') { r = g2 = b = land ? 0 : 255; }
+                            else if (view === 'raw') { r = g2 = b = raw ? 255 : 0; }
+                            else if (view === 'diff') {
+                                if (land && !raw) { r = 34; g2 = 197; b = 94; }
+                                else if (!land && raw) { r = 239; g2 = 68; b = 68; }
+                                else { const v = p.pre[i] >> 1; r = g2 = b = v; }
+                            } else {
+                                const base = p.pre[i];
+                                if (land) { r = Math.round(base * 0.45 + 16); g2 = Math.round(base * 0.45 + 140); b = Math.round(base * 0.45 + 70); }
+                                else { r = Math.round(base * 0.45 + 150); g2 = Math.round(base * 0.45 + 40); b = Math.round(base * 0.45 + 40); }
+                            }
+                        }
+                        d[j] = r; d[j + 1] = g2; d[j + 2] = b; d[j + 3] = 255;
+                    }
+                });
+            }
+
+            // ── full-resolution analysis ─────────────────────────────────────
+            function cancel() { S.cancel = true; note('Cancelling…', true); }
+
+            function run() {
+                const c = ctxInfo();
+                if (!c.hasImage) { note('Load an image in the Tracer first.', true); setStatus('needsinput'); return; }
+                if (!c.cvReady) { note('OpenCV is still loading — try again in a moment.', true); setStatus('needsinput'); return; }
+                readOpts();
+                const valid = buildValidMask();
+                if (!valid) { note('Select a valid analysis region first.', true); setStatus('needsinput'); return; }
+                S.valid = valid;
+                S.validCount = Core.countMask(valid);
+                if (!S.validCount) { note('The analysis region contains no pixels.', true); setStatus('needsinput'); return; }
+                S.validBBox = Core.maskBBox(valid, c.w, c.h);
+
+                S.cancel = false;
+                setStatus('running');
+                const ov = $('processingOverlay');
+                if (ov) ov.classList.add('active');
+                const bar = $('ttaProgress');
+                const setProg = (p, txt) => {
+                    if (bar) bar.style.width = Math.round(p * 100) + '%';
+                    const t = $('ttaProgressText'); if (t) t.textContent = txt || '';
+                };
+                setProg(0.05, 'Preprocessing…');
+
+                setTimeout(() => {
+                    let pre = null;
+                    try {
+                        pre = Pipe.preprocess(baseGrayMat, S.pre);
+                        if (S.cancel) throw new Error('cancelled');
+                        setProg(0.25, 'Segmenting land and void…');
+
+                        const seg = Pipe.segment(pre, valid, c.w, c.h, S.seg);
+                        S.rawLand = seg.land;
+                        if (S.cancel) throw new Error('cancelled');
+                        setProg(0.45, 'Cleaning mask…');
+
+                        const cl = Pipe.cleanup(seg.land, valid, c.w, c.h, S.seg);
+                        const voidArr = new Uint8Array(c.w * c.h);
+                        for (let i = 0; i < voidArr.length; i++) voidArr[i] = (valid[i] && !cl.land[i]) ? 1 : 0;
+                        S.masks = { land: cl.land, void: voidArr };
+                        invalidateOverlay();
+                        S.maskUndo = []; S.maskRedo = []; S.manualEdited = false;
+                        S.segThreshold = seg.threshold;
+                        S.cleanSteps = cl.steps;
+                        if (S.cancel) throw new Error('cancelled');
+                        setProg(0.6, 'Measuring blocks…');
+
+                        recomputeFromMasks(setProg);
+                        setStatus('complete');
+                        note('Analysis complete.');
+                        S.overlay = true;
+                        const t = $('ttaOverlayToggle'); if (t) t.checked = true;
+                        if (typeof draw === 'function') draw();
+                    } catch (err) {
+                        if (String(err.message) === 'cancelled') { setStatus('notrun'); note('Analysis cancelled.', true); }
+                        else { setStatus('failed'); note('Analysis failed: ' + err.message, true); console.error(err); }
+                    } finally {
+                        if (pre) pre.delete();
+                        if (ov) ov.classList.remove('active');
+                        setProg(0, '');
+                    }
+                }, 40);
+            }
+
+            // Recompute every derived number from the current masks. Called after
+            // a run and after any manual mask edit, so edits stay consistent.
+            function recomputeFromMasks(setProg) {
+                const c = ctxInfo();
+                const pxPerMm = c.pxPerMm;
+                const bbox = S.validBBox || { x: 0, y: 0, w: c.w, h: c.h };
+                const basic = Core.basicMetrics(S.masks.land, S.masks.void, S.valid, pxPerMm);
+
+                if (setProg) setProg(0.7, 'Block properties…');
+                const rp = Pipe.regionProps(S.masks.land, c.w, c.h, pxPerMm, bbox, S.zoneEdges, S.blocks);
+                Pipe.attachContourProps(rp.blocks, rp.labels, S.masks.land, c.w, c.h);
+
+                if (setProg) setProg(0.82, 'Void properties…');
+                const vp = Pipe.regionProps(S.masks.void, c.w, c.h, pxPerMm, bbox, S.zoneEdges,
+                                            { minArea: Math.max(1, S.seg.minVoidArea), maxArea: 0, maxAspect: 0 });
+                Pipe.attachContourProps(vp.blocks, vp.labels, S.masks.void, c.w, c.h);
+
+                if (setProg) setProg(0.9, 'Groove widths…');
+                const groove = Pipe.grooveAnalysis(S.masks.void, S.valid, c.w, c.h, pxPerMm);
+
+                const borderTouch = Pipe.countBorderTouching(S.masks.land, S.valid, c.w, c.h);
+                // how much of the ROI edge sits on the picture edge
+                let edgeOnBorder = 0, edgeTotal = 0;
+                for (let i = 0; i < S.valid.length; i++) {
+                    if (!S.valid[i]) continue;
+                    const x = i % c.w, y = (i / c.w) | 0;
+                    const isEdge = (x === 0 || y === 0 || x === c.w - 1 || y === c.h - 1) ||
+                        (x > 0 && !S.valid[i - 1]) || (x < c.w - 1 && !S.valid[i + 1]) ||
+                        (y > 0 && !S.valid[i - c.w]) || (y < c.h - 1 && !S.valid[i + c.w]);
+                    if (!isEdge) continue;
+                    edgeTotal++;
+                    if (x === 0 || y === 0 || x === c.w - 1 || y === c.h - 1) edgeOnBorder++;
+                }
+                const warnings = Core.validateMasks(basic, rp.blocks.length, vp.blocks.length,
+                    borderTouch, edgeTotal ? edgeOnBorder / edgeTotal : 0, S.roiMode);
+
+                const zones = summariseZones(rp.blocks, basic, bbox, c, pxPerMm);
+
+                S.results = {
+                    when: new Date().toISOString(),
+                    image: { w: c.w, h: c.h },
+                    roi: { mode: S.roiMode, bbox, exclusions: S.exclusions.length },
+                    calibration: { pxPerMm: pxPerMm, mmPerPx: pxPerMm ? 1 / pxPerMm : null },
+                    segmentation: {
+                        method: S.seg.method, threshold: S.segThreshold, polarity: S.seg.polarity,
+                        inverted: S.seg.invertMask, cleanup: S.cleanSteps, manuallyEdited: !!S.manualEdited
+                    },
+                    basic, blocks: rp.blocks, voids: vp.blocks, groove, zones, warnings,
+                    counts: { landComponents: rp.blocks.length, voidComponents: vp.blocks.length, borderTouching: borderTouch }
+                };
+                renderResults();
+            }
+
+            function summariseZones(blocks, basic, bbox, c, pxPerMm) {
+                const zones = Core.ZONE_NAMES.map((name, i) => ({
+                    name, index: i, blocks: 0, landPx: 0, validPx: 0,
+                    areas: [], landFraction: 0, landAreaMm2: null
+                }));
+                // land / valid pixel counts per zone, straight from the masks
+                for (let i = 0; i < S.valid.length; i++) {
+                    if (!S.valid[i]) continue;
+                    const x = i % c.w;
+                    const zi = Core.zoneIndex(x, bbox, S.zoneEdges);
+                    zones[zi].validPx++;
+                    if (S.masks.land[i]) zones[zi].landPx++;
+                }
+                blocks.forEach(b => { zones[b.zoneIndex].blocks++; zones[b.zoneIndex].areas.push(b.areaPx); });
+                zones.forEach(z => {
+                    z.landFraction = z.validPx ? z.landPx / z.validPx : 0;
+                    z.landAreaMm2 = pxPerMm ? z.landPx / (pxPerMm * pxPerMm) : null;
+                    z.areaStats = Core.stats(z.areas);
+                });
+                return zones;
+            }
+
+            function resetPreprocessing() {
+                const setC = (id, v) => { const e = $(id); if (e) e.checked = v; };
+                const setV = (id, v) => { const e = $(id); if (e) e.value = v; };
+                ['ttaIllum', 'ttaClahe', 'ttaGauss', 'ttaMedian', 'ttaBilat', 'ttaSharp', 'ttaInvert']
+                    .forEach(id => setC(id, false));
+                setV('ttaIllumSize', 51); setV('ttaClaheClip', 2); setV('ttaClaheTile', 8);
+                setV('ttaGaussSize', 3); setV('ttaMedianSize', 3);
+                setV('ttaBilatD', 5); setV('ttaBilatSigma', 50);
+                setV('ttaSharpAmt', 1);
+                syncSliderLabels();
+                note('Preprocessing reset to defaults.');
+                schedulePreview();
+            }
+
+            function reset() {
+                S.results = null; S.masks = null; S.rawLand = null; S.lastPreview = null;
+                S.exclusions = []; S.roiRect = null; S.roiPoly = null; S.roiMode = 'full';
+                S.maskUndo = []; S.maskRedo = []; S.manualEdited = false;
+                S.importedMask = null; S.overlay = false;
+                setDrawMode(null);
+                setStatus('notrun');
+                note('Tread analysis reset. Tracer traces and calibration are untouched.');
+                const t = $('ttaOverlayToggle'); if (t) t.checked = false;
+                ['ttaResults', 'ttaBlockTable', 'ttaValidation', 'ttaZoneTable', 'ttaGroove'].forEach(id => {
+                    const e = $(id); if (e) e.innerHTML = '<div class="tta-hint">Not run yet.</div>';
+                });
+                document.querySelectorAll('[data-ttaroi]').forEach(b => b.classList.toggle('active', b.dataset.ttaroi === 'full'));
+                if (typeof draw === 'function') draw();
+                schedulePreview();
+            }
+
+            // ── results rendering ────────────────────────────────────────────
+            function fmt(v, d) {
+                if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+                return v.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+            }
+            function esc(s) {
+                return String(s).replace(/[&<>"']/g, ch =>
+                    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+            }
+            const row = (k, v, strong) =>
+                `<div class="tta-kv"><span>${k}</span><strong${strong ? ' class="hi"' : ''}>${v}</strong></div>`;
+
+            function renderResults() {
+                const R = S.results;
+                if (!R) return;
+                const b = R.basic, cal = b.calibrated;
+                const U = cal ? 'mm²' : 'px²';
+                const el = $('ttaResults');
+                if (el) {
+                    el.innerHTML =
+                        `<div class="tta-headline">
+                            <div class="tta-big">${fmt(b.projectedTreadFillRatioPercent, 2)}<span>%</span></div>
+                            <div class="tta-big-label">Projected tread land ratio<br>
+                              <em>(image-based tread fill ratio — not a loaded contact ratio)</em></div>
+                         </div>` +
+                        row('Void ratio', fmt(b.voidRatioPercent, 2) + ' %') +
+                        row('Land-to-void ratio', b.landToVoidRatio === null ? '—' : fmt(b.landToVoidRatio, 4)) +
+                        row('Valid ROI area', fmt(b.validPixels, 0) + ' px²' + (cal ? ` · ${fmt(b.validAreaMm2, 2)} mm²` : '')) +
+                        row('Land area', fmt(b.landPixels, 0) + ' px²' + (cal ? ` · ${fmt(b.landAreaMm2, 2)} mm²` : '')) +
+                        row('Void area', fmt(b.voidPixels, 0) + ' px²' + (cal ? ` · ${fmt(b.voidAreaMm2, 2)} mm²` : '')) +
+                        row('Unclassified', fmt(b.unclassifiedPixels, 0) + ' px² (' + fmt(b.unclassifiedFraction * 100, 3) + ' %)') +
+                        row('land + void check', fmt(b.sumCheck, 6) + (Math.abs(b.sumCheck - 1) < 1e-9 ? ' ✓' : ' ⚠')) +
+                        row('Tread blocks', fmt(R.counts.landComponents, 0)) +
+                        row('Void components', fmt(R.counts.voidComponents, 0)) +
+                        (cal
+                            ? row('Projected tread width', fmt(R.roi.bbox.w / b.pxPerMm, 2) + ' mm') +
+                              row('Projected tread length', fmt(R.roi.bbox.h / b.pxPerMm, 2) + ' mm')
+                            : row('Projected tread extent', `${R.roi.bbox.w} × ${R.roi.bbox.h} px (no calibration)`)) +
+                        `<div class="tta-disclaimer">${esc(Core.LIMITATIONS_TEXT)}</div>`;
+                }
+                renderValidation();
+                renderBlockTable();
+                renderZoneTable();
+                renderGroove();
+                renderCharts();
+            }
+
+            function renderValidation() {
+                const R = S.results, el = $('ttaValidation');
+                if (!el || !R) return;
+                const b = R.basic;
+                el.innerHTML =
+                    row('Valid ROI pixels', fmt(b.validPixels, 0)) +
+                    row('Land pixels', `${fmt(b.landPixels, 0)} (${fmt(b.projectedTreadFillRatioPercent, 2)} %)`) +
+                    row('Void pixels', `${fmt(b.voidPixels, 0)} (${fmt(b.voidRatioPercent, 2)} %)`) +
+                    row('Land components', fmt(R.counts.landComponents, 0)) +
+                    row('Void components', fmt(R.counts.voidComponents, 0)) +
+                    row('Touching ROI boundary', fmt(R.counts.borderTouching, 0)) +
+                    (R.segmentation.threshold != null ? row('Threshold used', R.segmentation.threshold) : '') +
+                    (R.segmentation.manuallyEdited ? row('Mask', 'manually edited') : '') +
+                    (R.warnings.length
+                        ? R.warnings.map(w => `<div class="tta-warn">${esc(w)}</div>`).join('')
+                        : '<div class="tta-ok">No validation warnings.</div>');
+            }
+
+            let blockSort = { key: 'areaPx', dir: -1 };
+            function setBlockSort(k) {
+                if (blockSort.key === k) blockSort.dir *= -1;
+                else { blockSort.key = k; blockSort.dir = -1; }
+                renderBlockTable();
+            }
+
+            function renderBlockTable() {
+                const R = S.results, el = $('ttaBlockTable');
+                if (!el || !R) return;
+                const cal = R.basic.calibrated;
+                const q = (($('ttaBlockFilter') || {}).value || '').trim().toLowerCase();
+                let rows = R.blocks.slice();
+                if (q) rows = rows.filter(b => (b.zone + ' ' + b.id).toLowerCase().includes(q));
+                rows.sort((a, b) => {
+                    const av = a[blockSort.key], bv = b[blockSort.key];
+                    if (typeof av === 'string') return blockSort.dir * String(av).localeCompare(String(bv));
+                    return blockSort.dir * ((av || 0) - (bv || 0));
+                });
+                const cap = 400;
+                const shown = rows.slice(0, cap);
+                const cols = [
+                    ['id', 'ID', 0], ['areaPx', cal ? 'Area mm²' : 'Area px²', 2], ['perimeterPx', cal ? 'Perim mm' : 'Perim px', 2],
+                    ['equivDiameterPx', cal ? 'EqDia mm' : 'EqDia px', 2], ['majorAxisPx', cal ? 'Major mm' : 'Major px', 2],
+                    ['minorAxisPx', cal ? 'Minor mm' : 'Minor px', 2], ['aspectRatio', 'Aspect', 2],
+                    ['orientationDeg', 'Angle °', 1], ['circularity', 'Circ', 3], ['solidity', 'Solidity', 3],
+                    ['extent', 'Extent', 3], ['eccentricity', 'Ecc', 3], ['eulerNumber', 'Euler', 0],
+                    ['distFromCentrePx', cal ? 'r mm' : 'r px', 1], ['zone', 'Zone', 0]
+                ];
+                const mmKey = { areaPx: 'areaMm2', perimeterPx: 'perimeterMm', equivDiameterPx: 'equivDiameterMm',
+                                majorAxisPx: 'majorAxisMm', minorAxisPx: 'minorAxisMm', distFromCentrePx: 'distFromCentreMm' };
+                const head = cols.map(([k, t]) =>
+                    `<th onclick="TTA.setBlockSort('${k}')" title="Sort">${t}${blockSort.key === k ? (blockSort.dir < 0 ? ' ▼' : ' ▲') : ''}</th>`).join('');
+                const body = shown.map(bk => '<tr>' + cols.map(([k, , d]) => {
+                    let v = bk[k];
+                    if (cal && mmKey[k] && bk[mmKey[k]] != null) v = bk[mmKey[k]];
+                    if (k === 'zone') return `<td>${esc(v)}</td>`;
+                    if (k === 'id' || k === 'eulerNumber') return `<td>${v == null ? '—' : v}</td>`;
+                    return `<td>${fmt(v, d)}</td>`;
+                }).join('') + '</tr>').join('');
+                el.innerHTML =
+                    `<div class="tta-tablewrap"><table class="tta-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>` +
+                    `<div class="tta-hint">${rows.length} block(s)${rows.length > cap ? ` · showing the first ${cap} by the current sort` : ''}${cal ? ' · physical units' : ' · pixel units (no calibration)'}</div>`;
+            }
+
+            function renderZoneTable() {
+                const R = S.results, el = $('ttaZoneTable');
+                if (!el || !R) return;
+                const cal = R.basic.calibrated;
+                el.innerHTML =
+                    `<div class="tta-tablewrap"><table class="tta-table"><thead><tr>
+                        <th>Zone</th><th>Blocks</th><th>Land ${cal ? 'mm²' : 'px²'}</th><th>Land %</th><th>Mean block ${cal ? 'mm²' : 'px²'}</th>
+                     </tr></thead><tbody>` +
+                    R.zones.map(z => {
+                        const conv = cal ? 1 / (R.basic.pxPerMm * R.basic.pxPerMm) : 1;
+                        return `<tr><td>${esc(z.name)}</td><td>${z.blocks}</td>
+                                <td>${fmt(z.landPx * conv, 1)}</td>
+                                <td>${fmt(z.landFraction * 100, 2)}</td>
+                                <td>${fmt(z.areaStats.mean * conv, 1)}</td></tr>`;
+                    }).join('') + '</tbody></table></div>';
+            }
+
+            function renderGroove() {
+                const R = S.results, el = $('ttaGroove');
+                if (!el || !R) return;
+                const g = R.groove, cal = R.basic.calibrated;
+                const st = cal ? g.widthStatsMm : g.widthStatsPx;
+                const U = cal ? 'mm' : 'px';
+                if (!st || !st.n) { el.innerHTML = '<div class="tta-hint">No void skeleton was found — there may be no grooves in the ROI.</div>'; return; }
+                el.innerHTML =
+                    row('Samples along centreline', fmt(st.n, 0)) +
+                    row('Mean groove width', fmt(st.mean, 3) + ' ' + U, true) +
+                    row('Median width', fmt(st.median, 3) + ' ' + U) +
+                    row('Std deviation', fmt(st.sd, 3) + ' ' + U) +
+                    row('Min / Max', `${fmt(st.min, 3)} / ${fmt(st.max, 3)} ${U}`) +
+                    row('P5 / P25', `${fmt(st.p5, 3)} / ${fmt(st.p25, 3)} ${U}`) +
+                    row('P75 / P95', `${fmt(st.p75, 3)} / ${fmt(st.p95, 3)} ${U}`) +
+                    row('Total centreline length', cal && g.skeletonLengthMm != null
+                        ? fmt(g.skeletonLengthMm, 2) + ' mm' : fmt(g.skeletonLengthPx, 1) + ' px') +
+                    (g.lengthByDirection ? row('Length by direction',
+                        `H ${fmt(g.lengthByDirection.horizontal, 0)} · V ${fmt(g.lengthByDirection.vertical, 0)} · D ${fmt(g.lengthByDirection.diagonal, 0)} px`) : '') +
+                    (g.downscale > 1 ? `<div class="tta-hint">Skeleton computed on a 1/${g.downscale} copy for speed; widths are scaled back up.</div>` : '');
+            }
+
+            // ── charts ───────────────────────────────────────────────────────
+            function chartCtx(id, h) {
+                const c = $(id);
+                if (!c) return null;
+                const wpx = c.parentElement ? c.parentElement.clientWidth : 320;
+                c.width = Math.max(200, wpx); c.height = h || 130;
+                const g = c.getContext('2d');
+                g.clearRect(0, 0, c.width, c.height);
+                return { c, g };
+            }
+            function axisStyle(g) {
+                g.strokeStyle = 'rgba(148,163,184,.45)'; g.lineWidth = 1;
+                g.fillStyle = '#94a3b8'; g.font = '9px JetBrains Mono, monospace';
+            }
+            function histogram(id, values, label, colour) {
+                const cc = chartCtx(id); if (!cc) return;
+                const { c, g } = cc;
+                if (!values.length) { axisStyle(g); g.fillText('no data', 8, 20); return; }
+                const bins = 24;
+                let lo = Math.min.apply(null, values), hi = Math.max.apply(null, values);
+                if (hi - lo < 1e-9) hi = lo + 1;
+                const counts = new Array(bins).fill(0);
+                values.forEach(v => { let i = Math.floor((v - lo) / (hi - lo) * bins); if (i >= bins) i = bins - 1; if (i < 0) i = 0; counts[i]++; });
+                const mx = Math.max.apply(null, counts) || 1;
+                const pad = 22, bw = (c.width - pad - 6) / bins;
+                axisStyle(g);
+                g.beginPath(); g.moveTo(pad, 4); g.lineTo(pad, c.height - 14); g.lineTo(c.width - 4, c.height - 14); g.stroke();
+                g.fillStyle = colour || '#10b981';
+                counts.forEach((n, i) => {
+                    const bh = (n / mx) * (c.height - 22);
+                    g.fillRect(pad + i * bw + 0.5, c.height - 14 - bh, Math.max(1, bw - 1), bh);
+                });
+                g.fillStyle = '#94a3b8';
+                g.fillText(lo.toFixed(1), pad, c.height - 4);
+                g.fillText(hi.toFixed(1), c.width - 34, c.height - 4);
+                g.fillText(String(mx), 2, 12);
+                g.fillText(label, pad + 4, 11);
+            }
+            function scatter(id, xs, ys, xl, yl) {
+                const cc = chartCtx(id); if (!cc) return;
+                const { c, g } = cc;
+                if (!xs.length) { axisStyle(g); g.fillText('no data', 8, 20); return; }
+                const xmin = Math.min.apply(null, xs), xmax = Math.max.apply(null, xs);
+                const ymin = Math.min.apply(null, ys), ymax = Math.max.apply(null, ys);
+                const pad = 26;
+                axisStyle(g);
+                g.beginPath(); g.moveTo(pad, 4); g.lineTo(pad, c.height - 14); g.lineTo(c.width - 4, c.height - 14); g.stroke();
+                g.fillStyle = 'rgba(59,130,246,.75)';
+                for (let i = 0; i < xs.length; i++) {
+                    const px = pad + ((xs[i] - xmin) / Math.max(1e-9, xmax - xmin)) * (c.width - pad - 8);
+                    const py = c.height - 14 - ((ys[i] - ymin) / Math.max(1e-9, ymax - ymin)) * (c.height - 22);
+                    g.fillRect(px - 1.2, py - 1.2, 2.4, 2.4);
+                }
+                g.fillStyle = '#94a3b8';
+                g.fillText(xl, pad + 4, 11);
+                g.fillText(yl, 2, c.height - 4);
+            }
+            function boxplot(id, groups, labels) {
+                const cc = chartCtx(id, 150); if (!cc) return;
+                const { c, g } = cc;
+                const all = [].concat.apply([], groups);
+                if (!all.length) { axisStyle(g); g.fillText('no data', 8, 20); return; }
+                const lo = Math.min.apply(null, all), hi = Math.max.apply(null, all);
+                const pad = 30, bw = (c.width - pad - 8) / groups.length;
+                const Y = v => c.height - 24 - ((v - lo) / Math.max(1e-9, hi - lo)) * (c.height - 40);
+                axisStyle(g);
+                g.beginPath(); g.moveTo(pad, 4); g.lineTo(pad, c.height - 24); g.lineTo(c.width - 4, c.height - 24); g.stroke();
+                groups.forEach((vals, i) => {
+                    if (!vals.length) return;
+                    const st = Core.stats(vals);
+                    const cx = pad + bw * (i + 0.5);
+                    const w = Math.min(26, bw * 0.5);
+                    g.strokeStyle = 'rgba(148,163,184,.8)';
+                    g.beginPath(); g.moveTo(cx, Y(st.p5)); g.lineTo(cx, Y(st.p95)); g.stroke();
+                    g.fillStyle = 'rgba(16,185,129,.35)';
+                    g.fillRect(cx - w / 2, Y(st.p75), w, Math.max(1, Y(st.p25) - Y(st.p75)));
+                    g.strokeStyle = '#10b981';
+                    g.strokeRect(cx - w / 2, Y(st.p75), w, Math.max(1, Y(st.p25) - Y(st.p75)));
+                    g.beginPath(); g.moveTo(cx - w / 2, Y(st.median)); g.lineTo(cx + w / 2, Y(st.median)); g.stroke();
+                    g.fillStyle = '#94a3b8';
+                    g.save(); g.translate(cx, c.height - 14); g.textAlign = 'center';
+                    g.fillText((labels[i] || '').slice(0, 9), 0, 0); g.restore();
+                });
+                g.fillStyle = '#94a3b8';
+                g.fillText(hi.toFixed(0), 2, 12);
+                g.fillText(lo.toFixed(0), 2, c.height - 28);
+            }
+            function renderCharts() {
+                const R = S.results;
+                if (!R) return;
+                const cal = R.basic.calibrated;
+                const A = R.blocks.map(b => (cal && b.areaMm2 != null) ? b.areaMm2 : b.areaPx);
+                histogram('ttaChartArea', A, cal ? 'Block area (mm²)' : 'Block area (px²)', '#10b981');
+                histogram('ttaChartAspect', R.blocks.map(b => b.aspectRatio), 'Aspect ratio', '#3b82f6');
+                histogram('ttaChartAngle', R.blocks.map(b => b.orientationDeg), 'Orientation (°)', '#a855f7');
+                histogram('ttaChartCirc', R.blocks.map(b => b.circularity), 'Circularity', '#f59e0b');
+                const gw = cal && R.groove.widthStatsMm ? R.groove.widthsPx.map(v => v / R.basic.pxPerMm) : R.groove.widthsPx;
+                histogram('ttaChartGroove', gw, cal ? 'Groove width (mm)' : 'Groove width (px)', '#ef4444');
+                scatter('ttaChartScatter', A, R.blocks.map(b => b.aspectRatio), 'area', 'aspect');
+                const groups = Core.ZONE_NAMES.map((n, i) =>
+                    R.blocks.filter(b => b.zoneIndex === i).map(b => (cal && b.areaMm2 != null) ? b.areaMm2 : b.areaPx));
+                boxplot('ttaChartZone', groups, ['L-sh', 'L-int', 'Centre', 'R-int', 'R-sh']);
+            }
+
+            // ── quick mask actions ───────────────────────────────────────────
+            function invertMaskNow() {
+                if (!S.masks) { note('Run the analysis first.', true); return; }
+                pushMaskUndo();
+                const land = new Uint8Array(S.masks.land.length);
+                for (let i = 0; i < land.length; i++) land[i] = (S.valid[i] && !S.masks.land[i]) ? 1 : 0;
+                applyLand(land);
+                note('Land/void mask inverted.');
+            }
+            function keepLargestNow() {
+                if (!S.masks) { note('Run the analysis first.', true); return; }
+                const c = ctxInfo();
+                pushMaskUndo();
+                applyLand(Pipe.keepLargestComponent(S.masks.land, c.w, c.h));
+                note('Kept the largest tread region only.');
+            }
+            function excludeBorderNow() {
+                if (!S.masks) { note('Run the analysis first.', true); return; }
+                const c = ctxInfo();
+                pushMaskUndo();
+                applyLand(Pipe.removeBorderTouching(S.masks.land, S.valid, c.w, c.h).mask);
+                note('Removed components touching the ROI boundary.');
+            }
+            function importMask(input) {
+                const f = input.files && input.files[0];
+                if (!f) return;
+                const im = new Image();
+                im.onload = () => {
+                    try {
+                        const c = ctxInfo();
+                        const cc = document.createElement('canvas');
+                        cc.width = c.w; cc.height = c.h;
+                        const g = cc.getContext('2d', { willReadFrequently: true });
+                        g.drawImage(im, 0, 0, c.w, c.h);
+                        const d = g.getImageData(0, 0, c.w, c.h).data;
+                        const m = new Uint8Array(c.w * c.h);
+                        for (let i = 0, j = 0; j < m.length; i += 4, j++) m[j] = d[i] > 127 ? 255 : 0;
+                        S.importedMask = m;
+                        const sel = $('ttaSegMethod'); if (sel) { sel.value = 'import'; syncMethodVisibility(); }
+                        note(`Imported binary mask (${im.width}×${im.height}, rescaled to the image).`);
+                        schedulePreview();
+                    } catch (e) { note('Could not read that mask: ' + e.message, true); }
+                };
+                im.onerror = () => note('Could not load that image.', true);
+                im.src = URL.createObjectURL(f);
+                input.value = '';
+            }
+
+            // ── export ───────────────────────────────────────────────────────
+            function dl(text, name, mime) {
+                const blob = new Blob([text], { type: mime || 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = name;
+                document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 1500);
+            }
+            function csvEsc(v) {
+                if (v === null || v === undefined) return '';
+                const s = String(v);
+                return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+            }
+            function exportSummaryCSV() {
+                const R = S.results; if (!R) { note('Run the analysis first.', true); return; }
+                const b = R.basic, cal = b.calibrated;
+                const L = [['metric', 'value', 'unit']];
+                L.push(['projected_tread_land_ratio_percent', b.projectedTreadFillRatioPercent, '%']);
+                L.push(['void_ratio_percent', b.voidRatioPercent, '%']);
+                L.push(['land_to_void_ratio', b.landToVoidRatio, 'ratio']);
+                L.push(['valid_roi_area', b.validPixels, 'px^2']);
+                L.push(['land_area', b.landPixels, 'px^2']);
+                L.push(['void_area', b.voidPixels, 'px^2']);
+                L.push(['unclassified_area', b.unclassifiedPixels, 'px^2']);
+                if (cal) {
+                    L.push(['valid_roi_area', b.validAreaMm2, 'mm^2']);
+                    L.push(['land_area', b.landAreaMm2, 'mm^2']);
+                    L.push(['void_area', b.voidAreaMm2, 'mm^2']);
+                    L.push(['pixel_size', b.mmPerPx, 'mm/px']);
+                }
+                L.push(['land_components', R.counts.landComponents, 'count']);
+                L.push(['void_components', R.counts.voidComponents, 'count']);
+                const g = cal ? R.groove.widthStatsMm : R.groove.widthStatsPx;
+                if (g && g.n) {
+                    const u = cal ? 'mm' : 'px';
+                    ['mean', 'median', 'sd', 'min', 'max', 'p5', 'p25', 'p75', 'p95'].forEach(k =>
+                        L.push(['groove_width_' + k, g[k], u]));
+                }
+                R.zones.forEach(z => L.push(['zone_land_fraction_' + z.name.replace(/\s+/g, '_').toLowerCase(), z.landFraction, 'fraction']));
+                L.push(['NOTE', Core.LIMITATIONS_TEXT, '']);
+                dl(L.map(r => r.map(csvEsc).join(',')).join('\n'), 'tread_summary.csv', 'text/csv');
+                note('Summary CSV exported.');
+            }
+            function exportBlocksCSV() {
+                const R = S.results; if (!R || !R.blocks.length) { note('No blocks to export.', true); return; }
+                const keys = Object.keys(R.blocks[0]).filter(k => k !== 'label');
+                const lines = [keys.join(',')].concat(R.blocks.map(b => keys.map(k => csvEsc(b[k])).join(',')));
+                dl(lines.join('\n'), 'tread_blocks.csv', 'text/csv');
+                note(`Exported ${R.blocks.length} blocks.`);
+            }
+            function exportVoidsCSV() {
+                const R = S.results; if (!R || !R.voids.length) { note('No void components to export.', true); return; }
+                const keys = Object.keys(R.voids[0]).filter(k => k !== 'label');
+                const lines = [keys.join(',')].concat(R.voids.map(b => keys.map(k => csvEsc(b[k])).join(',')));
+                dl(lines.join('\n'), 'tread_voids.csv', 'text/csv');
+                note(`Exported ${R.voids.length} void components.`);
+            }
+            function exportJSON() {
+                const R = S.results; if (!R) { note('Run the analysis first.', true); return; }
+                const out = JSON.parse(JSON.stringify({
+                    generatedAt: R.when, image: R.image, roi: R.roi, calibration: R.calibration,
+                    segmentation: R.segmentation, metrics: R.basic, counts: R.counts,
+                    zones: R.zones.map(z => ({ name: z.name, blocks: z.blocks, landPx: z.landPx, validPx: z.validPx,
+                                               landFraction: z.landFraction, landAreaMm2: z.landAreaMm2, areaStats: z.areaStats })),
+                    grooveWidth: { px: R.groove.widthStatsPx, mm: R.groove.widthStatsMm,
+                                   skeletonLengthPx: R.groove.skeletonLengthPx, skeletonLengthMm: R.groove.skeletonLengthMm,
+                                   lengthByDirection: R.groove.lengthByDirection },
+                    blocks: R.blocks, voids: R.voids, warnings: R.warnings,
+                    disclaimer: Core.LIMITATIONS_TEXT
+                }));
+                dl(JSON.stringify(out, null, 2), 'tread_analysis.json', 'application/json');
+                note('Full results exported as JSON.');
+            }
+            function exportOverlayPNG() {
+                if (!S.masks) { note('Run the analysis first.', true); return; }
+                const c = ctxInfo();
+                const cc = document.createElement('canvas');
+                cc.width = c.w; cc.height = c.h;
+                const g = cc.getContext('2d');
+                g.drawImage(img, 0, 0);
+                const ov = buildOverlayCanvas();
+                if (ov) g.drawImage(ov, 0, 0);
+                cc.toBlob(bl => {
+                    const url = URL.createObjectURL(bl);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = 'tread_overlay.png';
+                    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                    setTimeout(() => URL.revokeObjectURL(url), 1500);
+                }, 'image/png');
+                note('Overlay image exported.');
+            }
+            function exportMaskPNG() {
+                if (!S.masks) { note('Run the analysis first.', true); return; }
+                const c = ctxInfo();
+                const cc = document.createElement('canvas');
+                cc.width = c.w; cc.height = c.h;
+                const g = cc.getContext('2d');
+                const im = g.createImageData(c.w, c.h);
+                for (let i = 0, j = 0; i < S.masks.land.length; i++, j += 4) {
+                    const v = S.masks.land[i] ? 255 : 0;
+                    im.data[j] = im.data[j + 1] = im.data[j + 2] = v; im.data[j + 3] = 255;
+                }
+                g.putImageData(im, 0, 0);
+                cc.toBlob(bl => {
+                    const url = URL.createObjectURL(bl);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = 'land_mask.png';
+                    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                    setTimeout(() => URL.revokeObjectURL(url), 1500);
+                }, 'image/png');
+                note('Binary land mask exported.');
+            }
+
+            // ── canvas overlay (drawn by the Tracer's draw()) ────────────────
+            let overlayCanvas = null, overlayKey = '';
+            function buildOverlayCanvas() {
+                if (!S.masks) return null;
+                const c = ctxInfo();
+                const key = `${c.w}x${c.h}:${S.masks.land.length}:${S.overlayVersion || 0}`;
+                if (overlayCanvas && overlayKey === key) return overlayCanvas;
+                const cc = document.createElement('canvas');
+                cc.width = c.w; cc.height = c.h;
+                const g = cc.getContext('2d');
+                const im = g.createImageData(c.w, c.h);
+                const d = im.data;
+                for (let i = 0, j = 0; i < S.masks.land.length; i++, j += 4) {
+                    if (!S.valid[i]) { d[j + 3] = 0; continue; }
+                    if (S.masks.land[i]) { d[j] = 16; d[j + 1] = 185; d[j + 2] = 129; d[j + 3] = 90; }
+                    else { d[j] = 59; d[j + 1] = 130; d[j + 2] = 246; d[j + 3] = 80; }
+                }
+                g.putImageData(im, 0, 0);
+                overlayCanvas = cc; overlayKey = key;
+                return cc;
+            }
+            function invalidateOverlay() { S.overlayVersion = (S.overlayVersion || 0) + 1; overlayCanvas = null; }
+
+            // Called from the Tracer's draw(). Must be cheap and must never throw.
+            function drawOverlay(g) {
+                try {
+                    const c = ctxInfo();
+                    if (!c.hasImage) return;
+                    const vs = 1 / Math.max(typeof zoomLevel !== 'undefined' ? zoomLevel : 1, 0.05);
+                    const sz = (px, min) => Math.max(px * vs, min);
+
+                    if (S.overlay && S.masks) {
+                        const ov = buildOverlayCanvas();
+                        if (ov) g.drawImage(ov, 0, 0);
+                        if (S.results && (S.showBlockIds || S.showBBoxes)) {
+                            g.save();
+                            g.lineWidth = sz(1, 0.6);
+                            g.font = `bold ${sz(11, 7)}px JetBrains Mono, monospace`;
+                            g.textAlign = 'center'; g.textBaseline = 'middle';
+                            for (const b of S.results.blocks) {
+                                if (S.showBBoxes) {
+                                    g.strokeStyle = 'rgba(245,158,11,.9)';
+                                    g.strokeRect(b.bboxX, b.bboxY, b.bboxW, b.bboxH);
+                                }
+                                if (S.showBlockIds) {
+                                    g.fillStyle = '#fff'; g.strokeStyle = '#000';
+                                    g.lineWidth = sz(2.5, 1.5);
+                                    g.strokeText(String(b.id), b.cx, b.cy);
+                                    g.fillText(String(b.id), b.cx, b.cy);
+                                    g.lineWidth = sz(1, 0.6);
+                                }
+                            }
+                            g.restore();
+                        }
+                    }
+
+                    // ROI boundary is always shown while the panel is open
+                    const modal = $('ttaModal');
+                    const panelOpen = modal && modal.classList.contains('active');
+                    if (panelOpen || S.overlay) {
+                        g.save();
+                        g.setLineDash([sz(7, 4), sz(5, 3)]);
+                        g.lineWidth = sz(2, 1.2);
+                        g.strokeStyle = '#facc15';
+                        if (S.roiMode === 'rect' && S.roiRect) {
+                            g.strokeRect(S.roiRect.x, S.roiRect.y, S.roiRect.w, S.roiRect.h);
+                        } else if (S.roiMode === 'poly' && S.roiPoly && S.roiPoly.length > 2) {
+                            g.beginPath();
+                            g.moveTo(S.roiPoly[0].x, S.roiPoly[0].y);
+                            S.roiPoly.forEach(p => g.lineTo(p.x, p.y));
+                            g.closePath(); g.stroke();
+                        } else if (S.validBBox && S.roiMode !== 'full') {
+                            g.strokeRect(S.validBBox.x, S.validBBox.y, S.validBBox.w, S.validBBox.h);
+                        }
+                        g.setLineDash([]);
+                        g.strokeStyle = 'rgba(239,68,68,.95)';
+                        S.exclusions.forEach(ex => {
+                            if (ex.type === 'rect') g.strokeRect(ex.rect.x, ex.rect.y, ex.rect.w, ex.rect.h);
+                        });
+                        // in-progress shapes
+                        if (S.tmpRect) {
+                            g.strokeStyle = S.drawMode === 'exclude' ? '#ef4444' : '#facc15';
+                            g.setLineDash([sz(6, 3), sz(4, 2)]);
+                            g.strokeRect(Math.min(S.tmpRect.x0, S.tmpRect.x1), Math.min(S.tmpRect.y0, S.tmpRect.y1),
+                                Math.abs(S.tmpRect.x1 - S.tmpRect.x0), Math.abs(S.tmpRect.y1 - S.tmpRect.y0));
+                            g.setLineDash([]);
+                        }
+                        if (S.tmpPoly.length) {
+                            g.strokeStyle = '#facc15';
+                            g.beginPath(); g.moveTo(S.tmpPoly[0].x, S.tmpPoly[0].y);
+                            S.tmpPoly.forEach(p => g.lineTo(p.x, p.y));
+                            g.stroke();
+                            g.fillStyle = '#facc15';
+                            S.tmpPoly.forEach(p => { g.beginPath(); g.arc(p.x, p.y, sz(3, 1.8), 0, 7); g.fill(); });
+                        }
+                        g.restore();
+                    }
+                } catch (err) { /* overlay must never break the Tracer's render */ }
+            }
+
+            function init() {
+                try {
+                    const lim = $('ttaLimitations');
+                    if (lim) lim.textContent = Core.LIMITATIONS_TEXT;
+                    syncMethodVisibility();
+                    syncSliderLabels();
+                    refreshContext();
+                } catch (e) { console.error('Tread analysis init failed', e); }
+            }
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+            else init();
+
+            return { init, open, close, setRoiMode, setDrawMode, addExclusionMode, clearExclusions,
+                     run, cancel, reset, runPreview, schedulePreview, refreshContext,
+                     syncMethodVisibility, syncSliderLabels, readOpts,
+                     onDown, onMove, onUp, onClick, closePolygon, wantsPointer,
+                     maskUndo, maskRedo, applyLand, recomputeFromMasks,
+                     drawPreviewPanels, setStatus, note, S, Core, Pipe,
+                     setBlockSort, renderBlockTable, renderResults, renderCharts, resetPreprocessing,
+                     invertMaskNow, keepLargestNow, excludeBorderNow, importMask,
+                     exportSummaryCSV, exportBlocksCSV, exportVoidsCSV, exportJSON,
+                     exportOverlayPNG, exportMaskPNG,
+                     drawOverlay, invalidateOverlay, buildOverlayCanvas,
+                     setBrush: v => { S.brushSize = v; },
+                     setOverlay: v => { S.overlay = v; if (typeof draw === 'function') draw(); },
+                     setShowIds: v => { S.showBlockIds = v; if (typeof draw === 'function') draw(); },
+                     setShowBoxes: v => { S.showBBoxes = v; if (typeof draw === 'function') draw(); },
+                     _internal: { buildValidMask, summariseZones } };
+        })();
+
         /* ===== COLOUR FILTER =================================================
            Trace one specific colour and ignore everything else.
 
@@ -6228,6 +8547,7 @@
            of them. Disarming restores the pristine grayscale.
         ==================================================================== */
 
+        let ttaDragging = false;       // tread-analysis ROI / brush drag in progress
         let colorPickMode = false;     // eyedropper armed
         let colorSamples = [];         // [{r,g,b}] picked reference colours
         let colorFilterActive = false; // grayMat currently points at the mask
@@ -8748,6 +11068,7 @@
                     <button class="side-tab" data-group="shapes">Shapes</button>
                     <button class="side-tab" data-group="cad">CAD</button>
                     <button class="side-tab" data-group="pitch">Pitch</button>
+                    <button class="side-tab" data-group="tread">Tread</button>
                     <button class="side-tab" data-group="dxf">DXF</button>
                     <button class="side-tab" data-group="export">Export</button>`;
                 side.prepend(tabs);
@@ -8777,6 +11098,7 @@
                     {match: 'Geometry', group: 'edit'},
                     {match: 'CAD Constraints', group: 'cad'},
                     {match: 'DXF Studio', group: 'dxf'},
+                    {match: 'Tire Tread Analysis', group: 'tread'},
                     {match: 'Colour Filter', group: 'trace'},
                     {match: 'Measure Distance', group: 'setup'},
                     {match: 'Coordinate Output', group: 'export'},
@@ -8871,6 +11193,242 @@
         })();
 
     </script>
+    <!-- ── Tire Tread Analysis ───────────────────────────────────────────── -->
+    <div class="tta-modal" id="ttaModal">
+      <div class="tta-shell">
+        <div class="tta-head">
+          <div class="tta-title">🛞 Tire Tread Analysis</div>
+          <span class="tta-status" id="ttaStatus">Not run</span>
+          <span class="tta-imginfo" id="ttaImageInfo">No image loaded</span>
+          <div class="tta-spacer"></div>
+          <label class="tta-inline"><input type="checkbox" id="ttaOverlayToggle" onchange="TTA.setOverlay(this.checked)"> Show analysis overlay on canvas</label>
+          <button class="btn tta-needs-image" onclick="TTA.runPreview()" style="font-size:11px;">↻ Update Preview</button>
+          <button class="btn btn-primary tta-needs-image" onclick="TTA.run()" style="font-size:11px;">▶ Run Tread Analysis</button>
+          <button class="btn" onclick="TTA.cancel()" style="font-size:11px;">■ Cancel</button>
+          <button class="btn" onclick="TTA.reset()" style="font-size:11px;">↺ Reset</button>
+          <button class="btn" onclick="TTA.close()" style="font-size:11px;">✕ Close</button>
+        </div>
+
+        <div class="tta-progresswrap"><div class="tta-progress" id="ttaProgress"></div></div>
+        <div class="tta-note" id="ttaNote"></div>
+
+        <div class="tta-gate" id="ttaGate">
+          No image is loaded. Load an image in the Tracer first — this module analyses the image that is already open,
+          together with its calibration and ROI.
+        </div>
+
+        <div class="tta-body" id="ttaBody">
+          <!-- left: visual -->
+          <div class="tta-visual">
+            <div class="tta-previews">
+              <div class="tta-prev"><h5>Original ROI</h5><canvas id="ttaCanvasOrig"></canvas></div>
+              <div class="tta-prev"><h5>Preprocessed ROI</h5><canvas id="ttaCanvasPre"></canvas></div>
+              <div class="tta-prev">
+                <h5>Segmentation
+                  <select id="ttaMaskView" onchange="TTA.drawPreviewPanels()">
+                    <option value="overlay">Land / void overlay</option>
+                    <option value="land">Cleaned land mask</option>
+                    <option value="void">Void mask</option>
+                    <option value="raw">Raw mask</option>
+                    <option value="diff">Raw vs cleaned difference</option>
+                  </select>
+                </h5>
+                <canvas id="ttaCanvasMask"></canvas>
+              </div>
+            </div>
+            <div class="tta-previewstats" id="ttaPreviewStats"></div>
+
+            <div class="tta-charts">
+              <div class="tta-chart"><canvas id="ttaChartArea"></canvas></div>
+              <div class="tta-chart"><canvas id="ttaChartAspect"></canvas></div>
+              <div class="tta-chart"><canvas id="ttaChartAngle"></canvas></div>
+              <div class="tta-chart"><canvas id="ttaChartCirc"></canvas></div>
+              <div class="tta-chart"><canvas id="ttaChartGroove"></canvas></div>
+              <div class="tta-chart"><canvas id="ttaChartScatter"></canvas></div>
+              <div class="tta-chart tta-chart-wide"><canvas id="ttaChartZone"></canvas></div>
+            </div>
+
+            <details open><summary>Tread block properties</summary>
+              <div style="padding:8px 10px;">
+                <input class="control-input" id="ttaBlockFilter" placeholder="Filter by zone or ID…"
+                       oninput="TTA.renderBlockTable()" style="margin-bottom:8px;">
+                <div id="ttaBlockTable"><div class="tta-hint">Not run yet.</div></div>
+              </div>
+            </details>
+          </div>
+
+          <!-- right: controls -->
+          <div class="tta-side">
+
+            <details open><summary>A · Analysis Region</summary><div class="tta-sec">
+              <div class="tta-btnrow">
+                <button class="btn" data-ttaroi="tracer" onclick="TTA.setRoiMode('tracer')">Current Tracer view</button>
+                <button class="btn" data-ttaroi="rect" onclick="TTA.setRoiMode('rect')">Draw rectangle</button>
+                <button class="btn" data-ttaroi="poly" onclick="TTA.setRoiMode('poly')">Draw polygon</button>
+                <button class="btn" data-ttaroi="shape" onclick="TTA.setRoiMode('shape')">Traced shape</button>
+                <button class="btn" data-ttaroi="auto" onclick="TTA.setRoiMode('auto')">Auto propose</button>
+                <button class="btn active" data-ttaroi="full" onclick="TTA.setRoiMode('full')">Full image</button>
+              </div>
+              <div class="tta-hint">Crop to just the tread you want measured. All land and void percentages are computed
+                inside this region only.</div>
+              <div class="tta-btnrow" style="margin-top:8px;">
+                <button class="btn" data-ttadraw="exclude" onclick="TTA.addExclusionMode()">➖ Exclude a region</button>
+                <button class="btn" onclick="TTA.clearExclusions()">Clear exclusions</button>
+              </div>
+              <div class="tta-hint">Use exclusions for sidewalls, rims, borders, shadows, labels or scale bars.
+                Press <strong>Enter</strong> to close a polygon.</div>
+            </div></details>
+
+            <details open><summary>B · Calibration</summary><div class="tta-sec">
+              <div id="ttaCalib"></div>
+              <div class="tta-hint">Calibration is read from the Tracer. Set it there (Calibration panel, or a
+                measured dimension) and it is picked up here automatically. Pixel and physical units are never mixed.</div>
+            </div></details>
+
+            <details><summary>C · Image Preprocessing</summary><div class="tta-sec">
+              <div class="tta-hint">Non-destructive — the Tracer's image is never modified.</div>
+              <label class="tta-chk"><input type="checkbox" id="ttaIllum" onchange="TTA.schedulePreview()"> Background illumination correction</label>
+              <div class="tta-row"><label>Background size</label><input type="range" id="ttaIllumSize" min="11" max="201" step="2" value="51" data-ttalabel="ttaIllumSizeV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaIllumSizeV">51</span></div>
+              <label class="tta-chk"><input type="checkbox" id="ttaClahe" onchange="TTA.schedulePreview()"> CLAHE contrast enhancement</label>
+              <div class="tta-row"><label>Clip limit</label><input type="range" id="ttaClaheClip" min="1" max="8" step="0.5" value="2" data-ttalabel="ttaClaheClipV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaClaheClipV">2</span></div>
+              <div class="tta-row"><label>Tile grid</label><input type="range" id="ttaClaheTile" min="2" max="16" step="1" value="8" data-ttalabel="ttaClaheTileV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaClaheTileV">8</span></div>
+              <label class="tta-chk"><input type="checkbox" id="ttaGauss" onchange="TTA.schedulePreview()"> Gaussian blur</label>
+              <div class="tta-row"><label>Kernel</label><input type="range" id="ttaGaussSize" min="1" max="21" step="2" value="3" data-ttalabel="ttaGaussSizeV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaGaussSizeV">3</span></div>
+              <label class="tta-chk"><input type="checkbox" id="ttaMedian" onchange="TTA.schedulePreview()"> Median blur</label>
+              <div class="tta-row"><label>Kernel</label><input type="range" id="ttaMedianSize" min="3" max="21" step="2" value="3" data-ttalabel="ttaMedianSizeV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaMedianSizeV">3</span></div>
+              <label class="tta-chk"><input type="checkbox" id="ttaBilat" onchange="TTA.schedulePreview()"> Bilateral filter (edge-preserving)</label>
+              <div class="tta-row"><label>Diameter</label><input type="range" id="ttaBilatD" min="3" max="15" step="2" value="5" data-ttalabel="ttaBilatDV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaBilatDV">5</span></div>
+              <div class="tta-row"><label>Sigma</label><input type="range" id="ttaBilatSigma" min="10" max="150" step="5" value="50" data-ttalabel="ttaBilatSigmaV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaBilatSigmaV">50</span></div>
+              <label class="tta-chk"><input type="checkbox" id="ttaSharp" onchange="TTA.schedulePreview()"> Sharpen (unsharp mask)</label>
+              <div class="tta-row"><label>Amount</label><input type="range" id="ttaSharpAmt" min="0.2" max="3" step="0.1" value="1" data-ttalabel="ttaSharpAmtV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaSharpAmtV">1</span></div>
+              <label class="tta-chk"><input type="checkbox" id="ttaInvert" onchange="TTA.schedulePreview()"> Invert image</label>
+              <button class="btn" onclick="TTA.resetPreprocessing()" style="width:100%;font-size:10px;margin-top:8px;">Reset preprocessing to defaults</button>
+            </div></details>
+
+            <details open><summary>D · Land / Void Segmentation</summary><div class="tta-sec">
+              <div class="tta-row"><label>Method</label>
+                <select id="ttaSegMethod" onchange="TTA.syncMethodVisibility();TTA.schedulePreview()">
+                  <option value="otsu">Otsu (automatic, within ROI)</option>
+                  <option value="manual">Manual global threshold</option>
+                  <option value="adaptive_mean">Adaptive — mean</option>
+                  <option value="adaptive_gauss">Adaptive — Gaussian</option>
+                  <option value="local">Local (Sauvola)</option>
+                  <option value="edge">Edge-assisted</option>
+                  <option value="kmeans">K-means clustering</option>
+                  <option value="import">Import binary land mask</option>
+                </select></div>
+              <div class="tta-row"><label>Land is</label>
+                <select id="ttaPolarity" onchange="TTA.schedulePreview()">
+                  <option value="bright">Bright (contact area is light grey)</option>
+                  <option value="dark">Dark</option>
+                </select></div>
+              <div class="tta-hint">For a footprint scan the light grey contact patch is the land and the dark grey/black
+                grooves and sipes are the void — the default polarity already matches that.</div>
+              <div class="tta-row" id="ttaRowThreshold"><label>Threshold</label><input type="range" id="ttaThreshold" min="0" max="255" value="128" data-ttalabel="ttaThresholdV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaThresholdV">128</span></div>
+              <div class="tta-row" id="ttaRowBlock"><label>Block size</label><input type="range" id="ttaBlockSize" min="3" max="201" step="2" value="51" data-ttalabel="ttaBlockSizeV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaBlockSizeV">51</span></div>
+              <div class="tta-row" id="ttaRowAdaptiveC"><label>Constant C</label><input type="range" id="ttaAdaptiveC" min="-20" max="20" step="1" value="5" data-ttalabel="ttaAdaptiveCV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaAdaptiveCV">5</span></div>
+              <div class="tta-row" id="ttaRowSauvola"><label>Sauvola k</label><input type="range" id="ttaSauvolaK" min="0.05" max="0.6" step="0.05" value="0.2" data-ttalabel="ttaSauvolaKV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaSauvolaKV">0.2</span></div>
+              <div id="ttaRowEdge">
+                <div class="tta-row"><label>Canny low</label><input type="range" id="ttaCannyLow" min="5" max="150" value="30" data-ttalabel="ttaCannyLowV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaCannyLowV">30</span></div>
+                <div class="tta-row"><label>Canny high</label><input type="range" id="ttaCannyHigh" min="20" max="300" value="100" data-ttalabel="ttaCannyHighV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaCannyHighV">100</span></div>
+                <div class="tta-row"><label>Close</label><input type="range" id="ttaEdgeClose" min="1" max="12" value="3" data-ttalabel="ttaEdgeCloseV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaEdgeCloseV">3</span></div>
+              </div>
+              <div id="ttaRowK">
+                <div class="tta-row"><label>Clusters</label><input type="range" id="ttaK" min="2" max="8" value="2" data-ttalabel="ttaKV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaKV">2</span></div>
+                <div class="tta-row"><label>Brightest = land</label><input type="range" id="ttaKLand" min="1" max="7" value="1" data-ttalabel="ttaKLandV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaKLandV">1</span></div>
+              </div>
+              <div id="ttaRowImport" class="tta-row"><label>Mask file</label>
+                <input type="file" id="ttaMaskFile" accept="image/*" onchange="TTA.importMask(this)" style="font-size:10px;"></div>
+
+              <label class="tta-chk"><input type="checkbox" id="ttaInvertMask" onchange="TTA.schedulePreview()"> Invert land / void</label>
+
+              <div class="tta-subhead">Cleanup</div>
+              <div class="tta-row"><label>Opening</label><input type="range" id="ttaOpen" min="0" max="10" value="1" data-ttalabel="ttaOpenV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaOpenV">1</span></div>
+              <div class="tta-row"><label>Closing</label><input type="range" id="ttaClose" min="0" max="10" value="1" data-ttalabel="ttaCloseV" oninput="TTA.syncSliderLabels();TTA.schedulePreview()"><span class="tta-val" id="ttaCloseV">1</span></div>
+              <div class="tta-row"><label>SE shape</label>
+                <select id="ttaSE" onchange="TTA.schedulePreview()">
+                  <option value="ellipse">Ellipse</option><option value="rect">Rectangle</option><option value="cross">Cross</option>
+                </select></div>
+              <div class="tta-row"><label>Min land area px²</label><input type="number" class="control-input" id="ttaMinLand" value="50" min="0" step="10" oninput="TTA.schedulePreview()"></div>
+              <div class="tta-row"><label>Min void area px²</label><input type="number" class="control-input" id="ttaMinVoid" value="30" min="0" step="10" oninput="TTA.schedulePreview()"></div>
+              <label class="tta-chk"><input type="checkbox" id="ttaFillHoles" onchange="TTA.schedulePreview()"> Fill enclosed holes in land</label>
+              <label class="tta-chk"><input type="checkbox" id="ttaRemoveBorder" onchange="TTA.schedulePreview()"> Remove components touching the ROI boundary</label>
+              <label class="tta-chk"><input type="checkbox" id="ttaKeepLargest" onchange="TTA.schedulePreview()"> Keep only the largest tread region</label>
+            </div></details>
+
+            <details><summary>J · Mask Validation &amp; Manual Correction</summary><div class="tta-sec">
+              <div id="ttaValidation"><div class="tta-hint">Not run yet.</div></div>
+              <div class="tta-btnrow" style="margin-top:8px;">
+                <button class="btn" onclick="TTA.invertMaskNow()">Invert land/void</button>
+                <button class="btn" onclick="TTA.keepLargestNow()">Keep largest region</button>
+                <button class="btn" onclick="TTA.excludeBorderNow()">Exclude boundary-touching</button>
+              </div>
+              <div class="tta-subhead">Manual mask correction</div>
+              <div class="tta-btnrow">
+                <button class="btn" data-ttadraw="brush+" onclick="TTA.setDrawMode('brush+')">🖌 Add land</button>
+                <button class="btn" data-ttadraw="brush-" onclick="TTA.setDrawMode('brush-')">🧽 Remove land</button>
+                <button class="btn" onclick="TTA.setDrawMode(null)">Done</button>
+              </div>
+              <div class="tta-row"><label>Brush ⌀</label><input type="range" id="ttaBrush" min="4" max="120" value="24" data-ttalabel="ttaBrushV" oninput="TTA.syncSliderLabels();TTA.setBrush(+this.value)"><span class="tta-val" id="ttaBrushV">24</span></div>
+              <div class="tta-btnrow">
+                <button class="btn" onclick="TTA.maskUndo()">↶ Undo</button>
+                <button class="btn" onclick="TTA.maskRedo()">↷ Redo</button>
+              </div>
+              <div class="tta-hint">Brush edits change only the analysis mask. Your traced paths, measurements and
+                calibration are never touched.</div>
+            </div></details>
+
+            <details><summary>E · Block Analysis</summary><div class="tta-sec">
+              <div class="tta-row"><label>Min block area px²</label><input type="number" class="control-input" id="ttaBlkMin" value="50" min="0" step="10"></div>
+              <div class="tta-row"><label>Max block area px² (0 = none)</label><input type="number" class="control-input" id="ttaBlkMax" value="0" min="0" step="100"></div>
+              <div class="tta-row"><label>Max aspect ratio (0 = none)</label><input type="number" class="control-input" id="ttaBlkAspect" value="0" min="0" step="0.5"></div>
+              <label class="tta-chk"><input type="checkbox" onchange="TTA.setShowIds(this.checked)"> Show block IDs on canvas</label>
+              <label class="tta-chk"><input type="checkbox" onchange="TTA.setShowBoxes(this.checked)"> Show bounding boxes on canvas</label>
+              <div class="tta-hint">Filters are applied when you press Run. Highly elongated slivers are usually
+                segmentation noise — cap the aspect ratio to drop them.</div>
+            </div></details>
+
+            <details><summary>F · Groove &amp; Void Analysis</summary><div class="tta-sec">
+              <div id="ttaGroove"><div class="tta-hint">Not run yet.</div></div>
+              <div class="tta-hint">Widths are sampled along the void medial axis using a Euclidean distance
+                transform, so they are local apparent groove widths rather than a single nominal figure.</div>
+            </div></details>
+
+            <details><summary>G · Tread-Zone Analysis</summary><div class="tta-sec">
+              <div class="tta-row"><label>Zone edges %</label><input type="text" class="control-input" id="ttaZones" value="15,35,65,85"></div>
+              <div class="tta-hint">Four cumulative edges across the ROI width giving five bands:
+                left shoulder · left intermediate · centre · right intermediate · right shoulder.</div>
+              <div id="ttaZoneTable" style="margin-top:8px;"><div class="tta-hint">Not run yet.</div></div>
+            </div></details>
+
+            <details open><summary>H · Results Summary</summary><div class="tta-sec">
+              <div id="ttaResults"><div class="tta-hint">Not run yet.</div></div>
+            </div></details>
+
+            <details><summary>I · Export</summary><div class="tta-sec">
+              <div class="tta-btnrow">
+                <button class="btn btn-primary" onclick="TTA.exportSummaryCSV()">Summary CSV</button>
+                <button class="btn" onclick="TTA.exportBlocksCSV()">Blocks CSV</button>
+                <button class="btn" onclick="TTA.exportVoidsCSV()">Voids CSV</button>
+                <button class="btn" onclick="TTA.exportJSON()">Full JSON</button>
+                <button class="btn" onclick="TTA.exportOverlayPNG()">Overlay PNG</button>
+                <button class="btn" onclick="TTA.exportMaskPNG()">Land mask PNG</button>
+              </div>
+            </div></details>
+
+            <details open><summary>Limitations</summary><div class="tta-sec">
+              <div class="tta-disclaimer" id="ttaLimitations"></div>
+              <div class="tta-hint">Results are labelled <strong>projected tread land ratio</strong> /
+                <strong>image-based tread fill ratio</strong>. To obtain a measured loaded contact ratio you must import a
+                measured loaded contact-footprint image and analyse that instead.</div>
+            </div></details>
+
+          </div>
+        </div>
+        <div class="tta-progresstext" id="ttaProgressText"></div>
+      </div>
+    </div>
+
     <!-- ── DXF Studio: viewer + profile smoother ─────────────────────────── -->
     <div class="dxfs-modal" id="dxfsModal">
         <div class="dxfs-shell">
