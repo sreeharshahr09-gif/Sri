@@ -506,7 +506,7 @@ source of truth.
 | `e44e00e` | Stack every compared design's tread |
 | `9a7c52c` | The patch band on the coupling and compare tabs |
 | `94e4cc9` | Read the 2×2 rather than staring at Kxy |
-| `ed5e09c` | **Land and sea from a STEP model** |
+| `7cef093` | **Land and sea from a STEP model** |
 
 ---
 
