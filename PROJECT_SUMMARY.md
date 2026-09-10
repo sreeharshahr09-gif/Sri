@@ -503,7 +503,7 @@ source of truth.
 | `9a7c52c` | The patch band on the coupling and compare tabs |
 | `94e4cc9` | Read the 2×2 rather than staring at Kxy |
 | `7cef093` | **Land and sea from a STEP model** |
-| `pending` | Show the model and click the faces |
+| `4891e42` | Show the model and click the faces |
 
 ---
 
