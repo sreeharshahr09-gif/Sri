@@ -211,6 +211,25 @@ header .spacer { flex: 1; }
 #runBtn         { grid-column: 1 / span 3; grid-row: 4; min-height: 56px; align-self: stretch; font-size: 15px; }
 #addCompareSide { grid-column: 4 / span 4; grid-row: 4; min-height: 56px; align-self: stretch; margin-top: 0 !important; }
 
+/* The STEP viewport. A canvas, because the model is drawn face by face with a
+   painter's sort and picked by hit-testing the same projected outlines -- there
+   is no library here and nothing to load. */
+.step-stage {
+  position: relative; width: 100%; height: 460px;
+  background: var(--panel-2); border: 1px solid var(--edge); border-radius: 8px;
+  overflow: hidden;
+}
+.step-stage canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.step-stage canvas.dragging { cursor: grabbing; }
+.step-stage canvas.over { cursor: pointer; }
+.step-legend {
+  position: absolute; left: 10px; bottom: 8px; pointer-events: none;
+  font-size: 11.5px; color: var(--ink-dim);
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
+  padding: 3px 8px; border-radius: 5px;
+}
+@media (max-width: 900px) { .step-stage { height: 340px; } }
+
 /* Fields on the left, the detected bars on the right. */
 .tb-setup { display: grid; grid-template-columns: minmax(280px, 22%) 1fr; gap: 16px; align-items: start; }
 .tb-setup-fields { min-width: 0; }

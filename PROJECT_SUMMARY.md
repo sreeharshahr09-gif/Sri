@@ -327,47 +327,43 @@ Cxy: a few tenths of a percent says no.
 ### Land and sea from a STEP model
 
 The rest of the tool starts from a 2D tread plan. Sometimes the design only
-exists as a 3D model and the question is just *how much of this surface is
-rubber* — so the **STEP model** tab answers that off the model, with no DXF, no
-contact patch and no Run. It is a setup tab badged `3D` rather than numbered,
-because it is a geometry import beside the other geometry import but not a step
-in the numbered workflow.
+exists as a 3D model and the question is just *how much of this bit of tread is
+rubber* — so the **STEP model** tab puts the model on screen and you click the
+faces. It is a setup tab badged `3D` rather than numbered: a geometry import
+beside the other geometry import, but not a step in the numbered workflow.
 
-- **A real Part 21 reader** (`app/stepio.js`, ~1050 lines, no dependencies):
-  single-scan tokeniser handling strings with escaped quotes and semicolons in
-  them, block comments, complex instances, `$` and `*` slots; then the B-rep
-  walk `ADVANCED_FACE → FACE_BOUND → EDGE_LOOP → ORIENTED_EDGE → EDGE_CURVE →
-  curve + VERTEX_POINT`. Units come from the file: SI prefixes and
+- **A real Part 21 reader** (`app/stepio.js`, no dependencies): single-scan
+  tokeniser handling strings with escaped quotes and semicolons in them, block
+  comments, complex instances, `$` and `*` slots; then the B-rep walk
+  `ADVANCED_FACE → FACE_BOUND → EDGE_LOOP → ORIENTED_EDGE → EDGE_CURVE → curve
+  + VERTEX_POINT`. Units come from the file: SI prefixes and
   `CONVERSION_BASED_UNIT` alike, lengths ×k and areas ×k².
-- **Faces grouped by surface.** A blocked tread top is hundreds of faces on one
-  plane or one cylinder, so picking the tread is one tick, not two hundred. The
-  suggestion is the **outermost** surface of the commonest kind, not the
-  largest — a floor plate under a blocked tread is one big face while the tread
-  is hundreds of small ones, and picking by area gets it exactly backwards.
+- **A viewport, not a table.** ~200 lines of canvas 2D: project every face
+  outline, sort by depth, fill with even-odd so a hole is a hole, and hit-test
+  those same projected outlines so what you click is what you see. No library,
+  which is what keeps the page a single file. Drag to turn, wheel to zoom,
+  click to pick, **Whole surface** to take every face on the same plane.
+- **Picking is per face, deliberately.** The question is usually about *part*
+  of a pattern — a rib, a block row, one pitch — and every one of those sits on
+  the same plane as the rest of the tread top, so selecting by surface could
+  never express it.
+- **The denominator is the equivalent bounded area:** the convex hull of the
+  pick in its own developed frame. A groove *between* picked faces is inside
+  the hull and counts as sea; space outside the pick does not count. It is also
+  orientation-independent — a rib at 30° measures the same as one running
+  straight, where a bounding box round it is 2.08× too big.
 - **Exact areas where a closed form exists.** Green's theorem with an arc term,
   so a circular groove opening or a round stone ejector is measured exactly
   rather than polygonised; a cylinder develops to (R·θ, axial) without
   stretching, so the flattened area *is* the surface area. Only B-splines are
   sampled (de Boor, rational weights supported).
-- **Anything else is reported, never dropped.** A torus or a general spline
-  surface has no distortion-free development; those faces are counted, named
-  and excluded, because a face silently missing from a land ratio is a wrong
-  answer that looks like a right one.
-- **The envelope is always stated.** A ratio is land over *something*; left
-  blank that something is the bounding box of the pick, and typing the width and
-  length of the region you actually mean (a rib, a block row, one pitch) is the
-  difference between an answer and a plausible number. The stated rectangle is
-  drawn on the chart.
-- **Groove depth is the NSD, measured.** The one place the two halves of the
-  tool meet: the depth between the tread surface and the surface marked as
-  floor goes straight into the compound panel, where the whole stiffness model
-  depends on it. Pick two non-parallel surfaces and it says there is no single
-  depth; pick them the wrong way round and it says so, rather than reporting a
-  plausible number of the right size and the wrong meaning.
-- **Also on the dashboard:** biting edge (total and per mm² — two patterns at
-  the same land ratio can differ several-fold, and it is what wet grip trades
-  against), face and hole counts, void volume stated as the upper bound it is,
-  and a per-face CSV.
+- **Unmeasurable surfaces are drawn but not counted.** A torus or general
+  spline face has no distortion-free development. It is still rendered — a
+  tread with its fillets missing does not look like the engineer's tread — but
+  it is marked, it refuses to be selected, and it is named in a warning.
+- **Groove depth is found, not asked for**, and is the NSD the compound panel
+  otherwise makes you guess; a button hands it over. Non-parallel or upside-down
+  picks report no depth rather than a plausible number with the wrong meaning.
 
 Six fixtures with hand-computed areas (`data/make_step.py`) pin it: a plate with
 rectangular voids and a round hole (5521.4602 mm²), block bands (4400.0000), a
@@ -388,7 +384,7 @@ v6.4 reference JS  ──(~1e-9)──  Python engine  ──(<2e-3)──  Brow
   verify/tool_v64_reference.js   tread_eval/*.py              app/engine.js
 ```
 
-- **354 tests** (from 153 at the start of the audit).
+- **357 tests** (from 153 at the start of the audit).
 - `tests/test_physics.py` checks every equation against a **closed form worked
   out by hand**, not against a previous run — a golden-value test would have
   blessed the bugs above.
@@ -507,6 +503,7 @@ source of truth.
 | `9a7c52c` | The patch band on the coupling and compare tabs |
 | `94e4cc9` | Read the 2×2 rather than staring at Kxy |
 | `7cef093` | **Land and sea from a STEP model** |
+| `pending` | Show the model and click the faces |
 
 ---
 
@@ -540,7 +537,7 @@ app/
 tread_eval/              the Python pipeline (schema, stiffness, dxf, raster,
                          sweep, metrics, contact_patch, cp_shapes, report, config)
 verify/                  v6.4 functions extracted verbatim, the reference oracle
-tests/                   354 tests
+tests/                   357 tests
 data/                    the Tramplr sample DXF, tie-bar and pitch fixtures,
                          hatch and STEP fixtures and their generators, footprints
 GUIDE.md                 plain-language guide, embedded in the app as a tab

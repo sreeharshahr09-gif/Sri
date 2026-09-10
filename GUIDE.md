@@ -701,99 +701,93 @@ the real footprint does not have were smoothing the ripple.
 ## Land and sea from a STEP model
 
 Everything else in this tool starts from a 2D tread plan. Sometimes the drawing
-is not what you have: the design exists as a 3D model, the question is only
-*how much of this surface is rubber*, and nobody wants to flatten a solid into
-a DXF to find out. The **STEP model** tab answers that question directly, off
-the model, and it is deliberately self-contained — no DXF, no contact patch, no
-Run.
+is not what you have: the design exists as a 3D model, and the question is only
+*how much of this bit of tread is rubber*. The **STEP model** tab answers that
+directly — you click the faces on the model and it measures them. It is
+self-contained: no DXF, no contact patch, no Run.
 
-### What a STEP model is, for this purpose
+### What you do
 
-A STEP file (ISO 10303-21, `.step` or `.stp` — every CAD package exports one)
-describes a solid as a set of **faces**. Each face is a patch of some surface —
-a plane, a cylinder, a torus, a spline — trimmed by loops of curves. The tread
-top of a blocked pattern is not one face; it is one face per block, hundreds of
-them, all lying on the *same* surface.
+1. **Load STEP…** — an ISO 10303-21 file, `.step` or `.stp`. Every CAD package
+   exports one. It is read here in the browser; nothing is uploaded.
+2. The model appears. **Drag** to turn it, **wheel** to zoom, **shift-drag** to
+   pan, **Fit view** to recentre.
+3. **Click a face** to select it. Click it again to let it go. The tread
+   surface is pre-selected on load, because on a tread model it is nearly
+   always what was wanted.
+4. **Whole surface** takes every face lying on the same surface as the ones you
+   have already picked. A blocked tread top is hundreds of faces on one plane,
+   so one click on a block and then this gives you the entire tread.
+5. Read the answer off the cards.
 
-That is the fact the tab is built on. Faces are grouped by the surface they sit
-on, so picking the tread is a single tick rather than two hundred, and the list
-you see is short:
+Faces the reader cannot measure are drawn in amber and refuse to be selected,
+with the reason — see *What it will not do* below.
 
-| Surface | Faces | Area | Meaning |
-|---|---|---|---|
-| plane ⊥ Z at 10.000 mm | 214 | 41 320 mm² | the tread top — every block |
-| plane ⊥ Z at 2.000 mm | 96 | 9 640 mm² | the groove floor, 8 mm below it |
-| cylinder R 4.000 mm | 300 | … | the groove-corner radii |
+### Why you pick faces and not surfaces
 
-### What to tick
+Because the question is usually about **part** of a pattern — a rib, a block
+row, one pitch — and every one of those sits on the *same plane* as the rest of
+the tread top. A list of surfaces could never express "this rib". Picking faces
+can, and that is the whole reason the model is on screen rather than in a table.
 
-**Tread** is the surface you are measuring — usually one row, occasionally two
-if the model has a shoulder step at a different height. The tool pre-ticks the
-**outermost** surface of the commonest kind: the one furthest along its own
-normal, or of the greatest radius. Outermost, *not* biggest — a solid floor
-plate under a blocked tread is one large face while the tread is hundreds of
-small ones, and picking by area gets it exactly backwards. It is a suggestion,
-and a model built upside down would fool it, so look at the list.
+### The equivalent bounded area
 
-**Floor** is the groove bottom. It is only used for the depth, and you can
-leave it unset.
+A land ratio is land divided by *something*, and that something is the only
+part of this calculation that is a convention rather than a measurement. So it
+is stated on the dashboard every time.
 
-### The envelope, which is the part to get right
+By default it is the **equivalent bounded area**: the tightest convex outline
+the faces you picked sit inside, measured in the same flattened frame as the
+land. That means:
 
-A land ratio is land area divided by *something*. The something is the
-**envelope**, and different choices give different answers, so it is always
-shown beside the ratio.
+- a groove **between** two faces you picked is inside the outline, so it counts
+  as **sea** — which is what it is;
+- space **outside** your pick does not count at all — which is also right;
+- and it does not care how the pattern is oriented. A rib running at 30° to the
+  tread measures the same as one running straight, where a bounding box round
+  the same rib would be more than twice too big.
 
-Left blank, the envelope is the **bounding box of what you ticked**. That is
-the right answer when the pick fills a rectangle — a whole rolled-out tread, a
-complete band. It is the wrong answer when it does not: tick one shoulder rib
-of a curved pattern and the bounding box includes the space beside it that was
-never part of the region you meant.
+Worked example, from the bundled `step_blocks` fixture: two neighbouring bands
+of 100 × 8.8 mm with a 4 mm groove between them. Land is 2 × 880 = **1760 mm²**.
+The bounded outline is 100 × (8.8 + 4 + 8.8) = **2160 mm²**. So the land ratio
+is **81.48%**, and the 400 mm² of groove is the sea. Pick one band on its own
+and it reads 100% land — a solid rectangle has no sea in it.
 
-So if you mean a specific region — a rib, one block row, one pitch — type its
-width and length into **Reference envelope**. The land does not change; only
-what it is divided by. The stated rectangle is drawn on the chart, dotted, so
-you can see what the ratio was taken against.
+If you want the ratio taken against a rectangle you state instead — a nominal
+tread width by a pitch length, say — type it into **Reference area**. The land
+does not change; only what it is divided by.
 
-### What the dashboard tells you
+### What else it tells you
 
-- **Land ratio / sea ratio** — the answer, and its complement.
-- **Land area** — the measured rubber, in mm². This is the number everything
-  else follows from.
-- **Sea area** — envelope minus land. Not measured; *derived*, which is why the
-  envelope matters.
-- **Biting edge** — total edge length, and edge per mm² of tread. Two patterns
-  at the same land ratio can differ several-fold here, and biting edge is
-  exactly what wet grip trades the land ratio against.
-- **Groove depth** — the separation between the tread surface and the surface
-  you marked as floor. This is the **NSD**, measured rather than typed: the
-  button under the chart puts it straight into *2 · Block depth & compound*,
-  where the whole stiffness model depends on it.
-- **Void volume** — sea × depth. An **upper bound**: a real groove has draft
-  and radiused corners, so the true void is smaller.
+- **Groove depth** — the distance down to the largest surface lying parallel
+  below your pick. This is the **NSD**, measured rather than typed: the button
+  under the cards puts it straight into *2 · Block depth & compound*, where the
+  whole stiffness model depends on it. A 2D tread plan cannot carry this
+  number at all.
+- **Face CSV** — one row per selected face, with the totals in the header, for
+  when the question is *which* face rather than how much.
 
 ### What it will not do
 
 - **Only planes and cylinders are measured.** They are the two surfaces that
   flatten without distortion — a cylinder unrolls to (R·θ, axial) exactly, so
   the developed area *is* the surface area. A torus or a general spline surface
-  needs a real surface integral, and faces on one are **reported and excluded**,
-  never quietly dropped. If your tread top is a spline surface, the panel says
-  so and the numbers below it are not your tread.
-- **It does not know which surface you meant.** It suggests; you confirm.
-- **A depth needs two parallel surfaces.** Pick a groove wall as the floor and
-  it tells you there is no single depth rather than inventing one; pick the two
-  the wrong way round and it says the floor is outside the tread.
+  needs a real surface integral. Those faces are **drawn** (a tread with its
+  fillets missing would not look like your tread) but they are marked, they
+  cannot be selected, and the panel says how many there are. A face silently
+  missing from a land ratio is a wrong answer that looks like a right one.
+- **A depth needs two parallel surfaces.** If nothing parallel lies below your
+  pick it reports no depth rather than inventing one; if the model is upside
+  down it says so rather than reporting a plausible number of the right size
+  and the wrong meaning.
 - **Units come from the file.** A model in inches is converted (×25.4) and the
-  unit is printed in the header line. A file that states no unit at all is read
-  as millimetres, with a warning — that is the one case where a wrong number
-  can look right.
+  unit is printed in the header line. A file stating no unit at all is read as
+  millimetres, with a warning — that is the one case where a wrong number can
+  look right.
 
 Straight edges and circular arcs are integrated in closed form, not
 polygonised, so a round stone-ejector hole or a radiused groove opening is
-measured exactly rather than to within a chord tolerance. **Face CSV** writes
-one row per face — surface, area, perimeter, holes — with the totals in the
-header, for when the question is *which* face rather than how much.
+measured exactly rather than to within a chord tolerance.
 
 ---
 

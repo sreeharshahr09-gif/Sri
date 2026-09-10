@@ -1060,46 +1060,74 @@ const fs = require("fs");
   }
 
   // ---------------------------------------------------------------------
-  // The STEP tab: land / sea straight off a 3D model.
+  // The STEP tab: click the faces on the model, read the land/sea off them.
   //
   // The fixtures have hand-computed areas (data/make_step.py prints them), so
-  // this checks the number on the SCREEN against paper, not just that the panel
-  // rendered something. That distinction matters here more than anywhere else
-  // in the tool: a land ratio is a plausible-looking number whatever the reader
-  // got wrong.
+  // this checks the number on the SCREEN against paper. That matters more here
+  // than anywhere else in the tool: a land ratio is a plausible-looking number
+  // whatever the reader got wrong.
   {
     const stepFile = (n) => path.join(__dirname, "..", "data", n);
+    const cards = () => page.$eval("#stepCards", (el) => el.textContent.replace(/\s+/g, " "));
+    const pickLine = () => page.$eval("#stepPick", (el) => el.textContent.replace(/\s+/g, " "));
+    const shown = () => page.evaluate(() => {
+      const m = window.__ttStep.measure();
+      return m ? { land: +m.land_mm2.toFixed(4), env: +m.envelope_mm2.toFixed(4),
+                   ratio: +(100 * m.land_ratio).toFixed(2), n: m.n_faces } : null;
+    });
+    // Click a face by its index, wherever the projection happens to have put
+    // it -- the test cannot know screen positions in advance.
+    const clickFace = async (i) => {
+      const box = await page.locator("#stepCanvas").boundingBox();
+      const at = await page.evaluate((ix) => {
+        const p = window.__ttStep.faces()[ix].scr;
+        return p.reduce((a, q) => [a[0] + q[0] / p.length, a[1] + q[1] / p.length], [0, 0]);
+      }, i);
+      await page.mouse.click(box.x + at[0], box.y + at[1]);
+      await page.waitForTimeout(150);
+    };
+
     await openTab("step");
     await setInputFiles("#stepInput", stepFile("step_plate_holes.step"));
     await page.waitForFunction(() => document.getElementById("stepBody").style.display === "", { timeout: 20000 });
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(400);
 
     const status = (await page.textContent("#stepStatus")).replace(/\s+/g, " ");
-    console.log("STEP:", status.slice(0, 120));
+    console.log("STEP:", status.slice(0, 110));
     if (!/mm/.test(status)) errors.push("the STEP panel does not state the file's length unit");
 
-    const rows = await page.$$eval("#stepFamilies tr", (tr) => tr.length);
-    if (rows !== 2) errors.push(`the plate fixture should list 2 surface families, listed ${rows}`);
-    const ticked = await page.$$eval(".step-tread:checked", (e) => e.length);
-    if (ticked !== 1) errors.push(`exactly one surface should be pre-ticked, ${ticked} were`);
-
-    const cardText = () => page.$eval("#stepCards", (el) => el.textContent.replace(/\s+/g, " "));
-    let cards = await cardText();
-    console.log("STEP cards:", cards.slice(0, 200));
-    // 6000 - 2x200 - pi*25 = 5521.4602 mm^2 on a 100 x 60 envelope.
-    if (!/5521\.5/.test(cards)) errors.push("the measured land area is not the hand-computed 5521.5 mm²");
-    if (!/92\.02/.test(cards)) errors.push("the land ratio is not the hand-computed 92.02%");
-    if (!/8\.000/.test(cards)) errors.push("the groove depth is not the modelled 8 mm");
-
-    const drawn = await page.$eval("#stepPlot", (el) => !!el.querySelector(".plot-container"));
-    if (!drawn) errors.push("the STEP tab drew no chart");
-    const traces = await page.evaluate(() => {
-      const gd = document.getElementById("stepPlot");
-      return gd.data.map((d) => ({ name: d.name, n: d.x.length }));
+    // The model is on screen, drawn face by face, and every face was projected.
+    const scene = await page.evaluate(() => {
+      const f = window.__ttStep.faces();
+      return { n: f.length, drawn: f.filter((x) => x.scr && x.scr.length >= 3).length,
+               pixels: document.getElementById("stepCanvas").width };
     });
-    console.log("STEP plot traces:", JSON.stringify(traces));
-    if (!traces.some((t) => t.name === "holes" && t.n > 0))
-      errors.push("the plate's three holes were not drawn as holes");
+    console.log("STEP scene:", JSON.stringify(scene));
+    if (scene.n !== 4) errors.push(`the plate fixture is 4 faces, the viewport built ${scene.n}`);
+    if (scene.drawn !== scene.n) errors.push("some faces were not projected, so they cannot be clicked");
+    if (!scene.pixels) errors.push("the STEP canvas has no backing pixels");
+
+    // 6000 - 2x200 - pi*25 = 5521.4602 mm^2 inside a 100 x 60 bounded outline.
+    let c = await cards();
+    console.log("STEP cards:", c.slice(0, 190));
+    if (!/5521\.5/.test(c)) errors.push("the measured land area is not the hand-computed 5521.5 mm²");
+    if (!/92\.02/.test(c)) errors.push("the land ratio is not the hand-computed 92.02%");
+    if (!/8\.000/.test(c)) errors.push("the groove depth is not the modelled 8 mm");
+    if (!/equivalent bounded area/.test(c)) errors.push("the reference area is not named on the dashboard");
+
+    // Turning the model must not change what is selected or measured.
+    const before = await shown();
+    const box = await page.locator("#stepCanvas").boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 90, box.y + box.height / 2 + 40, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+    const cam = await page.evaluate(() => ({ yaw: window.__ttStep.camera.yaw, pitch: window.__ttStep.camera.pitch }));
+    const after = await shown();
+    console.log("STEP drag:", JSON.stringify(cam), "measurement unchanged:", JSON.stringify(after) === JSON.stringify(before));
+    if (Math.abs(cam.yaw + 0.5) < 1e-6) errors.push("dragging did not rotate the model");
+    if (JSON.stringify(after) !== JSON.stringify(before)) errors.push("dragging the model changed the measurement");
 
     // The measured depth is the NSD the rest of the tool otherwise makes you
     // guess. Offering it is the one place these two halves meet.
@@ -1109,13 +1137,58 @@ const fs = require("fs");
     if (Math.abs(parseFloat(nsd) - 8) > 1e-6) errors.push(`"use depth as NSD" set NSD to ${nsd}, not 8`);
     console.log("NSD from the model:", nsd);
 
-    // A stated envelope must change the ratio and nothing else.
+    // Part of a pattern, which is the whole point of picking faces: five bands
+    // on one plane, so no surface-level pick could ever express "these two".
+    await setInputFiles("#stepInput", stepFile("step_blocks.step"));
+    await page.waitForTimeout(600);
+    const whole = await shown();
+    console.log("STEP blocks, tread pre-picked:", JSON.stringify(whole), "|", await pickLine());
+    if (!whole || Math.abs(whole.land - 4400) > 1e-6)
+      errors.push("the five bands do not measure their hand-computed 4400 mm²");
+
+    await click("#stepClear");
+    await page.waitForTimeout(150);
+    if (await shown()) errors.push("Clear did not clear the selection");
+
+    await clickFace(0);
+    const one = await shown();
+    console.log("one band clicked:", JSON.stringify(one));
+    if (!one || one.n !== 1) errors.push("clicking a face did not select exactly that face");
+    if (!one || Math.abs(one.land - 880) > 1e-6) errors.push("one 100 x 8.8 band is 880 mm²");
+    if (!one || Math.abs(one.ratio - 100) > 1e-6)
+      errors.push("a solid rectangle has no sea, so it must read 100% land");
+
+    await clickFace(1);
+    const two = await shown();
+    console.log("two bands:", JSON.stringify(two));
+    // 100 x (8.8 + 4 + 8.8) = 2160 bounded, 1760 land, 81.48%.
+    if (!two || Math.abs(two.land - 1760) > 1e-6 || Math.abs(two.env - 2160) > 1e-4)
+      errors.push("two neighbouring bands must bound the 4 mm groove between them");
+    if (!two || Math.abs(two.ratio - 81.48) > 0.01)
+      errors.push("two bands and the groove between them are 81.48% land");
+    await page.screenshot({ path: path.join(outDir, "tab-step.png"), fullPage: false });
+
+    // Clicking the same face again lets it go.
+    await clickFace(1);
+    const back = await shown();
+    if (!back || back.n !== 1) errors.push("clicking a selected face did not deselect it");
+
+    await click("#stepPickSurface");
+    await page.waitForTimeout(200);
+    const all = await shown();
+    console.log("whole surface:", JSON.stringify(all), "|", await pickLine());
+    if (!all || Math.abs(all.land - 4400) > 1e-6)
+      errors.push("'Whole surface' did not take every face on the picked plane");
+
+    // A stated reference area must change the ratio and nothing else.
     await fill("#stepEnvW", "120");
     await fill("#stepEnvH", "80");
     await page.waitForTimeout(250);
-    cards = await cardText();
-    if (!/5521\.5/.test(cards)) errors.push("stating an envelope changed the measured land area");
-    if (!/57\.5/.test(cards)) errors.push("stating a 120 x 80 envelope did not give 57.5% land");
+    const stated = await shown();
+    if (!stated || Math.abs(stated.land - 4400) > 1e-6)
+      errors.push("stating a reference area changed the measured land");
+    if (!stated || Math.abs(stated.ratio - 45.83) > 0.01)
+      errors.push("4400 / 9600 is 45.83% land");
     await fill("#stepEnvW", "");
     await fill("#stepEnvH", "");
     await page.waitForTimeout(200);
@@ -1123,27 +1196,38 @@ const fs = require("fs");
     // A cylindrical band: the area only comes out right if the face is rolled
     // out rather than projected.
     await setInputFiles("#stepInput", stepFile("step_band_cyl.step"));
-    await page.waitForTimeout(600);
-    cards = await cardText();
-    if (!/24818\.6/.test(cards))
-      errors.push("the cylindrical band did not develop to its hand-computed 24818.6 mm²");
-    const axis = await page.evaluate(() => document.getElementById("stepPlot").layout.xaxis.title.text);
-    if (!/developed/.test(axis)) errors.push("the developed cylinder is not labelled as developed");
-    await page.screenshot({ path: path.join(outDir, "tab-step.png"), fullPage: false });
+    await page.waitForTimeout(700);
+    const cyl = await shown();
+    console.log("cylinder:", JSON.stringify(cyl));
+    if (!cyl || Math.abs(cyl.land - 24818.582) > 0.01)
+      errors.push("the cylindrical band did not develop to its hand-computed 24818.58 mm²");
 
     // A model carrying a surface this reader cannot measure must say so rather
-    // than quietly report the rest as the whole.
+    // than quietly report the rest as the whole -- and must still draw it.
     await setInputFiles("#stepInput", stepFile("step_toroidal.step"));
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(600);
     const notes = (await page.textContent("#stepNotes")).replace(/\s+/g, " ");
     if (!/TOROIDAL_SURFACE/.test(notes)) errors.push("the unmeasurable torus face was not reported");
+    const torus = await page.evaluate(() => {
+      const f = window.__ttStep.faces();
+      return { n: f.length, unmeasurable: f.filter((x) => !x.measurable).length };
+    });
+    if (torus.n !== 2 || torus.unmeasurable !== 1)
+      errors.push(`the torus face must still be drawn: ${JSON.stringify(torus)}`);
+    // ...and refuse to be selected, with a reason.
+    const ix = await page.evaluate(() => window.__ttStep.faces().findIndex((f) => !f.measurable));
+    await clickFace(ix);
+    const refused = (await page.textContent("#stepStatus")).replace(/\s+/g, " ");
+    if (!/cannot be measured/.test(refused))
+      errors.push("clicking an unmeasurable face gave no explanation");
+    console.log("STEP refusal (face):", refused.slice(refused.indexOf("That face"), refused.indexOf("That face") + 80));
 
     // And something that is not a STEP file at all.
     await setInputFiles("#stepInput", stepFile("hatch_only.dxf"));
     await page.waitForTimeout(400);
     const bad = (await page.textContent("#stepStatus")).replace(/\s+/g, " ");
     if (!/DATA section/.test(bad)) errors.push("a non-STEP file was not refused with a reason");
-    console.log("STEP refusal:", bad.slice(0, 90));
+    console.log("STEP refusal (file):", bad.slice(0, 80));
     await openTab("plan");
   }
 

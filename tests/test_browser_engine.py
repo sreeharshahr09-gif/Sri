@@ -2991,12 +2991,17 @@ def test_the_step_reader_reaches_the_built_page():
     assert tpl.index("/*__STEPIO__*/") < tpl.index("/*__UI__*/")
 
 
-def test_the_step_tab_offers_the_pick_the_ratio_depends_on():
-    """A land ratio is land over an envelope, measured on surfaces the engineer
-    chose.  All three have to be on the page: what was ticked, what it was
-    divided by, and what came out.
+def test_the_step_tab_shows_the_model_and_lets_the_faces_be_clicked():
+    """The pick is made ON the model, not off a list.
+
+    A list of surfaces could not express "this rib": every rib on a tread sits
+    on the same plane as the rest of the tread top.  So the tab draws the model
+    and the faces are clicked -- which means a viewport, a projection, a
+    painter's sort and a hit test, all of them here rather than in a library
+    the page would have to load.
     """
     tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    css = open(os.path.join(APP, "style.css"), encoding="utf-8").read()
     ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
     setup = _setup_markup(tpl)
 
@@ -3004,19 +3009,134 @@ def test_the_step_tab_offers_the_pick_the_ratio_depends_on():
     assert '<section id="panel-step" class="panel setup">' in tpl
     assert '<section id="panel-step"' in setup, "the STEP panel sits in the setup row"
     assert 'data-tab="step" data-grp="grp-step"' in tpl
-    for el in ["stepInput", "stepFamilies", "stepEnvW", "stepEnvH", "stepCards",
-               "stepPlot", "stepNotes", "stepUseNsd", "stepExportCsv"]:
+    for el in ["stepInput", "stepCanvas", "stepPick", "stepPickSurface", "stepClear",
+               "stepFit", "stepEnvW", "stepEnvH", "stepCards", "stepNotes",
+               "stepUseNsd", "stepExportCsv"]:
         assert f'id="{el}"' in tpl, f"the STEP tab has no {el}"
+    assert "<canvas id=\"stepCanvas\"" in tpl, "the model is drawn on a canvas"
+    assert re.search(r"\.step-stage\s*{", css), "the viewport has no styling"
 
-    fn = ui[ui.index("function refreshStepMeasurement("):ui.index("function renderStepCards(")]
-    assert "floorKey" in fn and "width:" in fn and "height:" in fn
-    cards = ui[ui.index("function renderStepCards("):ui.index("  // The picked faces")]
-    for label in ["Land ratio", "Sea ratio", "Land area", "Envelope",
-                  "Biting edge", "Groove depth"]:
+    # No library: the page is one file and stays one file.
+    assert 'id="stepio-src"' in tpl and "/*__STEPIO__*/" in tpl
+    assert "getContext(\"2d\")" in ui, "the viewport is plain canvas 2D, not a 3D library"
+
+    # The renderer: project, sort by depth, fill -- and pick by hit-testing the
+    # same projected outlines, so what you click is what you see.
+    assert "function drawStepScene(" in ui
+    draw = ui[ui.index("function drawStepScene("):ui.index("function tracePoly(")]
+    assert "sort(" in draw and "depth" in draw, "faces must be depth-sorted to look like a solid"
+    assert 'ctx.fill("evenodd")' in draw, "a hole in a face must be drawn as a hole"
+    assert "function stepFaceAt(" in ui
+    pick = ui[ui.index("function stepFaceAt("):ui.index("function selectStepFamily(")]
+    assert "f.scr" in pick, "picking must use the projection the frame was drawn from"
+    assert "order.length - 1; o >= 0; o--" in pick, "the nearest face wins, not the first drawn"
+
+    # Selection is per face, and 'whole surface' is the shortcut, not the only
+    # option -- that is the whole difference from a list of surfaces.
+    assert "function toggleStepFace(" in ui and "function selectStepFamily(" in ui
+    fn = ui[ui.index("function refreshStepMeasurement("):ui.index("function renderStepPick(")]
+    assert "S.measureFaces(picked" in fn, "the measurement runs on the faces picked"
+
+    cards = ui[ui.index("function renderStepCards("):ui.index("function stepUseNsd(")]
+    for label in ["Land ratio", "Sea ratio", "Land area", "Bounded area", "Groove depth"]:
         assert label in cards, f"the dashboard does not report {label}"
-    # The envelope is never left implicit: a ratio against an unstated
-    # denominator is the one way to be confidently wrong here.
-    assert "envelope_source" in cards and "bounding box of the ticked faces" in cards
+    # The denominator is never left implicit: a ratio against an unstated
+    # reference is the one way to be confidently wrong here.
+    assert "envelope_source" in cards and "equivalent bounded area" in cards
+
+
+def test_a_face_that_cannot_be_measured_cannot_be_picked():
+    """Only planes and cylinders flatten without distortion.  A torus face is
+    still drawn -- a tread with its fillets missing does not look like the
+    engineer's tread -- but selecting one would put a number in the total that
+    was never measured, so it is refused with the reason."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    fn = ui[ui.index("function toggleStepFace("):ui.index("function refreshStepMeasurement(")]
+    assert "f.measurable" in fn and "return" in fn
+    assert "cannot be measured" in fn, "the refusal must say why"
+    # ...and the scene must carry those faces anyway.
+    scene = ui[ui.index("function buildStepScene("):ui.index("function faceNormal(")]
+    assert "rec.area != null" in scene, "measurability is recorded, not used to drop the face"
+    assert "if (!rec.shell || !rec.shell.length) continue" in scene
+
+
+def test_part_of_a_pattern_is_measured_face_by_face():
+    """The question is usually about part of a tread.  Two neighbouring bands
+    with a 4 mm groove between them: the groove is inside the bounded outline,
+    so it is sea.  100 x (8.8 + 4 + 8.8) = 2160 mm2 bounded, 1760 mm2 land.
+    """
+    node = _node()
+    script = f"""
+const S = require({json.dumps(os.path.join(APP, 'stepio.js'))});
+const fs = require("fs");
+const m = S.readModel(fs.readFileSync({json.dumps(os.path.join(REPO, 'data', 'step_blocks.step'))}, "utf8"));
+const bands = S.suggestTread(m.groups).faces;
+const one = S.measureFaces([bands[0]], m.groups, {{}});
+const two = S.measureFaces([bands[0], bands[1]], m.groups, {{}});
+const all = S.measureFaces(bands, m.groups, {{}});
+process.stdout.write(JSON.stringify({{
+  n: bands.length,
+  one: {{land: one.land_mm2, env: one.envelope_mm2, ratio: one.land_ratio, n: one.n_faces}},
+  two: {{land: two.land_mm2, env: two.envelope_mm2, ratio: two.land_ratio, n: two.n_faces}},
+  all: {{land: all.land_mm2, env: all.envelope_mm2, ratio: all.land_ratio, depth: all.groove_depth_mm}},
+  none: S.measureFaces([], m.groups, {{}}),
+}}));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
+    assert res.returncode == 0, res.stderr[:2000]
+    got = json.loads(res.stdout)
+
+    band = 100 * ((60 - 4 * 4) / 5)          # one 100 x 8.8 band
+    assert got["n"] == 5
+    assert got["one"]["land"] == pytest.approx(band, rel=1e-12)
+    assert got["one"]["n"] == 1
+    # A solid rectangle has no sea in it, so it is 100% land whatever the tread
+    # around it looks like.  This is the check that catches a denominator
+    # quietly taken from the whole model instead of the pick.
+    assert got["one"]["ratio"] == pytest.approx(1.0, rel=1e-12)
+
+    assert got["two"]["land"] == pytest.approx(2 * band, rel=1e-12)
+    assert got["two"]["env"] == pytest.approx(100 * (8.8 + 4 + 8.8), rel=1e-9)
+    assert got["two"]["ratio"] == pytest.approx(1760 / 2160, rel=1e-9)
+    # ...and that is NOT the whole-tread answer, or picking does nothing.
+    assert abs(got["two"]["ratio"] - got["all"]["ratio"]) > 0.05
+
+    assert got["all"]["land"] == pytest.approx(5 * band, rel=1e-12)
+    assert got["all"]["depth"] == pytest.approx(8.0, rel=1e-12), "the floor is found, not asked for"
+    assert got["none"] is None, "picking nothing measures nothing"
+
+
+def test_the_bounded_area_is_a_hull_not_a_bounding_box():
+    """The reference area is the only part of this that is a convention rather
+    than a measurement, so it is the tightest convex outline the picked rubber
+    sits inside.  On a rectangle turned 30 degrees the hull still measures its
+    area and a bounding box measures more than twice it."""
+    node = _node()
+    script = f"""
+const S = require({json.dumps(os.path.join(APP, 'stepio.js'))});
+const sq = [[0,0],[40,0],[40,20],[0,20]];
+const th = Math.PI/6, c = Math.cos(th), s = Math.sin(th);
+const rot = sq.map(p => [p[0]*c - p[1]*s, p[0]*s + p[1]*c]);
+const xs = rot.map(p=>p[0]), ys = rot.map(p=>p[1]);
+const ell = [[0,0],[30,0],[30,10],[10,10],[10,30],[0,30]];
+process.stdout.write(JSON.stringify({{
+  square: S.polygonArea(S.convexHull(sq)),
+  rotated: S.polygonArea(S.convexHull(rot)),
+  box: (Math.max.apply(null,xs)-Math.min.apply(null,xs)) * (Math.max.apply(null,ys)-Math.min.apply(null,ys)),
+  ell: S.polygonArea(S.convexHull(ell)),
+  degenerate: S.polygonArea(S.convexHull([[0,0],[1,1]])),
+}}));
+"""
+    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
+    assert res.returncode == 0, res.stderr[:2000]
+    got = json.loads(res.stdout)
+    assert got["square"] == pytest.approx(800, rel=1e-12)
+    assert got["rotated"] == pytest.approx(800, rel=1e-9), "a hull does not care how it is turned"
+    assert got["box"] / got["rotated"] > 2, "which is exactly what a bounding box gets wrong"
+    # An L: the hull spans the notch, because a groove inside the pick is sea.
+    assert got["ell"] == pytest.approx(30 * 30 - 20 * 20 / 2, rel=1e-12)
+    assert 500 < got["ell"] < 900
+    assert got["degenerate"] == 0, "two points bound no area"
 
 
 def test_the_measured_depth_is_offered_as_the_nsd():

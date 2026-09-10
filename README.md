@@ -65,15 +65,22 @@ table. A dark/light toggle and a built-in *How to read this* guide are included.
 Nothing is uploaded; the file works offline from `file://`.
 
 **Land and sea from a 3D model.** The **STEP model** tab is a separate question
-asked of a separate file: load an ISO 10303-21 `.step`/`.stp`, tick the tread
-surface(s) from the list of surface families the model is made of, and read the
-land–sea ratio, the biting edge, the groove depth and the void volume off the
-geometry. It needs no DXF, no contact patch and no Run. Planes and cylinders
-are measured exactly — a cylinder develops without stretching, and straight and
-circular edges are integrated in closed form; surfaces that cannot be developed
-(a torus, a general spline) are reported and excluded rather than dropped. The
-measured groove depth can be handed straight to the NSD box, which a 2D tread
-plan cannot supply.
+asked of a separate file. Load an ISO 10303-21 `.step`/`.stp` and the model
+appears in a viewport: drag to turn it, wheel to zoom, and **click the faces**
+you want measured. It then reports the land area, the land–sea ratio and the
+groove depth for exactly those faces. Picking is per face on purpose — the
+question is usually about *part* of a pattern (a rib, a block row, one pitch),
+and every one of those sits on the same plane as the rest of the tread top, so
+picking by surface could never express it; *Whole surface* is there when you do
+want the lot. The ratio is taken against the **equivalent bounded area** — the
+convex outline the picked faces sit inside — so grooves between them count as
+sea and space outside the pick does not. Planes and cylinders are measured
+exactly (a cylinder develops without stretching, and straight and circular
+edges are integrated in closed form); surfaces that cannot be developed, such
+as a torus or a general spline, are drawn but marked unmeasurable rather than
+silently dropped. The measured groove depth can be handed straight to the NSD
+box, which a 2D tread plan cannot supply. Nothing is uploaded and no library is
+loaded — the viewport is plain canvas 2D, so the page stays one file.
 
 ## Running it on your own tyre (command-line report)
 

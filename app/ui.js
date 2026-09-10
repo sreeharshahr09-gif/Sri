@@ -105,7 +105,7 @@
   // ---- element helpers -------------------------------------------------
   function $(id) { return document.getElementById(id); }
   function num(id) { return parseFloat($(id).value); }
-  function on(el, ev, fn) { el.addEventListener(ev, fn); }
+  function on(el, ev, fn, opts) { el.addEventListener(ev, fn, opts); }
 
   // ---- theme -----------------------------------------------------------
   function currentTheme() {
@@ -120,7 +120,7 @@
     $("themeToggle").textContent = theme === "light" ? "☾ Dark" : "☀ Light";
     drawEditor();
     if (state.results) renderAll();
-    if (state.step && state.step.measure) drawStepPlot(state.step.measure);
+    if (stepScene) redrawStep();
   }
   function initTheme() {
     var saved = null;
@@ -4210,19 +4210,25 @@
     renderReportChips();
   }
 
-  // ---- STEP model: land / sea straight off the 3D geometry --------------
+  // ---- STEP model: land / sea, picked off the model itself ---------------
   //
-  // This is a separate question from the sweep, asked of a separate file, and
-  // it deliberately shares nothing with it: no pattern, no run, no results. An
-  // engineer with a STEP model and a ruler wants ONE number -- how much of this
-  // surface is rubber -- and the honest way to give it is to measure the faces
-  // they point at rather than infer a tread from the whole solid.
+  // A separate question, asked of a separate file: how much of THIS bit of
+  // tread is rubber? So the model goes on screen and the faces are clicked.
+  // A list of surfaces could never express "this rib" -- every rib on a tread
+  // sits on the same plane as the rest of the tread top -- and asking an
+  // engineer to recognise their pattern from a table of plane offsets is
+  // asking the wrong person to do the computer's job.
   //
-  // The one place the two meet is groove depth. NSD is the single most
-  // influential number on the compound panel and a 2D plan cannot carry it, so
-  // it is normally typed in from the drawing; here it is measured, and offered.
+  // The viewport is a canvas and about two hundred lines: faces are flat
+  // outlines, so projecting them, sorting by depth and filling in order is the
+  // whole renderer, and hit-testing those same projected outlines is the whole
+  // picker. Nothing is loaded, which is what keeps the page a single file.
 
   var S = window.TreadStep;
+
+  var stepScene = null;        // { faces: [...], center, radius }
+  var stepCam = { yaw: -0.5, pitch: 0.62, scale: 1, ox: 0, oy: 0 };
+  var stepUi = { hover: -1, drag: null, moved: 0, raf: 0 };
 
   function stepStatus(html, bad) {
     var box = $("stepStatus");
@@ -4230,6 +4236,8 @@
     box.style.display = html ? "" : "none";
     box.innerHTML = bad ? "<b style='color:var(--bad)'>" + html + "</b>" : html;
   }
+
+  // --- loading ----------------------------------------------------------
 
   function loadStepFile(file) {
     var reader = new FileReader();
@@ -4242,21 +4250,21 @@
         var t0 = performance.now();
         try {
           var read = S.readModel(String(reader.result));
+          state.step = { name: file.name, read: read, groups: read.groups,
+                         sel: {}, ms: performance.now() - t0 };
+          buildStepScene(read);
+          // The tread is pre-picked, because on a tread model it is nearly
+          // always what was wanted, and a page that opens with the answer
+          // already on it beats one that opens with an empty chart.
           var tread = S.suggestTread(read.groups);
-          state.step = {
-            name: file.name,
-            read: read,
-            groups: read.groups,
-            tread: tread ? [tread.key] : [],
-            floorKey: tread ? (S.suggestFloor(read.groups, tread) || {}).key || null : null,
-            ms: performance.now() - t0,
-          };
+          if (tread) selectStepFamily(tread.key, true);
+          stepFit();
           $("stepBody").style.display = "";
-          renderStepFamilies();
           refreshStepMeasurement();
           stepStatus(stepHeaderHtml());
+          setTimeout(function () { stepFit(); drawStepScene(); }, 30);
         } catch (err) {
-          state.step = null;
+          state.step = null; stepScene = null;
           $("stepBody").style.display = "none";
           stepStatus("Could not read " + escapeHtml(file.name) + ": " + escapeHtml(err.message), true);
         }
@@ -4271,58 +4279,262 @@
   // nothing about the number itself says so.
   function stepHeaderHtml() {
     var st = state.step, r = st.read;
-    var html = "<b>" + escapeHtml(st.name) + "</b> — " + r.n_entities.toLocaleString() +
-      " entities, " + r.faces.length.toLocaleString() + " face(s) in " +
-      r.groups.length + " surface famil" + (r.groups.length === 1 ? "y" : "ies") +
-      ", read in " + st.ms.toFixed(0) + " ms." +
+    return "<b>" + escapeHtml(st.name) + "</b> — " + r.n_entities.toLocaleString() +
+      " entities, " + r.faces.length.toLocaleString() + " face(s), read in " +
+      st.ms.toFixed(0) + " ms." +
       "<br>Length unit: <b>" + escapeHtml(r.unit.name) + "</b> (×" + r.unit.mm +
       " to mm, from the " + escapeHtml(r.unit.source) + ").";
-    return html;
   }
 
-  function renderStepFamilies() {
-    var st = state.step, body = $("stepFamilies");
-    if (!st || !body) return;
-    var html = "";
-    for (var i = 0; i < st.groups.length; i++) {
-      var g = st.groups[i];
-      var picked = st.tread.indexOf(g.key) >= 0;
-      var b = g.bbox;
-      html += "<tr" + (picked ? " class='engaged'" : "") + ">" +
-        "<td><input type='checkbox' class='step-tread' data-key='" + escapeHtml(g.key) + "'" +
-        (picked ? " checked" : "") + " /></td>" +
-        "<td><input type='radio' name='stepFloor' class='step-floor' data-key='" + escapeHtml(g.key) + "'" +
-        (st.floorKey === g.key ? " checked" : "") + " /></td>" +
-        "<td>" + escapeHtml(g.label) + "</td>" +
-        "<td class='num'>" + g.n + "</td>" +
-        "<td class='num'>" + g.area.toFixed(2) + "</td>" +
-        "<td class='num'>" + g.holes + "</td>" +
-        "<td class='num'>" + (b ? b.w.toFixed(1) + " × " + b.h.toFixed(1) : "—") + "</td>" +
-        "</tr>";
+  // --- the scene --------------------------------------------------------
+
+  function buildStepScene(read) {
+    var faces = [], lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (var i = 0; i < read.faces.length; i++) {
+      var rec = read.faces[i];
+      if (!rec.shell || !rec.shell.length) continue;
+      var outer = null, holes = [];
+      for (var s = 0; s < rec.shell.length; s++) {
+        if (rec.shell[s].outer && !outer) outer = rec.shell[s].pts;
+        else holes.push(rec.shell[s].pts);
+      }
+      if (!outer) { outer = rec.shell[0].pts; holes = holes.slice(1); }
+      if (outer.length < 3) continue;
+      var f = { rec: rec, outer: outer, holes: holes, key: rec.familyKey || null,
+                measurable: rec.area != null, n: faceNormal(outer), c: [0, 0, 0], scr: null };
+      for (var p = 0; p < outer.length; p++) {
+        for (var d = 0; d < 3; d++) {
+          f.c[d] += outer[p][d] / outer.length;
+          if (outer[p][d] < lo[d]) lo[d] = outer[p][d];
+          if (outer[p][d] > hi[d]) hi[d] = outer[p][d];
+        }
+      }
+      faces.push(f);
     }
-    body.innerHTML = html;
+    if (!faces.length) throw new Error(
+      "this file has faces but none of them carry a usable outline, so there is nothing to show.");
+    var center = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+    var radius = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2 || 1;
+    stepScene = { faces: faces, center: center, radius: radius };
   }
+
+  // Newell's method: works on any planar-ish polygon and does not care which
+  // three vertices you would have picked.
+  function faceNormal(pts) {
+    var nx = 0, ny = 0, nz = 0;
+    for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      var a = pts[j], b = pts[i];
+      nx += (a[1] - b[1]) * (a[2] + b[2]);
+      ny += (a[2] - b[2]) * (a[0] + b[0]);
+      nz += (a[0] - b[0]) * (a[1] + b[1]);
+    }
+    var L = Math.hypot(nx, ny, nz) || 1;
+    return [nx / L, ny / L, nz / L];
+  }
+
+  // A canvas on a closed tab measures zero, and fitting to that would leave a
+  // scale of zero and an empty viewport when the tab is finally opened. So a
+  // fit that cannot be done now is remembered and done then.
+  function stepFit() {
+    var cv = $("stepCanvas");
+    if (!cv || !stepScene) return false;
+    var w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) { stepUi.needFit = true; return false; }
+    stepCam.scale = (0.42 * Math.min(w, h)) / stepScene.radius;
+    stepCam.ox = 0; stepCam.oy = 0;
+    stepUi.needFit = false;
+    return true;
+  }
+
+  // --- drawing ----------------------------------------------------------
+
+  function stepRotate(x, y, z, t) {
+    var x1 = t.ca * x + t.sa * y;
+    var y1 = -t.sa * x + t.ca * y;
+    return [x1, t.cb * y1 + t.sb * z, -t.sb * y1 + t.cb * z];
+  }
+
+  function drawStepScene() {
+    var cv = $("stepCanvas");
+    if (!cv || !stepScene) return;
+    var w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;                       // the panel is closed
+    var dpr = window.devicePixelRatio || 1;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+      cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    }
+    var ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    var t = { ca: Math.cos(stepCam.yaw), sa: Math.sin(stepCam.yaw),
+              cb: Math.cos(stepCam.pitch), sb: Math.sin(stepCam.pitch) };
+    var cx = w / 2 + stepCam.ox, cy = h / 2 + stepCam.oy, k = stepCam.scale;
+    var C = stepScene.center, faces = stepScene.faces;
+
+    function project(pts) {
+      var out = new Array(pts.length);
+      for (var i = 0; i < pts.length; i++) {
+        var r = stepRotate(pts[i][0] - C[0], pts[i][1] - C[1], pts[i][2] - C[2], t);
+        out[i] = [cx + r[0] * k, cy - r[1] * k];
+      }
+      return out;
+    }
+
+    // Painter's algorithm. Every face here is a flat plate, so ordering by the
+    // depth of its centre is exact enough to look like the model and to make
+    // "the face under the cursor" mean the nearest one.
+    var order = [];
+    for (var i = 0; i < faces.length; i++) {
+      var f = faces[i];
+      var rc = stepRotate(f.c[0] - C[0], f.c[1] - C[1], f.c[2] - C[2], t);
+      f.depth = rc[2];
+      f.scr = project(f.outer);
+      f.scrHoles = f.holes.map(project);
+      order.push(i);
+    }
+    order.sort(function (a, b) { return faces[a].depth - faces[b].depth; });
+    stepUi.order = order;
+
+    var th = plotTheme();
+    var selRGB = hexToRgb(th.accent, [78, 161, 255]);
+    var warnRGB = hexToRgb(th.warn, [255, 207, 92]);
+    var baseRGB = hexToRgb(cssVar("--ink-dim"), [159, 176, 192]);
+    var edge = cssVar("--edge");
+    var sel = (state.step && state.step.sel) || {};
+
+    for (var o = 0; o < order.length; o++) {
+      var ix = order[o], fc = faces[ix];
+      // A fixed light in camera space: the model lights consistently however
+      // it is turned, which is what makes the shape readable while dragging.
+      var rn = stepRotate(fc.n[0], fc.n[1], fc.n[2], t);
+      var lam = Math.abs(rn[0] * 0.35 + rn[1] * 0.25 + rn[2] * 0.90);
+      var shade = 0.42 + 0.58 * Math.min(1, lam);
+      var rgb = sel[ix] ? selRGB : (fc.measurable ? baseRGB : warnRGB);
+      var alpha = sel[ix] ? 0.97 : (fc.measurable ? 0.82 : 0.5);
+
+      ctx.beginPath();
+      tracePoly(ctx, fc.scr);
+      for (var hI = 0; hI < fc.scrHoles.length; hI++) tracePoly(ctx, fc.scrHoles[hI]);
+      ctx.fillStyle = "rgba(" + Math.round(rgb[0] * shade) + "," + Math.round(rgb[1] * shade) +
+                      "," + Math.round(rgb[2] * shade) + "," + alpha + ")";
+      // even-odd so a hole in a face is a hole, not a darker patch of face
+      ctx.fill("evenodd");
+      if (stepUi.hover === ix || sel[ix]) {
+        ctx.strokeStyle = stepUi.hover === ix ? cssVar("--ink") : "rgba(255,255,255,0.5)";
+        ctx.lineWidth = stepUi.hover === ix ? 1.6 : 0.8;
+        ctx.stroke();
+      } else if (!stepUi.drag && faces.length < 3000) {
+        ctx.strokeStyle = edge; ctx.lineWidth = 0.5; ctx.stroke();
+      }
+    }
+  }
+
+  function tracePoly(ctx, pts) {
+    if (!pts.length) return;
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath();
+  }
+
+  function hexToRgb(s, fallback) {
+    var m = /^#?([0-9a-f]{6})$/i.exec(String(s || "").trim());
+    if (!m) return fallback;
+    var v = parseInt(m[1], 16);
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  }
+
+  function redrawStep() {
+    if (stepUi.raf) return;
+    stepUi.raf = requestAnimationFrame(function () { stepUi.raf = 0; drawStepScene(); });
+  }
+
+  // --- picking ----------------------------------------------------------
+
+  function pointInPoly(pts, x, y) {
+    var inside = false;
+    for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      var xi = pts[i][0], yi = pts[i][1], xj = pts[j][0], yj = pts[j][1];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
+  // The face under the cursor: the same projected outlines the frame was drawn
+  // from, walked from nearest to furthest, so what you click is what you see.
+  function stepFaceAt(x, y) {
+    if (!stepScene || !stepUi.order) return -1;
+    var faces = stepScene.faces, order = stepUi.order;
+    for (var o = order.length - 1; o >= 0; o--) {
+      var f = faces[order[o]];
+      if (!f.scr || !pointInPoly(f.scr, x, y)) continue;
+      var holed = false;
+      for (var h = 0; h < f.scrHoles.length; h++)
+        if (pointInPoly(f.scrHoles[h], x, y)) { holed = true; break; }
+      if (!holed) return order[o];
+    }
+    return -1;
+  }
+
+  // --- selection --------------------------------------------------------
+
+  function selectStepFamily(key, on) {
+    if (!stepScene || !key) return 0;
+    var n = 0;
+    for (var i = 0; i < stepScene.faces.length; i++) {
+      if (stepScene.faces[i].key !== key) continue;
+      if (on) state.step.sel[i] = true; else delete state.step.sel[i];
+      n++;
+    }
+    return n;
+  }
+
+  function selectedStepFaces() {
+    if (!stepScene || !state.step) return [];
+    return Object.keys(state.step.sel).map(function (i) { return stepScene.faces[+i].rec; });
+  }
+
+  function toggleStepFace(ix) {
+    var f = stepScene.faces[ix];
+    if (!f.measurable) {
+      stepStatus(stepHeaderHtml() + "<br><span style='color:var(--warn)'>That face is on a " +
+        escapeHtml(f.rec.reason || "surface") + ", which does not flatten without distortion — " +
+        "it cannot be measured, so it cannot be selected.</span>");
+      return;
+    }
+    if (state.step.sel[ix]) delete state.step.sel[ix];
+    else state.step.sel[ix] = true;
+    refreshStepMeasurement();
+    redrawStep();
+  }
+
+  // --- the measurement --------------------------------------------------
 
   function refreshStepMeasurement() {
     var st = state.step;
     if (!st) return;
-    var m = st.tread.length
-      ? S.measure(st.groups, st.tread, {
+    var picked = selectedStepFaces();
+    var m = picked.length
+      ? S.measureFaces(picked, st.groups, {
           width: parseFloat($("stepEnvW").value),
           height: parseFloat($("stepEnvH").value),
-          floorKey: st.floorKey,
         })
       : null;
     st.measure = m;
     renderStepCards(m);
-    drawStepPlot(m);
+    renderStepPick(m);
     $("stepUseNsd").disabled = !(m && m.groove_depth_mm > 0);
     $("stepExportCsv").disabled = !m;
-    var note = $("stepEnvNote");
-    if (note) note.innerHTML = m
-      ? "Envelope: " + m.envelope_w.toFixed(2) + " × " + m.envelope_h.toFixed(2) + " mm = " +
-        m.envelope_mm2.toFixed(1) + " mm², taken from the <b>" + escapeHtml(m.envelope_source) + "</b>."
-      : "Tick at least one surface.";
+  }
+
+  function renderStepPick(m) {
+    var el = $("stepPick");
+    if (!el) return;
+    if (!m) { el.innerHTML = "nothing selected — click a face on the model"; return; }
+    var names = m.families.map(function (e) {
+      return e.n + " on " + escapeHtml(e.group.label);
+    });
+    el.innerHTML = "<b>" + m.n_faces + "</b> face(s) selected · " + names.join(" · ");
   }
 
   function renderStepCards(m) {
@@ -4330,100 +4542,32 @@
     if (!host) return;
     if (!m) { host.innerHTML = ""; $("stepNotes").innerHTML = ""; return; }
     var cards = [
-      ["Land ratio", (100 * m.land_ratio).toFixed(2), "% of the envelope is rubber"],
+      ["Land ratio", (100 * m.land_ratio).toFixed(2), "% of the bounded area is rubber"],
       ["Sea ratio", (100 * m.sea_ratio).toFixed(2), "% is groove"],
-      ["Land area", m.land_mm2.toFixed(1), "mm² measured"],
-      ["Sea area", m.sea_mm2.toFixed(1), "mm² = envelope − land"],
-      ["Envelope", m.envelope_mm2.toFixed(1), "mm² — " + m.envelope_source],
-      ["Faces measured", String(m.n_faces), m.n_holes ? m.n_holes + " hole(s) cut out" : "no holes"],
-      // Two patterns of the same land ratio can differ several-fold here, and
-      // biting edge is what wet grip trades the land ratio against.
-      ["Biting edge", m.edge_length_mm.toFixed(1), "mm — " + m.edge_density.toFixed(4) + " mm per mm²"],
+      ["Land area", m.land_mm2.toFixed(1), "mm² measured on the faces picked"],
+      ["Bounded area", m.envelope_mm2.toFixed(1), "mm² — " + m.envelope_source],
       ["Groove depth", m.groove_depth_mm == null ? "–" : m.groove_depth_mm.toFixed(3),
-       m.groove_depth_mm == null ? "no floor surface picked" : "mm below the tread surface"],
+       m.groove_depth_mm == null ? "no surface found below the pick" : "mm below the tread surface"],
     ];
-    if (m.groove_volume_mm3 != null)
-      cards.push(["Void volume", m.groove_volume_mm3.toFixed(0),
-                  "mm³ upper bound — sea × depth, no draft"]);
     var html = "";
     for (var i = 0; i < cards.length; i++)
       html += "<div class='card'><div class='k'>" + cards[i][0] + "</div><div class='v'>" +
               cards[i][1] + "</div><div class='u'>" + cards[i][2] + "</div></div>";
     host.innerHTML = html;
 
-    // Everything the numbers above depend on but do not show. A land ratio
-    // against a bounding box that is not the region the engineer meant is the
-    // easiest way to be confidently wrong here, so it is said out loud.
     var notes = [];
     if (m.envelope_source !== "stated")
-      notes.push("The ratio is against the <b>bounding box of the ticked faces</b>. That is the whole " +
-        "answer only if the pick fills a rectangle. For a rib, a block row or one pitch, type the " +
-        "width and length you mean above.");
+      notes.push("The ratio is against the <b>equivalent bounded area</b>: the convex outline the " +
+        "picked faces sit inside, " + m.envelope_mm2.toFixed(1) + " mm². Grooves between the faces " +
+        "count as sea; space outside the pick does not. Type a width and length below to divide by " +
+        "a rectangle you state instead.");
     if (m.groove_depth_note)
       notes.push("<span style='color:var(--warn)'>" + escapeHtml(m.groove_depth_note) + "</span>");
-    if (m.groove_volume_mm3 != null)
-      notes.push("Void volume treats every groove as a prism of the measured depth. A real groove has " +
-        "draft and radiused corners, so the true void is smaller — this is an upper bound.");
     (state.step.read.warnings || []).forEach(function (w) {
       notes.push("<span style='color:var(--warn)'>" + escapeHtml(w) + "</span>");
     });
     $("stepNotes").innerHTML = notes.length ? "<ul style='margin:6px 0 0;padding-left:18px'><li>" +
       notes.join("</li><li>") + "</li></ul>" : "";
-  }
-
-  // The picked faces, flattened. Two traces, not two thousand: Plotly fills
-  // each null-separated run of a single "toself" trace as its own polygon, so
-  // the whole tread is one land trace and one hole trace however many faces it
-  // has -- which is what keeps a 4000-face model interactive.
-  function drawStepPlot(m) {
-    var host = $("stepPlot");
-    if (!host) return;
-    if (!m) { Plotly.purge(host); return; }
-    var th = plotTheme();
-    var lx = [], ly = [], hx = [], hy = [];
-    for (var i = 0; i < m.selected.length; i++) {
-      var faces = m.selected[i].faces;
-      for (var f = 0; f < faces.length; f++) {
-        var ls = faces[f].loops;
-        for (var L = 0; L < ls.length; L++) {
-          var pts = ls[L].pts, X = ls[L].outer ? lx : hx, Y = ls[L].outer ? ly : hy;
-          for (var p = 0; p < pts.length; p++) { X.push(pts[p][0]); Y.push(pts[p][1]); }
-          if (pts.length) { X.push(pts[0][0]); Y.push(pts[0][1]); }
-          X.push(null); Y.push(null);
-        }
-      }
-    }
-    var data = [{
-      x: lx, y: ly, type: "scatter", mode: "lines", fill: "toself",
-      fillcolor: th.accent, opacity: 0.85, name: "land",
-      line: { color: th.accent, width: 1 }, hoverinfo: "skip",
-    }];
-    if (hx.length) data.push({
-      x: hx, y: hy, type: "scatter", mode: "lines", fill: "toself",
-      fillcolor: th.paper_bgcolor, name: "holes",
-      line: { color: th.inkDim, width: 1 }, hoverinfo: "skip",
-    });
-    // The stated envelope, drawn where it actually sits, because a ratio taken
-    // against a rectangle nobody can see is a ratio nobody can check.
-    var shapes = [];
-    if (m.envelope_source === "stated" && m.bbox)
-      shapes.push({
-        type: "rect", x0: m.bbox.x0, y0: m.bbox.y0,
-        x1: m.bbox.x0 + m.envelope_w, y1: m.bbox.y0 + m.envelope_h,
-        line: { color: th.warn, width: 1.5, dash: "dot" }, fillcolor: "rgba(0,0,0,0)",
-      });
-    var cyl = m.selected.some(function (g) { return g.kind === "cylinder"; });
-    Plotly.react(host, data, Object.assign({
-      margin: { l: 55, r: 12, t: 26, b: 44 },
-      xaxis: { title: { text: cyl ? "developed circumference R·θ (mm)" : "x (mm)" },
-               gridcolor: th.grid, zeroline: false },
-      yaxis: { title: { text: cyl ? "axial (mm)" : "y (mm)" },
-               gridcolor: th.grid, zeroline: false, scaleanchor: "x", scaleratio: 1 },
-      showlegend: false, shapes: shapes,
-      title: { text: m.land_mm2.toFixed(1) + " mm² land · " + (100 * m.land_ratio).toFixed(2) + "% of envelope",
-               font: { size: 13 } },
-    }, { paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font }),
-      { responsive: true, displaylogo: false });
   }
 
   function stepUseNsd() {
@@ -4436,7 +4580,7 @@
     $("nsd").dispatchEvent(new Event("input"));
     stepStatus(stepHeaderHtml() + "<br><b style='color:var(--good)'>NSD set to " +
       m.groove_depth_mm.toFixed(2) + " mm</b> in 2 · Block depth &amp; compound, measured between the " +
-      "two surfaces picked above.");
+      "tread surface and the one below it.");
   }
 
   function exportStepCsv() {
@@ -4448,51 +4592,129 @@
       "# length unit," + st.read.unit.name + ",x" + st.read.unit.mm + " to mm",
       "# land_mm2," + m.land_mm2.toFixed(4),
       "# sea_mm2," + m.sea_mm2.toFixed(4),
-      "# envelope_mm2," + m.envelope_mm2.toFixed(4) + "," + m.envelope_source,
-      "# envelope_w_mm," + m.envelope_w.toFixed(4) + ",envelope_h_mm," + m.envelope_h.toFixed(4),
+      "# bounded_area_mm2," + m.envelope_mm2.toFixed(4) + "," + m.envelope_source,
       "# land_ratio," + m.land_ratio.toFixed(6),
       "# edge_length_mm," + m.edge_length_mm.toFixed(4),
       "# groove_depth_mm," + (m.groove_depth_mm == null ? "" : m.groove_depth_mm.toFixed(4)),
       "# faces," + m.n_faces + ",holes," + m.n_holes,
       "surface,step_entity_id,area_mm2,perimeter_mm,holes",
     ];
-    for (var i = 0; i < m.selected.length; i++) {
-      var g = m.selected[i];
-      for (var f = 0; f < g.faces.length; f++) {
-        var r = g.faces[f];
-        L.push('"' + g.label + '",#' + r.id + "," + r.area.toFixed(6) + "," +
-               r.perimeter.toFixed(6) + "," + r.holes);
-      }
-    }
+    var label = {};
+    m.families.forEach(function (e) { label[e.group.key] = e.group.label; });
+    m.faces.forEach(function (r) {
+      L.push('"' + (label[r.familyKey] || "") + '",#' + r.id + "," + r.area.toFixed(6) + "," +
+             r.perimeter.toFixed(6) + "," + r.holes);
+    });
     download(safeName() + "_step_faces.csv", L.join("\n") + "\n", "text/csv;charset=utf-8");
   }
 
+  // --- wiring -----------------------------------------------------------
+
   function initStep() {
-    if (!$("stepInput")) return;
+    var cv = $("stepCanvas");
+    if (!cv) return;
     on($("stepInput"), "change", function (e) {
       if (e.target.files[0]) loadStepFile(e.target.files[0]);
       // Re-selecting the same file must re-read it; without this the change
       // event never fires a second time.
       e.target.value = "";
     });
-    on($("stepFamilies"), "change", function (ev) {
-      var el = ev.target, st = state.step;
-      if (!st || !el.dataset || !el.dataset.key) return;
-      if (el.classList.contains("step-tread")) {
-        var ix = st.tread.indexOf(el.dataset.key);
-        if (el.checked && ix < 0) st.tread.push(el.dataset.key);
-        else if (!el.checked && ix >= 0) st.tread.splice(ix, 1);
-        renderStepFamilies();
-      } else if (el.classList.contains("step-floor")) {
-        st.floorKey = el.dataset.key;
-      }
-      refreshStepMeasurement();
+
+    var pos = function (ev) {
+      var r = cv.getBoundingClientRect();
+      return [ev.clientX - r.left, ev.clientY - r.top];
+    };
+    on(cv, "pointerdown", function (ev) {
+      if (!stepScene) return;
+      cv.setPointerCapture(ev.pointerId);
+      stepUi.drag = { x: ev.clientX, y: ev.clientY, pan: ev.shiftKey || ev.button === 1 };
+      stepUi.moved = 0;
+      cv.classList.add("dragging");
     });
+    on(cv, "pointermove", function (ev) {
+      if (!stepScene) return;
+      if (stepUi.drag) {
+        var dx = ev.clientX - stepUi.drag.x, dy = ev.clientY - stepUi.drag.y;
+        stepUi.drag.x = ev.clientX; stepUi.drag.y = ev.clientY;
+        stepUi.moved += Math.abs(dx) + Math.abs(dy);
+        if (stepUi.drag.pan) { stepCam.ox += dx; stepCam.oy += dy; }
+        else {
+          stepCam.yaw += dx * 0.0085;
+          // Stop just short of straight up: at exactly vertical the model
+          // flips over and the drag reverses under the hand.
+          stepCam.pitch = Math.max(-1.5, Math.min(1.5, stepCam.pitch + dy * 0.0085));
+        }
+        redrawStep();
+        return;
+      }
+      var p = pos(ev), hit = stepFaceAt(p[0], p[1]);
+      if (hit !== stepUi.hover) {
+        stepUi.hover = hit;
+        cv.classList.toggle("over", hit >= 0);
+        redrawStep();
+      }
+    });
+    var release = function (ev) {
+      if (!stepUi.drag) return;
+      var wasDrag = stepUi.moved > 4;
+      stepUi.drag = null;
+      cv.classList.remove("dragging");
+      if (wasDrag) { redrawStep(); return; }        // a turn, not a click
+      var p = pos(ev), hit = stepFaceAt(p[0], p[1]);
+      if (hit >= 0) toggleStepFace(hit);
+    };
+    on(cv, "pointerup", release);
+    on(cv, "pointercancel", function () { stepUi.drag = null; cv.classList.remove("dragging"); });
+    on(cv, "wheel", function (ev) {
+      if (!stepScene) return;
+      ev.preventDefault();
+      stepCam.scale *= Math.exp(-ev.deltaY * 0.0012);
+      redrawStep();
+    }, { passive: false });
+    on(cv, "pointerleave", function () {
+      if (stepUi.hover !== -1) { stepUi.hover = -1; redrawStep(); }
+    });
+
+    on($("stepPickSurface"), "click", function () {
+      if (!stepScene || !state.step) return;
+      // Every surface already touched, taken whole. One click on a block and
+      // this second click is the entire tread top.
+      var keys = {};
+      Object.keys(state.step.sel).forEach(function (i) {
+        var k = stepScene.faces[+i].key; if (k) keys[k] = true;
+      });
+      var list = Object.keys(keys);
+      if (!list.length) {
+        stepStatus(stepHeaderHtml() + "<br>Click one face first — this then takes every face on " +
+          "the same surface.");
+        return;
+      }
+      list.forEach(function (k) { selectStepFamily(k, true); });
+      refreshStepMeasurement(); redrawStep();
+    });
+    on($("stepClear"), "click", function () {
+      if (!state.step) return;
+      state.step.sel = {};
+      refreshStepMeasurement(); redrawStep();
+    });
+    on($("stepFit"), "click", function () { stepFit(); redrawStep(); });
     ["stepEnvW", "stepEnvH"].forEach(function (id) {
       on($(id), "input", function () { if (state.step) refreshStepMeasurement(); });
     });
     on($("stepUseNsd"), "click", stepUseNsd);
     on($("stepExportCsv"), "click", exportStepCsv);
+    on(window, "resize", function () { if (stepScene) redrawStep(); });
+
+    // For the browser test, which has to click a face without knowing where on
+    // screen it ended up.
+    window.__ttStep = {
+      faces: function () { return stepScene ? stepScene.faces : []; },
+      pickAt: stepFaceAt,
+      toggle: toggleStepFace,
+      selected: function () { return Object.keys(state.step.sel).map(Number); },
+      measure: function () { return state.step ? state.step.measure : null; },
+      camera: stepCam,
+    };
   }
 
   // ---- tabs ------------------------------------------------------------
@@ -4526,6 +4748,9 @@
     var hint = $("emptyHint");
     if (hint && !state.pattern) hint.style.display = tab === "step" ? "none" : "";
     if (tab === "cpatch" || tab === "wear") drawEditor();
+    // Same story for the STEP viewport, which is a canvas and measures zero
+    // while its tab is closed.
+    if (tab === "step" && stepScene) { if (stepUi.needFit) stepFit(); redrawStep(); }
     // The band belongs to whichever tab is open; it has to be laid out against
     // the figures that are actually on screen.
     if (state.results) setTimeout(drawPatchBand, 30);

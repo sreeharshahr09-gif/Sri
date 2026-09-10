@@ -721,25 +721,66 @@
     return out;
   };
 
+  // The 3D outline of one loop, as a polyline, for DRAWING only.
+  //
+  // Every face gets one of these, including faces on surfaces this reader
+  // cannot measure -- the model has to look like the model on screen, and a
+  // tread with its fillets missing would look like a tread full of holes. The
+  // sagitta is deliberately coarser than the one the area path uses: a screen
+  // pixel is worth about a twentieth of a millimetre, and 180 points per
+  // corner radius across a few thousand faces is a slideshow.
+  var DISPLAY_SAG = 0.05;                           // mm
+
+  function loopPoints3(segs, sag) {
+    var pts = [];
+    function push(p) {
+      var n = pts.length;
+      if (n && Math.abs(pts[n - 1][0] - p[0]) < 1e-9 &&
+               Math.abs(pts[n - 1][1] - p[1]) < 1e-9 &&
+               Math.abs(pts[n - 1][2] - p[2]) < 1e-9) return;
+      pts.push(p);
+    }
+    for (var i = 0; i < segs.length; i++) {
+      var s = segs[i];
+      if (s.kind === "arc") { sampleArc(s, sag).forEach(push); continue; }
+      if (s.kind === "poly") { s.pts.forEach(push); continue; }
+      push(s.a); push(s.b);
+    }
+    return pts;
+  }
+
   // Measure every ADVANCED_FACE in the model. Returns one record per face with
-  // its area in mm^2, its surface descriptor, and its developed outline for
-  // drawing. A face whose surface does not develop gets area null and a reason.
+  // its area in mm^2, its surface descriptor, its developed outline (for the
+  // measurement) and its 3D outline (for the viewport). A face whose surface
+  // does not develop gets area null and a reason -- but it still gets an
+  // outline, because it is still part of the model you are looking at.
   Model.prototype.readFaces = function (opts) {
     opts = opts || {};
     var sag = opts.sagitta || DEFAULT_SAG;
     var k = this.unit.mm;                            // file units -> mm
+    var dsag = (opts.displaySagitta || DISPLAY_SAG) / Math.max(k, 1e-9);
     var faces = this.all("ADVANCED_FACE"), out = [];
     for (var i = 0; i < faces.length; i++) {
       var f = faces[i], af = this.as(f, "ADVANCED_FACE");
       var surf = this.surfaceOf(af.args[2]);
       var rec = { id: f.id, surface: surf.kind, area: null, reason: null,
-                  loops: [], perimeter: 0, holes: 0, approximated: 0 };
+                  loops: [], shell: [], perimeter: 0, holes: 0, approximated: 0 };
+      var loops = this.faceLoops(af, sag / Math.max(k, 1e-9));
+      // The drawable outline first, so it exists whatever happens to the
+      // measurement below.
+      rec.shell = loops.map(function (L) {
+        return {
+          outer: L.outer,
+          pts: loopPoints3(L.segs, dsag).map(function (p) {
+            return [p[0] * k, p[1] * k, p[2] * k];
+          }),
+        };
+      }).filter(function (L) { return L.pts.length >= 3; });
       if (surf.kind !== "plane" && surf.kind !== "cylinder") {
         rec.reason = surf.type || surf.kind;
         out.push(rec);
         continue;
       }
-      var loops = this.faceLoops(af, sag / Math.max(k, 1e-9));
       if (!loops.length) { rec.reason = "no bounded loop"; out.push(rec); continue; }
       var measured = [];
       for (var L = 0; L < loops.length; L++) {
@@ -833,6 +874,7 @@
         };
         out.push(g);
       }
+      r.familyKey = key;                            // so a face knows its surface
       g.faces.push(r);
       g.area += r.area;
       g.perimeter += r.perimeter;
@@ -946,44 +988,136 @@
   // 9. the measurement
   // =====================================================================
 
-  // Land, sea and everything that follows from them, for a chosen set of
-  // families. `envelope` is the reference area the ratio is taken against:
-  // without one there is no ratio, and different choices give different
-  // answers, so it is always reported alongside.
-  function measure(groups, selectedKeys, opts) {
-    opts = opts || {};
-    var sel = groups.filter(function (g) { return selectedKeys.indexOf(g.key) >= 0; });
-    if (!sel.length) return null;
-    var land = 0, per = 0, nFaces = 0, holes = 0;
-    for (var i = 0; i < sel.length; i++) {
-      land += sel[i].area; per += sel[i].perimeter;
-      nFaces += sel[i].n; holes += sel[i].holes;
+  // The EQUIVALENT BOUNDED AREA of a set of points: the area of their convex
+  // hull, in the surface's own developed frame.
+  //
+  // This is the denominator of the land ratio, and it is the only part of the
+  // calculation that is a convention rather than a measurement. A bounding box
+  // is the crude version -- it is right when the pick fills a rectangle and
+  // over-states the reference when it does not, which for a shoulder rib or a
+  // pitch cut on the diagonal is most of the time. The hull is the tightest
+  // convex outline the picked rubber actually sits inside, so grooves INSIDE
+  // the pick count as sea (which they are) and the space outside it does not
+  // (which it is not).
+  //
+  // Andrew's monotone chain: sort, then one pass up and one pass down.
+  function convexHull(pts) {
+    if (pts.length < 3) return pts.slice();
+    var p = pts.slice().sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
+    var cross2 = function (o, a, b) {
+      return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    };
+    var lower = [], i;
+    for (i = 0; i < p.length; i++) {
+      while (lower.length >= 2 && cross2(lower[lower.length - 2], lower[lower.length - 1], p[i]) <= 0) lower.pop();
+      lower.push(p[i]);
     }
-    // The reference envelope. Stated dimensions win when given; otherwise the
-    // bounding box of what was picked, in the surface's own developed frame.
+    var upper = [];
+    for (i = p.length - 1; i >= 0; i--) {
+      while (upper.length >= 2 && cross2(upper[upper.length - 2], upper[upper.length - 1], p[i]) <= 0) upper.pop();
+      upper.push(p[i]);
+    }
+    lower.pop(); upper.pop();
+    return lower.concat(upper);
+  }
+
+  function polygonArea(pts) {
+    var two = 0;
+    for (var i = 0, j = pts.length - 1; i < pts.length; j = i++)
+      two += pts[j][0] * pts[i][1] - pts[i][0] * pts[j][1];
+    return Math.abs(two) / 2;
+  }
+
+  // The hull of everything picked, and its area. Returned together because the
+  // page draws the one it divided by.
+  function boundedOutline(groups) {
+    var pts = [];
+    for (var i = 0; i < groups.length; i++)
+      for (var f = 0; f < groups[i].faces.length; f++) {
+        var ls = groups[i].faces[f].loops;
+        for (var L = 0; L < ls.length; L++)
+          if (ls[L].outer) for (var p = 0; p < ls[L].pts.length; p++) pts.push(ls[L].pts[p]);
+      }
+    if (pts.length < 3) return { hull: [], area: 0 };
+    var hull = convexHull(pts);
+    return { hull: hull, area: polygonArea(hull) };
+  }
+
+  // Land, sea and everything that follows from them, for the faces that were
+  // PICKED -- not for whole surfaces.
+  //
+  // Face by face is the unit that matters: the question is usually about part
+  // of a pattern (a rib, a block row, one pitch), and every one of those sits
+  // on the same plane as the rest of the tread top. Selecting by surface could
+  // never express "this rib".
+  //
+  // `envelope` is the reference area the ratio is taken against: without one
+  // there is no ratio, and different choices give different answers, so it is
+  // always reported alongside.
+  function measureFaces(faces, groups, opts) {
+    opts = opts || {};
+    groups = groups || [];
+    var sel = faces.filter(function (f) { return f && f.area != null; });
+    if (!sel.length) return null;
+    var land = 0, per = 0, holes = 0;
+    for (var i = 0; i < sel.length; i++) {
+      land += sel[i].area; per += sel[i].perimeter; holes += sel[i].holes;
+    }
+    // The families the pick touches, biggest first -- for the label, and for
+    // deciding which surface the groove depth is measured from.
+    var byKey = Object.create(null), families = [];
+    for (var q = 0; q < sel.length; q++) {
+      var kq = sel[q].familyKey;
+      var gq = byKey[kq];
+      if (!gq) {
+        gq = byKey[kq] = groups.filter(function (g) { return g.key === kq; })[0] || null;
+        if (gq) families.push({ group: gq, area: 0, n: 0 });
+      }
+      var slot = families.filter(function (e) { return e.group === gq; })[0];
+      if (slot) { slot.area += sel[q].area; slot.n++; }
+    }
+    families.sort(function (a, b) { return b.area - a.area; });
+
     var bbox = null;
     for (var j = 0; j < sel.length; j++) {
-      var b = sel[j].bbox;
-      if (!b) continue;
-      bbox = bbox ? { x0: Math.min(bbox.x0, b.x0), x1: Math.max(bbox.x1, b.x1),
-                      y0: Math.min(bbox.y0, b.y0), y1: Math.max(bbox.y1, b.y1) } : { x0: b.x0, x1: b.x1, y0: b.y0, y1: b.y1 };
+      var ls = sel[j].loops;
+      for (var L = 0; L < ls.length; L++) {
+        if (!ls[L].outer) continue;
+        var pts = ls[L].pts;
+        for (var p = 0; p < pts.length; p++) {
+          if (!bbox) bbox = { x0: pts[p][0], x1: pts[p][0], y0: pts[p][1], y1: pts[p][1] };
+          else {
+            if (pts[p][0] < bbox.x0) bbox.x0 = pts[p][0];
+            if (pts[p][0] > bbox.x1) bbox.x1 = pts[p][0];
+            if (pts[p][1] < bbox.y0) bbox.y0 = pts[p][1];
+            if (pts[p][1] > bbox.y1) bbox.y1 = pts[p][1];
+          }
+        }
+      }
     }
     if (bbox) { bbox.w = bbox.x1 - bbox.x0; bbox.h = bbox.y1 - bbox.y0; bbox.area = bbox.w * bbox.h; }
-    var envW = opts.width != null && opts.width > 0 ? opts.width : (bbox ? bbox.w : 0);
-    var envH = opts.height != null && opts.height > 0 ? opts.height : (bbox ? bbox.h : 0);
-    var envelope = envW * envH;
-    var envSource = (opts.width > 0 || opts.height > 0) ? "stated" : "bounding box of the selection";
+    // The reference area. Stated dimensions win when both are given; otherwise
+    // the equivalent bounded area -- the convex hull of what was picked.
+    var bounded = boundedOutline([{ faces: sel }]);
+    var stated = opts.width > 0 && opts.height > 0;
+    var envW = stated ? opts.width : (bbox ? bbox.w : 0);
+    var envH = stated ? opts.height : (bbox ? bbox.h : 0);
+    var envelope = stated ? opts.width * opts.height : bounded.area;
+    var envSource = stated ? "stated" : "equivalent bounded area";
 
+    // Groove depth. The floor is found rather than asked for: the largest
+    // surface lying parallel and below the pick is the groove bottom, and
+    // making the engineer nominate it was a question with one sensible answer.
     var depth = null, floor = null, depthNote = null;
-    if (opts.floorKey) {
-      floor = groups.find(function (g) { return g.key === opts.floorKey; }) || null;
-      if (floor) {
-        var sep = familyOffsetBelow(sel[0], floor);
-        if (sep == null) depthNote = "the surface chosen as the groove floor is not parallel to the tread, so there is no single depth between them";
-        else if (sep <= 0) depthNote = "the surface chosen as the groove floor lies OUTSIDE the tread surface by " +
-          Math.abs(sep).toFixed(3) + " mm — the two picks look the wrong way round";
-        else depth = sep;
-      }
+    var tread = families.length ? families[0].group : null;
+    if (opts.floorKey) floor = groups.filter(function (g) { return g.key === opts.floorKey; })[0] || null;
+    else if (opts.floorKey !== false && tread) floor = suggestFloor(groups, tread);
+    if (floor && tread) {
+      var sep = familyOffsetBelow(tread, floor);
+      if (sep == null) depthNote = "the surface taken as the groove floor is not parallel to the tread, so there is no single depth between them";
+      else if (sep <= 0) depthNote = "the surface taken as the groove floor lies OUTSIDE the tread surface by " +
+        Math.abs(sep).toFixed(3) + " mm — the pick looks upside down";
+      else depth = sep;
     }
     var sea = envelope > 0 ? Math.max(0, envelope - land) : 0;
     return {
@@ -992,9 +1126,10 @@
       envelope_mm2: envelope,
       envelope_w: envW, envelope_h: envH, envelope_source: envSource,
       bbox: bbox,
+      bounded_outline: bounded.hull,
       land_ratio: envelope > 0 ? land / envelope : 0,
       sea_ratio: envelope > 0 ? sea / envelope : 0,
-      n_faces: nFaces,
+      n_faces: sel.length,
       n_holes: holes,
       edge_length_mm: per,
       // Biting edge per unit of tread. Two patterns of the same land ratio can
@@ -1005,9 +1140,24 @@
       // A groove is not a prism -- it has draft, and radiused corners -- so
       // this is an upper bound on the void, not the void.
       groove_volume_mm3: depth != null ? sea * depth : null,
-      selected: sel,
+      faces: sel,
+      families: families,
+      tread: tread,
       floor: floor,
     };
+  }
+
+  // The same measurement for whole surfaces, which is what the audits and the
+  // tests ask for: every face on the named families.
+  function measure(groups, selectedKeys, opts) {
+    var sel = groups.filter(function (g) { return selectedKeys.indexOf(g.key) >= 0; });
+    if (!sel.length) return null;
+    var faces = [];
+    for (var i = 0; i < sel.length; i++)
+      for (var j = 0; j < sel[i].faces.length; j++) faces.push(sel[i].faces[j]);
+    var r = measureFaces(faces, groups, opts);
+    if (r) r.selected = sel;
+    return r;
   }
 
   // One call, for the page: read, measure, group.
@@ -1045,10 +1195,11 @@
 
   return {
     parse: parse, Model: Model, readModel: readModel,
-    groupFaces: groupFaces, measure: measure,
+    groupFaces: groupFaces, measure: measure, measureFaces: measureFaces,
     familyOffsetBelow: familyOffsetBelow, familyKey: familyKey,
     suggestTread: suggestTread, suggestFloor: suggestFloor,
     loopArea: loopArea, arcTwiceArea: arcTwiceArea, deBoor: deBoor,
-    DEFAULT_SAG: DEFAULT_SAG,
+    convexHull: convexHull, polygonArea: polygonArea, boundedOutline: boundedOutline,
+    DEFAULT_SAG: DEFAULT_SAG, DISPLAY_SAG: DISPLAY_SAG,
   };
 });

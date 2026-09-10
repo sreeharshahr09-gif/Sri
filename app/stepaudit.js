@@ -153,7 +153,7 @@ function landOf(name, keys) {
   ck("its perimeter counts the hole walls too",
      rel(plate.edge_length_mm, PLATE_PERIM) < 1e-12, plate.edge_length_mm.toFixed(4));
   ck("three holes are reported as holes", plate.n_holes === 3, String(plate.n_holes));
-  ck("the envelope falls back to the bounding box, 100 x 60",
+  ck("the reference area falls back to the equivalent bounded area, 100 x 60",
      rel(plate.envelope_mm2, 6000) < 1e-12 && plate.envelope_source !== "stated");
   ck("so the land ratio is land / 6000",
      rel(plate.land_ratio, PLATE_LAND / 6000) < 1e-12, (100 * plate.land_ratio).toFixed(4) + "%");
@@ -308,7 +308,7 @@ section("7. groove depth, and what it refuses to report");
   // depth of the right size and the wrong meaning.
   const back = S.measure(m.groups, [f.key], { floorKey: t.key });
   ck("swapping tread and floor reports no depth at all", back.groove_depth_mm === null);
-  ck("and says which way round they are", /wrong way round/.test(back.groove_depth_note),
+  ck("and says which way round they are", /upside down/.test(back.groove_depth_note),
      back.groove_depth_note.slice(0, 50));
 
   // Non-parallel surfaces have no single separation, and saying so beats
@@ -381,6 +381,131 @@ section("9. the whole pipeline on each fixture, as the page runs it");
     })));
     ck("  its drawn outlines are finite and closed", bad === 0, bad + " bad point(s)");
   });
+}
+
+// ---------------------------------------------------------------------------
+section("10. the equivalent bounded area, which is the denominator");
+// ---------------------------------------------------------------------------
+//
+// The one part of the calculation that is a convention rather than a
+// measurement, so it gets checked on shapes whose hull is known by hand.
+{
+  const sq = [[0, 0], [40, 0], [40, 20], [0, 20]];
+  ck("the hull of a rectangle is the rectangle",
+     rel(S.polygonArea(S.convexHull(sq)), 800) < 1e-12);
+
+  // Rotated 30 degrees: the hull still measures 800, a bounding box measures
+  // 1666. This is the whole argument for using one and not the other.
+  const th = Math.PI / 6, c = Math.cos(th), s30 = Math.sin(th);
+  const rot = sq.map((p) => [p[0] * c - p[1] * s30, p[0] * s30 + p[1] * c]);
+  const hullA = S.polygonArea(S.convexHull(rot));
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  rot.forEach((p) => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]);
+                       y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); });
+  const boxA = (x1 - x0) * (y1 - y0);
+  ck("and is unchanged when that rectangle is rotated", rel(hullA, 800) < 1e-9, hullA.toFixed(6));
+  ck("where a bounding box would have grown by 108%",
+     rel(boxA, (40 * c + 20 * s30) * (40 * s30 + 20 * c)) < 1e-9 && boxA / hullA > 2,
+     boxA.toFixed(1) + " vs " + hullA.toFixed(1) + " mm²");
+
+  // Concave: the hull spans the notch, which is the point -- a groove inside
+  // the pick is sea, and sea belongs in the denominator.
+  const ell = [[0, 0], [30, 0], [30, 10], [10, 10], [10, 30], [0, 30]];
+  const ellHull = S.polygonArea(S.convexHull(ell));
+  ck("the hull of an L spans its notch", rel(ellHull, 30 * 30 - 20 * 20 / 2) < 1e-12,
+     ellHull.toFixed(2) + " vs the L's own " + 500);
+  ck("and is bigger than the L but smaller than its box",
+     ellHull > 500 && ellHull < 900, ellHull.toFixed(1));
+
+  // Degenerate input must not throw or invent an area.
+  ck("two points bound no area", S.polygonArea(S.convexHull([[0, 0], [1, 1]])) === 0);
+}
+
+// ---------------------------------------------------------------------------
+section("11. picking part of a pattern, face by face");
+// ---------------------------------------------------------------------------
+//
+// The question is usually about PART of a tread -- a rib, a block row, one
+// pitch -- and every one of those sits on the same plane as the rest of the
+// tread top. So the measurement has to work on the faces picked, not on whole
+// surfaces, and these are the numbers that follows from that.
+{
+  const m = models.step_blocks;
+  const tread = S.suggestTread(m.groups);
+  const bands = tread.faces;                       // five 100 x 8.8 bands
+  ck("the fixture is the five bands it should be", bands.length === 5);
+
+  const one = S.measureFaces([bands[0]], m.groups, {});
+  ck("one band alone measures its own area", rel(one.land_mm2, 880) < 1e-12, one.land_mm2.toFixed(4));
+  ck("and is 100% land -- a solid rectangle has no sea in it",
+     rel(one.land_ratio, 1) < 1e-12, (100 * one.land_ratio).toFixed(2) + "%");
+
+  // Two bands with a 4 mm groove between them: the groove is INSIDE the
+  // bounded outline, so it is sea. 100 x (8.8 + 4 + 8.8) = 2160 mm².
+  const two = S.measureFaces([bands[0], bands[1]], m.groups, {});
+  ck("two neighbouring bands bound the groove between them",
+     rel(two.envelope_mm2, 100 * (8.8 + 4 + 8.8)) < 1e-9, two.envelope_mm2.toFixed(4));
+  ck("so their land is the rubber and the groove is the sea",
+     rel(two.land_mm2, 1760) < 1e-12 && rel(two.sea_mm2, 400) < 1e-9,
+     two.land_mm2.toFixed(1) + " land, " + two.sea_mm2.toFixed(1) + " sea");
+  ck("which is a land ratio of 81.48%", rel(two.land_ratio, 1760 / 2160) < 1e-12,
+     (100 * two.land_ratio).toFixed(2) + "%");
+  // NEGATIVE CONTROL: the two-band answer must NOT be the whole-tread answer,
+  // or face-level picking is not doing anything.
+  const all = S.measureFaces(bands, m.groups, {});
+  ck("and is not the same as taking the whole tread (picking does something)",
+     Math.abs(two.land_ratio - all.land_ratio) > 0.05,
+     (100 * two.land_ratio).toFixed(2) + "% vs " + (100 * all.land_ratio).toFixed(2) + "%");
+
+  ck("the whole set of faces equals the whole family",
+     rel(all.land_mm2, S.measure(m.groups, [tread.key], {}).land_mm2) < 1e-12);
+  ck("land is additive over the faces picked",
+     rel(bands.reduce((s2, b) => s2 + S.measureFaces([b], m.groups, {}).land_mm2, 0),
+         all.land_mm2) < 1e-12);
+  ck("picking no faces measures nothing", S.measureFaces([], m.groups, {}) === null);
+  ck("a face that could not be measured cannot be picked into a total",
+     S.measureFaces(models.step_toroidal.faces.filter((f) => f.area == null),
+                    models.step_toroidal.groups, {}) === null);
+
+  // The pick knows which surfaces it touches -- that is what the page labels
+  // it with, and what the groove depth is measured from.
+  ck("the pick reports the surface its faces lie on",
+     all.families.length === 1 && all.families[0].n === 5,
+     JSON.stringify(all.families.map((f) => f.n)));
+  ck("and the depth is found without being asked for",
+     rel(all.groove_depth_mm, NSD) < 1e-12, all.groove_depth_mm.toFixed(3) + " mm");
+}
+
+// ---------------------------------------------------------------------------
+section("12. every face is drawable, including the ones it cannot measure");
+// ---------------------------------------------------------------------------
+//
+// The viewport draws the model from these outlines. A face missing from them
+// is a hole in the picture, and a tread whose fillets are missing does not
+// look like the engineer's tread.
+{
+  Object.keys(models).forEach((f) => {
+    const m = models[f];
+    const drawable = m.faces.filter((r) => r.shell && r.shell.length);
+    let bad = 0, pts = 0;
+    m.faces.forEach((r) => (r.shell || []).forEach((L) => {
+      if (L.pts.length < 3) bad++;
+      L.pts.forEach((p) => { pts++; if (!isFinite(p[0]) || !isFinite(p[1]) || !isFinite(p[2])) bad++; });
+    }));
+    ck(f.padEnd(17) + " " + String(drawable.length).padStart(2) + "/" +
+       String(m.faces.length).padEnd(2) + " faces drawable, " + String(pts).padStart(5) + " points",
+       drawable.length === m.faces.length && bad === 0);
+  });
+  const tor = models.step_toroidal;
+  ck("the torus face is drawn even though it cannot be measured",
+     tor.faces.filter((r) => r.area == null)[0].shell.length > 0);
+  // A display outline is for looking at, not for measuring: it must be far
+  // coarser than the area path or a big model is a slideshow.
+  const holeFace = models.step_plate_holes.faces.filter((r) => r.holes === 3)[0];
+  const drawPts = holeFace.shell.reduce((s2, L) => s2 + L.pts.length, 0);
+  const areaPts = holeFace.loops.reduce((s2, L) => s2 + L.pts.length, 0);
+  ck("and is coarser than the outline the area was integrated from",
+     drawPts < areaPts, drawPts + " display points vs " + areaPts + " measurement points");
 }
 
 console.log("\n" + (fails ? fails + " CHECK(S) FAILED of " + checks : checks + " checks passed"));
