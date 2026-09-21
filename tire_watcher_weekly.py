@@ -302,7 +302,10 @@ def extract_articles(mail):
         if score_match is None:
             score_match = next((SCORE_RE.search(s) for s in current['body']
                                 if METADATA_RE.match(s) and SCORE_RE.search(s)), None)
-        articles.append(Article(title, lead, why, ' '.join(current['body'][:1]), links,
+        # Category colour keys off this. Joining every metadata line, rather than
+        # only the first body line, lets 'Technology topic:' steer the category.
+        metadata = ' '.join(s for s in current['body'] if METADATA_RE.match(s))
+        articles.append(Article(title, lead, why, metadata, links,
                                 float(score_match[1]) if score_match else None, mail.received, fingerprint))
 
     pending_number = ''
