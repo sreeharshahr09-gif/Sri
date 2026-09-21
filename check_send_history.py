@@ -19,7 +19,9 @@ def main():
     print(f'Mailbox: {cfg["mailbox"]}')
     print(f'Automatic sending enabled: {bool(cfg.get("automatic_sending_enabled"))}')
     print(f'First scheduled run: {cfg.get("first_scheduled_run") or "(not installed)"}')
-    print(f'Send time: {weekly.send_time(cfg):%H:%M} IST')
+    # send_time() exists only in builds that made the hour configurable.
+    scheduled = weekly.send_time(cfg) if hasattr(weekly, 'send_time') else None
+    print(f'Send time: {scheduled:%H:%M} IST' if scheduled else 'Send time: 09:00 IST (fixed in this build)')
     if not JOURNAL.is_file():
         print(f'\nNo journal file yet ({JOURNAL.name}). No week has ever reached the send step.')
         return 0
