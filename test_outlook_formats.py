@@ -104,6 +104,61 @@ class ParsesRealLayouts(unittest.TestCase):
         self.assertEqual(len(articles), 1)
 
 
+WRAPPED_TOPIC = f"""Top developments
+
+1) Firestone Destination LE4 combines deeper tread with lightweight
+carcass architecture — Relevance 8.8/10
+Segment: PCR / SUV / Light Truck
+Technology topic: Lightweight construction | Wear | Rolling resistance
+| Compound/process engineering
+
+Bridgestone Americas launched the Firestone Destination LE4 on 15
+September. The engineering combination is a deeper initial tread.
+Why it matters: Deeper tread normally costs rolling resistance.
+Source: {SRC}
+"""
+
+QUIET_QUICK_READS = f"""Top developments
+
+1) Michelin X Multi Energy D2 targets regional-haul efficiency
+— Relevance 9.2/10
+Segment: TBR
+Development: Michelin has launched the X Multi Energy D2 regional-drive tire.
+Why it matters: Casing life is becoming the purchase criterion.
+Source: {SRC}
+
+Quick reads
+• Les Schwab has acquired two BestDrive locations in Phoenix and
+Tucson, expanding its commercial footprint: {SRC}
+• RubberTech China 2026 concludes today in Shanghai. No sufficiently
+verified new technical disclosure from the event was identified.
+• No newly announced guest lecture, workshop or short course with
+higher tire-R&D relevance was found today; not repeated.
+"""
+
+
+class WrappedFieldValues(unittest.TestCase):
+    def test_pipe_continuation_never_becomes_the_summary(self):
+        """Outlook wraps 'a | b | c' field values onto a line starting with '|'."""
+        articles, notes = weekly.extract_articles(mail(WRAPPED_TOPIC))
+        self.assertEqual(len(articles), 1)
+        self.assertEqual(notes, [])
+        lead = articles[0].lead
+        self.assertFalse(lead.startswith('|'), f'field continuation leaked into lead: {lead!r}')
+        self.assertNotIn('Compound/process engineering', lead)
+        self.assertTrue(lead.startswith('Bridgestone Americas launched'), lead)
+
+
+class QuietQuickReads(unittest.TestCase):
+    def test_nothing_found_bullets_are_skipped_without_a_warning(self):
+        """'No new X was found today' bullets carry no link by design."""
+        articles, notes = weekly.extract_articles(mail(QUIET_QUICK_READS))
+        titles = [a.title for a in articles]
+        self.assertEqual(len(articles), 2, titles)
+        self.assertTrue(any('Les Schwab' in t for t in titles), titles)
+        self.assertEqual(notes, [], 'editorial no-content bullets must not be flagged')
+
+
 class NoUpdateEmails(unittest.TestCase):
     def test_no_update_email_is_read_and_reported_not_rejected(self):
         articles, notes = weekly.extract_articles(mail(NO_UPDATES))

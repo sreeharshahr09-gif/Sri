@@ -55,6 +55,9 @@ UPDATE_RE = re.compile(r"^(?:what is new|what[’']s new)\s*:\s*", re.I)
 DETAIL_RE = re.compile(r"^(?:development|developments|what is new|what[’']s new|update|summary)\s*:\s*", re.I)
 # Lines saying a section produced nothing today. These are not article content.
 NOTHING_RE = re.compile(r'^(?:no\s|none\b|nothing\b|not applicable\b|n/?a\b)', re.I)
+# Editorial 'nothing to report' bullets, which deliberately carry no source link.
+NO_CONTENT_RE = re.compile(r'\bno (?:sufficiently|newly|new|further|additional|meaningful|other)\b'
+                           r'|\bnot repeated\b|\bwas found today\b|\bnothing (?:new|further)\b', re.I)
 
 
 def read_config(path):
@@ -228,7 +231,8 @@ def normalize_plain_newsletter(body):
         if numbered or field or bullet:
             flush()
             kind = 'title' if numbered else 'metadata' if METADATA_RE.match(line) else 'field' if field else 'bullet'
-        elif kind == 'metadata' and pending and not pending[-1].endswith('|'):
+        elif (kind == 'metadata' and pending and not pending[-1].endswith('|')
+              and not line.startswith('|')):
             flush()
             kind = 'body'
         pending.append(line)
@@ -270,7 +274,7 @@ def extract_articles(mail):
             if DETAIL_RE.match(s) and not detail:
                 detail = DETAIL_RE.sub('', s).strip()
                 continue
-            if not FIELD_RE.match(s) and not METADATA_RE.match(s):
+            if not FIELD_RE.match(s) and not METADATA_RE.match(s) and not s.startswith('|'):
                 leads.append(UPDATE_RE.sub('', s))
         # A labelled 'Development:' sentence is the summary; unlabelled prose is the
         # fallback. Either way the metadata lines never become the visible lead.
@@ -315,8 +319,10 @@ def extract_articles(mail):
         lead = core.squish(lead).strip(' :;')
         links = list(dict.fromkeys(quick_links))
         if not lead or not links:
-            # A quick read without a link is still readable in the PDF; note it and move on.
-            incomplete.append(lead[:100] or 'quick read')
+            # A quick read without a link is still readable in the PDF; note it and move on,
+            # unless it is an explicit 'nothing found today' bullet, which is not a defect.
+            if not (lead and (NOTHING_RE.match(lead) or NO_CONTENT_RE.search(lead))):
+                incomplete.append(lead[:100] or 'quick read')
             quick_parts.clear()
             quick_links.clear()
             return
