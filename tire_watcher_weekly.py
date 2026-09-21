@@ -30,6 +30,7 @@ from bs4 import BeautifulSoup, NavigableString
 BASE = Path(__file__).resolve().parent
 CONFIG = BASE / 'tire_watcher_weekly_config.json'
 TASK_NAME = 'Tire Technology Watcher - Weekly Brief'
+DEFAULT_SEND_TIME = time(9)  # IST. Override with "send_time": "HH:MM" in the config.
 MARKER = 'TireWatcherBriefWeek'
 LAYOUT_MARKER = 'TireWatcherBriefLayout'
 LAYOUT_VERSION = 2
@@ -78,6 +79,17 @@ def read_config(path):
     if set(x.lower() for x in cfg['to']) & set(x.lower() for x in cfg['cc']):
         raise ERROR('An address appears in both To and Cc. Remove the duplicate.')
     return cfg
+
+
+def send_time(cfg):
+    """The Monday send time in IST. Both the installer and the guard use this."""
+    value = str(cfg.get('send_time', '') or '').strip()
+    if not value:
+        return DEFAULT_SEND_TIME
+    match = re.fullmatch(r'([01]?\d|2[0-3]):([0-5]\d)', value)
+    if not match:
+        raise ERROR('send_time must be a 24-hour time such as "12:30".')
+    return time(int(match[1]), int(match[2]))
 
 
 def item_limits(cfg):
@@ -911,9 +923,10 @@ def scheduled_week(cfg, now=None):
     if first_due.tzinfo is None:
         raise ERROR('first_scheduled_run must include a timezone.')
     monday = now.date() - timedelta(days=now.weekday())
-    due = datetime.combine(monday, time(9), tzinfo=core.IST)
+    scheduled = send_time(cfg)
+    due = datetime.combine(monday, scheduled, tzinfo=core.IST)
     if now < first_due or now < due:
-        raise ERROR('The Monday 09:00 IST send time has not arrived. No email was sent.')
+        raise ERROR(f'The Monday {scheduled:%H:%M} IST send time has not arrived. No email was sent.')
     return core.previous_week(now)
 
 
@@ -943,7 +956,7 @@ def install_schedule(config_path, cfg, enabled=True):
             raise ERROR('Set Windows time zone to (UTC+05:30) Chennai, Kolkata, Mumbai, New Delhi before installing the 09:00 IST task.')
         now = datetime.now(core.IST)
         next_monday = now.date() + timedelta(days=(7 - now.weekday()) % 7)
-        due = datetime.combine(next_monday, time(9), tzinfo=core.IST)
+        due = datetime.combine(next_monday, send_time(cfg), tzinfo=core.IST)
         if due <= now:
             due += timedelta(days=7)
         task = service.NewTask(0)
@@ -980,7 +993,7 @@ def install_schedule(config_path, cfg, enabled=True):
         cfg['automatic_sending_enabled'] = True
         cfg['first_scheduled_run'] = due.isoformat()
         write_config(config_path, cfg)
-        return f'Monday 09:00 IST sending enabled. First run: {due:%d %b %Y, %H:%M}. Windows must be signed in and the PC available.'
+        return f'Monday {due:%H:%M} IST sending enabled. First run: {due:%d %b %Y, %H:%M}. Windows must be signed in and the PC available.'
     finally:
         pythoncom.CoUninitialize()
 
@@ -1073,7 +1086,7 @@ def gui(config_path):
                     return
             if mode == 'self-test' and not messagebox.askyesno('Send a test to yourself', f'Send this brief only to {cfg["mailbox"]}?'):
                 return
-            if mode == 'enable' and not messagebox.askyesno('Enable Monday sending', 'Enable automatic sending every Monday at 09:00 IST to the displayed recipient list?\n\nThis installs a Windows scheduled task. It does not send immediately.'):
+            if mode == 'enable' and not messagebox.askyesno('Enable Monday sending', f'Enable automatic sending every Monday at {send_time(cfg):%H:%M} IST to the displayed recipient list?\n\nThis installs a Windows scheduled task. It does not send immediately.'):
                 return
         except Exception as exc:
             messagebox.showerror('Check the week', str(exc))
@@ -1090,7 +1103,8 @@ def gui(config_path):
         threading.Thread(target=worker, daemon=True).start()
 
     for label, mode, parent in [('Preview in browser', 'preview', controls), ('Create / open draft', 'draft', controls),
-                                ('Send test to myself', 'self-test', controls), ('Enable Monday 9 AM', 'enable', schedule_controls),
+                                ('Send test to myself', 'self-test', controls),
+                                (f'Enable Monday {send_time(cfg):%H:%M}', 'enable', schedule_controls),
                                 ('Disable automatic sending', 'disable', schedule_controls)]:
         button = ttk.Button(parent, text=label, command=lambda m=mode: start(m))
         button.pack(side='left', padx=(0, 10))
