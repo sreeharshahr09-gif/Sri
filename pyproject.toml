@@ -1,0 +1,12 @@
+[project]
+name = "data-analyst-agent"
+version = "0.2.0"
+description = "An LLM data analyst that writes, runs and checks pandas/Plotly code against your data."
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
