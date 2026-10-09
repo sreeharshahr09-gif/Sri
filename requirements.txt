@@ -7,3 +7,4 @@ openpyxl>=3.1      # .xlsx
 scipy>=1.10        # statistical tests inside the sandbox
 # Optional, enabled in the sandbox automatically when installed:
 # statsmodels, scikit-learn, matplotlib, seaborn, pyarrow (.parquet), xlrd (.xls)
+# pypdf  (PDF text on the Workspace page)

@@ -61,3 +61,6 @@ class AgentConfig:
     # Prior conversation turns included as context for follow-up questions.
     history_turns: int = 4
     sample_rows: int = 5
+    # Total conversation size (characters) before the oldest tool outputs are shortened.
+    # ~4 characters per token: 90k characters fits comfortably in a 32k-token context.
+    max_context_chars: int = field(default_factory=lambda: _env_int("AGENT_MAX_CONTEXT_CHARS", 90_000))

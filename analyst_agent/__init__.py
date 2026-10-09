@@ -8,6 +8,8 @@ from .config import AgentConfig, LLMConfig, SandboxConfig
 from .data import Dataset, load_dataset
 from .llm import LLMClient, LLMError
 from .sandbox import ExecutionResult, Sandbox
+from .workspace import Workspace, WorkspaceError
+from .workspace_agent import WorkspaceAgent
 
 __all__ = [
     "AgentConfig",
@@ -21,5 +23,8 @@ __all__ = [
     "LLMError",
     "Sandbox",
     "SandboxConfig",
+    "Workspace",
+    "WorkspaceAgent",
+    "WorkspaceError",
     "load_dataset",
 ]

@@ -239,6 +239,54 @@ def _matplotlib_item(fig, title):
             "summary": summary}
 
 
+def _workspace_helpers(root):
+    """Read-only, root-bounded file access for analysis code (open() itself stays blocked)."""
+    import pandas as pd
+
+    root = os.path.realpath(root)
+
+    def _resolve(path):
+        full = os.path.realpath(os.path.join(root, str(path)))
+        if full != root and not full.startswith(root + os.sep):
+            raise PermissionError(f"'{path}' is outside the workspace folder.")
+        name = os.path.basename(full).lower()
+        if name.startswith(".env") or name.endswith((".pem", ".key")) or "secret" in name:
+            raise PermissionError(f"'{path}' looks like a credentials file and cannot be read.")
+        if not os.path.isfile(full):
+            raise FileNotFoundError(f"No such file in the workspace: '{path}'")
+        return full
+
+    def read_text(path, encoding=None):
+        """Return the text of a workspace file."""
+        full = _resolve(path)
+        with open(full, "rb") as fh:
+            raw = fh.read()
+        for enc in ([encoding] if encoding else ["utf-8-sig", "cp1252", "latin-1"]):
+            try:
+                return raw.decode(enc)
+            except UnicodeDecodeError:
+                continue
+        return raw.decode("latin-1")
+
+    def load_table(path, sheet=None, **kwargs):
+        """Load a CSV/TSV/Excel/Parquet/JSON workspace file as a DataFrame (kwargs go to pandas)."""
+        full = _resolve(path)
+        ext = os.path.splitext(full)[1].lower()
+        if ext in (".xlsx", ".xlsm", ".xls"):
+            return pd.read_excel(full, sheet_name=0 if sheet is None else sheet, **kwargs)
+        if ext == ".parquet":
+            return pd.read_parquet(full, **kwargs)
+        if ext in (".json", ".jsonl"):
+            return pd.read_json(full, lines=ext == ".jsonl", **kwargs)
+        if "sep" not in kwargs and "delimiter" not in kwargs:
+            kwargs["sep"] = "\t" if ext == ".tsv" else None
+            kwargs.setdefault("engine", "python")
+        kwargs.setdefault("encoding_errors", "replace")
+        return pd.read_csv(full, **kwargs)
+
+    return {"read_text": read_text, "load_table": load_table}
+
+
 def _analysis_traceback(exc):
     """Traceback limited to frames from the analysis code and below."""
     tb = exc.__traceback__
@@ -272,8 +320,11 @@ def run(job_dir):
         import pandas as pd
 
         np.random.seed(seed)
-        df = pd.read_pickle(job["data_path"])
-        namespace = {"__name__": "__main__", "df": df, "pd": pd, "np": np, "show": collector.show}
+        namespace = {"__name__": "__main__", "pd": pd, "np": np, "show": collector.show}
+        if job.get("data_path"):
+            namespace["df"] = pd.read_pickle(job["data_path"])
+        if job.get("workspace_root"):
+            namespace.update(_workspace_helpers(job["workspace_root"]))
         try:
             import plotly.express as px
             import plotly.graph_objects as go

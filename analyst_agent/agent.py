@@ -10,7 +10,7 @@ from typing import Any, Callable, Iterable
 
 from .config import AgentConfig
 from .data import Dataset, describe_for_llm
-from .grounding import GroundingReport, check_grounding
+from .grounding import CitationReport, GroundingReport, check_grounding
 from .llm import ChatModel, LLMError
 from .parsing import parse_reply, strip_thinking
 from .prompts import (
@@ -39,9 +39,16 @@ class AgentStep:
     llm_latency_s: float = 0.0
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
+    # Workspace agent tool calls (list_files, search, read_file, ...).
+    tool: str | None = None
+    tool_args: dict | None = None
+    observation: str | None = None
+    tool_error: bool = False
 
     @property
     def succeeded(self) -> bool:
+        if self.tool is not None:
+            return not self.tool_error
         return self.result is not None and self.result.ok
 
     def to_dict(self) -> dict[str, Any]:
@@ -69,6 +76,8 @@ class AgentRun:
     temperature: float | None = None
     dataset_sha256: str = ""
     grounding: GroundingReport | None = None
+    citations: CitationReport | None = None
+    mode: str = "data"  # "data" analysis, or workspace "answer" / "teach"
 
     @property
     def executed(self) -> bool:
@@ -85,11 +94,12 @@ class AgentRun:
         Falls back to the auto-displayed output of the last successful step when the
         model never called show(), so a correct result is never hidden.
         """
-        explicit = [a for s in self.steps if s.succeeded for a in s.result.artifacts if a.explicit]
+        ran = [s for s in self.steps if s.succeeded and s.result is not None]
+        explicit = [a for s in ran for a in s.result.artifacts if a.explicit]
         if explicit:
             return explicit
-        for step in reversed(self.steps):
-            if step.succeeded and step.result.artifacts:
+        for step in reversed(ran):
+            if step.result.artifacts:
                 return list(step.result.artifacts)
         return []
 
@@ -98,9 +108,10 @@ class AgentRun:
         return sum((s.prompt_tokens or 0) + (s.completion_tokens or 0) for s in self.steps)
 
     def to_dict(self) -> dict[str, Any]:
-        data = {k: v for k, v in self.__dict__.items() if k not in ("steps", "grounding")}
+        data = {k: v for k, v in self.__dict__.items() if k not in ("steps", "grounding", "citations")}
         data["steps"] = [s.to_dict() for s in self.steps]
         data["grounding"] = self.grounding.to_dict() if self.grounding else None
+        data["citations"] = self.citations.to_dict() if self.citations else None
         return data
 
     @classmethod
@@ -108,9 +119,11 @@ class AgentRun:
         data = dict(data)
         steps = [AgentStep.from_dict(s) for s in data.pop("steps", [])]
         grounding = data.pop("grounding", None)
+        citations = data.pop("citations", None)
         return cls(
             steps=steps,
             grounding=GroundingReport.from_dict(grounding) if grounding else None,
+            citations=CitationReport.from_dict(citations) if citations else None,
             **data,
         )
 
@@ -126,6 +139,43 @@ def _clip(text: str, limit: int) -> str:
     head = int(limit * 0.6)
     tail = limit - head
     return f"{text[:head]}\n... [{len(text) - limit:,} characters omitted] ...\n{text[-tail:]}"
+
+
+def format_execution(result: ExecutionResult, limit: int, hint: str = "") -> str:
+    """Text the model sees after a code block runs: status, output, outputs shown, errors."""
+    parts: list[str] = []
+    if result.rejected:
+        parts.append(f"Status: REJECTED, the code did not run.\n{result.error_message}")
+        parts.append("Rewrite the code to comply with the sandbox rules.")
+        return "\n\n".join(parts)
+
+    if result.ok:
+        parts.append(f"Status: success ({result.duration_s:.1f}s)")
+    else:
+        parts.append(f"Status: ERROR ({result.error_type}): {result.error_message}")
+
+    if result.stdout.strip():
+        note = " (truncated)" if result.stdout_truncated else ""
+        parts.append(f"stdout{note}:\n{_clip(result.stdout.rstrip(), int(limit * 0.5))}")
+
+    if result.artifacts:
+        lines = []
+        for i, art in enumerate(result.artifacts, 1):
+            label = "shown to user" if art.explicit else "last expression"
+            title = f" '{art.title}'" if art.title else ""
+            lines.append(f"[{i}] ({label}){title} {art.summary}")
+        parts.append("Outputs:\n" + _clip("\n".join(lines), int(limit * 0.4)))
+    elif result.ok and not result.stdout.strip():
+        parts.append("The code produced no output. Use print() or show() to see results.")
+
+    if result.warnings:
+        parts.append("Warnings:\n" + "\n".join(f"- {w[:300]}" for w in result.warnings))
+
+    if not result.ok:
+        if result.traceback:
+            parts.append("Traceback:\n" + _clip(result.traceback, 2500))
+        parts.append(hint)
+    return _clip("\n\n".join(p for p in parts if p), limit)
 
 
 def build_system_prompt(n_rows: int, modules: Iterable[str], profile: str) -> str:
@@ -195,40 +245,8 @@ class DataAnalystAgent:
         return None
 
     def format_observation(self, result: ExecutionResult) -> str:
-        limit = self.config.max_observation_chars
-        parts: list[str] = []
-        if result.rejected:
-            parts.append(f"Status: REJECTED, the code did not run.\n{result.error_message}")
-            parts.append("Rewrite the code to comply with the sandbox rules.")
-            return "\n\n".join(parts)
-
-        if result.ok:
-            parts.append(f"Status: success ({result.duration_s:.1f}s)")
-        else:
-            parts.append(f"Status: ERROR ({result.error_type}): {result.error_message}")
-
-        if result.stdout.strip():
-            note = " (truncated)" if result.stdout_truncated else ""
-            parts.append(f"stdout{note}:\n{_clip(result.stdout.rstrip(), int(limit * 0.5))}")
-
-        if result.artifacts:
-            lines = []
-            for i, art in enumerate(result.artifacts, 1):
-                label = "shown to user" if art.explicit else "last expression"
-                title = f" '{art.title}'" if art.title else ""
-                lines.append(f"[{i}] ({label}){title} {art.summary}")
-            parts.append("Outputs:\n" + _clip("\n".join(lines), int(limit * 0.4)))
-        elif result.ok and not result.stdout.strip():
-            parts.append("The code produced no output. Use print() or show() to see results.")
-
-        if result.warnings:
-            parts.append("Warnings:\n" + "\n".join(f"- {w[:300]}" for w in result.warnings))
-
-        if not result.ok:
-            if result.traceback:
-                parts.append("Traceback:\n" + _clip(result.traceback, 2500))
-            parts.append(self._error_hint(result))
-        return _clip("\n\n".join(p for p in parts if p), limit)
+        hint = "" if result.ok or result.rejected else self._error_hint(result)
+        return format_execution(result, self.config.max_observation_chars, hint)
 
     def _error_hint(self, result: ExecutionResult) -> str:
         etype = result.error_type or ""

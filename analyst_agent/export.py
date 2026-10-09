@@ -138,3 +138,51 @@ def to_markdown(runs: list[AgentRun], dataset: Dataset) -> str:
             lines += ["<details><summary>Code</summary>", "", "```python", "\n\n".join(code), "```",
                       "", "</details>", ""]
     return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- workspace sessions
+
+
+def describe_tool_step(step) -> str:
+    args = step.tool_args or {}
+    if step.tool == "read_file":
+        span = f" lines {args.get('start', 1)}-{args.get('end', 'end')}" if args.get("start") or args.get("end") else ""
+        return f"read `{args.get('path', '?')}`{span}"
+    if step.tool == "search":
+        where = f" in `{args['glob']}`" if args.get("glob") else ""
+        return f"searched for “{args.get('query', '')}”{where}"
+    if step.tool == "list_files":
+        return f"listed `{args.get('path', '.')}`"
+    return f"called {step.tool}"
+
+
+def workspace_to_markdown(runs: list[AgentRun], root: str) -> str:
+    lines = [f"# Workspace session: {root}", "", f"- Exported: {_now()}", ""]
+    for n, run in enumerate(runs, 1):
+        lines += [f"## {n}. {run.question}", f"<sub>mode: {run.mode} · status: {run.status} · "
+                  f"{run.duration_s:.1f}s · model: {run.model}</sub>", "", run.answer or f"_No answer ({run.status})._", ""]
+        if run.citations and run.citations.citations:
+            lines.append("**Sources**")
+            marks = {"verified": "✔", "unseen": "?", "invalid": "✘"}
+            lines += [f"- {marks.get(c.status, '')} `{c.label}` ({c.status})" for c in run.citations.citations]
+            lines.append("")
+        steps = [s for s in run.steps if s.tool or s.code]
+        if steps:
+            lines += ["<details><summary>What the assistant looked at</summary>", ""]
+            for s in steps:
+                lines.append(f"- {describe_tool_step(s)}" if s.tool else "- ran Python:\n\n```python\n" + s.code + "\n```")
+            lines += ["", "</details>", ""]
+    return "\n".join(lines)
+
+
+def workspace_to_json(runs: list[AgentRun], root: str, settings: dict[str, Any] | None = None,
+                      system_prompt: str | None = None) -> str:
+    record = {
+        "exported_at": _now(),
+        "workspace_root": root,
+        "settings": settings or {},
+        "environment": _package_versions(),
+        "system_prompt": system_prompt,
+        "runs": [r.to_dict() for r in runs],
+    }
+    return json.dumps(record, indent=2, default=str)

@@ -202,9 +202,11 @@ _SENSITIVE_ENV = re.compile(r"KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH", re.IGN
 class Sandbox:
     """Runs analysis code against a DataFrame in short-lived worker processes."""
 
-    def __init__(self, config: SandboxConfig | None = None, seed: int = 0):
+    def __init__(self, config: SandboxConfig | None = None, seed: int = 0, workspace_root: str | None = None):
         self.config = config or SandboxConfig()
         self.seed = seed
+        # When set, code may read (never write) files under this folder via read_text()/load_table().
+        self.workspace_root = str(Path(workspace_root).resolve()) if workspace_root else None
         self._dir = Path(tempfile.mkdtemp(prefix="analyst_sandbox_"))
         self._data_path: Path | None = None
         self._data_key: str | None = None
@@ -220,8 +222,8 @@ class Sandbox:
         self._data_key = key
 
     def run(self, code: str) -> ExecutionResult:
-        if self._data_path is None:
-            raise RuntimeError("No dataset loaded into the sandbox.")
+        if self._data_path is None and self.workspace_root is None:
+            raise RuntimeError("No dataset or workspace loaded into the sandbox.")
         problems = validate_code(code)
         if problems:
             return ExecutionResult(
@@ -242,7 +244,8 @@ class Sandbox:
         cfg = self.config
         job = {
             "code": code,
-            "data_path": str(self._data_path),
+            "data_path": str(self._data_path) if self._data_path else None,
+            "workspace_root": self.workspace_root,
             "allowed_modules": self.allowed_modules,
             "seed": self.seed,
             "limits": {

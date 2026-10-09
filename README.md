@@ -10,6 +10,13 @@ question ─▶ LLM writes code ─▶ sandbox executes ─▶ output/error fed 
                                      numeric grounding audit ◀─────────────────────┘
 ```
 
+The app has two pages:
+
+- **📊 Data analysis:** upload a dataset and ask questions. The agent writes and runs code to
+  answer them.
+- **📁 Workspace:** point the assistant at a local folder. It searches, reads and explains the
+  files, citing file and line for everything it says. It's read-only.
+
 ## Features
 
 - **Agent loop with self-correction.** It runs up to *N* steps of code, observes the results and
@@ -40,6 +47,37 @@ question ─▶ LLM writes code ─▶ sandbox executes ─▶ output/error fed 
   - Lets you pick the Excel sheet.
   - Cleans up empty or duplicate headers and drops fully empty rows.
 - **Conversation memory.** Follow-up questions see earlier answers and the code that produced them.
+
+## Workspace assistant (read-only)
+
+Enter a folder path on the **Workspace** page and press **Open**. You can then ask things like
+"what is in this folder?", "explain `fit.py` step by step" or "which report mentions slip
+stiffness?".
+
+- **Tools, not guesses.** The model works through `list_files`, `search` and `read_file`, plus
+  optional sandboxed Python that reads files with `read_text()` and `load_table()`. It reads only
+  what it needs, one step at a time.
+- **Many file types.** It reads code and text, Word (`.docx`), PowerPoint (`.pptx`), PDF (with
+  `pypdf`), Jupyter notebooks, and Excel/CSV (shown as a data profile).
+- **Checked citations.**
+  - Every `path:line` reference in an answer is checked. It is shown as verified if the assistant
+    opened those lines, flagged if it cited lines it never opened, and marked invalid if the file
+    or lines don't exist.
+  - The cited lines are shown under **Sources**.
+- **Two modes.**
+  - **Answer:** concise answers.
+  - **Teach me:** big picture first, then details, with jargon explained, examples quoted from
+    your files, and questions to check your understanding.
+- **Safety.**
+  - Read-only by design: the tools have no write, move or delete operations.
+  - Paths are confined to the folder you opened, including through symlinks.
+  - Credentials files (`.env`, private keys, `*secret*`) and folders such as `.git` and
+    `node_modules` are never read.
+  - The page warns you if the model server isn't local, because file contents would leave your
+    machine.
+- **Long sessions.** Old tool output is trimmed automatically to fit the model's context window.
+
+Set `WORKSPACE_DIR` to pre-fill the folder path.
 
 ## Quick start
 
@@ -74,7 +112,9 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `LLM_TEMPERATURE` | `0.2` | Sampling temperature |
 | `LLM_MAX_TOKENS` | `2048` | Max tokens per model reply |
 | `LLM_TIMEOUT` | `180` | Seconds to wait for a reply |
-| `AGENT_MAX_STEPS` | `6` | Code executions allowed per question |
+| `AGENT_MAX_STEPS` | `6` | Code executions allowed per question (data page) |
+| `AGENT_MAX_CONTEXT_CHARS` | `90000` | Conversation size before old tool output is trimmed |
+| `WORKSPACE_DIR` | *(empty)* | Default folder on the Workspace page |
 | `SANDBOX_TIMEOUT` | `60` | Seconds per code execution |
 | `SANDBOX_MEMORY_MB` | `4096` | Memory cap per execution (Linux/macOS) |
 
@@ -82,7 +122,11 @@ You can change any setting in the sidebar. Defaults come from environment variab
 
 | Module | Responsibility |
 |---|---|
-| `app.py` | Streamlit UI: upload, chat, live progress, trace, data tab, exports |
+| `app.py` | Streamlit entry point: page navigation and shared model settings |
+| `ui/data_page.py` | Data analysis page: upload, chat, live progress, trace, data tab, exports |
+| `ui/workspace_page.py` | Workspace page: open a folder, chat, sources, file browser |
+| `analyst_agent/workspace.py` | Read-only, root-bounded file access and text extraction |
+| `analyst_agent/workspace_agent.py` | Tool-using loop for the workspace assistant, plus citation checks |
 | `analyst_agent/agent.py` | The reasoning loop, observation formatting, conversation memory |
 | `analyst_agent/prompts.py` | System prompt (protocol and analysis standards) and nudges |
 | `analyst_agent/parsing.py` | Pulls code and final answers out of free-form replies (fences, `<think>`, truncation) |

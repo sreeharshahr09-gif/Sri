@@ -117,3 +117,71 @@ def _traced(number: float, decimals: int, suffix: str, values: list[float]) -> b
             if _has_value_in(values, t - tol, t + tol):
                 return True
     return False
+
+
+# --------------------------------------------------------------------------- file citations
+
+_CITATION = re.compile(
+    r"(?<![\w/.-])((?:\.{0,2}/)?[\w.\-]+(?:/[\w.\- ]+)*\.[A-Za-z0-9]{1,8})"  # path with extension
+    r"(?::|#L|\s+lines?\s+|,\s*lines?\s+)(\d+)(?:\s*(?:-|–|to)\s*L?(\d+))?",
+    re.IGNORECASE,
+)
+
+
+@dataclass
+class Citation:
+    path: str
+    start: int
+    end: int
+    status: str  # "verified" (seen in this run), "unseen" (exists, not opened), "invalid"
+    detail: str = ""
+
+    @property
+    def label(self) -> str:
+        return f"{self.path}:{self.start}" + (f"-{self.end}" if self.end != self.start else "")
+
+
+@dataclass
+class CitationReport:
+    citations: list[Citation] = field(default_factory=list)
+
+    def by_status(self, status: str) -> list[Citation]:
+        return [c for c in self.citations if c.status == status]
+
+    def to_dict(self) -> dict:
+        return {"citations": [c.__dict__ for c in self.citations]}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "CitationReport":
+        return cls([Citation(**c) for c in data.get("citations", [])])
+
+
+def check_citations(answer: str, line_counts, seen: dict[str, list[tuple[int, int]]]) -> CitationReport:
+    """Check `path:line` references in an answer.
+
+    `line_counts(path)` returns (normalized_path, n_lines) or raises ValueError for a path that
+    does not exist; `seen` maps normalized paths to line ranges the agent actually viewed.
+    """
+    report = CitationReport()
+    keys: set[tuple[str, int, int]] = set()
+    for match in _CITATION.finditer(answer):
+        path, start = match.group(1), int(match.group(2))
+        end = int(match.group(3)) if match.group(3) else start
+        if end < start:
+            start, end = end, start
+        try:
+            norm, n_lines = line_counts(path)
+        except ValueError as exc:
+            cite = Citation(path, start, end, "invalid", str(exc))
+        else:
+            if start < 1 or end > n_lines:
+                cite = Citation(norm, start, end, "invalid", f"the file has {n_lines} lines")
+            elif any(a <= end and start <= b for a, b in seen.get(norm, [])):
+                cite = Citation(norm, start, end, "verified")
+            else:
+                cite = Citation(norm, start, end, "unseen", "these lines were not opened in this answer")
+        key = (cite.path, cite.start, cite.end)
+        if key not in keys:
+            keys.add(key)
+            report.citations.append(cite)
+    return report
