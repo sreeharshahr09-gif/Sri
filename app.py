@@ -17,7 +17,7 @@ st.set_page_config(page_title="Research Agent", page_icon="📊", layout="wide")
 
 navigation = st.navigation(
     [
-        st.Page(data_page.page, title="Data analysis", icon="📊", url_path="data", default=True),
+        st.Page(data_page.page, title="Data analysis", icon="📊", default=True),  # served at "/"
         st.Page(workspace_page.page, title="Workspace", icon="📁", url_path="workspace"),
     ]
 )

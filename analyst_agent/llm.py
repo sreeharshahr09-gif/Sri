@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from typing import Protocol
@@ -90,6 +91,10 @@ class LLMClient:
                 data = resp.json()
                 choice = data["choices"][0]
                 content = choice["message"].get("content") or ""
+                if not content.strip():
+                    # Servers started with --jinja may move tool calls out of the text into a separate
+                    # field; turn them back into text the agent's parser understands.
+                    content = _tool_calls_as_text(choice["message"].get("tool_calls")) or content
             except (ValueError, KeyError, IndexError, TypeError) as exc:
                 raise LLMError(f"Unexpected response from model server: {resp.text[:500]}") from exc
 
@@ -108,6 +113,21 @@ class LLMClient:
             ) from last_error
         raise LLMError(str(last_error)) from last_error
 
+    def context_size(self) -> int | None:
+        """The server's context window in tokens, if it reports one (llama-server /props)."""
+        try:
+            resp = self.session.get(f"{self._base}/props", headers=self._headers(), timeout=(3, 5))
+            data = resp.json() if resp.status_code == 200 else {}
+        except (requests.RequestException, ValueError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        settings = data.get("default_generation_settings") or {}
+        for value in (settings.get("n_ctx"), data.get("n_ctx")):
+            if isinstance(value, int) and value > 0:
+                return value
+        return None
+
     def health(self) -> tuple[bool, str]:
         """Return (ok, detail) describing whether the server is reachable."""
         try:
@@ -123,3 +143,19 @@ class LLMClient:
         except (ValueError, AttributeError):
             models = []
         return True, ", ".join(models) if models else "connected"
+
+
+def _tool_calls_as_text(tool_calls) -> str:
+    """OpenAI-style tool_calls as <tool_call> blocks (the format Qwen itself writes)."""
+    if not isinstance(tool_calls, list):
+        return ""
+    blocks = []
+    for call in tool_calls:
+        fn = (call or {}).get("function") or {}
+        if not fn.get("name"):
+            continue
+        args = fn.get("arguments") or {}
+        if not isinstance(args, str):
+            args = json.dumps(args)
+        blocks.append(f'<tool_call>\n{{"name": {json.dumps(fn["name"])}, "arguments": {args}}}\n</tool_call>')
+    return "\n".join(blocks)

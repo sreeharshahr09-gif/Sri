@@ -132,7 +132,18 @@ Set `WORKSPACE_DIR` to pre-fill the folder path.
    ```
 
 Upload a file in the sidebar and ask away. Use **Model server → Check connection** to verify the
-LLM is reachable.
+LLM is reachable. It also reads the server's context window (`-c`) and sizes the app's memory budget
+to match.
+
+**Larger context.** Qwen3-30B-A3B-Instruct-2507 supports up to 256K tokens; the cost is memory.
+For example, at 64K with a compressed cache:
+
+```bash
+llama-server -m Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL.gguf --port 8080 --jinja \
+  -c 65536 -np 1 -fa on -ctk q8_0 -ctv q8_0 -ngl 99 --cpu-moe
+```
+
+Then press **Check connection** in the app and the window is picked up automatically.
 
 Any OpenAI-compatible endpoint works (llama.cpp, vLLM, Ollama's `/v1`, LM Studio, hosted APIs).
 
@@ -148,8 +159,9 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `LLM_TEMPERATURE` | `0.2` | Sampling temperature |
 | `LLM_MAX_TOKENS` | `2048` | Max tokens per model reply |
 | `LLM_TIMEOUT` | `180` | Seconds to wait for a reply |
+| `LLM_CONTEXT_TOKENS` | `32768` | Server context window; **Check connection** detects it from llama-server |
 | `AGENT_MAX_STEPS` | `6` | Code executions allowed per question (data page) |
-| `AGENT_MAX_CONTEXT_CHARS` | `90000` | Conversation size before old tool output is trimmed |
+| `AGENT_MAX_CONTEXT_CHARS` | *(derived)* | Overrides the conversation budget, which is otherwise derived from the context window |
 | `WORKSPACE_DIR` | *(empty)* | Default folder on the Workspace page |
 | `AGENT_BACKUP_DIR` | `~/.research_agent/backups` | Where backups and the change journal are kept |
 | `SANDBOX_TIMEOUT` | `60` | Seconds per code execution |

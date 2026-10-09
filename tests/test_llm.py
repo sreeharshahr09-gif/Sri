@@ -98,3 +98,53 @@ def test_health():
     assert llm.health() == (True, "qwen")
     llm, _ = client([requests.ConnectionError()])
     assert llm.health()[0] is False
+
+
+def test_tool_calls_field_is_turned_back_into_text():
+    from analyst_agent.parsing import parse_action
+
+    reply = FakeResponse(payload={"choices": [{"message": {"content": "", "tool_calls": [
+        {"type": "function", "function": {"name": "read_file", "arguments": '{"path": "src/fit.py", "start": 1}'}}
+    ]}, "finish_reason": "tool_calls"}]})
+    llm, _ = client([reply])
+    content = llm.chat([]).content
+    action = parse_action(content)
+    assert (action.tool, action.args) == ("read_file", {"path": "src/fit.py", "start": 1})
+
+
+def test_plain_content_is_not_touched_when_tool_calls_absent():
+    llm, _ = client([OK])
+    assert llm.chat([]).content == "hi"
+
+
+@pytest.mark.parametrize(
+    "payload,expected",
+    [
+        ({"default_generation_settings": {"n_ctx": 65536}, "total_slots": 1}, 65536),
+        ({"n_ctx": 131072}, 131072),
+        ({"something": "else"}, None),
+    ],
+)
+def test_context_size_from_server_props(payload, expected):
+    llm, session = client([FakeResponse(200, payload=payload)])
+    assert llm.context_size() == expected
+    assert session.posts[0][0] == "http://srv:8080/props"
+
+
+def test_context_size_unavailable():
+    llm, _ = client([requests.ConnectionError()])
+    assert llm.context_size() is None
+    llm, _ = client([FakeResponse(404, text="not found")])
+    assert llm.context_size() is None
+
+
+def test_context_budget_follows_the_window(monkeypatch):
+    from analyst_agent.config import context_budget_chars
+
+    monkeypatch.delenv("AGENT_MAX_CONTEXT_CHARS", raising=False)
+    small = context_budget_chars(LLMConfig(context_tokens=32768, max_tokens=2048))
+    large = context_budget_chars(LLMConfig(context_tokens=65536, max_tokens=2048))
+    assert 80_000 < small < 95_000 and 180_000 < large < 190_000
+    assert context_budget_chars(LLMConfig(context_tokens=4096, max_tokens=2048)) == 20_000  # floor
+    monkeypatch.setenv("AGENT_MAX_CONTEXT_CHARS", "123456")
+    assert context_budget_chars(LLMConfig(context_tokens=65536)) == 123456

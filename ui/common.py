@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from analyst_agent import LLMClient, LLMConfig
+from analyst_agent.config import context_budget_chars
 from analyst_agent.sandbox import Artifact, ExecutionResult
 
 DEFAULT_LLM = LLMConfig()
@@ -23,6 +24,12 @@ def model_settings() -> LLMConfig:
                                 help="Low values give more consistent, reproducible analyses.")
         max_tokens = st.number_input("Max tokens per reply", 256, 16384, DEFAULT_LLM.max_tokens, 256, key="llm_max_tokens")
         read_timeout = st.number_input("Request timeout (s)", 10, 1800, int(DEFAULT_LLM.read_timeout), 10, key="llm_timeout")
+        # The value lives only in session state so "Check connection" can update it.
+        st.session_state.setdefault("llm_context", DEFAULT_LLM.context_tokens)
+        context_tokens = st.number_input(
+            "Context window (tokens)", min_value=2048, max_value=1_048_576, step=4096, key="llm_context",
+            help="Must match llama-server's -c value. 'Check connection' reads it from the server.",
+        )
         seed_text = st.text_input("Sampling seed (optional)", "", key="llm_seed", help="Passed to the server if set.")
         llm_cfg = replace(
             DEFAULT_LLM,
@@ -32,13 +39,30 @@ def model_settings() -> LLMConfig:
             max_tokens=int(max_tokens),
             read_timeout=float(read_timeout),
             seed=int(seed_text) if seed_text.strip().lstrip("-").isdigit() else None,
+            context_tokens=int(context_tokens),
         )
-        if st.button("Check connection", width="stretch"):
-            ok, detail = LLMClient(llm_cfg).health()
-            (st.success if ok else st.error)(f"{'Connected' if ok else 'Not connected'}: {detail}")
+        st.button("Check connection", width="stretch", on_click=_check_connection, args=(llm_cfg,))
+        result = st.session_state.get("llm_check")
+        if result:
+            (st.success if result[0] else st.error)(result[1])
+        st.caption(f"Conversation budget: ~{context_budget_chars(llm_cfg):,} characters before old tool output is trimmed.")
 
     st.session_state.llm_cfg = llm_cfg
     return llm_cfg
+
+
+def _check_connection(llm_cfg: LLMConfig) -> None:
+    """Button callback: test the server and adopt its context window (runs before widgets render)."""
+    client = LLMClient(llm_cfg)
+    ok, detail = client.health()
+    if not ok:
+        st.session_state.llm_check = (False, f"Not connected: {detail}")
+        return
+    n_ctx = client.context_size()
+    if n_ctx:
+        st.session_state.llm_context = n_ctx
+        detail += f" · context window {n_ctx:,} tokens (applied)"
+    st.session_state.llm_check = (True, f"Connected: {detail}")
 
 
 def render_artifact(art: Artifact, key: str) -> None:

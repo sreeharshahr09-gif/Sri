@@ -14,6 +14,7 @@ from pathlib import PurePosixPath
 import streamlit as st
 
 from analyst_agent import AgentConfig, AgentRun, LLMClient, LLMConfig, Sandbox, SandboxConfig
+from analyst_agent.config import context_budget_chars
 from analyst_agent.editing import BackupStore, EditError, apply_change, undo_change
 from analyst_agent.export import describe_tool_step, workspace_to_json, workspace_to_markdown
 from analyst_agent.workspace import Workspace, WorkspaceError, is_local_url
@@ -146,7 +147,8 @@ def sidebar(llm_cfg: LLMConfig) -> tuple[AgentConfig, bool]:
         allow_python = st.checkbox("Allow Python analysis", value=True, key="ws_python",
                                    help="Lets the assistant run sandboxed code that reads (never writes) "
                                         "files in the folder, e.g. to analyse a data file.")
-    cfg = replace(AgentConfig(), max_steps=int(max_steps), history_turns=int(history_turns))
+    cfg = replace(AgentConfig(), max_steps=int(max_steps), history_turns=int(history_turns),
+                  max_context_chars=context_budget_chars(llm_cfg))
 
     runs: list[AgentRun] = st.session_state.ws_runs
     if ws is not None and runs:

@@ -37,6 +37,8 @@ class LLMConfig:
     read_timeout: float = field(default_factory=lambda: _env_float("LLM_TIMEOUT", 180.0))
     max_retries: int = 2
     seed: int | None = None
+    # The server's context window (llama-server -c). The workspace agent sizes its memory from it.
+    context_tokens: int = field(default_factory=lambda: _env_int("LLM_CONTEXT_TOKENS", 32768))
 
 
 @dataclass
@@ -64,3 +66,15 @@ class AgentConfig:
     # Total conversation size (characters) before the oldest tool outputs are shortened.
     # ~4 characters per token: 90k characters fits comfortably in a 32k-token context.
     max_context_chars: int = field(default_factory=lambda: _env_int("AGENT_MAX_CONTEXT_CHARS", 90_000))
+
+
+def context_budget_chars(llm: LLMConfig) -> int:
+    """Characters of conversation the agent may keep before trimming old tool output.
+
+    AGENT_MAX_CONTEXT_CHARS overrides it; otherwise it is derived from the model's context window,
+    leaving room for the reply, at a conservative ~3 characters per token.
+    """
+    explicit = _env_int("AGENT_MAX_CONTEXT_CHARS", 0)
+    if explicit > 0:
+        return explicit
+    return max(20_000, (llm.context_tokens - llm.max_tokens - 1_500) * 3)
