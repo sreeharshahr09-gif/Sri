@@ -75,7 +75,10 @@ class Workspace:
         if not path.is_dir():
             raise WorkspaceError(f"Not a folder: {path}")
         self.root = path.resolve()
-        self._cache: dict[str, tuple[float, Document]] = {}
+        self._cache: dict[str, tuple[tuple[int, int], Document]] = {}
+        # Proposed (not yet applied) file contents, keyed by relative path. Set by the agent
+        # during an edit run so its own reads see its proposals; empty otherwise.
+        self.overlay: dict[str, str] = {}
 
     # ------------------------------------------------------------------ paths
 
@@ -196,6 +199,10 @@ class Workspace:
 
     def document(self, rel: str) -> Document:
         path = self.resolve(rel)
+        key = self.relative(path)
+        if key in self.overlay:
+            note = "Shows your proposed changes (not yet applied to the file on disk)."
+            return Document(key, "text", self.overlay[key].splitlines(), note=note)
         if not path.exists():
             raise WorkspaceError(f"No such file: '{rel}'. Use list_files or search to find the right path.")
         if path.is_dir():
@@ -204,12 +211,12 @@ class Workspace:
         stat = path.stat()
         if stat.st_size > MAX_FILE_BYTES:
             raise WorkspaceError(f"'{rel}' is {_fmt_size(stat.st_size)}, above the {_fmt_size(MAX_FILE_BYTES)} limit.")
-        key = self.relative(path)
+        version = (stat.st_mtime_ns, stat.st_size)
         cached = self._cache.get(key)
-        if cached and cached[0] == stat.st_mtime:
+        if cached and cached[0] == version:
             return cached[1]
         doc = extract_document(path, key)
-        self._cache[key] = (stat.st_mtime, doc)
+        self._cache[key] = (version, doc)
         return doc
 
     def read(self, rel: str, start: int = 1, end: int | None = None) -> tuple[str, Document, int, int]:

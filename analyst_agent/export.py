@@ -153,6 +153,9 @@ def describe_tool_step(step) -> str:
         return f"searched for “{args.get('query', '')}”{where}"
     if step.tool == "list_files":
         return f"listed `{args.get('path', '.')}`"
+    if step.tool == "propose_edits":
+        paths = sorted({e.get("path", "?") for e in args.get("edits", [])})
+        return "proposed changes to " + ", ".join(f"`{p}`" for p in paths)
     return f"called {step.tool}"
 
 
@@ -166,6 +169,12 @@ def workspace_to_markdown(runs: list[AgentRun], root: str) -> str:
             marks = {"verified": "✔", "unseen": "?", "invalid": "✘"}
             lines += [f"- {marks.get(c.status, '')} `{c.label}` ({c.status})" for c in run.citations.citations]
             lines.append("")
+        if run.changes:
+            lines.append("**Proposed changes**")
+            for c in run.changes:
+                added, removed = c.stats()
+                lines += [f"- `{c.path}` ({c.kind}, +{added} −{removed}): **{c.status}**", "",
+                          "```diff", c.diff().rstrip(), "```", ""]
         steps = [s for s in run.steps if s.tool or s.code]
         if steps:
             lines += ["<details><summary>What the assistant looked at</summary>", ""]

@@ -1,7 +1,8 @@
-"""Workspace page: point the assistant at a local folder and ask it to explain what is there.
+"""Workspace page: point the assistant at a local folder; it explains, teaches and proposes edits.
 
-Phase 1 is strictly read-only: the assistant can list, search and read files (and run
-analysis code that reads them), but nothing on this page can create, change or delete a file.
+The assistant itself never writes: in Edit mode it *proposes* changes, which are shown here as
+diffs. Only the user's Apply click writes a file (with a backup and a journal entry), and Undo
+restores the backup. Files are never deleted or renamed.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from pathlib import PurePosixPath
 import streamlit as st
 
 from analyst_agent import AgentConfig, AgentRun, LLMClient, LLMConfig, Sandbox, SandboxConfig
+from analyst_agent.editing import BackupStore, EditError, apply_change, undo_change
 from analyst_agent.export import describe_tool_step, workspace_to_json, workspace_to_markdown
 from analyst_agent.workspace import Workspace, WorkspaceError, is_local_url
 from analyst_agent.workspace_agent import WorkspaceAgent
@@ -23,7 +25,7 @@ STARTER_QUESTIONS = [
     "Which are the most important files here, and what does each one do?",
     "Explain the main script step by step.",
 ]
-MODES = {"Answer": "answer", "Teach me": "teach"}
+MODES = {"Answer": "answer", "Teach me": "teach", "Edit": "edit"}
 LANGUAGES = {
     ".py": "python", ".m": "matlab", ".r": "r", ".jl": "julia", ".js": "javascript", ".ts": "typescript",
     ".c": "c", ".h": "c", ".cpp": "cpp", ".java": "java", ".sh": "bash", ".sql": "sql", ".md": "markdown",
@@ -31,11 +33,13 @@ LANGUAGES = {
     ".tex": "latex",
 }
 DEFAULT_SANDBOX = SandboxConfig()
-ICONS = {"read_file": "📄", "search": "🔍", "list_files": "🗂️"}
+ICONS = {"read_file": "📄", "search": "🔍", "list_files": "🗂️", "propose_edits": "✏️"}
+STATUS_ICONS = {"pending": "🟡", "applied": "✅", "rejected": "⛔", "undone": "↩️", "conflict": "⚠️"}
 
 
 def init_state() -> None:
-    for key, value in {"ws": None, "ws_runs": [], "ws_sandbox": None, "ws_pending": None}.items():
+    defaults = {"ws": None, "ws_runs": [], "ws_sandbox": None, "ws_pending": None, "ws_backups": None, "ws_flash": []}
+    for key, value in defaults.items():
         st.session_state.setdefault(key, value)
 
 
@@ -52,7 +56,44 @@ def open_workspace(path: str) -> None:
         ws=ws,
         ws_runs=[],
         ws_sandbox=Sandbox(SandboxConfig(), workspace_root=str(ws.root)),
+        ws_backups=BackupStore(ws),
     )
+
+
+# --------------------------------------------------------------------------- change actions
+# Button callbacks: they run before the page re-renders, so the new status shows immediately.
+
+
+def _flash(kind: str, message: str) -> None:
+    st.session_state.ws_flash.append((kind, message))
+
+
+def _apply(run_idx: int, change_idx: int) -> None:
+    change = st.session_state.ws_runs[run_idx].changes[change_idx]
+    try:
+        apply_change(st.session_state.ws, change, st.session_state.ws_backups)
+        _flash("success", f"Applied changes to `{change.path}` (backup kept; Undo is available).")
+    except EditError as exc:
+        _flash("error", f"Could not apply `{change.path}`: {exc}")
+
+
+def _apply_all(run_idx: int) -> None:
+    for i, change in enumerate(st.session_state.ws_runs[run_idx].changes):
+        if change.status == "pending":
+            _apply(run_idx, i)
+
+
+def _reject(run_idx: int, change_idx: int) -> None:
+    st.session_state.ws_runs[run_idx].changes[change_idx].status = "rejected"
+
+
+def _undo(run_idx: int, change_idx: int) -> None:
+    change = st.session_state.ws_runs[run_idx].changes[change_idx]
+    try:
+        undo_change(st.session_state.ws, change, st.session_state.ws_backups)
+        _flash("success", f"Undid the change to `{change.path}`.")
+    except EditError as exc:
+        _flash("error", f"Could not undo `{change.path}`: {exc}")
 
 
 # --------------------------------------------------------------------------- sidebar
@@ -78,13 +119,25 @@ def sidebar(llm_cfg: LLMConfig) -> tuple[AgentConfig, bool]:
 
     ws: Workspace | None = st.session_state.ws
     if ws is not None:
-        st.sidebar.caption(f"🔒 Read-only access to `{ws.root}`")
+        st.sidebar.caption(f"🔒 Access limited to `{ws.root}`. The assistant never writes; only your Apply clicks do.")
     if not is_local_url(llm_cfg.base_url):
         st.sidebar.warning(
             f"The model server is not local ({llm_cfg.base_url}). File contents the assistant reads "
             "will be sent to it.",
             icon="🌐",
         )
+
+    backups: BackupStore | None = st.session_state.ws_backups
+    if ws is not None and backups is not None:
+        history = backups.history(limit=30)
+        with st.sidebar.expander(f"🕘 Change history ({len(history)})", expanded=False):
+            if not history:
+                st.caption("No changes applied to this folder yet.")
+            for entry in history:
+                icon = "✅" if entry.get("action") == "apply" else "↩️"
+                st.caption(f"{icon} {entry.get('time', '')[:19].replace('T', ' ')} · {entry.get('action')} · "
+                           f"`{entry.get('path')}`")
+            st.caption(f"Backups and journal: `{backups.dir}`")
 
     with st.sidebar.expander("⚙️ Assistant", expanded=False):
         max_steps = st.slider("Max steps per question", 2, 30, 12, key="ws_max_steps",
@@ -147,6 +200,41 @@ def render_sources(run: AgentRun, ws: Workspace | None, run_idx: int) -> None:
             st.code(_numbered(doc.lines, lo, hi), language=None)
 
 
+def render_changes(run: AgentRun, run_idx: int) -> None:
+    if not run.changes:
+        return
+    pending = [c for c in run.changes if c.status == "pending"]
+    st.markdown(f"**✏️ Proposed changes ({len(run.changes)} file{'s' * (len(run.changes) != 1)})** — "
+                "nothing is written until you apply it.")
+    if len(pending) > 1:
+        st.button(f"Apply all {len(pending)} pending", key=f"ws-apply-all-{run_idx}", type="primary",
+                  on_click=_apply_all, args=(run_idx,))
+    for i, change in enumerate(run.changes):
+        added, removed = change.stats()
+        kind = "new file" if change.kind == "create" else "edit"
+        header = (f"{STATUS_ICONS.get(change.status, '')} `{change.path}` · {kind} · "
+                  f"+{added} −{removed} · {change.status}")
+        with st.container(border=True):
+            cols = st.columns([6, 1, 1])
+            cols[0].markdown(header)
+            if change.status in ("pending", "rejected", "undone", "conflict"):
+                cols[1].button("Apply", key=f"ws-apply-{run_idx}-{i}", type="primary", width="stretch",
+                               on_click=_apply, args=(run_idx, i))
+            if change.status == "pending":
+                cols[2].button("Reject", key=f"ws-reject-{run_idx}-{i}", width="stretch",
+                               on_click=_reject, args=(run_idx, i))
+            if change.status == "applied":
+                cols[2].button("Undo", key=f"ws-undo-{run_idx}-{i}", width="stretch",
+                               on_click=_undo, args=(run_idx, i))
+            for w in change.warnings:
+                st.warning(f"Check before applying: {w}", icon="⚠️")
+            if change.status == "conflict" and change.error:
+                st.error(change.error)
+            diff = change.diff()
+            with st.expander("Diff", expanded=change.status == "pending"):
+                st.code(diff[:20000] + ("\n… (diff truncated)" if len(diff) > 20000 else ""), language="diff")
+
+
 def render_step(step, run_idx: int) -> None:
     title = f"**Step {step.index + 1}**"
     if step.tool:
@@ -185,6 +273,7 @@ def render_run(run: AgentRun, run_idx: int) -> None:
     elif run.status == "step_limit":
         st.warning("The step limit was reached; the answer may be incomplete.", icon="⏱️")
     render_sources(run, ws, run_idx)
+    render_changes(run, run_idx)
     for i, art in enumerate(run.report_artifacts()):
         render_artifact(art, key=f"ws-report-{run_idx}-{i}")
     if run.steps:
@@ -268,8 +357,9 @@ def page() -> None:
             "Enter a folder path in the sidebar and press **Open**. The assistant can search and read "
             "the files in it (code, Word, PowerPoint, PDF, notebooks, spreadsheets) and explain them, "
             "citing the exact file and line for what it says.\n\n"
-            "🔒 **Read-only:** nothing here can create, change or delete your files. Credentials files "
-            "(such as `.env` and private keys) are never read."
+            "🛡️ **Safe by design:** in **Edit** mode it only *proposes* changes to text files; you review "
+            "each diff and nothing is written until you click Apply (with backup and Undo). Files are "
+            "never deleted or renamed, and credentials files (such as `.env` and private keys) are never read."
         )
         st.chat_input("Open a folder first", disabled=True)
         return
@@ -279,6 +369,12 @@ def page() -> None:
     mode_label = top[1].radio("Mode", list(MODES), horizontal=True, key="ws_mode", label_visibility="collapsed",
                               help="Teach me: step-by-step explanations with terms defined and check questions.")
     mode = MODES[mode_label]
+    if mode == "edit":
+        st.info("✏️ **Edit mode:** the assistant proposes changes to text files as diffs. Nothing is "
+                "written until you click **Apply**; a backup is kept so you can **Undo**.", icon="🛡️")
+    for kind, message in st.session_state.ws_flash:
+        (st.success if kind == "success" else st.error)(message)
+    st.session_state.ws_flash = []
 
     ask_tab, files_tab_ = st.tabs(["💬 Ask", "🗂️ Files"])
     with files_tab_:
@@ -287,7 +383,8 @@ def page() -> None:
         runs: list[AgentRun] = st.session_state.ws_runs
         for idx, run in enumerate(runs):
             with st.chat_message("user"):
-                st.markdown(run.question + ("  \n_🎓 teach mode_" if run.mode == "teach" else ""))
+                tag = {"teach": "  \n_🎓 teach mode_", "edit": "  \n_✏️ edit mode_"}.get(run.mode, "")
+                st.markdown(run.question + tag)
             with st.chat_message("assistant"):
                 render_run(run, idx)
         if not runs:

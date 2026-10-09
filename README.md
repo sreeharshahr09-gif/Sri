@@ -15,7 +15,8 @@ The app has two pages:
 - **📊 Data analysis:** upload a dataset and ask questions. The agent writes and runs code to
   answer them.
 - **📁 Workspace:** point the assistant at a local folder. It searches, reads and explains the
-  files, citing file and line for everything it says. It's read-only.
+  files, citing file and line for everything it says. In **Edit** mode it proposes changes, which
+  you review and apply.
 
 ## Features
 
@@ -48,7 +49,7 @@ The app has two pages:
   - Cleans up empty or duplicate headers and drops fully empty rows.
 - **Conversation memory.** Follow-up questions see earlier answers and the code that produced them.
 
-## Workspace assistant (read-only)
+## Workspace assistant
 
 Enter a folder path on the **Workspace** page and press **Open**. You can then ask things like
 "what is in this folder?", "explain `fit.py` step by step" or "which report mentions slip
@@ -64,12 +65,14 @@ stiffness?".
     opened those lines, flagged if it cited lines it never opened, and marked invalid if the file
     or lines don't exist.
   - The cited lines are shown under **Sources**.
-- **Two modes.**
+- **Three modes.**
   - **Answer:** concise answers.
   - **Teach me:** big picture first, then details, with jargon explained, examples quoted from
     your files, and questions to check your understanding.
+  - **Edit:** proposes changes for your approval (see below).
 - **Safety.**
-  - Read-only by design: the tools have no write, move or delete operations.
+  - The assistant never writes. Only your **Apply** click writes a file, and nothing is ever
+    deleted or renamed.
   - Paths are confined to the folder you opened, including through symlinks.
   - Credentials files (`.env`, private keys, `*secret*`) and folders such as `.git` and
     `node_modules` are never read.
@@ -78,6 +81,28 @@ stiffness?".
 - **Long sessions.** Old tool output is trimmed automatically to fit the model's context window.
 
 Set `WORKSPACE_DIR` to pre-fill the folder path.
+
+### Edit mode: proposals, approval and undo
+
+1. **The assistant proposes.** It edits with search/replace blocks (`<<<<<<< OLD … ======= …
+   >>>>>>> NEW`), which small local models handle more reliably than JSON. It can also propose new
+   files. Proposals are staged in memory, and its later reads show the proposed version so it can
+   check its own work.
+2. **Guards on proposals.**
+   - It must read a file before editing it.
+   - The OLD text must match exactly one place. If it doesn't, the assistant gets an explanation
+     and the closest lines, and can retry.
+   - Only plain-text files can be edited (code, Markdown, CSV, config), not Word, PDF, spreadsheets
+     or notebooks.
+   - Python, JSON and TOML files are syntax-checked, and problems are flagged.
+3. **You review.** Each changed file appears as a diff with **Apply** and **Reject**.
+4. **Applying.**
+   - Apply refuses if the file changed on disk since the proposal.
+   - It saves a backup of the original outside the folder (`~/.research_agent/backups`, or
+     `AGENT_BACKUP_DIR`).
+   - Writes are atomic and keep the file's encoding, BOM, line endings and permissions.
+   - Every apply and undo is recorded in `journal.jsonl`, shown in the sidebar as **Change history**.
+5. **Undo** restores the backup. It refuses if you've edited the file since the change was applied.
 
 ## Quick start
 
@@ -115,6 +140,7 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `AGENT_MAX_STEPS` | `6` | Code executions allowed per question (data page) |
 | `AGENT_MAX_CONTEXT_CHARS` | `90000` | Conversation size before old tool output is trimmed |
 | `WORKSPACE_DIR` | *(empty)* | Default folder on the Workspace page |
+| `AGENT_BACKUP_DIR` | `~/.research_agent/backups` | Where backups and the change journal are kept |
 | `SANDBOX_TIMEOUT` | `60` | Seconds per code execution |
 | `SANDBOX_MEMORY_MB` | `4096` | Memory cap per execution (Linux/macOS) |
 
@@ -127,6 +153,7 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `ui/workspace_page.py` | Workspace page: open a folder, chat, sources, file browser |
 | `analyst_agent/workspace.py` | Read-only, root-bounded file access and text extraction |
 | `analyst_agent/workspace_agent.py` | Tool-using loop for the workspace assistant, plus citation checks |
+| `analyst_agent/editing.py` | Staged changes, diffs, apply with backup, undo, journal |
 | `analyst_agent/agent.py` | The reasoning loop, observation formatting, conversation memory |
 | `analyst_agent/prompts.py` | System prompt (protocol and analysis standards) and nudges |
 | `analyst_agent/parsing.py` | Pulls code and final answers out of free-form replies (fences, `<think>`, truncation) |

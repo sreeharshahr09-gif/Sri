@@ -160,7 +160,7 @@ def test_teach_mode_changes_instructions(ws):  # noqa: F811
     assert "teaching" in teach.system_prompt() and "check their understanding" in teach.system_prompt()
     assert "teaching" not in answer.system_prompt()
     with pytest.raises(ValueError):
-        make([], ws, mode="edit")
+        make([], ws, mode="delete")
 
 
 def test_system_prompt_contains_overview(ws):  # noqa: F811
@@ -214,3 +214,103 @@ def test_missing_folder_is_rejected(tmp_path):
 
     with pytest.raises(WorkspaceError, match="not found"):
         WorkspaceAgent(ScriptedLLM([]), Workspace(tmp_path / "missing"))
+
+
+# ----------------------------------------------------------------------------- edit mode
+
+
+def edit_block(path, old, new):
+    return f"Updating {path}.\n```edit\npath: {path}\n<<<<<<< OLD\n{old}\n=======\n{new}\n>>>>>>> NEW\n```"
+
+
+def test_edit_mode_proposes_without_writing(ws, ws_dir):  # noqa: F811
+    before = (ws_dir / "src" / "fit.py").read_text()
+    llm, agent = make(
+        [
+            tool("read_file", path="src/fit.py"),
+            edit_block("src/fit.py", "    x = B * slip", "    x = B * np.asarray(slip)  # accept lists"),
+            tool("read_file", path="src/fit.py", start=5, end=8),
+            "Final Answer: Proposed converting slip to an array (src/fit.py:7).",
+        ],
+        ws,
+        mode="edit",
+    )
+    run = agent.run("Make magic_formula accept lists")
+    assert (ws_dir / "src" / "fit.py").read_text() == before  # nothing written
+    assert [c.path for c in run.changes] == ["src/fit.py"] and run.changes[0].status == "pending"
+    assert "staged (proposal only" in run.steps[1].observation and "+    x = B * np.asarray" in run.steps[1].observation
+    assert "np.asarray(slip)" in llm.calls[3][-1]["content"]  # the re-read shows the proposal
+    assert ws.overlay == {}  # overlay cleared after the run
+    assert run.citations.citations[0].status == "verified"
+    assert "PROPOSE changes" in agent.system_prompt()
+
+
+def test_edit_requires_reading_first(ws):  # noqa: F811
+    llm, agent = make(
+        [
+            edit_block("README.md", "# Tyre study", "# Tyre study (2026)"),
+            tool("read_file", path="README.md"),
+            edit_block("README.md", "# Tyre study", "# Tyre study (2026)"),
+            "Final Answer: Updated the title (README.md:1).",
+        ],
+        ws,
+        mode="edit",
+    )
+    run = agent.run("Add the year to the title")
+    assert run.steps[0].tool_error and "read 'README.md' with read_file before editing" in run.steps[0].observation
+    assert run.changes[0].proposed.startswith("# Tyre study (2026)")
+
+
+def test_editing_is_refused_outside_edit_mode(ws):  # noqa: F811
+    _, agent = make(
+        [tool("read_file", path="README.md"), edit_block("README.md", "# Tyre study", "# X"), "Final Answer: no edits."],
+        ws,
+    )
+    run = agent.run("q")
+    assert run.steps[1].tool_error and "not available in this mode" in run.steps[1].observation
+    assert run.changes == [] and "PROPOSE" not in agent.system_prompt()
+
+
+def test_failed_edit_stops_the_batch_and_reports(ws):  # noqa: F811
+    two = edit_block("src/fit.py", "does not exist", "x") + "\n" + edit_block("src/fit.py", "    x = B * slip", "    x = 1")
+    _, agent = make([tool("read_file", path="src/fit.py"), two, "Final Answer: failed"], ws, mode="edit")
+    run = agent.run("q")
+    obs = run.steps[1].observation
+    assert "NOT staged" in obs and "1 edit(s) in this reply were not attempted" in obs
+    assert run.changes == []
+
+
+def test_syntax_warning_is_fed_back(ws):  # noqa: F811
+    llm, agent = make(
+        [
+            tool("read_file", path="src/fit.py"),
+            edit_block("src/fit.py", "def peak_mu(fx, fz):", "def peak_mu(fx, fz)"),
+            "Final Answer: done",
+        ],
+        ws,
+        mode="edit",
+    )
+    run = agent.run("q")
+    assert "WARNING: Python syntax error" in llm.calls[2][-1]["content"]
+    assert run.changes[0].warnings
+
+
+def test_create_file_and_follow_up_context(ws, ws_dir):  # noqa: F811
+    create = "```create\npath: docs/usage.md\n<<<<<<< CONTENT\n# Usage\nCall magic_formula().\n>>>>>>> END\n```"
+    _, agent = make([tool("list_files"), create, "Final Answer: Added docs/usage.md:1-2."], ws, mode="edit")
+    run = agent.run("Write a usage note")
+    assert run.changes[0].kind == "create" and not (ws_dir / "docs").exists()
+    llm2, agent2 = make([tool("list_files"), "Final Answer: ok"], ws, mode="edit")
+    agent2.run("Also mention peak_mu", history=[run])
+    assert "Changes proposed in A1, with their current status: docs/usage.md (pending)" in llm2.calls[0][1]["content"]
+
+
+def test_run_with_changes_round_trips(ws):  # noqa: F811
+    _, agent = make(
+        [tool("read_file", path="README.md"), edit_block("README.md", "# Tyre study", "# Tyre study v2"), "Final Answer: ok"],
+        ws,
+        mode="edit",
+    )
+    run = agent.run("q")
+    restored = AgentRun.from_dict(json.loads(json.dumps(run.to_dict())))
+    assert restored.changes[0].diff() == run.changes[0].diff()

@@ -116,6 +116,27 @@ _TOOL_FENCE = re.compile(r"```[ \t]*(?:tool|json|tool_call)[ \t]*\n(.*?)```", re
 _TOOL_TAG = re.compile(r"<tool_call>\s*(.*?)\s*(?:</tool_call>|$)", re.DOTALL | re.IGNORECASE)
 
 
+_EDIT_BLOCK = re.compile(
+    r"```[ \t]*edit[^\n]*\n[ \t]*(?:path|file)[ \t]*:[ \t]*(?P<path>[^\n]+?)[ \t]*\n"
+    r"<{5,9} ?(?:OLD|SEARCH)[^\n]*\n(?P<old>.*?)^={5,9}[ \t]*\n(?P<new>.*?)^>{5,9} ?(?:NEW|REPLACE)[^\n]*$",
+    re.DOTALL | re.MULTILINE | re.IGNORECASE,
+)
+_CREATE_BLOCK = re.compile(
+    r"```[ \t]*create[^\n]*\n[ \t]*(?:path|file)[ \t]*:[ \t]*(?P<path>[^\n]+?)[ \t]*\n"
+    r"<{5,9} ?CONTENT[^\n]*\n(?P<content>.*?)^>{5,9} ?END[^\n]*$",
+    re.DOTALL | re.MULTILINE | re.IGNORECASE,
+)
+_EDIT_START = re.compile(r"```[ \t]*(?:edit|create)\b", re.IGNORECASE)
+
+
+def _drop_one_newline(text: str) -> str:
+    return text[:-1] if text.endswith("\n") else text
+
+
+def _clean_path(path: str) -> str:
+    return path.strip().strip("`'\"")
+
+
 @dataclass
 class ParsedAction:
     """One step of the workspace agent: a tool call, a code block or a final answer."""
@@ -128,6 +149,8 @@ class ParsedAction:
     final_answer: str | None = None
     error: str | None = None  # a malformed tool call, explained for the model
     truncated: bool = False
+    # Proposed file changes: [{"op": "edit", "path", "old", "new", "replace_all"} | {"op": "create", "path", "content"}]
+    edits: list[dict] | None = None
 
 
 def _loads_lenient(text: str) -> dict:
@@ -178,10 +201,35 @@ def parse_action(text: str) -> ParsedAction:
     code, code_start, _ = extract_code(head)
     if code:
         candidates.append((code_start, "code", code))
+    edit_blocks = sorted(
+        [(m.start(), "edit", m) for m in _EDIT_BLOCK.finditer(head)]
+        + [(m.start(), "create", m) for m in _CREATE_BLOCK.finditer(head)],
+        key=lambda b: b[0],
+    )
+    if edit_blocks:
+        candidates.append((edit_blocks[0][0], "edits", ""))
+    elif _EDIT_START.search(head):
+        start = _EDIT_START.search(head).start()
+        if not candidates or start < min(c[0] for c in candidates):
+            action.truncated = True
+            action.thought = head[:start].strip()
+            return action
 
     if candidates:
         pos, kind, payload = min(candidates, key=lambda c: c[0])
         action.thought = head[:pos].strip()
+        if kind == "edits":
+            # All edit/create blocks in the reply are applied in order as one step.
+            action.edits = []
+            for _, op, m in edit_blocks:
+                if op == "edit":
+                    action.edits.append({"op": "edit", "path": _clean_path(m.group("path")),
+                                         "old": _drop_one_newline(m.group("old")),
+                                         "new": _drop_one_newline(m.group("new")), "replace_all": False})
+                else:
+                    action.edits.append({"op": "create", "path": _clean_path(m.group("path")),
+                                         "content": m.group("content")})
+            return action
         if kind == "code":
             # An unlabelled fence holding {"tool": ...} is a dict literal, not analysis code.
             try:
@@ -197,6 +245,19 @@ def parse_action(text: str) -> ParsedAction:
             action.tool, action.args = _normalize_call(_loads_lenient(payload))
         except (ValueError, SyntaxError) as exc:
             action.error = f"Could not parse the tool call ({exc}). Send one valid JSON object."
+            return action
+        args = action.args
+        if action.tool == "edit_file":
+            action.edits = [{
+                "op": "edit", "path": str(args.get("path", "")),
+                "old": str(args.get("old", args.get("old_string", args.get("old_text", "")))),
+                "new": str(args.get("new", args.get("new_string", args.get("new_text", "")))),
+                "replace_all": bool(args.get("replace_all", False)),
+            }]
+            action.tool = action.args = None
+        elif action.tool == "create_file":
+            action.edits = [{"op": "create", "path": str(args.get("path", "")), "content": str(args.get("content", ""))}]
+            action.tool = action.args = None
         return action
 
     if final_match:

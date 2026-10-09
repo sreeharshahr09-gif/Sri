@@ -197,8 +197,7 @@ def test_binary_files_are_not_dumped(ws):
 def test_document_cache_refreshes_on_change(ws, ws_dir):
     assert ws.document("README.md").lines[0] == "# Tyre study"
     path = ws_dir / "README.md"
-    path.write_text("# Changed\n")
-    os.utime(path, (path.stat().st_atime, path.stat().st_mtime + 5))
+    path.write_text("# Changed\n")  # same second is fine: the cache keys on mtime_ns and size
     assert ws.document("README.md").lines[0] == "# Changed"
 
 

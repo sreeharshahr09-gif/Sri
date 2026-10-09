@@ -10,6 +10,7 @@ from typing import Any, Callable, Iterable
 
 from .config import AgentConfig
 from .data import Dataset, describe_for_llm
+from .editing import FileChange
 from .grounding import CitationReport, GroundingReport, check_grounding
 from .llm import ChatModel, LLMError
 from .parsing import parse_reply, strip_thinking
@@ -77,7 +78,8 @@ class AgentRun:
     dataset_sha256: str = ""
     grounding: GroundingReport | None = None
     citations: CitationReport | None = None
-    mode: str = "data"  # "data" analysis, or workspace "answer" / "teach"
+    mode: str = "data"  # "data" analysis, or workspace "answer" / "teach" / "edit"
+    changes: list[FileChange] = field(default_factory=list)  # proposed file changes (edit mode)
 
     @property
     def executed(self) -> bool:
@@ -108,7 +110,8 @@ class AgentRun:
         return sum((s.prompt_tokens or 0) + (s.completion_tokens or 0) for s in self.steps)
 
     def to_dict(self) -> dict[str, Any]:
-        data = {k: v for k, v in self.__dict__.items() if k not in ("steps", "grounding", "citations")}
+        data = {k: v for k, v in self.__dict__.items() if k not in ("steps", "grounding", "citations", "changes")}
+        data["changes"] = [c.to_dict() for c in self.changes]
         data["steps"] = [s.to_dict() for s in self.steps]
         data["grounding"] = self.grounding.to_dict() if self.grounding else None
         data["citations"] = self.citations.to_dict() if self.citations else None
@@ -120,6 +123,7 @@ class AgentRun:
         steps = [AgentStep.from_dict(s) for s in data.pop("steps", [])]
         grounding = data.pop("grounding", None)
         citations = data.pop("citations", None)
+        data["changes"] = [FileChange.from_dict(c) for c in data.pop("changes", [])]
         return cls(
             steps=steps,
             grounding=GroundingReport.from_dict(grounding) if grounding else None,
