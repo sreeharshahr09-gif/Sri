@@ -78,3 +78,31 @@ def test_profile_truncates_wide_frames(dataset):
     dataset.df = wide
     text = describe_for_llm(dataset, max_columns=5)
     assert "plus 19 more columns" in text and "'extra_19'" in text
+
+
+def test_two_row_header_with_labels_and_units_is_merged():
+    raw = (
+        "Tyre Size Details,Load,,Peak\n"
+        ",[kN],SR @ \u00b5peak,\u00b5peak\n"
+        "225/50R19 96V,4.0,0.15,1.10\n"
+        "205/65R16 95H,4.5,0.11,1.05\n"
+        "225/50R19 96V,5.0,0.16,1.08\n"
+    ).encode()
+    ds = load_dataset(raw, "tyres.csv")
+    assert list(ds.df.columns) == ["Tyre Size Details", "Load [kN]", "SR @ \u00b5peak", "Peak \u00b5peak"]
+    assert pd.api.types.is_float_dtype(ds.df["SR @ \u00b5peak"]) and len(ds.df) == 3
+    assert any("header continuation" in n for n in ds.notes)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"name,score\nAlice,5\nBob,7\nCara,9\n",  # first row is ordinary data
+        b",name,city\n0,Alice,Paris\n1,Bob,Rome\n2,Cara,Oslo\n",  # saved index column
+        b"a,b\nx,y\nz,w\nq,r\n",  # all-text table
+    ],
+)
+def test_normal_files_are_not_treated_as_multi_row_headers(raw):
+    ds = load_dataset(raw, "x.csv")
+    assert not any("header continuation" in n for n in ds.notes)
+    assert len(ds.df) == 3

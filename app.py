@@ -241,6 +241,8 @@ def render_step(step, run_idx: int) -> None:
         title += " · ↩️ duplicate code skipped"
     elif step.note == "truncated":
         title += " · ✂️ reply truncated"
+    elif step.note == "premature answer":
+        title += " · ↩️ answered without evidence, sent back to verify"
     elif step.code is None:
         title += " · 📝 answer"
     if step.llm_latency_s:

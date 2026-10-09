@@ -87,6 +87,9 @@ def load_dataset(raw: bytes, filename: str, sheet: str | None = None) -> Dataset
     if df.shape[1] == 0:
         raise DataLoadError("No columns were found in the file.")
 
+    df, merged_note = _merge_header_rows(df)
+    if merged_note:
+        notes.append(merged_note)
     df, header_notes = _clean_columns(df)
     notes.extend(header_notes)
     empty_rows = int(df.isna().all(axis=1).sum())
@@ -147,6 +150,75 @@ def _read_json(raw: bytes, lines: bool) -> pd.DataFrame:
         if lines:
             raise
         return pd.read_json(io.StringIO(text), lines=True)
+
+
+def _is_unnamed(col) -> bool:
+    if col is None or (isinstance(col, float) and np.isnan(col)):
+        return True
+    text = str(col).strip()
+    return not text or text.startswith("Unnamed:")
+
+
+def _is_number(value) -> bool:
+    if isinstance(value, (int, float, np.number)) and not isinstance(value, bool):
+        return True
+    try:
+        float(str(value).strip().replace(",", ""))
+    except ValueError:
+        return False
+    return True
+
+
+def _merge_header_rows(df: pd.DataFrame, max_rows: int = 2) -> tuple[pd.DataFrame, str | None]:
+    """Fold header continuation rows (sub-labels or units below the header) into column names.
+
+    Spreadsheets often put a label like "SR @ µpeak" or a unit like "[kN]" in the row under
+    the main header. Read naively, such columns are "Unnamed" and numeric columns turn into
+    text. A row counts as part of the header when it is text-only, labels at least one unnamed
+    column or sits above numeric data, and the rows below it are numeric for those columns.
+    """
+    merged = 0
+    touched: set[int] = set()  # positions of columns that had header text folded in
+    for _ in range(max_rows):
+        if len(df) < 3:
+            break
+        first = df.iloc[0]
+        labelled = [c for c in df.columns if pd.notna(first[c]) and str(first[c]).strip()]
+        if not labelled or any(_is_number(first[c]) for c in labelled):
+            break
+        below = df.iloc[1:51]
+        numeric_below = [
+            c for c in labelled
+            if below[c].notna().any() and all(_is_number(v) for v in below[c].dropna())
+        ]
+        fills_unnamed = any(_is_unnamed(c) for c in labelled)
+        if not numeric_below or not (fills_unnamed or len(numeric_below) >= max(2, len(labelled) // 2)):
+            break
+
+        touched.update(i for i, c in enumerate(df.columns) if c in labelled)
+        names = []
+        for col in df.columns:
+            sub = first[col]
+            sub = str(sub).strip() if pd.notna(sub) and str(sub).strip() else ""
+            if _is_unnamed(col):
+                names.append(sub or col)
+            else:
+                names.append(f"{str(col).strip()} {sub}".strip() if sub else col)
+        df = df.iloc[1:].reset_index(drop=True)
+        df.columns = names
+        merged += 1
+
+    if not merged:
+        return df, None
+    # Columns that were numeric under the header text can now be numeric again.
+    for pos in sorted(touched):
+        s = df.iloc[:, pos]
+        if pd.api.types.is_object_dtype(s) or pd.api.types.is_string_dtype(s):
+            converted = pd.to_numeric(s, errors="coerce")
+            if s.notna().any() and converted.notna().sum() == s.notna().sum():
+                df.isetitem(pos, converted)
+    rows = "row" if merged == 1 else f"{merged} rows"
+    return df, f"Merged a header continuation {rows} (sub-labels/units under the header) into the column names."
 
 
 def _clean_columns(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:

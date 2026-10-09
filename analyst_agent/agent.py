@@ -15,10 +15,13 @@ from .llm import ChatModel, LLMError
 from .parsing import parse_reply, strip_thinking
 from .prompts import (
     FORCE_FINAL,
+    NUDGE_NO_CHART,
+    NUDGE_NO_CODE,
     NUDGE_REPEATED,
     NUDGE_TRUNCATED,
     OBSERVATION_FOOTER,
     SYSTEM_PROMPT,
+    wants_chart,
 )
 from .sandbox import Artifact, ExecutionResult, Sandbox
 
@@ -150,24 +153,46 @@ class DataAnalystAgent:
     def system_prompt(self) -> str:
         return build_system_prompt(len(self.dataset.df), self.sandbox.allowed_modules, self.profile)
 
-    def _history_messages(self, history: Iterable[AgentRun]) -> list[dict[str, str]]:
-        messages: list[dict[str, str]] = []
-        turns = [h for h in history if h.answer][-self.config.history_turns :] if self.config.history_turns else []
-        for past in turns:
-            messages.append({"role": "user", "content": past.question})
-            messages.append({"role": "assistant", "content": f"Final Answer:\n{_clip(past.answer, 3000)}"})
-        return messages
-
     def _question_message(self, question: str, history: list[AgentRun]) -> str:
-        previous = next((h for h in reversed(history) if h.successful_code), None)
-        if previous is None:
+        """The user turn: earlier Q&A as a context block, then the current question.
+
+        Earlier turns are deliberately not replayed as assistant messages: a history made of
+        bare "Final Answer:" replies teaches the model to answer without running code.
+        """
+        turns = [h for h in history if h.answer][-self.config.history_turns :] if self.config.history_turns else []
+        if not turns:
             return question
-        code = _clip("\n\n".join(previous.successful_code[-2:]), 3000)
-        return (
-            f"{question}\n\n"
-            "(For reference, code that produced the previous answer. Variables from it do not "
-            f"persist; reuse or adapt it if relevant.)\n```python\n{code}\n```"
-        )
+        lines = ["Earlier in this conversation (context only):"]
+        for n, past in enumerate(turns, 1):
+            tag = "" if past.executed else " [not verified by code]"
+            lines.append(f"Q{n}: {past.question}\nA{n}{tag}: {_clip(past.answer, 1500)}")
+        previous = next((h for h in reversed(turns) if h.successful_code), None)
+        if previous is not None:
+            code = _clip("\n\n".join(previous.successful_code[-2:]), 3000)
+            lines.append(
+                "Code behind the most recent verified answer (variables do not persist; reuse or "
+                f"adapt it if relevant):\n```python\n{code}\n```"
+            )
+        lines.append(f"Current question: {question}")
+        return "\n\n".join(lines)
+
+    def _premature_answer(self, run: AgentRun, question: str, nudged: set[str]) -> str | None:
+        """Feedback when the model tries to answer before producing the evidence, else None.
+
+        Each kind of nudge is sent at most once, so genuinely code-free questions
+        ("what can you do?") still get answered.
+        """
+        if not run.executed and "no_code" not in nudged:
+            nudged.add("no_code")
+            return NUDGE_NO_CODE
+        if wants_chart(question) and "no_chart" not in nudged:
+            has_chart = any(
+                a.kind in ("plotly", "image") for s in run.steps if s.succeeded for a in s.result.artifacts
+            )
+            if not has_chart:
+                nudged.add("no_chart")
+                return NUDGE_NO_CHART
+        return None
 
     def format_observation(self, result: ExecutionResult) -> str:
         limit = self.config.max_observation_chars
@@ -236,10 +261,12 @@ class DataAnalystAgent:
             temperature=getattr(getattr(self.llm, "config", None), "temperature", None),
             dataset_sha256=self.dataset.sha256,
         )
-        messages = [{"role": "system", "content": self.system_prompt()}]
-        messages += self._history_messages(history)
-        messages.append({"role": "user", "content": self._question_message(question, history)})
+        messages = [
+            {"role": "system", "content": self.system_prompt()},
+            {"role": "user", "content": self._question_message(question, history)},
+        ]
         executed: dict[str, int] = {}
+        nudged: set[str] = set()
 
         try:
             for index in range(cfg.max_steps + 1):
@@ -255,7 +282,18 @@ class DataAnalystAgent:
                     prompt_tokens=completion.prompt_tokens,
                     completion_tokens=completion.completion_tokens,
                 )
-                if force_final or not (parsed.code or parsed.truncated_code):
+                is_answer = not (parsed.code or parsed.truncated_code)
+                if is_answer and not force_final:
+                    feedback = self._premature_answer(run, question, nudged)
+                    if feedback is not None:
+                        step.note = "premature answer"
+                        run.steps.append(step)
+                        emit("step", step)
+                        footer = FORCE_FINAL if index + 1 == cfg.max_steps else ""
+                        messages.append({"role": "assistant", "content": strip_thinking(completion.content) or "(empty)"})
+                        messages.append({"role": "user", "content": f"{feedback}\n\n{footer}".strip()})
+                        continue
+                if force_final or is_answer:
                     run.steps.append(step)
                     answer = parsed.final_answer
                     if not answer:

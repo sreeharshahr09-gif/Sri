@@ -308,6 +308,13 @@ def run(job_dir):
                 obj = namespace.get(var)
                 if obj is not None and not callable(obj):
                     collector.show(obj)
+            # Any other Plotly figure the code built but forgot to show() (e.g. `fig_box`):
+            # a chart that was created should never be silently lost.
+            go_module = sys.modules.get("plotly.graph_objects")
+            if go_module is not None:
+                for obj in list(namespace.values()):
+                    if isinstance(obj, go_module.Figure):
+                        collector.show(obj)
             if "matplotlib.pyplot" in sys.modules:
                 plt = sys.modules["matplotlib.pyplot"]
                 for num in plt.get_fignums():
