@@ -7,6 +7,7 @@ restores the backup. Files are never deleted or renamed.
 
 from __future__ import annotations
 
+import copy
 import os
 from dataclasses import replace
 from pathlib import PurePosixPath
@@ -19,7 +20,8 @@ from analyst_agent.editing import BackupStore, EditError, apply_change, undo_cha
 from analyst_agent.export import describe_tool_step, workspace_to_json, workspace_to_markdown
 from analyst_agent.workspace import Workspace, WorkspaceError, is_local_url
 from analyst_agent.workspace_agent import WorkspaceAgent
-from ui.common import render_artifact, render_execution
+from ui import jobs
+from ui.common import remember, render_artifact, render_execution
 
 STARTER_QUESTIONS = [
     "Give me an overview of this folder: what is in it and how is it organised?",
@@ -104,15 +106,15 @@ def sidebar(llm_cfg: LLMConfig) -> tuple[AgentConfig, bool]:
     st.sidebar.header("📁 Workspace")
     path = st.sidebar.text_input(
         "Folder path",
-        value=os.environ.get("WORKSPACE_DIR", ""),
+        key=remember("ws_path_input", os.environ.get("WORKSPACE_DIR", "")),
         placeholder="e.g. C:\\Users\\me\\tyre-study or /home/me/project",
-        key="ws_path_input",
         help="A folder on the machine running this app. The assistant can only read inside it.",
     )
     cols = st.sidebar.columns(2)
-    if cols[0].button("Open", width="stretch", type="primary", disabled=not path.strip()):
+    busy = jobs.is_running("ws_job")
+    if cols[0].button("Open", width="stretch", type="primary", disabled=not path.strip() or busy):
         open_workspace(path.strip())
-    if cols[1].button("Close", width="stretch", disabled=st.session_state.ws is None):
+    if cols[1].button("Close", width="stretch", disabled=st.session_state.ws is None or busy):
         if st.session_state.ws_sandbox is not None:
             st.session_state.ws_sandbox.close()
         st.session_state.update(ws=None, ws_runs=[], ws_sandbox=None)
@@ -141,10 +143,11 @@ def sidebar(llm_cfg: LLMConfig) -> tuple[AgentConfig, bool]:
             st.caption(f"Backups and journal: `{backups.dir}`")
 
     with st.sidebar.expander("⚙️ Assistant", expanded=False):
-        max_steps = st.slider("Max steps per question", 2, 30, 12, key="ws_max_steps",
+        max_steps = st.slider("Max steps per question", min_value=2, max_value=30, key=remember("ws_max_steps", 12),
                               help="Tool calls (search, read, …) allowed before it must answer.")
-        history_turns = st.slider("Conversation memory (turns)", 0, 10, 4, key="ws_history")
-        allow_python = st.checkbox("Allow Python analysis", value=True, key="ws_python",
+        history_turns = st.slider("Conversation memory (turns)", min_value=0, max_value=10,
+                                  key=remember("ws_history", 4))
+        allow_python = st.checkbox("Allow Python analysis", key=remember("ws_python", True),
                                    help="Lets the assistant run sandboxed code that reads (never writes) "
                                         "files in the folder, e.g. to analyse a data file.")
     cfg = replace(AgentConfig(), max_steps=int(max_steps), history_turns=int(history_turns),
@@ -153,7 +156,7 @@ def sidebar(llm_cfg: LLMConfig) -> tuple[AgentConfig, bool]:
     runs: list[AgentRun] = st.session_state.ws_runs
     if ws is not None and runs:
         st.sidebar.header("🗂️ Session")
-        if st.sidebar.button("New conversation", width="stretch", key="ws_new"):
+        if st.sidebar.button("New conversation", width="stretch", key="ws_new", disabled=busy):
             st.session_state.ws_runs = []
             st.rerun()
         settings = {"llm": llm_cfg.__dict__ | {"api_key": "***" if llm_cfg.api_key else ""}, "agent": cfg.__dict__}
@@ -268,6 +271,8 @@ def render_run(run: AgentRun, run_idx: int) -> None:
         st.error(f"Model error: {run.error}")
     elif run.status == "error":
         st.error(f"The assistant stopped unexpectedly: {run.error}")
+    elif run.status == "cancelled":
+        st.info("Stopped at your request. What it did so far is under “How it worked”.", icon="⏹")
     if run.answer:
         st.markdown(run.answer)
     if run.answer and not run.executed:
@@ -312,38 +317,42 @@ def files_tab(ws: Workspace) -> None:
 # --------------------------------------------------------------------------- main
 
 
+def describe_event(kind: str, payload) -> tuple[str | None, tuple[str, str] | None]:
+    """Progress text for an agent event (runs in the worker thread: no Streamlit calls)."""
+    if kind == "llm_call":
+        return f"Thinking (step {payload + 1})…", None
+    if kind == "tool":
+        return f"{ICONS.get(payload.tool, '🔧')} {describe_tool_step(payload)}…", None
+    if kind == "executing":
+        return f"🐍 Running Python (step {payload.index + 1})…", ("code", payload.code)
+    if kind == "step":
+        if payload.tool:
+            return None, ("caption", f"{'❌' if payload.tool_error else '✅'} {describe_tool_step(payload)}")
+        if payload.result is not None:
+            return None, ("caption", "✅ Python ran" if payload.result.ok else f"❌ Python: {payload.result.error_type}")
+        if payload.note:
+            return None, ("caption", f"↩️ {payload.note}")
+    return None, None
+
+
 def run_question(question: str, mode: str, llm_cfg: LLMConfig, cfg: AgentConfig, allow_python: bool) -> None:
+    """Start the question as a background job, so switching pages does not lose it."""
     ws: Workspace = st.session_state.ws
     sandbox: Sandbox | None = st.session_state.ws_sandbox if allow_python else None
     if sandbox is not None:
         sandbox.config = DEFAULT_SANDBOX
-    agent = WorkspaceAgent(LLMClient(llm_cfg), ws, sandbox=sandbox, config=cfg, mode=mode)
+    # The job gets its own view of the folder: an edit run's staged proposals (its "overlay")
+    # must not show up in the Files tab while it runs. The text cache is shared.
+    job_ws = copy.copy(ws)
+    job_ws.overlay = {}
+    agent = WorkspaceAgent(LLMClient(llm_cfg), job_ws, sandbox=sandbox, config=cfg, mode=mode)
+    history = list(st.session_state.ws_runs)
 
-    with st.chat_message("user"):
-        st.markdown(question)
-    with st.chat_message("assistant"):
-        status = st.status("Reading the folder…", expanded=True)
+    def work(on_event, should_stop):
+        return agent.run(question, history=history, on_event=on_event, should_stop=should_stop)
 
-        def on_event(kind: str, payload) -> None:
-            if kind == "llm_call":
-                status.update(label=f"Thinking (step {payload + 1})…")
-            elif kind == "tool":
-                status.update(label=f"{ICONS.get(payload.tool, '🔧')} {describe_tool_step(payload)}…")
-            elif kind == "executing":
-                status.update(label=f"🐍 Running Python (step {payload.index + 1})…")
-            elif kind == "step":
-                if payload.tool:
-                    mark = "❌" if payload.tool_error else "✅"
-                    status.caption(f"{mark} {describe_tool_step(payload)}")
-                elif payload.result is not None:
-                    status.caption("✅ Python ran" if payload.result.ok else f"❌ Python: {payload.result.error_type}")
-                elif payload.note:
-                    status.caption(f"↩️ {payload.note}")
-
-        run = agent.run(question, history=st.session_state.ws_runs, on_event=on_event)
-        state = "error" if run.status in ("llm_error", "error") else "complete"
-        status.update(label=f"Done in {run.duration_s:.1f}s", state=state, expanded=False)
-    st.session_state.ws_runs.append(run)
+    st.session_state.ws_job = jobs.start_job(question, "Workspace", work, describe_event, mode=mode,
+                                             max_steps=cfg.max_steps + 1)
     st.rerun()
 
 
@@ -368,7 +377,8 @@ def page() -> None:
 
     top = st.columns([3, 2])
     top[0].caption(f"**{ws.root.name or ws.root}** · `{ws.root}`")
-    mode_label = top[1].radio("Mode", list(MODES), horizontal=True, key="ws_mode", label_visibility="collapsed",
+    mode_label = top[1].radio("Mode", list(MODES), horizontal=True, key=remember("ws_mode", "Answer"),
+                              label_visibility="collapsed",
                               help="Teach me: step-by-step explanations with terms defined and check questions.")
     mode = MODES[mode_label]
     if mode == "edit":
@@ -389,14 +399,18 @@ def page() -> None:
                 st.markdown(run.question + tag)
             with st.chat_message("assistant"):
                 render_run(run, idx)
-        if not runs:
+        busy = jobs.active("ws_job") is not None
+        if busy:
+            jobs.job_panel("ws_job")
+        elif not runs:
             st.markdown("**Try asking:**")
             cols = st.columns(len(STARTER_QUESTIONS))
             for col, q in zip(cols, STARTER_QUESTIONS):
                 if col.button(q, width="stretch", key=f"ws-start-{q[:20]}"):
                     st.session_state.ws_pending = q
-        question = st.chat_input("Ask about the files in this folder")
+        placeholder = "Working on your question…" if busy else "Ask about the files in this folder"
+        question = st.chat_input(placeholder, disabled=busy)
         question = question or st.session_state.ws_pending
         st.session_state.ws_pending = None
-        if question and question.strip():
+        if question and question.strip() and not busy:
             run_question(question.strip(), mode, llm_cfg, cfg, allow_python)

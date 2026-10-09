@@ -326,3 +326,18 @@ def test_spreadsheet_rows_found_by_search_are_citable(ws, patents):  # noqa: F81
     run = agent.run("Which patent mentions wet grip?")
     assert "[Patents r1844]" in run.steps[0].observation
     assert [(c.label, c.status) for c in run.citations.citations] == [(f"patents.xlsx:{line}", "verified")]
+
+
+def test_stop_keeps_changes_proposed_so_far(ws):  # noqa: F811
+    replies = [tool("read_file", path="README.md"), edit_block("README.md", "# Tyre study", "# Tyre study v2"),
+               tool("list_files"), "Final Answer: done"]
+    _, agent = make(replies, ws, mode="edit")
+    state = {"steps": 0}
+
+    def should_stop():
+        state["steps"] += 1
+        return state["steps"] > 2
+
+    run = agent.run("q", should_stop=should_stop)
+    assert run.status == "cancelled" and [c.path for c in run.changes] == ["README.md"]
+    assert ws.overlay == {}

@@ -49,6 +49,21 @@ The app has two pages:
   - Cleans up empty or duplicate headers and drops fully empty rows.
 - **Conversation memory.** Follow-up questions see earlier answers and the code that produced them.
 
+## Background runs and status bar
+
+Each question runs as a background job, not inside the page.
+
+- **You can switch pages while it works.** A status bar at the top of every page shows the
+  question, the current activity, the step (out of the maximum) and the elapsed time, with a
+  **Stop** button. Stop takes effect after the current step; a model reply already being
+  generated finishes first.
+- **When a job finishes on the other page,** a notification tells you, and the answer is waiting
+  in that page's conversation.
+- **Datasets, open folders, conversations and settings** (steps, mode, folder path) are kept when
+  you switch pages.
+- **Limit:** jobs belong to the browser session, so refreshing the browser tab starts a new
+  session and loses runs in progress.
+
 ## Workspace assistant
 
 Enter a folder path on the **Workspace** page and press **Open**. You can then ask things like
@@ -171,7 +186,8 @@ You can change any setting in the sidebar. Defaults come from environment variab
 
 | Module | Responsibility |
 |---|---|
-| `app.py` | Streamlit entry point: page navigation and shared model settings |
+| `app.py` | Streamlit entry point: page navigation, shared model settings, status bar |
+| `ui/jobs.py` | Background jobs: questions that survive page switches, the status bar, Stop |
 | `ui/data_page.py` | Data analysis page: upload, chat, live progress, trace, data tab, exports |
 | `ui/workspace_page.py` | Workspace page: open a folder, chat, sources, file browser |
 | `analyst_agent/workspace.py` | Read-only, root-bounded file access and text extraction |

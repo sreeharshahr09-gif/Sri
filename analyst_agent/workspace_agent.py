@@ -221,7 +221,13 @@ class WorkspaceAgent:
 
     # ------------------------------------------------------------------ loop
 
-    def run(self, question: str, history: Iterable[AgentRun] = (), on_event: EventHandler | None = None) -> AgentRun:
+    def run(
+        self,
+        question: str,
+        history: Iterable[AgentRun] = (),
+        on_event: EventHandler | None = None,
+        should_stop: Callable[[], bool] | None = None,
+    ) -> AgentRun:
         history = list(history)
         emit = on_event or (lambda *_: None)
         cfg = self.config
@@ -246,6 +252,10 @@ class WorkspaceAgent:
 
         try:
             for index in range(cfg.max_steps + 1):
+                if should_stop is not None and should_stop():
+                    run.status = "cancelled"
+                    run.error = "Stopped at your request."
+                    break
                 force_final = index == cfg.max_steps
                 self._fit_context(messages)
                 emit("llm_call", index)

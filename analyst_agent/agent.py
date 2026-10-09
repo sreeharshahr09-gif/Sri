@@ -68,7 +68,7 @@ class AgentStep:
 class AgentRun:
     question: str
     answer: str = ""
-    status: str = "running"  # answered | step_limit | llm_error | error
+    status: str = "running"  # answered | step_limit | llm_error | error | cancelled
     error: str | None = None
     steps: list[AgentStep] = field(default_factory=list)
     started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat(timespec="seconds"))
@@ -272,6 +272,7 @@ class DataAnalystAgent:
         question: str,
         history: Iterable[AgentRun] = (),
         on_event: EventHandler | None = None,
+        should_stop: Callable[[], bool] | None = None,
     ) -> AgentRun:
         history = list(history)
         emit = on_event or (lambda *_: None)
@@ -292,6 +293,10 @@ class DataAnalystAgent:
 
         try:
             for index in range(cfg.max_steps + 1):
+                if should_stop is not None and should_stop():
+                    run.status = "cancelled"
+                    run.error = "Stopped at your request."
+                    break
                 force_final = index == cfg.max_steps
                 emit("llm_call", index)
                 completion = self.llm.chat(messages)

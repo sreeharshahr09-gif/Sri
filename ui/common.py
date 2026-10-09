@@ -15,6 +15,26 @@ from analyst_agent.sandbox import Artifact, ExecutionResult
 DEFAULT_LLM = LLMConfig()
 
 
+# Widgets whose values should survive page switches. Streamlit discards the state of widgets that
+# are not on the current page; re-assigning their values on every run keeps them.
+_REMEMBERED: set[str] = set()
+
+
+def remember(key: str, default) -> str:
+    """Register a widget key to keep across pages and give it a first value. Create the widget
+    with `key=` and without an explicit default value (the value comes from session state)."""
+    _REMEMBERED.add(key)
+    st.session_state.setdefault(key, default)
+    return key
+
+
+def keep_widget_state() -> None:
+    """Call at the start of every run, before any page renders."""
+    for key in _REMEMBERED:
+        if key in st.session_state:
+            st.session_state[key] = st.session_state[key]
+
+
 def model_settings() -> LLMConfig:
     """Model-server settings, shown on every page so they persist across navigation."""
     with st.sidebar.expander("🧠 Model server", expanded=False):

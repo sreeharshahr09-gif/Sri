@@ -257,3 +257,16 @@ def test_unexpected_errors_keep_partial_trace(sandbox, dataset):
     run = agent.run("q")
     assert run.status == "error" and "AssertionError" in run.error
     assert len(run.steps) == 1 and run.steps[0].succeeded
+
+
+def test_stop_request_ends_the_run_between_steps(sandbox, dataset):
+    llm, agent = make_agent(["```python\nprint(len(df))\n```", "```python\nprint(2)\n```", "Final Answer: x"], sandbox, dataset)
+    calls = {"n": 0}
+
+    def should_stop():
+        calls["n"] += 1
+        return calls["n"] > 1  # allow the first step, then stop
+
+    run = agent.run("q", should_stop=should_stop)
+    assert run.status == "cancelled" and run.error == "Stopped at your request."
+    assert len(run.steps) == 1 and run.steps[0].succeeded and run.answer == ""

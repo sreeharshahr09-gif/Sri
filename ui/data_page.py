@@ -28,7 +28,8 @@ from analyst_agent.data import (
     load_dataset,
 )
 from analyst_agent.export import to_json, to_markdown, to_notebook
-from ui.common import render_artifact, render_execution
+from ui import jobs
+from ui.common import remember, render_artifact, render_execution
 
 STARTER_QUESTIONS = [
     "Give me an overview of this dataset and any data-quality issues.",
@@ -83,25 +84,39 @@ def cached_profile(key: str, _dataset: Dataset, sample_rows: int) -> str:
 def sidebar() -> tuple[LLMConfig, AgentConfig, SandboxConfig]:
     llm_cfg: LLMConfig = st.session_state.llm_cfg
     st.sidebar.header("📁 Data")
+    busy = jobs.is_running("data_job")
     uploaded = st.sidebar.file_uploader(
         "Upload a dataset",
         type=[ext.lstrip(".") for ext in SUPPORTED_EXTENSIONS],
         help="CSV/TSV (delimiter and encoding auto-detected), Excel, Parquet or JSON.",
+        disabled=busy,
     )
-    if uploaded is not None:
+    # The dataset lives in session state, not in the upload widget: Streamlit empties the widget when
+    # you switch pages, and that must not wipe the dataset or the conversation.
+    dataset: Dataset | None = st.session_state.dataset
+    if busy:
+        st.sidebar.caption("⏳ The dataset is locked while a question is being analysed.")
+    elif uploaded is not None:
         handle_upload(uploaded)
-    else:
-        if st.session_state.dataset is not None:  # the file was removed: start over
-            st.session_state.update(dataset=None, dataset_key=None, runs=[], profile=None)
+    if dataset is None and uploaded is None:
         st.sidebar.info("Upload a file to get started.")
+    elif dataset is not None:
+        st.sidebar.caption(f"📄 Loaded: **{dataset.name}**" + (f" · sheet {dataset.sheet}" if dataset.sheet else ""))
+        if st.sidebar.button("Remove dataset", width="stretch", disabled=busy,
+                             help="Unloads the dataset and clears this conversation."):
+            st.session_state.update(dataset=None, dataset_key=None, runs=[], profile=None)
+            st.rerun()
 
     with st.sidebar.expander("⚙️ Agent", expanded=False):
-        max_steps = st.slider("Max reasoning steps", 1, 15, DEFAULT_AGENT.max_steps,
+        max_steps = st.slider("Max reasoning steps", min_value=1, max_value=15,
+                              key=remember("data_max_steps", DEFAULT_AGENT.max_steps),
                               help="Code executions allowed before the agent must answer.")
-        history_turns = st.slider("Conversation memory (turns)", 0, 10, DEFAULT_AGENT.history_turns)
-        code_timeout = st.number_input("Code timeout (s)", 5, 1800, int(DEFAULT_SANDBOX.timeout_seconds), 5)
-        memory_mb = st.number_input("Code memory limit (MB, 0 = none)", 0, 65536,
-                                    DEFAULT_SANDBOX.memory_limit_mb, 512,
+        history_turns = st.slider("Conversation memory (turns)", min_value=0, max_value=10,
+                                  key=remember("data_history", DEFAULT_AGENT.history_turns))
+        code_timeout = st.number_input("Code timeout (s)", min_value=5, max_value=1800, step=5,
+                                       key=remember("data_code_timeout", int(DEFAULT_SANDBOX.timeout_seconds)))
+        memory_mb = st.number_input("Code memory limit (MB, 0 = none)", min_value=0, max_value=65536, step=512,
+                                    key=remember("data_memory_mb", DEFAULT_SANDBOX.memory_limit_mb),
                                     help="Enforced on Linux/macOS only.")
     agent_cfg = replace(DEFAULT_AGENT, max_steps=int(max_steps), history_turns=int(history_turns))
     sandbox_cfg = replace(DEFAULT_SANDBOX, timeout_seconds=float(code_timeout), memory_limit_mb=int(memory_mb))
@@ -113,7 +128,7 @@ def sidebar_session(dataset: Dataset, llm_cfg: LLMConfig, agent_cfg: AgentConfig
                     sandbox_cfg: SandboxConfig) -> None:
     runs: list[AgentRun] = st.session_state.runs
     st.sidebar.header("🗂️ Session")
-    if st.sidebar.button("New conversation", width="stretch", disabled=not runs):
+    if st.sidebar.button("New conversation", width="stretch", disabled=not runs or jobs.is_running("data_job")):
         st.session_state.runs = []
         st.rerun()
     if runs:
@@ -201,6 +216,8 @@ def render_run(run: AgentRun, run_idx: int) -> None:
         st.error(f"Model error: {run.error}")
     elif run.status == "error":
         st.error(f"The analysis stopped unexpectedly: {run.error}")
+    elif run.status == "cancelled":
+        st.info("Stopped at your request. The steps completed so far are in the trace below.", icon="⏹")
     if run.answer:
         st.markdown(run.answer)
 
@@ -268,38 +285,36 @@ def render_data_tab(dataset: Dataset, profile: str) -> None:
 # --------------------------------------------------------------------------- main
 
 
+def describe_event(kind: str, payload) -> tuple[str | None, tuple[str, str] | None]:
+    """Progress text for an agent event (runs in the worker thread: no Streamlit calls)."""
+    if kind == "llm_call":
+        return f"Thinking (step {payload + 1})…", None
+    if kind == "executing":
+        return f"Running code (step {payload.index + 1})…", ("code", payload.code)
+    if kind == "step":
+        r = payload.result
+        if r is None:
+            return None, ("caption", f"Step {payload.index + 1}: {payload.note}")
+        if r.ok:
+            return None, ("caption", f"✅ Step {payload.index + 1} succeeded in {r.duration_s:.1f}s")
+        return None, ("caption", f"❌ Step {payload.index + 1}: {r.error_type}: {(r.error_message or '')[:200]}")
+    return None, None
+
+
 def run_question(question: str, llm_cfg: LLMConfig, agent_cfg: AgentConfig, sandbox_cfg: SandboxConfig) -> None:
+    """Start the question as a background job, so switching pages does not lose it."""
     dataset: Dataset = st.session_state.dataset
     sandbox: Sandbox = st.session_state.sandbox
     sandbox.config = sandbox_cfg
     agent = DataAnalystAgent(LLMClient(llm_cfg), sandbox, dataset, config=agent_cfg,
                              profile=st.session_state.profile)
+    history = list(st.session_state.runs)
 
-    with st.chat_message("user"):
-        st.markdown(question)
-    with st.chat_message("assistant"):
-        status = st.status("Analyzing…", expanded=True)
+    def work(on_event, should_stop):
+        return agent.run(question, history=history, on_event=on_event, should_stop=should_stop)
 
-        def on_event(kind: str, payload) -> None:
-            if kind == "llm_call":
-                status.update(label=f"Thinking (step {payload + 1})…")
-            elif kind == "executing":
-                status.update(label=f"Running code (step {payload.index + 1})…")
-                status.code(payload.code, language="python")
-            elif kind == "step":
-                r = payload.result
-                if r is None:
-                    status.caption(f"Step {payload.index + 1}: {payload.note}")
-                elif r.ok:
-                    status.caption(f"✅ Step {payload.index + 1} succeeded in {r.duration_s:.1f}s")
-                else:
-                    status.caption(f"❌ Step {payload.index + 1}: {r.error_type}: {(r.error_message or '')[:200]}")
-
-        run = agent.run(question, history=st.session_state.runs, on_event=on_event)
-        state = "error" if run.status in ("llm_error", "error") else "complete"
-        status.update(label=f"Done in {run.duration_s:.1f}s", state=state, expanded=False)
-    st.session_state.runs.append(run)
-    # Re-render from state so the sidebar exports and history include this run.
+    st.session_state.data_job = jobs.start_job(question, "Data analysis", work, describe_event,
+                                               max_steps=agent_cfg.max_steps + 1)
     st.rerun()
 
 
@@ -336,15 +351,19 @@ def page() -> None:
             with st.chat_message("assistant"):
                 render_run(run, idx)
 
-        if not runs:
+        busy = jobs.active("data_job") is not None
+        if busy:
+            jobs.job_panel("data_job")
+        elif not runs:
             st.markdown("**Try asking:**")
             cols = st.columns(len(STARTER_QUESTIONS))
             for col, q in zip(cols, STARTER_QUESTIONS):
                 if col.button(q, width="stretch"):
                     st.session_state.pending_question = q
 
-        question = st.chat_input("Ask a question about your data")
+        placeholder = "Working on your question…" if busy else "Ask a question about your data"
+        question = st.chat_input(placeholder, disabled=busy)
         question = question or st.session_state.pending_question
         st.session_state.pending_question = None
-        if question and question.strip():
+        if question and question.strip() and not busy:
             run_question(question.strip(), llm_cfg, agent_cfg, sandbox_cfg)

@@ -10,8 +10,8 @@ Pages:
 
 import streamlit as st
 
-from ui import data_page, workspace_page
-from ui.common import model_settings
+from ui import data_page, jobs, workspace_page
+from ui.common import keep_widget_state, model_settings
 
 st.set_page_config(page_title="Research Agent", page_icon="📊", layout="wide")
 
@@ -21,5 +21,10 @@ navigation = st.navigation(
         st.Page(workspace_page.page, title="Workspace", icon="📁", url_path="workspace"),
     ]
 )
+keep_widget_state()
 model_settings()
+# Questions run in the background; a status bar on every page shows their progress.
+jobs.show_notice()
+if jobs.any_active():
+    jobs.status_bar(navigation.title)
 navigation.run()
