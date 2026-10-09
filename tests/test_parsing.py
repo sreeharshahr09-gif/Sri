@@ -71,3 +71,13 @@ def test_legacy_code_marker():
 
 def test_plain_prose_is_final_answer():
     assert parse_reply("Hello! Upload data and ask me.").final_answer == "Hello! Upload data and ask me."
+
+
+def test_answer_starting_with_bold_keeps_its_formatting():
+    for text in ("Final Answer: **EP3001841** is it.", "**Final Answer:** **EP3001841** is it.",
+                 "**Final Answer**: **EP3001841** is it.", "__Final Answer:__ **EP3001841** is it."):
+        assert parse_reply(text).final_answer == "**EP3001841** is it.", text
+
+
+def test_bold_final_answer_heading_on_its_own_line():
+    assert parse_reply("**Final Answer**\nWest leads.").final_answer == "West leads."

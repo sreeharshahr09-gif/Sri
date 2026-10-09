@@ -10,8 +10,11 @@ from dataclasses import dataclass
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _FENCE = re.compile(r"```[ \t]*([\w+-]*)[^\n]*\n(.*?)```", re.DOTALL)
 _OPEN_FENCE = re.compile(r"```[ \t]*(python|py|python3)?[ \t]*\n", re.IGNORECASE)
+# Only the emphasis markers that wrap the label itself are consumed ("**Final Answer:**"), so an
+# answer that starts with bold text ("Final Answer: **EP123** ...") keeps its opening "**".
 _FINAL = re.compile(
-    r"^[ \t>#*_-]*final[ \t]+answer\b[ \t*_]*(?::[ \t*_]*|$)",
+    r"^[ \t>#-]*(?P<m>[*_]{0,3})[ \t]*final[ \t]+answer\b[ \t]*"
+    r"(?:(?P=m)[ \t]*:|:[ \t]*(?P=m)|(?P=m)[ \t]*$)[ \t]*",
     re.IGNORECASE | re.MULTILINE,
 )
 _LEGACY_CODE = re.compile(r"^[ \t-]*code[ \t]*:[ \t]*", re.IGNORECASE | re.MULTILINE)
