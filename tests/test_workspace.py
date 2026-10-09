@@ -204,3 +204,92 @@ def test_document_cache_refreshes_on_change(ws, ws_dir):
 def test_is_local_url():
     assert is_local_url("http://localhost:8080") and is_local_url("http://127.0.0.1:8080/v1")
     assert not is_local_url("https://api.example.com/v1")
+
+
+# ----------------------------------------------------------------------------- large files
+
+
+@pytest.fixture
+def patents(ws_dir):
+    pd = pytest.importorskip("pandas")
+    pytest.importorskip("openpyxl")
+    rows = [
+        {"Publication": f"EP{3000000 + i}", "Title": f"Tyre tread {i}", "Year": 2010 + i % 10,
+         "Abstract": "A pneumatic tyre with " + ("low rolling resistance\nand wet grip" if i == 1841 else "durability ") + "x" * 600}
+        for i in range(3000)
+    ]
+    with pd.ExcelWriter(ws_dir / "patents.xlsx") as writer:
+        pd.DataFrame(rows).to_excel(writer, sheet_name="Patents", index=False, startrow=1)  # row 1 left blank
+        pd.DataFrame({"Note": ["exported 2026"]}).to_excel(writer, sheet_name="Info", index=False)
+    return ws_dir / "patents.xlsx"
+
+
+def test_search_finds_text_inside_spreadsheet_cells_with_excel_row_numbers(ws, patents):
+    text, hits = ws.search("rolling resistance")
+    assert [p for p, _ in hits] == ["patents.xlsx"]
+    # Header is on Excel row 2 (row 1 blank), so data item 1841 sits on row 1844.
+    assert "[Patents r1844]" in text and "Abstract: A pneumatic tyre with low rolling resistance / and wet grip" in text
+    assert len(text.splitlines()[-1]) < 300  # long cells are shown as a window around the match
+
+
+def test_spreadsheet_document_has_profile_then_rows(ws, patents):
+    doc = ws.document("patents.xlsx")
+    assert doc.kind == "data" and doc.lines[0] == "## Data profile"
+    header = next(line for line in doc.lines if line.startswith("[Patents r2] (header)"))
+    assert header == "[Patents r2] (header) Publication | Title | Year | Abstract"
+    assert any(line.startswith("[Info r2] Note: exported 2026") for line in doc.lines)
+    assert "Year: 2011" in next(line for line in doc.lines if line.startswith("[Patents r4] "))
+    assert "Sheets: Patents, Info" in doc.note
+
+
+def test_spreadsheet_hit_can_be_read_and_cited(ws, patents):
+    _, hits = ws.search("wet grip")
+    path, line = hits[0]
+    text, _, start, end = ws.read(path, start=line, end=line)
+    assert "EP3001841" in text and (start, end) == (line, line)
+
+
+def test_large_csv_gets_row_view(ws, ws_dir):
+    lines = ["id,comment"] + [f"{i},{'note ' * 30}{'needle' if i == 4999 else ''}" for i in range(6000)]
+    (ws_dir / "big.csv").write_text("\n".join(lines))
+    assert (ws_dir / "big.csv").stat().st_size > 512 * 1024
+    text, hits = ws.search("needle")
+    assert "[r5001] id: 4999" in text and hits[0][0] == "big.csv"
+
+
+def test_row_view_is_capped(ws, patents, monkeypatch):
+    import analyst_agent.workspace as workspace_module
+
+    monkeypatch.setattr(workspace_module, "MAX_ROW_LINES", 100)
+    doc = ws.document("patents.xlsx")
+    assert len(doc.lines) <= 100 and "Row view stopped" in doc.note
+
+
+def test_office_files_are_not_limited_by_file_size(ws, monkeypatch):
+    import analyst_agent.workspace as workspace_module
+
+    monkeypatch.setattr(workspace_module, "MAX_FILE_BYTES", 10)  # tiny limit for plain files
+    with pytest.raises(WorkspaceError, match="limit"):
+        ws.document("README.md")
+    assert ws.document("talk.pptx").lines[1] == "Intro"  # judged by its text, not its file size
+    assert ws.document("report.docx").kind == "word"
+
+
+def test_very_long_pdfs_are_capped(ws, monkeypatch):
+    pytest.importorskip("pypdf")
+    import analyst_agent.workspace as workspace_module
+
+    monkeypatch.setattr(workspace_module, "MAX_PDF_PAGES", 0)
+    doc = ws.document("paper.pdf")
+    assert doc.lines == ["## [Stopped after 0 of 1 pages]"]
+
+
+def test_cell_formatting():
+    import datetime
+
+    from analyst_agent.workspace import _cell, _column_letter
+
+    assert [_cell(v) for v in (None, float("nan"), 3.0, 2.5, "a\nb", datetime.datetime(2024, 5, 1))] == [
+        "", "", "3", "2.5", "a / b", "2024-05-01"
+    ]
+    assert [_column_letter(i) for i in (0, 25, 26, 701)] == ["A", "Z", "AA", "ZZ"]

@@ -113,9 +113,12 @@ Call exactly one tool per reply, written as a JSON object in a ```tool block, fo
 ```
 - list_files {"path": ".", "depth": 2}: folder tree with file sizes.
 - search {"query": "text", "path": ".", "glob": "*.py", "regex": false}: case-insensitive search \
-across files (code, text, Word, PowerPoint, PDF, notebooks). Returns path:line matches.
+across files (code, text, Word, PowerPoint, PDF, notebooks, and every cell of spreadsheets). \
+Returns path:line matches.
 - read_file {"path": "...", "start": 1, "end": 250}: numbered lines of a file. Word, PowerPoint, \
-PDF and notebooks are converted to text; spreadsheets and CSV files return a data profile.
+PDF and notebooks are converted to text. Spreadsheets show a data profile followed by one line \
+per row, labelled [sheet rN] where N is the row number in Excel. To count, filter or summarise \
+many rows, use Python with load_table instead of reading rows one by one.
 <<PYTHON_TOOL>><<EDIT_TOOLS>>
 ## How to work
 - Use the overview below and search to locate what matters instead of reading files blindly; \

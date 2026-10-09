@@ -107,7 +107,7 @@ def load_dataset(raw: bytes, filename: str, sheet: str | None = None) -> Dataset
     )
 
 
-def _read_delimited(raw: bytes, default_sep: str | None) -> tuple[pd.DataFrame, str]:
+def _read_delimited(raw: bytes, default_sep: str | None, **read_kwargs) -> tuple[pd.DataFrame, str]:
     last_exc: Exception | None = None
     for encoding in _ENCODINGS:
         try:
@@ -120,13 +120,29 @@ def _read_delimited(raw: bytes, default_sep: str | None) -> tuple[pd.DataFrame, 
             sample = raw[: exc.start].decode(encoding)
         sep = default_sep or _sniff_delimiter(sample)
         try:
-            df = pd.read_csv(io.BytesIO(raw), sep=sep, encoding=encoding, low_memory=False)
+            df = pd.read_csv(io.BytesIO(raw), sep=sep, encoding=encoding, low_memory=False, **read_kwargs)
         except UnicodeDecodeError as exc:
             last_exc = exc
             continue
         readable = {"\t": "tab", ",": "comma", ";": "semicolon", "|": "pipe"}.get(sep, repr(sep))
         return df, f"Parsed as {encoding} text with {readable} delimiter."
     raise DataLoadError(f"Could not decode the file with any of {_ENCODINGS}: {last_exc}")
+
+
+def read_raw_grid(raw: bytes, filename: str, sheet: str | None = None) -> pd.DataFrame:
+    """The sheet as a plain grid (no header handling): row i is spreadsheet row i + 1."""
+    ext = file_extension(filename)
+    if ext in (".xlsx", ".xlsm", ".xls"):
+        return pd.read_excel(io.BytesIO(raw), sheet_name=sheet if sheet is not None else 0, header=None, dtype=object)
+    if ext == ".parquet":
+        df = pd.read_parquet(io.BytesIO(raw))
+        header = pd.DataFrame([list(df.columns)], columns=df.columns)
+        return pd.concat([header, df.astype(object)], ignore_index=True).T.reset_index(drop=True).T
+    df, _ = _read_delimited(
+        raw, default_sep="\t" if ext == ".tsv" else None, header=None, dtype=object,
+        skip_blank_lines=False, keep_default_na=False, na_values=[""],
+    )
+    return df
 
 
 def _sniff_delimiter(sample: str) -> str:

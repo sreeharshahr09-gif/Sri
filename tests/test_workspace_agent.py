@@ -10,7 +10,7 @@ from analyst_agent.workspace import Workspace
 from analyst_agent.workspace_agent import WorkspaceAgent
 
 from .conftest import ScriptedLLM
-from .test_workspace import ws, ws_dir  # noqa: F401  (fixtures)
+from .test_workspace import patents, ws, ws_dir  # noqa: F401  (fixtures)
 
 
 def tool(name, **args):
@@ -314,3 +314,15 @@ def test_run_with_changes_round_trips(ws):  # noqa: F811
     run = agent.run("q")
     restored = AgentRun.from_dict(json.loads(json.dumps(run.to_dict())))
     assert restored.changes[0].diff() == run.changes[0].diff()
+
+
+def test_spreadsheet_rows_found_by_search_are_citable(ws, patents):  # noqa: F811
+    _, hits = ws.search("wet grip")
+    line = hits[0][1]
+    _, agent = make(
+        [tool("search", query="wet grip"), f"Final Answer: EP3001841 covers it (patents.xlsx:{line}, Excel row 1844)."],
+        ws,
+    )
+    run = agent.run("Which patent mentions wet grip?")
+    assert "[Patents r1844]" in run.steps[0].observation
+    assert [(c.label, c.status) for c in run.citations.citations] == [(f"patents.xlsx:{line}", "verified")]

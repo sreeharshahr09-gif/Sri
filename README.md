@@ -59,7 +59,18 @@ stiffness?".
   optional sandboxed Python that reads files with `read_text()` and `load_table()`. It reads only
   what it needs, one step at a time.
 - **Many file types.** It reads code and text, Word (`.docx`), PowerPoint (`.pptx`), PDF (with
-  `pypdf`), Jupyter notebooks, and Excel/CSV (shown as a data profile).
+  `pypdf`), Jupyter notebooks, and Excel/CSV.
+- **Large files.**
+  - Files are never loaded whole. The assistant searches, reads 250-line pieces, or computes with
+    Python.
+  - Spreadsheets appear as a data profile followed by one line per row, labelled `[Sheet r1844]`
+    with Excel's row numbers. Search finds text in any cell, which is useful for patent extracts.
+  - Size limits:
+    - Word/PowerPoint: limited by their text, not file size, so image-heavy decks are fine.
+    - PDF: up to 500 MB and 3,000 pages.
+    - Spreadsheets: up to 150 MB, with a 200,000-row view (use Python for the rest).
+    - Other text files: up to 50 MB.
+  - Scanned PDFs without a text layer would need OCR, which isn't included.
 - **Checked citations.**
   - Every `path:line` reference in an answer is checked. It is shown as verified if the assistant
     opened those lines, flagged if it cited lines it never opened, and marked invalid if the file

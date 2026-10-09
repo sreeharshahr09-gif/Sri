@@ -40,7 +40,14 @@ TEXT_EXTENSIONS = frozenset(
     }
 )
 DATA_EXTENSIONS = frozenset({".csv", ".tsv", ".xlsx", ".xlsm", ".xls", ".parquet"})
-MAX_FILE_BYTES = 50 * 1024 * 1024
+MAX_FILE_BYTES = 50 * 1024 * 1024  # plain text and anything not listed below
+# Word/PowerPoint files are mostly images: their limit applies to the text XML inside instead.
+SIZE_LIMITS = {".pdf": 500 * 1024 * 1024, ".docx": None, ".pptx": None,
+               **{ext: 150 * 1024 * 1024 for ext in (".xlsx", ".xlsm", ".xls", ".parquet", ".csv", ".tsv")}}
+MAX_XML_BYTES = 200 * 1024 * 1024
+MAX_PDF_PAGES = 3000
+MAX_ROW_LINES = 200_000
+MAX_LINE_CHARS = 1500
 READ_MAX_LINES = 250
 READ_MAX_CHARS = 14_000
 
@@ -209,8 +216,9 @@ class Workspace:
             raise WorkspaceError(f"'{rel}' is a folder; use list_files to see its contents.")
         self._check_readable(path)
         stat = path.stat()
-        if stat.st_size > MAX_FILE_BYTES:
-            raise WorkspaceError(f"'{rel}' is {_fmt_size(stat.st_size)}, above the {_fmt_size(MAX_FILE_BYTES)} limit.")
+        limit = SIZE_LIMITS.get(path.suffix.lower(), MAX_FILE_BYTES)
+        if limit is not None and stat.st_size > limit:
+            raise WorkspaceError(f"'{rel}' is {_fmt_size(stat.st_size)}, above the {_fmt_size(limit)} limit for this file type.")
         version = (stat.st_mtime_ns, stat.st_size)
         cached = self._cache.get(key)
         if cached and cached[0] == version:
@@ -236,8 +244,8 @@ class Workspace:
         last = start - 1
         for i in range(start, end + 1):
             line = doc.lines[i - 1]
-            if len(line) > 500:
-                line = line[:500] + " …[line truncated]"
+            if len(line) > MAX_LINE_CHARS:
+                line = line[:MAX_LINE_CHARS] + " …[line truncated]"
             entry = f"{i:>{width}}| {line}"
             if chars + len(entry) > READ_MAX_CHARS and out:
                 break
@@ -296,9 +304,7 @@ class Workspace:
             for i, line in enumerate(doc.lines, 1):
                 if pattern.search(line):
                     hits.append((rel, i))
-                    snippet = line.strip()
-                    if len(snippet) > 200:
-                        snippet = snippet[:200] + "…"
+                    snippet = _snippet(line, pattern)
                     lines_out.append(f"{rel}:{i}: {snippet}")
                     if len(hits) >= max_results:
                         stopped = f" Showing the first {max_results} matches; refine the query for more."
@@ -314,12 +320,22 @@ class Workspace:
         return "\n".join(parts), hits
 
 
+def _snippet(line: str, pattern: re.Pattern) -> str:
+    """A short view of a matching line, centred on the match (keeps a spreadsheet [sheet rN] label)."""
+    line = line.strip()
+    if len(line) <= 220:
+        return line
+    label = line[: line.index("]") + 1] + " " if line.startswith("[") and "]" in line[:60] else ""
+    m = pattern.search(line)
+    start = max(len(label), m.start() - 90) if m else len(label)
+    window = line[start : start + 200]
+    return f"{label}{'…' if start > len(label) else ''}{window}{'…' if start + 200 < len(line) else ''}"
+
+
 def _searchable(path: Path) -> bool:
     ext = path.suffix.lower()
-    if ext in (".docx", ".pptx", ".ipynb", ".pdf") or ext in TEXT_EXTENSIONS:
+    if ext in (".docx", ".pptx", ".ipynb", ".pdf") or ext in TEXT_EXTENSIONS or ext in DATA_EXTENSIONS:
         return True
-    if ext in DATA_EXTENSIONS:
-        return False
     try:
         if path.stat().st_size > 5 * 1024 * 1024:
             return False
@@ -368,6 +384,8 @@ _A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
 
 def _docx_lines(path: Path) -> list[str]:
     with zipfile.ZipFile(path) as zf:
+        if zf.getinfo("word/document.xml").file_size > MAX_XML_BYTES:
+            raise ValueError("the document text is too large to extract")
         root = ElementTree.fromstring(zf.read("word/document.xml"))
     body = root.find(f"{_W}body")
     lines: list[str] = []
@@ -394,6 +412,8 @@ def _pptx_lines(path: Path) -> list[str]:
             (n for n in zf.namelist() if re.fullmatch(r"ppt/slides/slide\d+\.xml", n)),
             key=lambda n: int(re.search(r"(\d+)", n.rsplit("/", 1)[1]).group(1)),
         )
+        if sum(zf.getinfo(n).file_size for n in slides) > MAX_XML_BYTES:
+            raise ValueError("the slide text is too large to extract")
         lines: list[str] = []
         for i, name in enumerate(slides, 1):
             root = ElementTree.fromstring(zf.read(name))
@@ -439,7 +459,11 @@ def _pdf_document(path: Path, rel: str) -> Document:
         return Document(rel, "pdf", [], note="PDF text extraction needs the 'pypdf' package (pip install pypdf).")
     reader = PdfReader(str(path))
     lines: list[str] = []
+    n_pages = len(reader.pages)
     for i, page in enumerate(reader.pages, 1):
+        if i > MAX_PDF_PAGES:
+            lines.append(f"## [Stopped after {MAX_PDF_PAGES} of {n_pages} pages]")
+            break
         lines.append(f"## Page {i}")
         try:
             text = page.extract_text() or ""
@@ -452,28 +476,93 @@ def _pdf_document(path: Path, rel: str) -> Document:
     return Document(rel, "pdf", lines, note=note)
 
 
+def _column_letter(index: int) -> str:
+    letters = ""
+    index += 1
+    while index:
+        index, rem = divmod(index - 1, 26)
+        letters = chr(65 + rem) + letters
+    return letters
+
+
+def _cell(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        if value != value:  # NaN
+            return ""
+        return str(int(value)) if value.is_integer() and abs(value) < 1e15 else f"{value:.10g}"
+    if hasattr(value, "isoformat"):
+        text = value.isoformat()
+        return text[:-9] if text.endswith("T00:00:00") else text
+    return " / ".join(part.strip() for part in str(value).strip().splitlines() if part.strip())
+
+
+def _row_lines(grid, label: str, budget: int) -> tuple[list[str], bool]:
+    """One line per non-empty row, `[label rN] Column: value | ...`; N is the spreadsheet row number."""
+    values = grid.to_numpy(dtype=object)
+    header_idx = next((i for i, row in enumerate(values) if any(_cell(v) for v in row)), None)
+    if header_idx is None:
+        return [], False
+    header = [_cell(v) or _column_letter(j) for j, v in enumerate(values[header_idx])]
+    lines = [f"[{label}r{header_idx + 1}] (header) " + " | ".join(header)]
+    for i in range(header_idx + 1, len(values)):
+        if len(lines) >= budget:
+            return lines, True
+        parts = [f"{header[j]}: {text}" for j, v in enumerate(values[i]) if (text := _cell(v))]
+        if parts:
+            lines.append(f"[{label}r{i + 1}] " + " | ".join(parts))
+    return lines, False
+
+
 def _data_document(path: Path, rel: str) -> Document:
-    from .data import DataLoadError, describe_for_llm, list_sheets, load_dataset
+    """Spreadsheet as text: a short data profile, then one line per row (searchable, citable)."""
+    from .data import DataLoadError, describe_for_llm, list_sheets, load_dataset, read_raw_grid
 
     raw = path.read_bytes()
     try:
         sheets = list_sheets(raw, path.name)
     except DataLoadError:
         sheets = []
-    lines: list[str] = []
-    for sheet in (sheets[:5] if sheets else [None]):
+    targets = sheets or [None]
+
+    lines: list[str] = ["## Data profile"]
+    for sheet in targets[:5]:
         try:
             ds = load_dataset(raw, path.name, sheet=sheet)
         except DataLoadError as exc:
             lines.append(f"Could not load{f' sheet {sheet!r}' if sheet else ''}: {exc}")
             continue
-        lines.extend(describe_for_llm(ds, sample_rows=5).splitlines())
+        lines.extend(describe_for_llm(ds, sample_rows=3).splitlines())
         lines.append("")
-    if len(sheets) > 5:
-        lines.append(f"... plus {len(sheets) - 5} more sheets: {', '.join(sheets[5:])}")
-    note = "Data file shown as a profile. Use run_python with load_table(path, sheet=...) to analyse it."
+    if len(targets) > 5:
+        lines.append(f"... profiles of {len(targets) - 5} more sheets omitted: {', '.join(targets[5:])}")
+
+    lines.append("## Rows (one line per spreadsheet row; rN is the row number as shown in Excel)")
+    truncated_at = None
+    for sheet in targets:
+        budget = MAX_ROW_LINES - len(lines)
+        if budget <= 0:
+            truncated_at = sheet
+            break
+        try:
+            grid = read_raw_grid(raw, path.name, sheet=sheet)
+        except Exception as exc:  # one unreadable sheet should not hide the others
+            lines.append(f"[{sheet}] could not be read: {exc}")
+            continue
+        label = f"{sheet} " if sheet is not None else ""
+        rows, cut = _row_lines(grid, label, budget)
+        lines.extend(rows)
+        if cut:
+            truncated_at = sheet or "file"
+            break
+
+    note = ("Spreadsheet: a data profile, then one line per row labelled [sheet rN]. search finds text in "
+            "any cell. To count, filter or aggregate many rows, use Python with load_table(path, sheet=...).")
     if sheets:
         note += f" Sheets: {', '.join(sheets)}."
+    if truncated_at:
+        note += f" Row view stopped at {MAX_ROW_LINES:,} lines (in {truncated_at}); use Python for the rest."
     return Document(rel, "data", lines, note=note)
 
 
