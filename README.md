@@ -6,6 +6,13 @@ how much of the pattern is in contact and how stiff that contact is — so that
 pitch-sequence-induced flaws (uneven stiffness, noise-prone pitch orders,
 shoulder imbalance) can be caught before a mould is cut.
 
+**It evaluates a new tyre.** There is no wear state: every block stands at its
+full non-skid depth, and a tie bar — which sits below the tread and so never
+touches the road — earns its place entirely by **bonding** the blocks either
+side of it. (The wear *risk* of a new design is still reported, as block
+slenderness and sipe density; that is a prediction from the geometry, not a
+simulation of a worn tyre.)
+
 There are two ways to use it, sharing one verified compute core:
 
 1. **`tread_tool.html` — a standalone browser app.** Open the file in a browser,

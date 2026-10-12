@@ -133,7 +133,7 @@ header .spacer { flex: 1; }
 #grp-patch     { --g: #4fc47a; }
 #grp-divisions { --g: #e0b13c; }
 #grp-load      { --g: #f0913f; }
-#grp-wear      { --g: #ef7aa8; }
+#grp-tiebars      { --g: #ef7aa8; }
 #grp-export    { --g: #93a4b8; }
 /* The same hue on the tab that opens each section. The tab is not inside the
    card, so it cannot inherit --g and has to be given it. Kept in step with the
@@ -145,18 +145,18 @@ header .spacer { flex: 1; }
 [data-grp="grp-patch"]     { --g: #4fc47a; }
 [data-grp="grp-divisions"] { --g: #e0b13c; }
 [data-grp="grp-load"]      { --g: #f0913f; }
-[data-grp="grp-wear"]      { --g: #ef7aa8; }
+[data-grp="grp-tiebars"]      { --g: #ef7aa8; }
 [data-grp="grp-export"]    { --g: #93a4b8; }
 :root[data-theme="light"] {
   --g-project: #6247d6; --g-plan: #1f6feb; --g-step: #0e7490; --g-compound: #0a8f88;
   --g-patch: #2f8f52; --g-divisions: #a97c06; --g-load: #c26516;
-  --g-wear: #c2437a; --g-export: #5b6b7b;
+  --g-tiebars: #c2437a; --g-export: #5b6b7b;
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     --g-project: #6247d6; --g-plan: #1f6feb; --g-step: #0e7490; --g-compound: #0a8f88;
     --g-patch: #2f8f52; --g-divisions: #a97c06; --g-load: #c26516;
-    --g-wear: #c2437a; --g-export: #5b6b7b;
+    --g-tiebars: #c2437a; --g-export: #5b6b7b;
   }
   :root:not([data-theme="dark"]) #grp-project   { --g: var(--g-project); }
 :root:not([data-theme="dark"]) [data-grp="grp-project"]   { --g: var(--g-project); }
@@ -172,8 +172,8 @@ header .spacer { flex: 1; }
 :root:not([data-theme="dark"]) [data-grp="grp-divisions"] { --g: var(--g-divisions); }
   :root:not([data-theme="dark"]) #grp-load      { --g: var(--g-load); }
 :root:not([data-theme="dark"]) [data-grp="grp-load"]      { --g: var(--g-load); }
-  :root:not([data-theme="dark"]) #grp-wear      { --g: var(--g-wear); }
-:root:not([data-theme="dark"]) [data-grp="grp-wear"]      { --g: var(--g-wear); }
+  :root:not([data-theme="dark"]) #grp-tiebars      { --g: var(--g-tiebars); }
+:root:not([data-theme="dark"]) [data-grp="grp-tiebars"]      { --g: var(--g-tiebars); }
   :root:not([data-theme="dark"]) #grp-export    { --g: var(--g-export); }
 :root:not([data-theme="dark"]) [data-grp="grp-export"]    { --g: var(--g-export); }
 }
@@ -191,8 +191,8 @@ header .spacer { flex: 1; }
 :root[data-theme="light"] [data-grp="grp-divisions"] { --g: var(--g-divisions); }
 :root[data-theme="light"] #grp-load      { --g: var(--g-load); }
 :root[data-theme="light"] [data-grp="grp-load"]      { --g: var(--g-load); }
-:root[data-theme="light"] #grp-wear      { --g: var(--g-wear); }
-:root[data-theme="light"] [data-grp="grp-wear"]      { --g: var(--g-wear); }
+:root[data-theme="light"] #grp-tiebars      { --g: var(--g-tiebars); }
+:root[data-theme="light"] [data-grp="grp-tiebars"]      { --g: var(--g-tiebars); }
 :root[data-theme="light"] #grp-export    { --g: var(--g-export); }
 :root[data-theme="light"] [data-grp="grp-export"]    { --g: var(--g-export); }
 
@@ -206,7 +206,7 @@ header .spacer { flex: 1; }
 /* Tie bars are an INPUT: which regions are bars, how tall each one is, and how
    worn the tread is all feed the sweep. So the editor sits in the setup grid
    before Run, on its own full-width row -- the table needs the room. */
-#grp-wear      { grid-column: 1 / span 12; grid-row: 3; }
+#grp-tiebars      { grid-column: 1 / span 12; grid-row: 3; }
 #grp-export    { grid-column: 8 / span 5;  grid-row: 4; margin-top: 0 !important; }
 #runBtn         { grid-column: 1 / span 3; grid-row: 4; min-height: 56px; align-self: stretch; font-size: 15px; }
 #addCompareSide { grid-column: 4 / span 4; grid-row: 4; min-height: 56px; align-self: stretch; margin-top: 0 !important; }

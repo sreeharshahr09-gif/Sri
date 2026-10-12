@@ -28,9 +28,9 @@ const SP = { shore_a: 65, poisson: 0.49, mode: "parallel", bulk_modulus: 1100,
 function load(file, defaults, opts) {
   return E.loadPattern(fs.readFileSync(path.join(DATA, file), "utf8"), defaults, opts || {});
 }
-function netOf(pattern, wear, withBars) {
+function netOf(pattern, withBars) {
   const p = Object.assign({}, pattern, { tiebars: withBars === false ? [] : pattern.tiebars });
-  return E.factorCouplingNetwork(E.buildCouplingNetwork(p, wear, SP));
+  return E.factorCouplingNetwork(E.buildCouplingNetwork(p, SP));
 }
 function loadNodes(net, ids, weights) {
   const idx = [], w = [];
@@ -99,11 +99,11 @@ const asym = load("asym_tiebars.dxf", { height: 16, draft_angle: 0 }, { min_bloc
      Math.abs(t.links[0].span - 3) < 1e-6, t.links[0].span.toFixed(4));
   ck("link direction is circumferential", Math.abs(Math.abs(t.links[0].dir[0]) - 1) < 1e-9);
 
-  const n = netOf(p, 0, true);
+  const n = netOf(p, true);
   ck("the untied block is its own connected component", n.nComp === 2,
      n.members.map(function (m) { return m.map(function (i) { return n.nodes[i].id; }).join("+"); }).join(" | "));
   const excluded = Object.assign({}, p, { tiebars: p.tiebars.map(function (t2) { return Object.assign({}, t2, { enabled: false }); }) });
-  const ne = E.buildCouplingNetwork(excluded, 0, SP);
+  const ne = E.buildCouplingNetwork(excluded, SP);
   ck("a bar the user unticks leaves the network entirely",
      ne.links.length === 0 && ne.nodes.every(function (v) { return v.kind === "block"; }));
 }
@@ -114,7 +114,7 @@ section("3. physics -- the cases the whole feature exists for");
 {
   const p = asym.pattern;
   p.tiebars.forEach(function (t) { t.height = 8; });
-  const n = netOf(p, 0, true);
+  const n = netOf(p, true);
   const free = loadNodes(n, ["D0003"]);          // no bar on either side
   const one = loadNodes(n, ["D0000"]);           // bar on one side only
   const both = loadNodes(n, ["D0001"]);          // bars on both sides
@@ -131,7 +131,7 @@ section("3. physics -- the cases the whole feature exists for");
 
   // heights
   p.tiebars[0].height = 4; p.tiebars[1].height = 12;
-  const na = netOf(p, 0, true);
+  const na = netOf(p, true);
   const lo = loadNodes(na, ["D0000"]), hi = loadNodes(na, ["D0002"]);
   ck("a taller bar couples more", gain(hi) > gain(lo) + 1e-6,
      "h=4 gives x" + gain(lo).toFixed(4) + ", h=12 gives x" + gain(hi).toFixed(4));
@@ -143,7 +143,7 @@ section("3. physics -- the cases the whole feature exists for");
   const gains = [];
   for (const h of [4, 2, 1, 0.5, 0.25]) {
     p.tiebars.forEach(function (t) { t.height = h; });
-    gains.push([h, gain(loadNodes(netOf(p, 0, true), ["D0001"]))]);
+    gains.push([h, gain(loadNodes(netOf(p, true), ["D0001"]))]);
   }
   let monotone = true;
   for (let i = 1; i < gains.length; i++) if (gains[i][1] > gains[i - 1][1] + 1e-12) monotone = false;
@@ -161,14 +161,14 @@ section("3. physics -- the cases the whole feature exists for");
 
   // no bars at all
   p.tiebars.forEach(function (t) { t.height = 8; });
-  const nb = netOf(p, 0, false);
+  const nb = netOf(p, false);
   const r = loadNodes(nb, ["D0000", "D0001", "D0002"]);
   const rel = Math.abs(r.coupled.xx - r.uncoupled.xx) / r.uncoupled.xx;
   ck("with no bars, the coupled solve reproduces the uncoupled reference", rel < 1e-12,
      "rel " + rel.toExponential(2) + " (two different inversion routes)");
 
   // reciprocity: the compliance must be symmetric, so the stiffness is too
-  const nsym = netOf(p, 0, true);
+  const nsym = netOf(p, true);
   const rr = loadNodes(nsym, ["D0000", "D0001", "D0002"], [1, 0.4, 0.7]);
   ck("effective stiffness is symmetric (Maxwell-Betti)",
      Math.abs(rr.coupled.xy - rr.coupled.xy) === 0 && isFinite(rr.coupled.xy));
@@ -196,7 +196,7 @@ section("4. Kxy from a diagonal bar");
   const t = p.tiebars[0];
   ck("the link runs at 45 deg", Math.abs(Math.abs(t.links[0].dir[0]) - Math.SQRT1_2) < 0.05,
      "dir [" + t.links[0].dir.map(function (v) { return v.toFixed(3); }) + "]");
-  const n = netOf(p, 0, true);
+  const n = netOf(p, true);
   const r = loadNodes(n, [p.blocks[0].id]);
   console.log("   block next to a 45 deg bar: Kxy " + r.uncoupled.xy.toExponential(3) +
               " -> " + r.coupled.xy.toExponential(3));
@@ -207,47 +207,57 @@ section("4. Kxy from a diagonal bar");
 }
 
 // =====================================================================
-section("5. wear coupling to the network");
+section("5. a bar below the tread still bonds -- the whole new-tyre case");
 // =====================================================================
+//
+// This tool evaluates a NEW tyre, so a tie bar never touches the road unless it
+// was drawn flush with the tread. Everything it does, it does by BONDING the
+// blocks either side of it, and that is what this section pins down.
 {
   const r = load("tbr_ribs_tiebars.dxf", { height: 16, draft_angle: 2 }, {});
   const p = r.pattern;
-  p.tiebars.forEach(function (t) { t.height = 8.8; });     // engages at 7.2 mm
   // A block that actually has a bar on it. Half the blocks in this drawing are
   // in the untied outer ribs, and picking one of those would test nothing.
   const id = p.blocks[p.tiebars[0].links.filter(function (l) { return l.kind === "block"; })[0].index].id;
-  const rows = [];
-  for (const w of [0, 3, 6, 7.2, 9, 12]) {
-    const n = netOf(p, w, true);
-    const has = n.nodes.some(function (v) { return v.id === id; });
-    const r = has ? loadNodes(n, [id]) : null;
-    rows.push([w, r ? gain(r) : NaN, E.tiebarCurrentHeight(p.tiebars[0], w), r ? r.coupled.xx : NaN]);
-  }
-  rows.forEach(function (q) {
-    console.log("   wear " + String(q[0]).padStart(4) + " mm   bar height " + q[2].toFixed(2) +
-                " mm   coupled Kx " + q[3].toFixed(0).padStart(6) + "   gain x" + q[1].toFixed(4));
-  });
-  ck("a submerged bar already couples at zero wear", rows[0][1] > 1.001,
-     "x" + rows[0][1].toFixed(4) + " -- stiffness with no contact area, which is the point");
-  ck("bar height tracks NSD - wear once worn into",
-     Math.abs(rows[4][2] - (16 - 9)) < 1e-9, "at 9 mm wear the bar is " + rows[4][2].toFixed(2) + " mm");
 
-  // The RELATIVE help must fall with wear, even though the absolute stiffness
-  // rises.  A block shortens as the tread wears and stiffens as roughly 1/L^3,
-  // while the link only tracks the bar height -- and the bar height does not
-  // move at all until the tread reaches it.  So the bar is proportionally most
-  // valuable on a tall, floppy, nearly-new block.  That is the opposite of the
-  // contact-area mechanism, which contributes nothing until worn into: the two
-  // are complementary in time, not additive.
-  let gainFalls = true, absRises = true;
-  for (let i = 1; i < rows.length; i++) {
-    if (!(rows[i][1] <= rows[i - 1][1] + 1e-9)) gainFalls = false;
-    if (!(rows[i][3] >= rows[i - 1][3] - 1e-9)) absRises = false;
-  }
-  ck("the relative coupling gain falls as the tread wears", gainFalls,
-     "x" + rows[0][1].toFixed(3) + " new -> x" + rows[rows.length - 1][1].toFixed(3) + " at 12 mm");
-  ck("the absolute coupled stiffness still rises with wear", absRises,
-     rows[0][3].toFixed(0) + " -> " + rows[rows.length - 1][3].toFixed(0) + " N/mm");
+  const atHeight = (h) => {
+    const q = Object.assign({}, p, {
+      tiebars: p.tiebars.map((t) => Object.assign({}, t, { height: h })) });
+    const n = netOf(q, true);
+    return { gain: gain(loadNodes(n, [id])), inContact: E.effectiveBlocks(q, { separate: true }).tiebars.length,
+             depth: E.tiebarDepthBelowTread(q.tiebars[0]) };
+  };
+
+  const rows = [2, 4, 8, 12, 16].map(atHeight);
+  rows.forEach(function (q, i) {
+    console.log("   bar height " + String([2, 4, 8, 12, 16][i]).padStart(2) +
+                " mm   " + q.depth.toFixed(1).padStart(4) + " mm below tread   " +
+                (q.inContact ? "in contact" : "  bonding ") + "   gain x" + q.gain.toFixed(4));
+  });
+
+  // The headline. A bar whose top is 14 mm under the road, touching nothing,
+  // still stiffens the pair it joins.
+  ck("a bar well below the tread already bonds", rows[0].gain > 1.001,
+     "x" + rows[0].gain.toFixed(4) + " with the bar 14 mm under the road");
+  ck("and it adds no contact area while doing it", rows[0].inContact === 0);
+
+  // A taller bar is a bigger glued cross-section, so it bonds harder. This is
+  // the design lever the tab exists to show.
+  let rises = true;
+  for (let i = 1; i < rows.length; i++) if (!(rows[i].gain >= rows[i - 1].gain - 1e-9)) rises = false;
+  ck("a taller bar bonds harder", rises,
+     "x" + rows[0].gain.toFixed(3) + " at 2 mm -> x" + rows[rows.length - 1].gain.toFixed(3) + " at 16 mm");
+
+  // Drawn at the full NSD it is flush with the blocks, so it is land as well.
+  ck("a bar drawn flush with the tread is in contact", rows[4].inContact > 0,
+     rows[4].inContact + " bar(s) counted as land at height = NSD");
+  ck("and one a hair shorter is not", atHeight(15.99).inContact === 0);
+
+  // NEGATIVE CONTROL: no bars, no gain. Without this the checks above would
+  // pass on a network that had quietly bonded everything to everything.
+  const none = gain(loadNodes(netOf(Object.assign({}, p, { tiebars: [] }), true), [id]));
+  ck("with the bars removed there is no gain at all (the check can fail)",
+     Math.abs(none - 1) < 1e-12, "x" + none.toFixed(6));
 }
 
 // =====================================================================
@@ -259,15 +269,14 @@ section("6. integration with the rasterised sweep");
   const spec = { shape: "rectangle", length: 200, width: 190, rotation: 0, y_center: 0,
                  gamma_deg: 0, load_N: null, scale_with_lean: false };
   const cpp = { vertical_load: 25000, wheel_radius: 500, load_rises_with_lean: false };
-  const wear = 0;
-  const pat = Object.assign({}, p, { blocks: E.effectiveBlocks(p, wear) });
+  const pat = Object.assign({}, p, { blocks: E.effectiveBlocks(p) });
   const grid = E.makeGrid(pat, 1024, 96);
   const pack = E.rasterise(pat, grid, SP, false, null);
   const patch = E.shapePatch(spec, p.crown, p.tread_width, cpp);
   const sweep = E.sweepLean(pat, pack, 0, spec, cpp, new E.MapFFTCache(pack), 90, null);
 
   const t0 = Date.now();
-  const cs = E.couplingSweep(p, pack, patch, wear, SP, 360);
+  const cs = E.couplingSweep(p, pack, patch, SP, 360);
   const ms = Date.now() - t0;
   ck("couplingSweep returns a result", !!cs);
   console.log("   " + cs.n_nodes + " nodes, " + cs.n_links + " links, " + cs.n_components +
@@ -298,7 +307,7 @@ section("6. integration with the rasterised sweep");
      allUp ? "" : "worst " + worstDrop.toExponential(2));
   console.log("   mean gain: Kx x" + cs.gain_kx.toFixed(4) + "   Ky x" + cs.gain_ky.toFixed(4));
 
-  const csOff = E.couplingSweep(Object.assign({}, p, { tiebars: [] }), pack, patch, wear, SP, 360);
+  const csOff = E.couplingSweep(Object.assign({}, p, { tiebars: [] }), pack, patch, SP, 360);
   ck("no bars -> no coupling analysis offered", csOff === null);
 
   // the uncoupled reference and the FFT Kx measure the same tread under two
@@ -325,14 +334,15 @@ section("7. robustness");
   let threw = null;
   try {
     const bad = Object.assign({}, p, { blocks: [] });
-    E.buildCouplingNetwork(bad, 0, SP);
+    E.buildCouplingNetwork(bad, SP);
   } catch (e) { threw = e.message; }
   ck("an empty pattern does not crash the builder", threw === null);
-  const one = E.buildCouplingNetwork(Object.assign({}, p, { blocks: [p.blocks[0]], tiebars: [] }), 0, SP);
+  const one = E.buildCouplingNetwork(Object.assign({}, p, { blocks: [p.blocks[0]], tiebars: [] }), SP);
   ck("a single-block pattern returns no network", one === null);
-  let wornOut = E.buildCouplingNetwork(p, 15.99, SP);
-  ck("wear that removes every block returns no network", wornOut === null || wornOut.nMain === 0,
-     wornOut ? "nMain " + wornOut.nMain : "null");
+  const flat = E.buildCouplingNetwork(
+    Object.assign({}, p, { blocks: p.blocks.map((b) => Object.assign({}, b, { height: 0 })) }), SP);
+  ck("blocks with no height at all return no network", flat === null || flat.nMain === 0,
+     flat ? "nMain " + flat.nMain : "null");
 }
 
 // =====================================================================
@@ -341,7 +351,7 @@ section("8. the assembled system itself");
 {
   const p = load("asym_tiebars.dxf", { height: 16, draft_angle: 0 }, { min_block_area: 5 }).pattern;
   p.tiebars.forEach(function (t) { t.height = 8; });
-  const net = netOf(p, 0, true);
+  const net = netOf(p, true);
   const c = 0, mem = net.members[c], m = mem.length, n = 2 * m;
   const A = new Float64Array(n * n);
   for (let a = 0; a < m; a++) {
@@ -403,7 +413,7 @@ section("9. closed form -- 2 blocks and 1 bar, solved by hand");
   const p = load("pair_tiebar.dxf", { height: 16, draft_angle: 0 }, { min_block_area: 5 }).pattern;
   ck("2 blocks and 1 bar", p.blocks.length === 2 && p.tiebars.length === 1);
   p.tiebars[0].height = 8;
-  const net = netOf(p, 0, true);
+  const net = netOf(p, true);
   const k = net.nodes.find(function (v) { return v.id === "D0000"; }).K.kx;
   const g = net.nodes.find(function (v) { return v.kind === "tiebar"; }).K.kx;
   const c = net.links[0].C.xx;
@@ -433,7 +443,7 @@ section("10. symmetry, wrap and convergence");
 // =====================================================================
 {
   const d = load("diagonal_tiebars.dxf", { height: 14, draft_angle: 0 }, {}).pattern;
-  const nd = netOf(d, 0, true);
+  const nd = netOf(d, true);
   const k = nd.nodes.findIndex(function (v) { return v.id === d.blocks[0].id; });
   const pos = E.effectiveStiffnessAt(nd, [k], [1]).coupled.xy;
   const M = JSON.parse(JSON.stringify(d));
@@ -443,7 +453,7 @@ section("10. symmetry, wrap and convergence");
     t.centroid_y = -t.centroid_y;
     t.links.forEach(function (l) { l.dir = [l.dir[0], -l.dir[1]]; });
   });
-  const nm = netOf(M, 0, true);
+  const nm = netOf(M, true);
   const km = nm.nodes.findIndex(function (v) { return v.id === M.blocks[0].id; });
   const neg = E.effectiveStiffnessAt(nm, [km], [1]).coupled.xy;
   ck("mirroring the tread laterally flips the sign of Kxy",
@@ -454,17 +464,17 @@ section("10. symmetry, wrap and convergence");
   const spec = { shape: "rectangle", length: 200, width: 190, rotation: 0, y_center: 0,
                  gamma_deg: 0, load_N: null, scale_with_lean: false };
   const cpp = { vertical_load: 25000, wheel_radius: 500, load_rises_with_lean: false };
-  const net = E.prepareCouplingNetwork(r, 0, SP);
+  const net = E.prepareCouplingNetwork(r, SP);
 
   // A patch longer than the tyre wraps right round, which is where the shifted
   // interval arithmetic would break if it were going to.
   {
-    const pat = Object.assign({}, r, { blocks: E.effectiveBlocks(r, 0) });
+    const pat = Object.assign({}, r, { blocks: E.effectiveBlocks(r) });
     const grid = E.makeGrid(pat, 512, 48);
     const pack = E.rasterise(pat, grid, SP, false, null);
     const wide = Object.assign({}, spec, { length: r.tyre_circumference * 1.4 });
     const patch = E.shapePatch(wide, r.crown, r.tread_width, cpp);
-    const cs = E.couplingSweep(r, pack, patch, 0, SP, 180, net);
+    const cs = E.couplingSweep(r, pack, patch, SP, 180, net);
     const sw = E.sweepLean(pat, pack, 0, wide, cpp, new E.MapFFTCache(pack), 90, null);
     let worst = 0;
     for (let s = 0; s < cs.theta_deg.length; s++) {
@@ -477,21 +487,21 @@ section("10. symmetry, wrap and convergence");
 
   const gainsGrid = [];
   for (const nx of [512, 1024, 2048]) {
-    const pat = Object.assign({}, r, { blocks: E.effectiveBlocks(r, 0) });
+    const pat = Object.assign({}, r, { blocks: E.effectiveBlocks(r) });
     const grid = E.makeGrid(pat, nx, Math.round(204 / (1194 / nx)));
     const pack = E.rasterise(pat, grid, SP, false, null);
     const patch = E.shapePatch(spec, r.crown, r.tread_width, cpp);
-    gainsGrid.push(E.couplingSweep(r, pack, patch, 0, SP, 360, net).gain_kx);
+    gainsGrid.push(E.couplingSweep(r, pack, patch, SP, 360, net).gain_kx);
   }
   const spreadG = Math.max.apply(null, gainsGrid) - Math.min.apply(null, gainsGrid);
   ck("the gain is converged across a 4x grid range", spreadG < 5e-3,
      gainsGrid.map(function (g) { return g.toFixed(5); }).join(" / "));
 
-  const pat = Object.assign({}, r, { blocks: E.effectiveBlocks(r, 0) });
+  const pat = Object.assign({}, r, { blocks: E.effectiveBlocks(r) });
   const grid = E.makeGrid(pat, 1024, 96);
   const pack = E.rasterise(pat, grid, SP, false, null);
   const patch = E.shapePatch(spec, r.crown, r.tread_width, cpp);
-  const gainsN = [180, 360, 720].map(function (n) { return E.couplingSweep(r, pack, patch, 0, SP, n, net).gain_kx; });
+  const gainsN = [180, 360, 720].map(function (n) { return E.couplingSweep(r, pack, patch, SP, n, net).gain_kx; });
   ck("the gain is insensitive to the angular sample count",
      Math.max.apply(null, gainsN) - Math.min.apply(null, gainsN) < 2e-3,
      gainsN.map(function (g) { return g.toFixed(5); }).join(" / "));
@@ -519,15 +529,14 @@ section("9. separating a rotated block from a genuinely coupled network");
   // A drawing whose blocks are rectangles -- so they carry NO cross term of
   // their own, cause 1 is exactly zero -- bridged by diagonal tie bars.
   const r = load("diagonal_tiebars.dxf", { height: 10, shore_a: 65, draft_angle: 0 }).pattern;
-  const wear = 6;
-  const pat = Object.assign({}, r, { blocks: E.effectiveBlocks(r, wear) });
+  const pat = Object.assign({}, r, { blocks: E.effectiveBlocks(r) });
   const grid = E.makeGrid(pat, 1024, 96);
   const pack = E.rasterise(pat, grid, SP, false, null);
   const spec = { shape: "rectangle", length: 120, width: 150, gamma_deg: 0,
                  scale_with_lean: false, y_center: 0 };
   const patch = E.shapePatch(spec, r.crown, r.tread_width,
                              { vertical_load: 4000, wheel_radius: 320, load_rises_with_lean: false });
-  const c = E.couplingSweep(r, pack, patch, wear, SP, 360, netOf(r, wear));
+  const c = E.couplingSweep(r, pack, patch, SP, 360, netOf(r));
   const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
   const relTo = (a, b) => Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 1e-12);
 
@@ -539,24 +548,23 @@ section("9. separating a rotated block from a genuinely coupled network");
      blockKxy.every((v) => Math.abs(v) < 1e-12),
      r.blocks.length + " rectangular blocks, all Kxy = 0");
 
-  // But the BARS are diagonal, and a diagonal bar is itself an angled body. So
-  // cause 1 reappears at the bar level, and the independent solve -- nothing
-  // bonded to anything -- already shows a cross term.
+  // The bars ARE diagonal, and a diagonal body carries a cross term of its own.
+  // But on a new tyre those bars sit below the tread, so no load lands on them
+  // and they never enter the independent sum: the only loaded elements are the
+  // rectangles, and rectangles have no cross term.
   //
-  // This is the trap, and it is worth stating plainly: reading the bonded Kxy
-  // and calling it "the tie bars coupling the tread" over-attributes, because
-  // part of it is just the bars being diagonal. Only the DIFFERENCE is the
-  // network.
-  ck("but the diagonal BARS each carry one, so the independent solve is not zero",
-     Math.abs(kxyU) > 1, "independent Kxy = " + kxyU.toFixed(2) + " N/mm with nothing bonded");
+  // So on a new tyre the attribution is clean in a way it is not once a tread
+  // has worn down onto its bars: every bit of the bonded cross term is the
+  // network, because there is nothing else it could be.
+  ck("with the bars below the tread the independent solve is exactly zero",
+     Math.abs(kxyU) < 1e-9, "independent Kxy = " + kxyU.toExponential(2) + " N/mm");
   ck("bonding adds more on top", Math.abs(kxyC) > Math.abs(kxyU),
      kxyU.toFixed(2) + " -> " + kxyC.toFixed(2) + " N/mm");
   const share = (kxyC - kxyU) / kxyC;
-  ck("so the bonded value OVER-attributes: only the difference is the network",
-     share > 0.1 && share < 0.9,
-     "network share " + (100 * share).toFixed(0) + "% of the bonded " + kxyC.toFixed(2) +
-     " N/mm; reading the bonded number alone would over-state it by " +
-     (100 * kxyU / (kxyC - kxyU)).toFixed(0) + "%");
+  ck("so all of the bonded cross term is the network, and none of it the bars",
+     relTo(kxyC - kxyU, kxyC) < 1e-9,
+     "network share " + (100 * (kxyC - kxyU) / kxyC).toFixed(0) + "% of the bonded " +
+     kxyC.toFixed(2) + " N/mm");
 
   // The same subtraction on the diagonal terms. Comparing the two
   // decompositions is what says whether the bars merely stiffened the tread or
@@ -576,7 +584,7 @@ section("9. separating a rotated block from a genuinely coupled network");
   // Take the bars out altogether and BOTH contributions go: the bars' own cross
   // term and the network's. Only the rectangular blocks are left, and they have
   // none at all.
-  const bare = E.couplingSweep(r, pack, patch, wear, SP, 360, netOf(r, wear, false));
+  const bare = E.couplingSweep(r, pack, patch, SP, 360, netOf(r, false));
   ck("remove the bars and the cross term vanishes entirely",
      Math.abs(mean(bare.kxy_coupled)) < 1e-9,
      "Kxy = " + mean(bare.kxy_coupled).toExponential(2) + " N/mm");
@@ -587,13 +595,13 @@ section("9. separating a rotated block from a genuinely coupled network");
   // On a straight-ribbed tread with bars ACROSS the grooves rather than at an
   // angle, the bars stiffen and do not couple -- the other half of the claim.
   const s = load("tbr_ribs_tiebars.dxf", { height: 16, shore_a: 65, draft_angle: 0 }).pattern;
-  const sPat = Object.assign({}, s, { blocks: E.effectiveBlocks(s, 9) });
+  const sPat = Object.assign({}, s, { blocks: E.effectiveBlocks(s) });
   const sGrid = E.makeGrid(sPat, 1024, 96);
   const sPack = E.rasterise(sPat, sGrid, SP, false, null);
   const sPatch = E.shapePatch({ shape: "rectangle", length: 180, width: 190, gamma_deg: 0,
                                 scale_with_lean: false, y_center: 0 }, s.crown, s.tread_width,
                               { vertical_load: 26000, wheel_radius: 520, load_rises_with_lean: false });
-  const sc = E.couplingSweep(s, sPack, sPatch, 9, SP, 360, netOf(s, 9));
+  const sc = E.couplingSweep(s, sPack, sPatch, SP, 360, netOf(s));
   ck("lateral bars on straight ribs stiffen the tread", sc.gain_kx > 1.01 && sc.gain_ky > 1.01,
      "Kx x" + sc.gain_kx.toFixed(3) + ", Ky x" + sc.gain_ky.toFixed(3));
   ck("and couple it not at all", Math.abs(mean(sc.kxy_coupled)) < 1e-6,

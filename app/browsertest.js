@@ -470,7 +470,7 @@ const fs = require("fs");
     console.log("double-click on the band resets the zoom:", r);
   }
 
-  // ---- tie bars: detection, per-bar editing, and the wear gate ------------
+  // ---- tie bars: detection, per-bar editing, and what they actually do ----
   // Driven on a purpose-built rib pattern, because the bundled 2W sample has no
   // tie bars -- and the fact that it reports none is itself part of the check.
   {
@@ -497,50 +497,54 @@ const fs = require("fs");
     console.log("tie bars listed:", rows);
     if (rows !== 38) errors.push(`expected 38 tie bars on the rib drawing, listed ${rows}`);
 
-    // Height edits must stick and move the engagement point.
+    // Height edits must stick and move how deep the bar sits.
     const firstAt = () => page.$eval("#tbTable tr:nth-child(2) td:nth-child(8)", (e) => e.textContent.trim());
     const before = await firstAt();
     await fill("#tbTable tr:nth-child(2) input[data-tbfield='height']", "12");
     await dispatchEvent("#tbTable tr:nth-child(2) input[data-tbfield='height']", "change");
     await page.waitForTimeout(200);
     const after = await firstAt();
-    if (before === after) errors.push(`editing a tie-bar height did not move its engagement wear (${before})`);
-    console.log("tie bar T000 engages at:", before, "->", after, "after setting height 12 mm");
+    if (before === after) errors.push(`editing a tie-bar height did not move its depth below the tread (${before})`);
+    console.log("tie bar T000 sits below the tread:", before, "->", after, "after setting height 12 mm");
 
-    // At zero wear nothing is in contact; past the engagement point they are.
-    const engaged = async () => (await page.textContent("#tbSummary")).replace(/\s+/g, " ");
-    const atZero = await engaged();
-    if (!/\b0\b in contact/.test(atZero)) errors.push("tie bars reported in contact at zero wear: " + atZero);
+    // This is a NEW-tyre tool: a bar shorter than the blocks never touches the
+    // road, however it is set. Only one drawn flush with the tread does.
+    const summary = async () => (await page.textContent("#tbSummary")).replace(/\s+/g, " ");
     await fill("#tbAllFrac", "0.55");
     await click("#tbApplyAll");
-    await fill("#wear", "9");
     await page.waitForTimeout(250);
-    const atNine = await engaged();
-    console.log("wear 0:", atZero, "| wear 9:", atNine);
-    if (!/\b38\b in contact/.test(atNine)) errors.push("tie bars not engaged at 9 mm wear: " + atNine);
+    const belowAll = await summary();
+    console.log("bars at 0.55 NSD:", belowAll);
+    if (!/\b0\b drawn flush/.test(belowAll))
+      errors.push("a bar at 0.55 NSD is below the tread and must not be in contact: " + belowAll);
+    await fill("#tbAllFrac", "1");
+    await click("#tbApplyAll");
+    await page.waitForTimeout(250);
+    const flushAll = await summary();
+    console.log("bars at 1.00 NSD:", flushAll);
+    if (!/\b38\b drawn flush/.test(flushAll))
+      errors.push("bars drawn at the full NSD must be in contact: " + flushAll);
 
-    // And the sweep must actually see them: engaging 38 bars adds contact area
-    // and damps the circumferential fluctuation, which is what tie bars do.
-    const sweepAt = async (wear) => {
-      await fill("#wear", String(wear));
+    // And the sweep must see the difference: a flush bar is land, a buried one
+    // is not. Set by tie-bar height alone -- there is no wear to turn it on.
+    const sweepAtFrac = async (frac) => {
+      await fill("#tbAllFrac", String(frac));
+      await click("#tbApplyAll");
       await page.waitForTimeout(150);
       await click("#runBtn");
       await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 90000 });
-      return page.evaluate(() => {
-        const r = window.__ttState ? window.__ttState() : null;
-        return r;
-      });
+      return page.evaluate(() => (window.__ttState ? window.__ttState() : null));
     };
-    const s0 = await sweepAt(7.0), s1 = await sweepAt(9.0);
+    const s0 = await sweepAtFrac(0.55), s1 = await sweepAtFrac(1);
     if (!s0 || !s1) {
-      errors.push("could not read sweep state for the wear comparison");
+      errors.push("could not read sweep state for the tie-bar comparison");
     } else {
-      console.log(`wear 7.0: area ${s0.area.toFixed(0)} mm2, CoV ${(s0.cov * 100).toFixed(2)}%, ${s0.engaged} bars`);
-      console.log(`wear 9.0: area ${s1.area.toFixed(0)} mm2, CoV ${(s1.cov * 100).toFixed(2)}%, ${s1.engaged} bars`);
-      if (s0.engaged !== 0) errors.push("bars engaged below their engagement wear");
-      if (s1.engaged !== 38) errors.push("bars not engaged above their engagement wear");
-      if (!(s1.area > s0.area)) errors.push("engaging tie bars did not increase contact area");
-      if (!(s1.cov < s0.cov)) errors.push("engaging tie bars did not damp the contact-area fluctuation");
+      console.log(`bars at 0.55 NSD: area ${s0.area.toFixed(0)} mm2, CoV ${(s0.cov * 100).toFixed(2)}%, ${s0.engaged} in contact`);
+      console.log(`bars at 1.00 NSD: area ${s1.area.toFixed(0)} mm2, CoV ${(s1.cov * 100).toFixed(2)}%, ${s1.engaged} in contact`);
+      if (s0.engaged !== 0) errors.push("a bar below the tread was counted as in contact");
+      if (s1.engaged !== 38) errors.push("bars drawn flush with the tread were not counted as in contact");
+      if (!(s1.area > s0.area)) errors.push("a flush tie bar did not increase contact area");
+      if (!(s1.cov < s0.cov)) errors.push("a flush tie bar did not damp the contact-area fluctuation");
     }
 
     // The coupling tab carries the same tread below its curve: dimmed blocks,
@@ -581,7 +585,6 @@ const fs = require("fs");
     }
 
     await click("#sampleBtn");
-    await fill("#wear", "0");
     await fill("#nsd", "8.5");
     await page.waitForTimeout(200);
     await click("#runBtn");
@@ -642,7 +645,6 @@ const fs = require("fs");
     const prjBtn = await page.$eval("#saveProject", (e) => e.disabled);
     if (dxfBtn || prjBtn) errors.push("the DXF and project exports are disabled with a pattern loaded");
 
-    await fill("#wear", "6");
     await page.waitForTimeout(150);
     await click("#runBtn");
     await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 90000 });
@@ -697,7 +699,6 @@ const fs = require("fs");
     if (before !== after) errors.push("reloading the project did not restore the tread");
 
     await click("#sampleBtn");
-    await fill("#wear", "0");
     await fill("#nsd", "8.5");
     await page.waitForTimeout(200);
     await click("#runBtn");
@@ -838,11 +839,11 @@ const fs = require("fs");
       await page.waitForTimeout(250);
     };
     await click("#sampleBtn"); await page.waitForTimeout(400);
-    await fill("#nsd", "8.5"); await fill("#wear", "0");
+    await fill("#nsd", "8.5");
     await add();
     await setInputFiles("#fileInput", path.join(__dirname, "..", "data", "hatch_only.dxf"));
     await page.waitForTimeout(700);
-    await fill("#nsd", "12"); await fill("#wear", "7");
+    await fill("#nsd", "12");
     await add();
 
     await openTab("compare");
@@ -998,7 +999,6 @@ const fs = require("fs");
     await setInputFiles("#fileInput", path.join(__dirname, "..", "data", "diagonal_tiebars.dxf"));
     await page.waitForTimeout(700);
     await fill("#nsd", "10");
-    await fill("#wear", "6");
     await page.waitForTimeout(200);
     await click("#runBtn");
     await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 90000 });
@@ -1056,7 +1056,6 @@ const fs = require("fs");
     await click("#sampleBtn");
     await page.waitForTimeout(400);
     await fill("#nsd", "8.5");
-    await fill("#wear", "0");
   }
 
   // ---------------------------------------------------------------------
@@ -1258,7 +1257,6 @@ const fs = require("fs");
       await fill("#treadName", d.tread);
       await fill("#nsd", "10");
       await fill("#tiebarHeight", "0.6");
-      await fill("#wear", "9");
       await page.waitForTimeout(200);
       if (await page.isDisabled("#runBtn"))
         errors.push(`pack design ${d.tread} could not be run: ` +

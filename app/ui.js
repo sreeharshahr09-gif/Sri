@@ -347,7 +347,6 @@
       c.max_reachable_lean_deg.toFixed(1) + " deg";
   }
 
-  function readWear() { var v = num("wear"); return isFinite(v) && v > 0 ? v : 0; }
   function readTiebarFrac() { var v = num("tiebarHeight"); return isFinite(v) && v > 0 ? Math.min(1, v) : 0.55; }
   function readWeldTol() { var v = num("weldTol"); return isFinite(v) && v > 0 ? v : 0.01; }
   function readTiebarAreaFrac() { var v = num("tiebarFrac"); return isFinite(v) && v > 0 ? v : 0.5; }
@@ -789,13 +788,12 @@
     }
 
     // Tie bars in the same window, so the patch can be placed knowing where
-    // they are: filled once they have worn into contact, outlined while they
-    // are still below the surface.
-    var edWear = readWear();
+    // they are: filled if drawn flush with the tread, outlined while they sit
+    // below the surface, which on a new tyre is nearly always.
     for (var tbi = 0; tbi < (p.tiebars || []).length; tbi++) {
       var tbar = p.tiebars[tbi];
       if (tbar.enabled === false) continue;
-      var tbOn = E.tiebarEngaged(tbar, edWear);
+      var tbOn = E.tiebarInContact(tbar);
       var tbColor = tiebarDisplayColor(tbar);
       var tpieces = E.splitAtSeam(tbar.polygon, C);
       for (var tpc = 0; tpc < tpieces.length; tpc++) {
@@ -864,7 +862,6 @@
     ["wheelR", "Wheel radius", "mm", function (v) { return v > 0; }, "must be greater than 0"],
     ["cpLength", "Patch length", "mm", function (v) { return v > 0; }, "must be greater than 0"],
     ["cpWidth", "Patch width", "mm", function (v) { return v > 0; }, "must be greater than 0"],
-    ["wear", "Tread worn", "mm", function (v) { return v >= 0; }, "cannot be negative"],
     ["tiebarHeight", "Tie-bar height", "frac of NSD", function (v) { return v > 0 && v <= 1; }, "must be between 0 and 1"],
     ["weldTol", "Weld tolerance", "mm", function (v) { return v > 0 && v <= 1; }, "must be between 0 and 1"],
     ["tiebarFrac", "Tie-bar area limit", "", function (v) { return v > 0 && v <= 1; }, "must be between 0 and 1"],
@@ -909,9 +906,6 @@
       catch (err) { errs.push(err.message); }
       try { readCrownArcs(state.pattern ? state.pattern.tread_width : 0); }
       catch (err) { errs.push(err.message); }
-      var w = readWear(), nsd = num("nsd");
-      if (isFinite(nsd) && nsd > 0 && w >= nsd)
-        errs.push("Tread worn (" + w + " mm) must be less than the NSD (" + nsd + " mm) — that much wear removes every block");
     }
     return errs;
   }
@@ -1042,7 +1036,7 @@
         state.results = m.results; state.stiffness = m.stiffness; state.grid = m.grid;
         state.notes = m.notes || []; state.maxLean = m.maxLean;
         state.bandEdges = m.bandEdges || null;
-        state.compound = m.compound || null; state.wear = m.wear || null;
+        state.compound = m.compound || null; state.tiebars = m.tiebars || null;
         state.coupling = m.coupling || null;
         state.running = false; $("overlay").classList.remove("on");
         $("runBtn").textContent = "▶ Run";
@@ -1072,7 +1066,7 @@
       stiffParams: readStiffParams(), cpParams: readCpParams(), spec: readSpec(),
       zoneFracs: { center: tyreClassPhysics().zone_center, intermediate: tyreClassPhysics().zone_intermediate },
       leans: currentLeans(), discreteSamples: 360, bandEdges: state.ranBands, curvatureCorrection: $("curv").checked, stride: stride,
-      wear: readWear(), coupling: true, couplingSamples: 720,
+      coupling: true, couplingSamples: 720,
     });
   }
 
@@ -1431,8 +1425,8 @@
   // -- the curves above it did not. Falls back to the live state before any run,
   // where the strip is only a preview.
   function ranEngaged(tb) {
-    if (state.wear && state.wear.engaged_ids) return state.wear.engaged_ids.indexOf(tb.id) >= 0;
-    return E.tiebarEngaged(tb, readWear());
+    if (state.tiebars && state.tiebars.contact_ids) return state.tiebars.contact_ids.indexOf(tb.id) >= 0;
+    return E.tiebarInContact(tb);
   }
 
   // Deliberately outside the zone palette (blue / green / amber): a tie bar
@@ -1479,15 +1473,14 @@
     ctx.closePath();
   }
 
-  function patternStripTitle(wear) {
+  function patternStripTitle() {
     var tb = (state.pattern.tiebars || []).filter(function (t) { return t.enabled !== false; });
     if (!tb.length) return "Rolled-out tread pattern (same θ axis)";
     var on = tb.filter(ranEngaged).length;
     return "Rolled-out tread pattern (same θ axis) — " +
       (anyHatchedBars() ? "coloured = hatched tie bars, violet = detected, " : "violet = tie bars, ") +
-      on + " of " + tb.length +
-      " in contact at " + (+wear).toFixed(1) + " mm wear" +
-      (on < tb.length ? " (dotted outline = still below the surface)" : "");
+      tb.length + " tie bar(s)" +
+      (on ? ", " + on + " drawn flush with the tread" : " below the tread surface, bonding only");
   }
 
   // The rolled-out tread as Plotly shapes. Shared by the sweep tab's strip, the
@@ -1499,7 +1492,7 @@
   //   pattern    a tread other than the one on screen (a held comparison run)
   //   xref/yref  which subplot row to draw into, when the caller has several
   //   engaged    how to decide a bar is in contact, for a pattern that is not
-  //              the live one and so has no live wear state
+  //              the live one, so its bars come frozen with the run
   function patternStripShapes(opts) {
     opts = opts || {};
     var p = opts.pattern || state.pattern, th = plotTheme(), C = p.tyre_circumference;
@@ -1521,7 +1514,7 @@
     // Tie bars, on the same strip as the blocks. The sweep already counts the
     // engaged ones as land -- the worker merges them into the block list before
     // rasterising -- but with nothing drawn there was no way to see it, and a
-    // step in the curves at some wear had no visible cause on the pattern.
+    // step in the curves had no visible cause on the pattern.
     // Engaged bars are filled like land; bars still below the surface are drawn
     // as outlines so you can see where they sit and what is about to arrive.
     for (var ti = 0; ti < (p.tiebars || []).length; ti++) {
@@ -1632,8 +1625,7 @@
 
   function renderPatternStrip() {
     var th = plotTheme();
-    var tbWear = state.wear ? state.wear.mm : readWear();
-    var layout = stripLayout(th, patternStripTitle(tbWear), state.thetaRange || [0, 360]);
+    var layout = stripLayout(th, patternStripTitle(), state.thetaRange || [0, 360]);
     layout.shapes = patternStripShapes({});
     Plotly.react($("patternStrip"), STRIP_TRACE, layout, { responsive: true, displayModeBar: false })
       .then(linkThetaFigures);
@@ -1938,11 +1930,9 @@
     var domTxt = dom.map(function (d) { return "O" + d.order; }).join(", ");
     flags.push(flag("good", "dominant Kz orders: " + domTxt));
     if (state.pattern.meta && state.pattern.meta.uniform_array) flags.push(flag("warn", "uniform array — no pitch modulation in the drawing"));
-    if (state.wear && state.wear.n_tiebars_total)
-      flags.push(flag(state.wear.n_tiebars_engaged ? "good" : "warn",
-        state.wear.n_tiebars_engaged + " of " + state.wear.n_tiebars_total + " tie bars in contact at " +
-        state.wear.mm.toFixed(1) + " mm wear"));
-    if (state.wear && state.wear.mm > 0) flags.push(flag("good", "tread worn " + state.wear.mm.toFixed(1) + " mm"));
+    if (state.tiebars && state.tiebars.n_total)
+      flags.push(flag("good", state.tiebars.n_total + " tie bar(s) bonding the tread" +
+        (state.tiebars.n_in_contact ? ", " + state.tiebars.n_in_contact + " of them in contact" : "")));
     $("flags").innerHTML = flags.join(" ");
 
     // What the compound resolved to, and what the importer actually saw. Both
@@ -2484,22 +2474,21 @@
     body.style.display = tb.length ? "" : "none";
     if (!tb.length) { Plotly.purge($("tbPlot")); $("tbTable").innerHTML = ""; return; }
 
-    var wear = readWear();
     refreshTiebarSummary();
     drawTiebarPlan();
 
     renderTiebarGroups();
 
     var rows = "<table class='metrics'><tr><th>Bar</th><th>zone</th><th>θ (deg)</th><th>y (mm)</th>" +
-      "<th>area (mm²)</th><th>NSD (mm)</th><th>height (mm)</th><th>engages at wear</th>" +
+      "<th>area (mm²)</th><th>NSD (mm)</th><th>height (mm)</th><th>below tread (mm)</th>" +
       "<th>state</th>" +
       "<th title='Is this region a tie bar at all? Untick to exclude it completely — no contact " +
       "area, no coupling stiffness, not in the network. Use it for a region the detector picked " +
       "up that is really open groove.'>include</th></tr>";
     var circ = state.pattern.tyre_circumference;
     tb.forEach(function (t, i) {
-      var engaged = E.tiebarEngaged(t, wear);
-      var at = E.tiebarEngagementWear(t);
+      var engaged = E.tiebarInContact(t);
+      var at = E.tiebarDepthBelowTread(t);
       var theta = ((t.centroid_x % circ) + circ) % circ / circ * 360;
       var provenance = (t.source === "hatch"
         ? "drawn as a HATCH on the " + (t.layer || "TIEBAR") + " layer" +
@@ -2527,7 +2516,7 @@
     $("tbTable").innerHTML = rows + "</table>" + "<div class='hint tb-legend' style='margin-top:6px'>" +
       "<b>include</b> — is this a tie bar at all? Untick and it is excluded from everything: no contact " +
       "area, no coupling, not in the network. For a region that is really open groove.<br>" +
-      "<b>engages at wear</b> — the tread has to wear this far down before the bar touches the road. " +
+      "<b>below tread</b> — how far under the tread surface the bar's top sits, NSD minus its height. " +
       "A bar that reaches the surface as moulded has height = NSD and engages at 0." +
       "</div>";
 
@@ -2555,7 +2544,6 @@
     if (!tb.length) { host.innerHTML = ""; return; }
     var groups = currentTiebarGroups();
     state.tiebarGroups = groups;
-    var wear = readWear();
 
     if (tiebarGroupMode() === "none") {
       host.innerHTML = "<div class='hint'>Grouping off — set each bar in the list below.</div>";
@@ -2564,14 +2552,14 @@
 
     var rows = "<table class='metrics'><tr><th>Group</th><th>bars</th><th>zone</th>" +
       "<th>shape (circ × lat)</th><th>area (mm²)</th><th>y range (mm)</th><th>NSD (mm)</th>" +
-      "<th>height (mm)</th><th>engages at wear</th><th>state</th>" +
+      "<th>height (mm)</th><th>below tread (mm)</th><th>state</th>" +
       "<th title='Is this region a tie bar at all? Untick to exclude it completely — no contact " +
       "area, no coupling stiffness, not in the network. Use it for a region the detector picked " +
       "up that is really open groove.'>include</th></tr>";
     groups.forEach(function (g, i) {
       // A group is "in contact" only if it is uniform; a mixed group says so
       // rather than picking one member's answer and presenting it as the truth.
-      var eng = g.members.filter(function (k) { return E.tiebarEngaged(tb[k], wear); }).length;
+      var eng = g.members.filter(function (k) { return E.tiebarInContact(tb[k]); }).length;
       var at = g.mixed_height ? null : Math.max(0, g.nsd - g.height);
       var state1 = eng === 0 ? ["off", "below surface"]
         : eng === g.count ? ["on", "in contact"]
@@ -2598,7 +2586,7 @@
       "group as <i>mixed</i> until the group is set again.</div>" + "<div class='hint tb-legend' style='margin-top:6px'>" +
       "<b>include</b> — is this a tie bar at all? Untick and it is excluded from everything: no contact " +
       "area, no coupling, not in the network. For a region that is really open groove.<br>" +
-      "<b>engages at wear</b> — the tread has to wear this far down before the bar touches the road. " +
+      "<b>below tread</b> — how far under the tread surface the bar's top sits, NSD minus its height. " +
       "A bar that reaches the surface as moulded has height = NSD and engages at 0." +
       "</div>";
 
@@ -2633,14 +2621,14 @@
   }
 
   function refreshTiebarSummary() {
-    var tb = tiebarList(), wear = readWear(), nOn = 0, nEngaged = 0;
+    var tb = tiebarList(), nOn = 0, nInContact = 0;
     tb.forEach(function (t) {
       if (t.enabled !== false) nOn++;
-      if (E.tiebarEngaged(t, wear)) nEngaged++;
+      if (E.tiebarInContact(t)) nInContact++;
     });
     var el = $("tbSummary");
-    if (el) el.innerHTML = tb.length + " found · " + nOn + " enabled · <b>" + nEngaged +
-      "</b> in contact at " + wear.toFixed(1) + " mm wear";
+    if (el) el.innerHTML = tb.length + " found · " + nOn + " enabled · <b>" + nInContact +
+      "</b> drawn flush with the tread (the rest bond without touching the road)";
   }
 
   // Update a row's derived cells in place.
@@ -2657,7 +2645,7 @@
     var table = $("tbTable");
     var row = table && table.querySelector("tr:nth-child(" + (i + 2) + ")");
     if (!t || !row || row.cells.length < 9) return;
-    var wear = readWear(), engaged = E.tiebarEngaged(t, wear), at = E.tiebarEngagementWear(t);
+    var engaged = E.tiebarInContact(t), at = E.tiebarDepthBelowTread(t);
     row.className = t.enabled === false ? "off" : engaged ? "engaged" : "";
     row.cells[5].textContent = (+t.nsd).toFixed(2);
     var hIn = row.cells[6].firstChild;
@@ -2694,11 +2682,11 @@
     });
     if (!sameShape) { renderTiebarGroups(); return; }
     state.tiebarGroups = groups;
-    var tb = tiebarList(), wear = readWear();
+    var tb = tiebarList();
     groups.forEach(function (g, i) {
       var row = host.querySelector("tr:nth-child(" + (i + 2) + ")");
       if (!row || row.cells.length < 11) return;
-      var eng = g.members.filter(function (k) { return E.tiebarEngaged(tb[k], wear); }).length;
+      var eng = g.members.filter(function (k) { return E.tiebarInContact(tb[k]); }).length;
       var at = g.mixed_height ? null : Math.max(0, g.nsd - g.height);
       row.className = g.n_enabled === 0 ? "off" : eng === g.count ? "engaged" : "";
       row.cells[6].textContent = (+g.nsd).toFixed(2);
@@ -2763,7 +2751,6 @@
   // against the drawing rather than taken on trust.
   function drawTiebarPlan() {
     var p = state.pattern, th = plotTheme(), tb = tiebarList();
-    var wear = readWear();
     var shapes = [];
     function poly(region, fill, line, width) {
       var d = regionPlotPath(region, p.tyre_circumference, false);
@@ -2773,7 +2760,7 @@
     for (var j = 0; j < tb.length; j++) {
       var t = tb[j];
       var on_ = t.enabled !== false;
-      var eng = E.tiebarEngaged(t, wear);
+      var eng = E.tiebarInContact(t);
       var tc = tiebarDisplayColor(t);
       poly(t, !on_ ? "rgba(128,128,128,0.25)" : eng ? hexA(tc, 0.85) : "rgba(0,0,0,0)",
            !on_ ? th.inkDim : tc, 1.2);
@@ -2783,13 +2770,13 @@
       y: tb.map(function (t) { return t.centroid_y; }),
       text: tb.map(function (t) { return t.id; }),
       customdata: tb.map(function (t) {
-        return [t.area.toFixed(1), (+t.height).toFixed(2), t.nsd.toFixed(2), E.tiebarEngagementWear(t).toFixed(2),
+        return [t.area.toFixed(1), (+t.height).toFixed(2), t.nsd.toFixed(2), E.tiebarDepthBelowTread(t).toFixed(2),
                 t.source === "hatch" ? "drawn on the TIEBAR layer" : "found by area and adjacency",
                 (t.holes || []).length];
       }),
       mode: "markers", type: "scatter", marker: { size: 5, color: th.ink || th.accent },
       hovertemplate: "%{text}<br>area %{customdata[0]} mm²<br>height %{customdata[1]} of %{customdata[2]} mm" +
-                     "<br>engages at %{customdata[3]} mm wear" +
+                     "<br>%{customdata[3]} mm below the tread" +
                      "<br>%{customdata[4]} · %{customdata[5]} hole(s)<extra></extra>",
       showlegend: false,
     };
@@ -2798,8 +2785,8 @@
       margin: { l: 56, r: 12, t: 30, b: 42 }, height: 240, shapes: shapes,
       title: { text: "tie bars on the rolled-out plan — " +
                      (anyHatchedBars() ? "hatched bars keep their drawn colour; " : "") +
-                     "filled = in contact at " + wear.toFixed(1) +
-                     " mm wear, outline only = still below the surface, grey = excluded", font: { size: 11 } },
+                     "filled = drawn flush with the tread, outline only = below the surface " +
+                     "(bonding only), grey = excluded", font: { size: 11 } },
       xaxis: { title: { text: "circumferential position (mm)", font: { size: 11 } },
                range: [0, p.tyre_circumference], gridcolor: th.grid },
       yaxis: { title: { text: "lateral y (mm)", font: { size: 11 } },
@@ -2867,7 +2854,6 @@
                : "bars turned it " + cplAxisDelta(prU.angle_deg, prC.angle_deg).toFixed(2) + "°"),
       card("Bars in the network", String(c.n_engaged + c.n_submerged), c.n_submerged + " below the surface"),
       card("Bonded links", String(c.n_links), c.n_components + " independent group(s)"),
-      card("Tread worn", (c.wear_mm || 0).toFixed(1), "mm"),
     ].join("");
 
     // Kxy is an order of magnitude smaller than Kx/Ky, so it gets its own axis.
@@ -2997,8 +2983,8 @@
       // each design's own coupling rather than the one that happens to be live.
       coupling: state.coupling ? state.coupling.slice() : null,
       // Which bars the RUN had in contact, frozen with it -- a held design must
-      // not repaint itself when the live wear box is edited afterwards.
-      engaged_ids: state.wear && state.wear.engaged_ids ? state.wear.engaged_ids.slice() : [],
+      // not repaint itself when the live tie-bar heights are edited after.
+      engaged_ids: state.tiebars && state.tiebars.contact_ids ? state.tiebars.contact_ids.slice() : [],
     });
     renderCompare();
   }
@@ -3225,9 +3211,9 @@
       var ids = e.engaged_ids || [];
       shapes = shapes.concat(patternStripShapes({
         pattern: g, xref: "x" + (i + 1), yref: "y" + (i + 1),
-        // The wear state the RUN had, frozen with it. Reading the live wear box
-        // here would repaint a held design as though it had been run at a wear
-        // it never saw.
+        // The tie-bar state the RUN had, frozen with it. Reading the live
+        // boxes here would repaint a held design as though it had been run
+        // with heights it never saw.
         engaged: function (tb) { return ids.indexOf(tb.id) >= 0; },
       }));
       // An invisible trace per row: Plotly needs one to create the subplot, and
@@ -3356,14 +3342,13 @@
       load: readCpParams(),
       curvature_correction: $("curv").checked,
       crown: crownSummary(),
-      wear_and_tiebars: {
-        wear_mm: readWear(),
+      tiebars_settings: {
         default_height_fraction: readTiebarFrac(),
         weld_tolerance_mm: readWeldTol(),
         tiebar_area_fraction: readTiebarAreaFrac(),
         tiebars: tiebarList().map(function (t) {
           return { id: t.id, zone: t.zone, area_mm2: t.area, nsd_mm: t.nsd, height_mm: t.height,
-                   engages_at_wear_mm: E.tiebarEngagementWear(t), enabled: t.enabled !== false,
+                   below_tread_mm: E.tiebarDepthBelowTread(t), enabled: t.enabled !== false,
                    centroid_x_mm: t.centroid_x, centroid_y_mm: t.centroid_y,
                    // How the bar was identified travels with it: a number read
                    // off a colour the designer drew is not the same evidence as
@@ -3385,7 +3370,7 @@
       compound_and_boundary: base.compound_and_boundary,
       contact_patch: base.contact_patch,
       load: base.load,
-      wear_and_tiebars: base.wear_and_tiebars,
+      tiebars_settings: base.tiebars_settings,
       // The crown captureInputs() recorded for the run on screen. It was being
       // dropped here, so every export -- the CSV header, the JSON, the text
       // summary and the PDF cover -- has been saying "no crown resolved" while
@@ -3418,7 +3403,7 @@
     lines.push("# NSD " + s.block_defaults.height + " mm, draft " + s.block_defaults.draft_angle +
       " deg, sipes " + s.block_defaults.n_lateral_sipes + ", sipe model " + s.compound_and_boundary.sipe_model);
     lines.push("# compound: " + compoundLine(s));
-    lines.push("# wear: " + tiebarLine(s));
+    lines.push("# tie bars: " + tiebarLine(s));
     lines.push("# tie-bar coupling: " + couplingLine(s));
     lines.push("# crown: " + crownLine(s));
     lines.push("# patch: " + E.describeSpec(s.contact_patch) +
@@ -3526,7 +3511,7 @@
       runtime: state.results ? {
         results: state.results, stiffness: state.stiffness, grid: state.grid,
         notes: state.notes || [], max_lean: state.maxLean, band_edges: state.bandEdges,
-        compound: state.compound || null, wear: state.wear || null, coupling: state.coupling || null,
+        compound: state.compound || null, tiebars: state.tiebars || null, coupling: state.coupling || null,
       } : null,
     };
     download(safeName() + "_project.json", JSON.stringify(payload, null, 1), "application/json");
@@ -3562,7 +3547,7 @@
         state.stiffness = rt ? rt.stiffness : null; state.grid = rt ? rt.grid : null;
         state.notes = rt ? rt.notes || [] : []; state.maxLean = rt ? rt.max_lean : null;
         state.bandEdges = rt ? rt.band_edges : null; state.compound = rt ? rt.compound : null;
-        state.wear = rt ? rt.wear : null; state.coupling = rt ? rt.coupling : null;
+        state.tiebars = rt ? rt.tiebars : null; state.coupling = rt ? rt.coupling : null;
         state.ranInputs = j.ran_inputs || null; state.editorTheta = 0;
         syncShapeFields(); syncCompoundFields(); syncCrownFields(); syncCrownArcInfo();
         renderMeasuredInfo(); renderPitchInfo();
@@ -3599,7 +3584,7 @@
       // still be drawn beside the others rather than being a curve with no
       // pattern under it.
       pattern_geometry: comparisonGeometry(state.pattern),
-      engaged_tiebar_ids: state.wear && state.wear.engaged_ids ? state.wear.engaged_ids : [],
+      contact_tiebar_ids: state.tiebars && state.tiebars.contact_ids ? state.tiebars.contact_ids : [],
       results: state.results,
     };
     download(safeName() + "_run.json", JSON.stringify(payload, null, 1), "application/json");
@@ -3616,7 +3601,7 @@
     out.push("Blocks  : NSD " + s.block_defaults.height + " mm, draft " + s.block_defaults.draft_angle +
       " deg, " + s.block_defaults.n_lateral_sipes + " sipes");
     out.push("Compound: " + compoundLine(s));
-    out.push("Wear    : " + tiebarLine(s));
+    out.push("Tie bars: " + tiebarLine(s));
     out.push("Coupling: " + couplingLine(s));
     out.push("Crown   : " + crownLine(s));
     out.push("Patch   : " + E.describeSpec(s.contact_patch));
@@ -3690,7 +3675,7 @@
     { key: "zones",    label: "Zone area",           plot: "zones" },
     { key: "bands",    label: "Ribs",                plot: "bandsPlot" },
     // The pair. "with Tiebar" is exact -- that figure is the bonded network.
-    // "no tiebar" would not have been: a bar that has worn into contact is
+    // "no tiebar" would not have been: a bar drawn flush with the tread is
     // still rasterised as land, so it is in these numbers as RUBBER. What is
     // absent is the bonding, and that is what the name says.
     { key: "coupling", label: "Pattern Stiffness (with Tiebar) — Kx, Ky & Kxy", plot: "cplPlot",
@@ -3805,7 +3790,7 @@
     return out;
   }
 
-  // One phrasing of the compound and the wear state, shared by every export so
+  // One phrasing of the compound and the tie bars, shared by every export so
   // a CSV, a JSON and a PDF of the same run can never disagree about them.
   function compoundLine(s) {
     var c = s.compound_and_boundary || {}, r = s.compound_resolved;
@@ -3816,18 +3801,17 @@
     return base + ", Poisson " + c.poisson + ", " + c.mode + " boundary";
   }
   function tiebarLine(s) {
-    var w = s.wear_and_tiebars || {};
+    var w = s.tiebars_settings || {};
     var bars = w.tiebars || [];
-    var wear = +(w.wear_mm || 0);
-    if (!bars.length) return "tread worn " + wear.toFixed(2) + " mm; no tie bars in this drawing";
-    var engaged = bars.filter(function (t) {
-      return t.enabled && wear >= t.engages_at_wear_mm - 1e-9;
+    if (!bars.length) return "no tie bars in this drawing";
+    var touching = bars.filter(function (t) {
+      return t.enabled && (t.below_tread_mm || 0) <= 1e-9;
     }).length;
     var hs = bars.map(function (t) { return t.height_mm; });
     var lo = Math.min.apply(null, hs), hi = Math.max.apply(null, hs);
-    return "tread worn " + wear.toFixed(2) + " mm; " + bars.length + " tie bar(s) of height " +
-      (lo === hi ? lo.toFixed(2) : lo.toFixed(2) + "-" + hi.toFixed(2)) + " mm, " +
-      engaged + " in contact";
+    return bars.length + " tie bar(s) of height " +
+      (lo === hi ? lo.toFixed(2) : lo.toFixed(2) + "-" + hi.toFixed(2)) + " mm, bonding the blocks" +
+      (touching ? "; " + touching + " drawn flush with the tread" : " without touching the road");
   }
 
   // What the network solve found, in one shape every export can use.
@@ -3910,7 +3894,7 @@
         " deg, " + s0.block_defaults.n_lateral_sipes + " sipes"],
       ["Compound", compoundLine(s0)],
       ["Sipe model", s0.compound_and_boundary.sipe_model],
-      ["Wear state", tiebarLine(s0)],
+      ["Tie bars", tiebarLine(s0)],
       ["Tie-bar coupling", couplingLine(s0)],
       ["Tread arc / crown", crownLine(s0)],
       ["Contact patch", E.describeSpec(s0.contact_patch)],
@@ -4157,7 +4141,7 @@
     if (!state.results) return [];
     return [{ label: shortLabel(compareLabel(settingsSnapshot())), result: currentResult(),
               geometry: comparisonGeometry(state.pattern), coupling: currentCoupling(),
-              settings: settingsSnapshot(), engaged_ids: (state.wear && state.wear.engaged_ids) || [] }];
+              settings: settingsSnapshot(), engaged_ids: (state.tiebars && state.tiebars.contact_ids) || [] }];
   }
 
   // One order spectrum per design.
@@ -4213,8 +4197,8 @@
   // bonding out of the way, so a difference between designs is a difference in
   // the pattern and not in how its bars happen to tie up.
   //
-  // One caveat the chart states rather than hides: a tie bar that has worn into
-  // contact is still RUBBER in these numbers, because the sweep rasterises it
+  // One caveat the chart states rather than hides: a tie bar drawn flush with
+  // the tread is still RUBBER in these numbers, because the sweep rasterises it
   // as land. What is absent is the bonding, not the bar.
   function unbondedSeries(d, key) {
     var y = metricSeries(d.result, key);
@@ -4522,7 +4506,7 @@
           ["Block depth", "NSD " + s0.block_defaults.height + " mm, draft " + s0.block_defaults.draft_angle +
             "°, " + s0.block_defaults.n_lateral_sipes + " sipes"],
           ["Compound", compoundLine(s0)],
-          ["Wear state", tiebarLine(s0)],
+          ["Tie bars", tiebarLine(s0)],
           ["Tie-bar coupling", couplingLine(s0)],
           ["Tread arc / crown", crownLine(s0)],
           ["Contact patch", E.describeSpec(s0.contact_patch)],
@@ -5232,7 +5216,7 @@
     // and the one thing that does not apply.
     var hint = $("emptyHint");
     if (hint && !state.pattern) hint.style.display = tab === "step" ? "none" : "";
-    if (tab === "cpatch" || tab === "wear") drawEditor();
+    if (tab === "cpatch" || tab === "tiebars") drawEditor();
     // Same story for the STEP viewport, which is a canvas and measures zero
     // while its tab is closed.
     if (tab === "step" && stepScene) { if (stepUi.needFit) stepFit(); redrawStep(); }
@@ -5388,7 +5372,7 @@
     on($("cpScaleLean"), "change", function () { drawEditor(); markStale(); });
     on($("cpAutoLoad"), "change", function () { drawEditor(); markStale(); });
     ["nsd", "draft", "sipes", "sipeDepth", "shore", "poisson", "mode", "sipeModel", "quality", "curv",
-     "wheelR", "crownCenter", "crownShoulder", "crownArcs", "nPitches", "wear",
+     "wheelR", "crownCenter", "crownShoulder", "crownArcs", "nPitches",
      "tiebarHeight", "weldTol", "tiebarFrac"].forEach(function (id) {
       on($(id), "input", function () { refreshValidation(); syncCompoundFields(); syncCrownFields(); syncCrownArcInfo(); drawEditor(); reconcileAndRedrawTiebars(); markStale(); });
       on($(id), "change", function () { refreshValidation(); syncCompoundFields(); syncCrownFields(); syncCrownArcInfo(); drawEditor(); reconcileAndRedrawTiebars(); markStale(); });
@@ -5412,7 +5396,7 @@
     $("cpY").disabled = $("cpAutoY").checked;
   }
 
-  // NSD, the tie-bar fraction and the wear state all move the bars, so the
+  // NSD and the tie-bar fraction both move the bars, so the
   // editor has to follow the inputs live. In place -- see refreshTiebarRow.
   function reconcileAndRedrawTiebars() {
     if (!state.pattern || !tiebarList().length) return;
@@ -5455,8 +5439,7 @@
       gamma: r.gamma_deg, nLeans: state.results.length,
       blocks: state.pattern.blocks.length,
       tiebars: tiebarList().length,
-      engaged: state.wear ? state.wear.n_tiebars_engaged : 0,
-      wear: state.wear ? state.wear.mm : 0,
+      engaged: state.tiebars ? state.tiebars.n_in_contact : 0,
       E: state.compound ? state.compound.E : null,
       G: state.compound ? state.compound.G : null,
       k: state.compound ? state.compound.k : null,

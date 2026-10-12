@@ -139,7 +139,7 @@ header .spacer { flex: 1; }
 #grp-patch     { --g: #4fc47a; }
 #grp-divisions { --g: #e0b13c; }
 #grp-load      { --g: #f0913f; }
-#grp-wear      { --g: #ef7aa8; }
+#grp-tiebars      { --g: #ef7aa8; }
 #grp-export    { --g: #93a4b8; }
 /* The same hue on the tab that opens each section. The tab is not inside the
    card, so it cannot inherit --g and has to be given it. Kept in step with the
@@ -151,18 +151,18 @@ header .spacer { flex: 1; }
 [data-grp="grp-patch"]     { --g: #4fc47a; }
 [data-grp="grp-divisions"] { --g: #e0b13c; }
 [data-grp="grp-load"]      { --g: #f0913f; }
-[data-grp="grp-wear"]      { --g: #ef7aa8; }
+[data-grp="grp-tiebars"]      { --g: #ef7aa8; }
 [data-grp="grp-export"]    { --g: #93a4b8; }
 :root[data-theme="light"] {
   --g-project: #6247d6; --g-plan: #1f6feb; --g-step: #0e7490; --g-compound: #0a8f88;
   --g-patch: #2f8f52; --g-divisions: #a97c06; --g-load: #c26516;
-  --g-wear: #c2437a; --g-export: #5b6b7b;
+  --g-tiebars: #c2437a; --g-export: #5b6b7b;
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     --g-project: #6247d6; --g-plan: #1f6feb; --g-step: #0e7490; --g-compound: #0a8f88;
     --g-patch: #2f8f52; --g-divisions: #a97c06; --g-load: #c26516;
-    --g-wear: #c2437a; --g-export: #5b6b7b;
+    --g-tiebars: #c2437a; --g-export: #5b6b7b;
   }
   :root:not([data-theme="dark"]) #grp-project   { --g: var(--g-project); }
 :root:not([data-theme="dark"]) [data-grp="grp-project"]   { --g: var(--g-project); }
@@ -178,8 +178,8 @@ header .spacer { flex: 1; }
 :root:not([data-theme="dark"]) [data-grp="grp-divisions"] { --g: var(--g-divisions); }
   :root:not([data-theme="dark"]) #grp-load      { --g: var(--g-load); }
 :root:not([data-theme="dark"]) [data-grp="grp-load"]      { --g: var(--g-load); }
-  :root:not([data-theme="dark"]) #grp-wear      { --g: var(--g-wear); }
-:root:not([data-theme="dark"]) [data-grp="grp-wear"]      { --g: var(--g-wear); }
+  :root:not([data-theme="dark"]) #grp-tiebars      { --g: var(--g-tiebars); }
+:root:not([data-theme="dark"]) [data-grp="grp-tiebars"]      { --g: var(--g-tiebars); }
   :root:not([data-theme="dark"]) #grp-export    { --g: var(--g-export); }
 :root:not([data-theme="dark"]) [data-grp="grp-export"]    { --g: var(--g-export); }
 }
@@ -197,8 +197,8 @@ header .spacer { flex: 1; }
 :root[data-theme="light"] [data-grp="grp-divisions"] { --g: var(--g-divisions); }
 :root[data-theme="light"] #grp-load      { --g: var(--g-load); }
 :root[data-theme="light"] [data-grp="grp-load"]      { --g: var(--g-load); }
-:root[data-theme="light"] #grp-wear      { --g: var(--g-wear); }
-:root[data-theme="light"] [data-grp="grp-wear"]      { --g: var(--g-wear); }
+:root[data-theme="light"] #grp-tiebars      { --g: var(--g-tiebars); }
+:root[data-theme="light"] [data-grp="grp-tiebars"]      { --g: var(--g-tiebars); }
 :root[data-theme="light"] #grp-export    { --g: var(--g-export); }
 :root[data-theme="light"] [data-grp="grp-export"]    { --g: var(--g-export); }
 
@@ -212,7 +212,7 @@ header .spacer { flex: 1; }
 /* Tie bars are an INPUT: which regions are bars, how tall each one is, and how
    worn the tread is all feed the sweep. So the editor sits in the setup grid
    before Run, on its own full-width row -- the table needs the room. */
-#grp-wear      { grid-column: 1 / span 12; grid-row: 3; }
+#grp-tiebars      { grid-column: 1 / span 12; grid-row: 3; }
 #grp-export    { grid-column: 8 / span 5;  grid-row: 4; margin-top: 0 !important; }
 #runBtn         { grid-column: 1 / span 3; grid-row: 4; min-height: 56px; align-self: stretch; font-size: 15px; }
 #addCompareSide { grid-column: 4 / span 4; grid-row: 4; min-height: 56px; align-self: stretch; margin-top: 0 !important; }
@@ -513,7 +513,7 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
         <button data-tab="cpatch" data-grp="grp-patch">Contact patch</button>
         <button data-tab="ribs" data-grp="grp-divisions">Ribs</button>
         <button data-tab="load" data-grp="grp-load">Load &amp; advanced</button>
-        <button data-tab="wear" data-grp="grp-wear">Wear &amp; tie bars</button>
+        <button data-tab="tiebars" data-grp="grp-tiebars">Tie bars</button>
         <button data-tab="export" data-grp="grp-export">Export</button>
       </div>
       <span class="spacer"></span>
@@ -584,7 +584,7 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
         </div>
         <div class="hint">ASCII DXF: LINE, ARC, CIRCLE, ELLIPSE, LWPOLYLINE (with bulges), old-style POLYLINE, SPLINE, INSERT references into BLOCKS, and filled <b>HATCH</b> regions on a <b>TIEBAR</b> layer, which are read as tie bars in the colour they were drawn. Depth, draft and sipes are supplied below — a 2D plan has none.</div>
         <div class="field" title="How far apart two endpoints may be and still be treated as the same corner. CAD exports routinely leave corners a few microns apart after a trim, and an unwelded corner loses the whole block. 0.01 mm is two orders below the finest tread feature and two above the usual export round-off. Raise it if outlines are reported as not closing; lower it if separate features are being merged."><label>Weld tolerance (mm)</label><input id="weldTol" type="number" value="0.01" step="0.005" min="0.0001" max="1" /></div>
-        <div class="field" title="A region between blocks counts as a tie bar if its area is below this fraction of the typical block area. Only affects the initial guess — every candidate is listed in 6 · Wear &amp; tie bars for you to confirm or reject."><label>Tie-bar area limit</label><input id="tiebarFrac" type="number" value="0.5" step="0.05" min="0.02" max="1" /></div>
+        <div class="field" title="A region between blocks counts as a tie bar if its area is below this fraction of the typical block area. Only affects the initial guess — every candidate is listed in 6 · Tie bars for you to confirm or reject."><label>Tie-bar area limit</label><input id="tiebarFrac" type="number" value="0.5" step="0.05" min="0.02" max="1" /></div>
 
         <div class="field" title="Tick this when the DXF is ONE pitch rather than the whole tread. The tool repeats it to build the complete rolled-out pattern, at the lengths and in the order you give below."><label><input id="pitchOn" type="checkbox" /> <b>the DXF is one pitch — build the tread from it</b></label></div>
         <div id="pitchBox" style="display:none">
@@ -805,20 +805,17 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
 
       </section>
 
-      <section id="panel-wear" class="panel setup">
-      <div class="group" id="grp-wear">
-        <div class="ghead"><span class="gnum">6</span><span class="gtext"><span class="gtitle">Wear &amp; tie bars</span><span class="gsub">How worn the tread is, and which bars bridge its grooves.</span></span></div>
+      <section id="panel-tiebars" class="panel setup">
+      <div class="group" id="grp-tiebars">
+        <div class="ghead"><span class="gnum">6</span><span class="gtext"><span class="gtitle">Tie bars</span><span class="gsub">The bars bridging the grooves: how deep they sit, and which blocks they bond.</span></span></div>
         <div class="tb-setup">
           <div class="tb-setup-fields">
-            <div class="field" title="How much tread has been worn off, in mm. Every block's bending length becomes NSD − wear, so the tread stiffens as it wears. It also decides which tie bars have reached the road: a bar of height h engages once wear reaches NSD − h. Leave at 0 for a new tyre.">
-              <label>Tread worn (mm)</label><input id="wear" type="number" value="0" step="0.5" min="0" /></div>
-            <div class="field" title="Height of a newly detected tie bar as a fraction of the local NSD, measured from the groove bottom like the block height. 0.55 means the bar tops out just over halfway up the groove, so it reaches the road once the tyre has worn 45% of its NSD. Override individual bars in the table.">
+            <div class="field" title="Height of a newly detected tie bar as a fraction of the local NSD, measured from the groove bottom like the block height. 0.55 means the bar tops out just over halfway up the groove, so its top sits 45% of the NSD below the road. Override individual bars in the table.">
               <label>Tie-bar height (frac NSD)</label><input id="tiebarHeight" type="number" value="0.55" step="0.05" min="0.05" max="1" /></div>
             <details class="explain" style="margin-top:8px">
               <summary style="cursor:pointer;font-weight:600">How a tie bar is treated</summary>
-              <p style="margin-top:8px">Put the groove bottom at zero. A block's top starts at <code>NSD</code> and, after the tyre has worn <code>w</code>&nbsp;mm, sits at <code>NSD − w</code>. A tie bar is a raised strip of that groove bottom of height <code>h &lt; NSD</code>, so its top starts <code>NSD − h</code> <b>below the road and touches nothing</b>.</p>
-              <p>It engages once <code>w ≥ NSD − h</code>. From then on it is flush with the blocks and is simply more land at the same height — which is the point of a tie bar: it arrives part-worn and stiffens the block row against the heel-and-toe wear that is developing by then.</p>
-              <p style="margin-bottom:0">So at the default <b>wear = 0</b> the bars are listed and drawn but contribute nothing, which is the truth for a new tyre. <em>Force contact</em> overrides that for what-if work: the bar is analysed as a short proud block of its own height, which is as close as a surface-contact model can get.</p>
+              <p style="margin-top:8px">Put the groove bottom at zero. A block's top is at <code>NSD</code>, so its beam length is <code>NSD</code>. A tie bar is a raised strip of that same groove bottom of height <code>h &lt; NSD</code>, so its top sits <code>NSD − h</code> <b>below the road and touches nothing</b>. This tool evaluates a <b>new tyre</b>, so that is where a tie bar stays.</p>
+              <p style="margin-bottom:0">It earns its place by <b>bonding</b>. The bar is joined to the two blocks either side of it at their base, so a push on one is resisted by both — the pair deflects as one stiffer unit instead of two independent ones. That happens whether or not the bar's top is in contact, which is why it matters on a tyre that has never been driven. A bar drawn at the full <code>NSD</code> is flush with the blocks and <em>also</em> counts as land; anything shorter adds no contact area at all.</p>
             </details>
           </div>
           <div class="tb-setup-detail">
@@ -1009,7 +1006,7 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
               <li>The gain is <b>largest when few blocks are loaded</b> and smallest when the patch covers a whole tied rib. That is not an artefact — blocks moving together put no load into the bars at all.</li>
             </ul>
             <h4>Two mechanisms, at opposite ends of the tyre's life</h4>
-            <p style="margin-bottom:0">The coupling here works <b>from new</b> and its relative value <em>falls</em> as the tread wears: a block stiffens as roughly 1/L³ as it shortens, while the bar only shrinks once the tread reaches it. The contact-area contribution is the opposite — nothing until worn into, then land like any block. Tie bars are useful across the whole life because the two mechanisms hand over, not because they add up.</p>
+            <p style="margin-bottom:0">This is the whole of what a tie bar does on a new tyre: it <b>bonds</b>, and it adds no contact area unless it was drawn flush with the tread. Everything on this tab is that bonding and its consequences.</p>
           </div>
           <div class="banner warn" style="margin-top:12px">
             <b>What this model assumes.</b>
@@ -1074,7 +1071,7 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
 <p>The ripple gets worse when fewer blocks are in contact at once, because there's less averaging. And on a motorcycle, the contact patch <strong>shrinks as you lean</strong>. That's the whole reason this tool sweeps lean angle instead of just looking at the tyre upright.</p>
 <hr>
 <h2>Vocabulary</h2>
-<div class="tablewrap"><table><thead><tr><th>Term</th><th>What it means</th></tr></thead><tbody><tr><td><strong>Contact patch</strong></td><td>The bit of tyre actually touching the road at one instant. Roughly the size of a credit card, sometimes smaller.</td></tr><tr><td><strong>Block</strong> (or lug)</td><td>One raised island of rubber in the tread.</td></tr><tr><td><strong>Groove</strong></td><td>The channel between blocks.</td></tr><tr><td><strong>Land ratio</strong></td><td>Fraction of the surface that is rubber rather than groove. 0.69 means 69% rubber. Higher = more grip on dry, less water clearing.</td></tr><tr><td><strong>Pitch</strong></td><td>One repeat of the pattern going around the tyre. A tyre might have 24 pitches.</td></tr><tr><td><strong>Order</strong></td><td>How many times something happens per wheel revolution. "Order 24" = 24 times per revolution. Noise engineers think in orders.</td></tr><tr><td><strong>NSD</strong></td><td>Non-skid depth — the block height in mm. How deep the tread is.</td></tr><tr><td><strong>Kx / Ky / Kz</strong></td><td>Stiffness. Kx resists braking and acceleration forces, Ky resists cornering forces, Kz resists the tyre being squashed vertically. Units are N/mm: a Kx of 500 means it takes 500 newtons to shove the block 1 mm forwards.</td></tr><tr><td><strong>CoV</strong></td><td>Coefficient of variation — the ripple size as a percentage of the average. 5% CoV means the value wobbles by about ±5%. <strong>Lower is better.</strong></td></tr><tr><td><strong>Zone</strong></td><td>The tread split into three lateral bands: <strong>centre</strong> (used upright, straight-line), <strong>intermediate</strong> (used in the transition into a corner), <strong>shoulder</strong> (used at full lean).</td></tr><tr><td><strong>Tie bar</strong></td><td>A raised strip in the bottom of a groove, bridging two blocks. Its height is <em>less</em> than the NSD, so on a new tyre it sits below the road and touches nothing. It comes into contact part-worn and stiffens the block row against heel-and-toe wear. Common on TBR, sometimes on PCR.</td></tr><tr><td><strong>Wear</strong></td><td>How much tread has been worn off, in mm. Every block's bending length is NSD − wear, so a worn tread is stiffer. Wear is also what brings tie bars into contact.</td></tr><tr><td><strong>Cα / Cκ</strong></td><td>Slip stiffness. How much force the tread makes per unit of slip — Cα in N/rad for cornering, Cκ in N per unit slip ratio for braking and drive. Not the same as Ky and Kx: see <em>Slip response</em> below.</td></tr><tr><td><strong>Pneumatic trail</strong></td><td>How far behind the centre of the contact patch the lateral force actually acts, in mm. It is what makes a steering wheel self-centre.</td></tr></tbody></table></div>
+<div class="tablewrap"><table><thead><tr><th>Term</th><th>What it means</th></tr></thead><tbody><tr><td><strong>Contact patch</strong></td><td>The bit of tyre actually touching the road at one instant. Roughly the size of a credit card, sometimes smaller.</td></tr><tr><td><strong>Block</strong> (or lug)</td><td>One raised island of rubber in the tread.</td></tr><tr><td><strong>Groove</strong></td><td>The channel between blocks.</td></tr><tr><td><strong>Land ratio</strong></td><td>Fraction of the surface that is rubber rather than groove. 0.69 means 69% rubber. Higher = more grip on dry, less water clearing.</td></tr><tr><td><strong>Pitch</strong></td><td>One repeat of the pattern going around the tyre. A tyre might have 24 pitches.</td></tr><tr><td><strong>Order</strong></td><td>How many times something happens per wheel revolution. "Order 24" = 24 times per revolution. Noise engineers think in orders.</td></tr><tr><td><strong>NSD</strong></td><td>Non-skid depth — the block height in mm. How deep the tread is.</td></tr><tr><td><strong>Kx / Ky / Kz</strong></td><td>Stiffness. Kx resists braking and acceleration forces, Ky resists cornering forces, Kz resists the tyre being squashed vertically. Units are N/mm: a Kx of 500 means it takes 500 newtons to shove the block 1 mm forwards.</td></tr><tr><td><strong>CoV</strong></td><td>Coefficient of variation — the ripple size as a percentage of the average. 5% CoV means the value wobbles by about ±5%. <strong>Lower is better.</strong></td></tr><tr><td><strong>Zone</strong></td><td>The tread split into three lateral bands: <strong>centre</strong> (used upright, straight-line), <strong>intermediate</strong> (used in the transition into a corner), <strong>shoulder</strong> (used at full lean).</td></tr><tr><td><strong>Tie bar</strong></td><td>A raised strip in the bottom of a groove, bridging two blocks. Its height is <em>less</em> than the NSD, so it sits below the road and touches nothing. What it does is <strong>bond</strong> the two blocks either side, so they deflect as one stiffer unit — which it does from new, without ever touching the road. Common on TBR, sometimes on PCR.</td></tr><tr><td><strong>Cα / Cκ</strong></td><td>Slip stiffness. How much force the tread makes per unit of slip — Cα in N/rad for cornering, Cκ in N per unit slip ratio for braking and drive. Not the same as Ky and Kx: see <em>Slip response</em> below.</td></tr><tr><td><strong>Pneumatic trail</strong></td><td>How far behind the centre of the contact patch the lateral force actually acts, in mm. It is what makes a steering wheel self-centre.</td></tr></tbody></table></div>
 <hr>
 <h2>Units</h2>
 <p><strong>One system throughout.</strong> Every number crossing a function boundary in this tool is in it, and nothing is converted anywhere:</p>
@@ -1119,10 +1116,14 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
 <p>The shear modulus is always <strong>G = E / 2(1+ν)</strong>. Bending uses E, shear uses G, and the vertical stiffness uses <strong>E_eff = E(1 + 2kS²)</strong> with the bulk-modulus correction, where S is the block's shape factor.</p>
 <div class="tablewrap"><table><thead><tr><th>Shore A</th><th>E (N/mm²)</th><th>k</th></tr></thead><tbody><tr><td>30</td><td>1.50</td><td>0.93</td></tr><tr><td>40</td><td>2.50</td><td>0.85</td></tr><tr><td>50</td><td>4.00</td><td>0.73</td></tr><tr><td>60</td><td>6.89</td><td>0.64</td></tr><tr><td>70</td><td>12.00</td><td>0.57</td></tr></tbody></table></div>
 <hr>
-<h2>Tie bars and the wear state</h2>
-<p>Put the groove bottom at zero. A block's top starts at <strong>NSD</strong> and, after the tyre has worn <em>w</em> mm, sits at <strong>NSD − w</strong>. A tie bar is a raised strip of that groove bottom of height <strong>h &lt; NSD</strong>, so its top starts <strong>NSD − h below the road and touches nothing</strong>.</p>
-<p>It engages once <strong>w ≥ NSD − h</strong>. From then on it is flush with the blocks and is simply more land at the same height — which is the point of a tie bar: it arrives part-worn and stiffens the block row against the heel-and-toe wear that is developing by then.</p>
-<p>So at the default <strong>wear = 0</strong> the bars are listed and drawn but contribute nothing, which is the truth for a new tyre. Raise <strong>Tread worn</strong> in <em>6 · Wear &amp; tie bars</em> and watch the contact area step up and the θ-fluctuation drop as they come in — that step is the tie bar doing its job, and its position on the wear axis is a design decision you can now see.</p>
+<h2>Tie bars: what they do on a new tyre</h2>
+<p><strong>This tool evaluates a new tyre.</strong> There is no wear state anywhere in it, and that shapes what a tie bar means here.</p>
+<p>Put the groove bottom at zero. A block's top is at <strong>NSD</strong>, so its beam length is <strong>NSD</strong>. A tie bar is a raised strip of that same groove bottom of height <strong>h &lt; NSD</strong>, so its top sits <strong>NSD − h below the road and touches nothing</strong>.</p>
+<p>So it adds <strong>no contact area</strong>. What it does is <strong>bond</strong>: the bar is joined to the two blocks either side of it at their base, so a push on one is resisted by both and the pair deflects as one stiffer unit instead of two independent ones. That happens whether or not its top is in contact, which is exactly why it matters on a tyre that has never been driven.</p>
+<p>How much it matters is a design lever you can see. On the bundled TBR rib pattern at 16 mm NSD, Kx rises by:</p>
+<div class="tablewrap"><table><thead><tr><th>bar height</th><th>its top sits</th><th>Kx gain</th></tr></thead><tbody><tr><td>2 mm</td><td>14 mm under the road</td><td><strong>×1.126</strong></td></tr><tr><td>4 mm</td><td>12 mm under</td><td>×1.190</td></tr><tr><td>8 mm</td><td>8 mm under</td><td>×1.299</td></tr><tr><td>12 mm</td><td>4 mm under</td><td>×1.399</td></tr><tr><td>16 mm</td><td>flush with the tread</td><td>×1.492</td></tr></tbody></table></div>
+<p>A taller bar is a bigger glued cross-section, so it bonds harder — and even a bar buried 14 mm down is worth 12.6%.</p>
+<p>A bar drawn at the full <strong>NSD</strong> is flush with the blocks and is land as well, so it adds contact area too. Anything shorter adds none.</p>
 <p><strong>Where the bars come from.</strong> Two routes. If the drawing marks them with a filled HATCH on a <code>TIEBAR</code> layer, those are read directly and taken as authoritative — see <em>Tie bars you coloured in</em> below. Otherwise they are found geometrically, as small closed regions bridging two blocks. The table says which route found each bar; hover its ID.</p>
 <h3>150 bars, two edits</h3>
 <p>A mould repeats the same bar around the circumference, so a drawing with 150 tie bars usually has only two or three <em>distinct</em> ones. Setting each one is transcription, not design.</p>
@@ -1133,9 +1134,9 @@ table.metrics tr.engaged td:first-child { border-left: 3px solid var(--good); }
 <h3>include</h3>
 <p>One checkbox per row: <strong>is this region a tie bar at all?</strong> Untick it and the region is excluded from everything — no contact area, no coupling stiffness, not in the network. Use it for something the detector picked up that is really open groove.</p>
 <p>There is deliberately <strong>no way to force a bar into contact</strong>. A bar shorter than the blocks around it cannot touch the road while they do, so "in contact anyway" is not a what-if — it is an impossible geometry, and the model would have had to place an 8 mm element at the road surface beside 16 mm blocks.</p>
-<p>A bar that genuinely <em>does</em> reach the tread surface as moulded is expressed honestly: give it <strong>height = NSD</strong>. Its engagement wear is then 0 and it is in contact from new, with the geometry matching the claim.</p>
+<p>A bar that genuinely <em>does</em> reach the tread surface as moulded is expressed honestly: give it <strong>height = NSD</strong>. It then sits 0 mm below the tread and is in contact, with the geometry matching the claim.</p>
 <p><strong>Show every bar individually</strong> opens the full list underneath, so a single bar can still be overridden. Do that and its group reads <strong>mixed</strong> until you set the group again — the tool will not pick one member's value and present it as the family's.</p>
-<p><strong>How they are detected.</strong> A tie bar usually has no outline of its own: its two long sides <em>are</em> the groove walls of the blocks either side. The importer builds the planar arrangement of every line in the drawing and takes its enclosed regions, so a bar falls out as its own region even though it shares most of its boundary with its neighbours. A region counts as a tie bar if it shares an edge with two or more blocks and its area is below the <strong>tie-bar area limit</strong> (default half the typical block). That is only the first guess — <strong>6 · Wear &amp; tie bars</strong> in the setup panel lists every candidate with its area, height, engagement wear and a checkbox, so you can reject one, promote another, or set heights bar by bar. It sits with the other inputs, before <strong>Run</strong>, because that is what it is: the heights you set here decide what the sweep computes.</p>
+<p><strong>How they are detected.</strong> A tie bar usually has no outline of its own: its two long sides <em>are</em> the groove walls of the blocks either side. The importer builds the planar arrangement of every line in the drawing and takes its enclosed regions, so a bar falls out as its own region even though it shares most of its boundary with its neighbours. A region counts as a tie bar if it shares an edge with two or more blocks and its area is below the <strong>tie-bar area limit</strong> (default half the typical block). That is only the first guess — <strong>6 · Tie bars</strong> in the setup panel lists every candidate with its area, height, depth below the tread and a checkbox, so you can reject one, promote another, or set heights bar by bar. It sits with the other inputs, before <strong>Run</strong>, because that is what it is: the heights you set here decide what the sweep computes.</p>
 <hr>
 <h2>Camber and the tread arc profile</h2>
 <p>The crown is stored as a <strong>local radius at every lateral position</strong>, <code>r(y)</code>, where <code>y</code> is developed arc length from the centreline. Everything about lean comes from integrating it:</p>
@@ -1206,7 +1207,7 @@ lateral        u = tan α · s      α = slip angle</code></pre>
 <p>A tie bar is hard to find automatically. It has no outline of its own — it is the closed region left between two blocks — so the tool has to guess from area and adjacency which regions are bars and which are just small blocks. The guess is usually right and occasionally not, and either way it is a guess.</p>
 <p><strong>A filled HATCH on a layer called <code>TIEBAR</code> is not a guess.</strong> If your drawing marks the bars by colouring them in, the tool reads them directly and takes them as authoritative.</p>
 <h3>What it reads</h3>
-<ul><li><strong>Both boundary styles.</strong> A hatch whose paths are polylines (bulges included) and one whose paths are edge lists of lines, arcs, ellipses and splines. Arc edges carry their own direction flag, which is honoured — get that wrong and the boundary crosses itself.</li><li><strong>Holes.</strong> A hatch with an island in it — a stone ejector through the bar — comes in as a region with a hole. Its area, its stiffness and the contact area it adds once worn into are all the <strong>net</strong> ones.</li><li><strong>Colour.</strong> Entity true colour (24-bit) first, then entity ACI, then the layer's own colour. Bars keep the colour they were drawn in everywhere they appear: on the rolled-out tread, on the tie-bar plan, on the coupling links, and as a swatch beside the ID in the table. That is what lets you tell one family of bars from another at a glance.</li><li><strong>Bars inside blocks.</strong> A hatch in a <code>BLOCK</code> definition reached through an <code>INSERT</code> is expanded like any other geometry, inheriting the INSERT's layer the way CAD resolves it — so a pattern arrayed from a block still finds its bars.</li></ul>
+<ul><li><strong>Both boundary styles.</strong> A hatch whose paths are polylines (bulges included) and one whose paths are edge lists of lines, arcs, ellipses and splines. Arc edges carry their own direction flag, which is honoured — get that wrong and the boundary crosses itself.</li><li><strong>Holes.</strong> A hatch with an island in it — a stone ejector through the bar — comes in as a region with a hole. Its area and its stiffness are both the <strong>net</strong> ones.</li><li><strong>Colour.</strong> Entity true colour (24-bit) first, then entity ACI, then the layer's own colour. Bars keep the colour they were drawn in everywhere they appear: on the rolled-out tread, on the tie-bar plan, on the coupling links, and as a swatch beside the ID in the table. That is what lets you tell one family of bars from another at a glance.</li><li><strong>Bars inside blocks.</strong> A hatch in a <code>BLOCK</code> definition reached through an <code>INSERT</code> is expanded like any other geometry, inheriting the INSERT's layer the way CAD resolves it — so a pattern arrayed from a block still finds its bars.</li></ul>
 <h3>How it reconciles with the automatic detector</h3>
 <p>Both run. The detector is still there and is still what finds bars in every drawing that carries no hatches at all. Where they meet:</p>
 <div class="tablewrap"><table><thead><tr><th>Situation</th><th>What happens</th></tr></thead><tbody><tr><td>Both found the same face</td><td>One bar. The hatched definition wins, because it may carry holes and a colour the linework never had.</td></tr><tr><td>The detector called it a <strong>block</strong></td><td>The block is dropped and it becomes a bar, with a warning saying so. A drawn <code>TIEBAR</code> layer outranks an area heuristic.</td></tr><tr><td>Only the hatch found it</td><td>The bar stands on the hatch alone — which is the whole point on a drawing where the bars are not closed by linework.</td></tr></tbody></table></div>
@@ -1253,7 +1254,7 @@ lateral        u = tan α · s      α = slip angle</code></pre>
 <p><strong>Pick a metric</strong> and every held design is drawn on one θ axis at the lowest lean they all share, with a table of means, ripple and the difference from the first. Kx, Ky, Kz and Kxy are all offered, along with contact area, land ratio, block count and the slip response.</p>
 <p><strong>Below the curves, every design's rolled-out tread is stacked</strong> — one row each, on the same θ axis, zooming together with the curves above. That is the half of the answer a curve cannot give: <em>"design B dips at 140°"</em> and <em>"design B has a groove there and design A does not"</em> become one picture. Each row is labelled with its own circumference and width, and in the colour of its curve.</p>
 <p>Two things worth knowing:</p>
-<ul><li><strong>The θ axis is what makes different tyres comparable.</strong> 0–360° is one revolution whatever the circumference, so a 2193 mm motorcycle tread and a 474 mm test pattern line up. The row label gives the real size so the normalisation is never hidden.</li><li><strong>A held design is frozen.</strong> Its tie bars are drawn in the wear state <em>that run</em> had, so editing the live wear box afterwards cannot repaint a held design as something it never was.</li></ul>
+<ul><li><strong>The θ axis is what makes different tyres comparable.</strong> 0–360° is one revolution whatever the circumference, so a 2193 mm motorcycle tread and a 474 mm test pattern line up. The row label gives the real size so the normalisation is never hidden.</li><li><strong>A held design is frozen.</strong> Its tie bars are drawn in the state <em>that run</em> had, so editing the live heights afterwards cannot repaint a held design as something it never was.</li></ul>
 <p>A run exported before the tread travelled with it has no geometry to draw. Those designs still appear in the curves and the table; the stack says how many it could not draw rather than leaving a silent gap.</p>
 <hr>
 <h2>Tie-bar coupling: the tread as a network</h2>
@@ -1274,9 +1275,9 @@ lateral        u = tan α · s      α = slip angle</code></pre>
 <p>The table gives both states for <strong>Cxy</strong> (the coupling as a fraction of √(Kx·Ky)), <strong>K₁/K₂</strong> (how directional the tread is) and the <strong>stiff axis</strong>. Comparing the two decompositions is the clearest single statement of what the bars did:</p>
 <ul><li><strong>K₁/K₂ rises</strong> → the bars made the tread more directional than it was.</li><li><strong>The stiff axis turns</strong> → they changed <em>which way</em> it is stiffest. Where the independent tread was near-isotropic the card says "bars gave it one", because turning an axis that barely existed is not the same as turning a real one.</li><li><strong>Cxy rises</strong> → they coupled the two directions, and by a stated fraction rather than a raw N/mm you cannot compare against anything.</li></ul>
 <p>A gain is withheld wherever the independent value passes through zero: a ratio to nothing is not a number. The difference always is.</p>
-<h3>Two mechanisms, at opposite ends of the tyre's life</h3>
-<p>The coupling works <strong>from new</strong>, and its relative value <em>falls</em> as the tread wears: a block stiffens as roughly 1/L³ as it shortens, while the bar only shrinks once the tread reaches it. On a 16 mm NSD with an 8.8 mm bar the model gives ×1.32 at zero wear falling to ×1.05 at 12 mm.</p>
-<p>The contact-area contribution is the opposite — nothing until worn into, then land like any block. <strong>Tie bars earn their keep across the whole life because the two mechanisms hand over, not because they add up.</strong></p>
+<h3>The bonding is the whole mechanism</h3>
+<p>On a new tyre a tie bar has exactly one job and it does it without touching the road: it <strong>bonds</strong>. A block on its own is a cantilever of length NSD; bonded to its neighbour through a bar, the pair resists together. The taller the bar, the bigger the glued cross-section and the harder it bonds — ×1.126 for a 2 mm bar on a 16 mm NSD, ×1.492 for one drawn flush.</p>
+<p>This is also why the attribution here is clean. Because a buried bar carries no load, it never enters the <strong>independent</strong> solve at all, so on a new tyre <em>every</em> bit of the bonded cross term is the network. (On a worn tread it would not be: once a diagonal bar is in contact it carries a cross term of its own, and reading the bonded figure alone would over-state what the bonding did. That case is out of scope here.)</p>
 <h3>What it does not model: block rotation</h3>
 <p>Every element in the network has <strong>two</strong> degrees of freedom — it can slide along the tyre and across it. It cannot <strong>spin</strong> about the vertical axis.</p>
 <p>Think of a door. Push it in the middle and it just moves; push it near the <strong>edge</strong> and it swings. Same force, different result, because rotation matters.</p>
@@ -1303,7 +1304,7 @@ lateral        u = tan α · s      α = slip angle</code></pre>
 <p>Every option is a <strong>complete figure built when the file was written</strong>. Switching one is a redraw, never a calculation — which is what lets the file carry no engine while still being interactive.</p>
 <h4>Three other things it now does</h4>
 <ul><li><strong>Every compared design's tread is drawn</strong>, not just the live one, and all of them at <strong>true shape and one scale</strong>: millimetres on both axes with the vertical locked to the horizontal. A block comes out the shape it really is, and two designs can be compared by eye. (Against rotation angle in a fixed box, a 1194 × 204 mm tread was stretched about 1.6× across the page.)</li><li><strong>Two stiffness figures, one state each.</strong> <em>Pattern Stiffness (with Tiebar)</em> is the bonded network, design by design, with both curves on it — the gap between bonded and independent <strong>is</strong> what the bars do. <em>Pattern Comparison (no tie-bar bonding)</em> sets the designs against each other with the bonding out of the way, so a difference between them is a difference in the <strong>pattern</strong> and not in how its bars happen to tie up.</li></ul>
-<p>It is not called "no tiebar", because that would not be true: a bar that has worn into contact is rasterised as <strong>land</strong>, so it is in those numbers as rubber. What is absent is the bonding. For a genuinely bar-free comparison, switch the bars off in <em>6 · Wear &amp; tie bars</em> and re-run each design.</p>
+<p>It is not called "no tiebar", because that would not quite be true: a bar drawn flush with the tread is rasterised as <strong>land</strong>, so on such a design it is in those numbers as rubber. What is absent is the bonding. For a genuinely bar-free comparison, switch the bars off in <em>6 · Tie bars</em> and re-run each design.</p>
 <ul><li><strong>The lean map is not in it.</strong> It reads well printed and badly in a review, so it stays in the PDF; the chip in <em>Include</em> is marked <strong>PDF</strong> so the list never silently differs from the file.</li></ul>
 <h4>The two Kx numbers are not on one scale</h4>
 <p>Worth knowing before anyone reads one across to the other. The two figures reach Kx by different routes:</p>
@@ -70232,56 +70233,56 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   }
 
   // ---------------------------------------------------------------------
-  // wear state and tie bars
+  // tie bars
   // ---------------------------------------------------------------------
-  // Put the groove bottom at z = 0. A block's top starts at z = NSD and, after
-  // the tyre has worn w mm, sits at z = NSD - w; its beam length is therefore
-  // NSD - w. A tie bar is a raised strip of the groove bottom of height h < NSD,
-  // so its top starts at z = h -- (NSD - h) BELOW the road. It touches nothing
-  // until the tread has worn that far. Once it does, it is flush with the blocks
-  // and is simply more land at the same height, which is exactly why tie bars
-  // are used: they arrive part-worn and stiffen the block row against the
-  // heel-and-toe wear that is developing by then.
-  //
-  // So the whole model is: main blocks lose w off their height; a tie bar joins
-  // the block list, at the blocks' current height, once w >= NSD - h. Nothing
-  // else about the pipeline changes. At the default w = 0 the tie bars are drawn
-  // and listed but contribute nothing, which is the truth for a new tyre.
-  function tiebarEngagementWear(tb) {
+  // Put the groove bottom at z = 0. A block's top is at z = NSD, so its beam
+  // length is NSD. A tie bar is a raised strip of the groove bottom of height
+  // h, so its top sits at z = h -- (NSD - h) BELOW the road, touching nothing.
+  // It still joins the two blocks either side of it at their base, which is
+  // what it is for.
+  // How far below the tread surface a tie bar's top sits: NSD minus its height,
+  // and zero if it is drawn flush. This is the number that decides whether it
+  // touches the road, and on a new tyre it is also just a dimension of the
+  // design -- how deep in the groove the bar was put.
+  function tiebarDepthBelowTread(tb) {
     const nsd = Number.isFinite(+tb.nsd) ? +tb.nsd : 0;
     const h = Number.isFinite(+tb.height) ? +tb.height : 0;
     return Math.max(0, nsd - h);
   }
 
-  // A bar is in contact when the tread has worn down to it, and at no other
-  // time. There is deliberately no override: a bar shorter than the blocks
-  // around it cannot touch the road while they do, so "in contact anyway" is
-  // not a what-if, it is an impossible geometry. A bar that really does reach
-  // the surface has height == NSD, which engages here at zero wear with the
-  // geometry actually matching the claim.
-  function tiebarEngaged(tb, wear) {
-    if (tb.enabled === false) return false;
-    return (wear || 0) >= tiebarEngagementWear(tb) - 1e-9;
+  // Whether a tie bar touches the road.
+  //
+  // This tool evaluates a NEW tyre, so the only bar in contact is one drawn
+  // flush with the tread surface -- height equal to the non-skid depth. A bar
+  // shorter than the blocks around it cannot touch the road while they do;
+  // that is not a what-if, it is an impossible geometry.
+  //
+  // So on a normal design the answer here is no, and a tie bar earns its place
+  // entirely by BONDING the blocks either side of it. It is joined to them at
+  // the base whether or not its top is in contact, which is why it stiffens the
+  // pair without adding any contact area.
+  function tiebarInContact(tb) {
+    if (!tb || tb.enabled === false) return false;
+    const nsd = Number.isFinite(+tb.nsd) ? +tb.nsd : 0;
+    const h = Number.isFinite(+tb.height) ? +tb.height : 0;
+    return nsd > 0 && h >= nsd - 1e-9;
   }
 
-  // The block list the rest of the pipeline should see at this wear state.
-  function effectiveBlocks(pattern, wear, opts) {
-    wear = Number.isFinite(+wear) ? Math.max(0, +wear) : 0;
+  // The block list the rest of the pipeline should see.
+  function effectiveBlocks(pattern, opts) {
     opts = opts || {};
     const minH = 0.1;
     const out = [];
     for (const b of pattern.blocks || []) {
-      const h = (b.height || 0) - wear;
-      if (h < minH) continue;                      // worn past this block entirely
-      out.push(wear > 0 ? Object.assign({}, b, { height: h }) : b);
+      if ((b.height || 0) < minH) continue;
+      out.push(b);
     }
-    const engaged = [];
+    const touching = [];
     for (const tb of pattern.tiebars || []) {
-      if (!tiebarEngaged(tb, wear)) continue;
-      // Engaged means worn into, so the bar is flush with the blocks and has
-      // their current height. There is no other way to be in contact.
-      const h = Math.max(minH, (tb.nsd || 0) - wear);
-      engaged.push({
+      if (!tiebarInContact(tb)) continue;
+      // Flush with the blocks, so it carries their height.
+      const h = Math.max(minH, tb.nsd || 0);
+      touching.push({
         id: tb.id, pitch_id: tb.pitch_id || "", polygon: tb.polygon, holes: tb.holes || [], zone: tb.zone,
         height: h, draft_angle: tb.draft_angle || 0,
         n_lateral_sipes: tb.n_lateral_sipes || 0,
@@ -70289,27 +70290,15 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         shore_a: tb.shore_a, sipes: tb.sipes || [], is_tiebar: true,
       });
     }
-    return opts.separate ? { blocks: out, tiebars: engaged } : out.concat(engaged);
+    return opts.separate ? { blocks: out, tiebars: touching } : out.concat(touching);
   }
 
-  function validateWear(wear, pattern) {
-    if (wear == null) return null;
-    const w = +wear;
-    if (!Number.isFinite(w) || w < 0)
-      throw new Error("tread wear must be a non-negative number of mm, got " + wear);
-    const maxH = (pattern && pattern.blocks || []).reduce((m, b) => Math.max(m, b.height || 0), 0);
-    if (maxH > 0 && w >= maxH)
-      throw new Error("tread wear of " + w + " mm removes every block (the deepest is " +
-        maxH.toFixed(2) + " mm). Enter a wear less than the NSD.");
-    return null;
-  }
-
-  // Apply the wear state to a pattern, returning a pattern the sweep can use
-  // directly. Kept separate so the untouched original stays available to draw.
-  function patternAtWear(pattern, wear) {
-    if (!wear && !(pattern.tiebars || []).some((t) => tiebarEngaged(t, 0))) return pattern;
-    validateWear(wear, pattern);
-    return Object.assign({}, pattern, { blocks: effectiveBlocks(pattern, wear), wear_mm: wear || 0 });
+  // The pattern the sweep should run on: the blocks, plus any bar drawn flush
+  // enough to be in contact. Kept separate so the untouched original stays
+  // available to draw.
+  function patternForSweep(pattern) {
+    if (!(pattern.tiebars || []).some(tiebarInContact)) return pattern;
+    return Object.assign({}, pattern, { blocks: effectiveBlocks(pattern) });
   }
 
   // =====================================================================
@@ -70471,12 +70460,12 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     };
   }
 
-  // Bar height above the groove bottom at this wear state: its own height until
-  // the tread wears down to it, and thereafter the same as the blocks, because
-  // from then on it wears with them.
-  function tiebarCurrentHeight(tb, wear) {
+  // Bar height above the groove bottom. On a new tyre that is simply the height
+  // it was drawn at, capped by the non-skid depth -- a bar cannot stand proud
+  // of the blocks it sits between.
+  function tiebarHeight(tb) {
     const nsd = +tb.nsd || 0, h = +tb.height || 0;
-    return Math.min(h, Math.max(0, nsd - (wear || 0)));
+    return nsd > 0 ? Math.min(h, nsd) : h;
   }
 
   // Floor on any element height, block or bar. Below this the beam formulae
@@ -70591,8 +70580,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     return group.members.length;
   }
 
-  function buildCouplingNetwork(pattern, wear, params) {
-    wear = Math.max(0, +wear || 0);
+  function buildCouplingNetwork(pattern, params) {
     const cp = compoundProperties(params);
     const minH = COUPLING_MIN_HEIGHT;
     const nodes = [];
@@ -70601,26 +70589,28 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     // Main blocks, in the same order effectiveBlocks() emits them, so a raster
     // label maps straight onto a node.
     for (const b of pattern.blocks || []) {
-      const h = (b.height || 0) - wear;
+      const h = b.height || 0;
       if (h < minH) continue;
-      const blk = wear > 0 ? Object.assign({}, b, { height: h }) : b;
       idOf[b.id] = nodes.length;
-      nodes.push({ id: b.id, kind: "block", ref: b, K: blockStiffness(blk, params), height: h });
+      nodes.push({ id: b.id, kind: "block", ref: b, K: blockStiffness(b, params), height: h });
     }
     const nMain = nodes.length;
 
     // Then the engaged bars (also matching effectiveBlocks), then the rest.
     const bars = (pattern.tiebars || []).filter((t) => t.enabled !== false);
-    const engaged = bars.filter((t) => tiebarEngaged(t, wear));
-    const submerged = bars.filter((t) => !tiebarEngaged(t, wear));
-    for (const list of [engaged, submerged]) {
+    // In contact first, then the rest -- same order as effectiveBlocks. On a
+    // new tyre the first list is normally empty and every bar is below the
+    // surface, bonding its neighbours without touching the road.
+    const touching = bars.filter(tiebarInContact);
+    const below = bars.filter((t) => !tiebarInContact(t));
+    for (const list of [touching, below]) {
       for (const tb of list) {
-        const h = Math.max(minH, tiebarCurrentHeight(tb, wear));
+        const h = Math.max(minH, tiebarHeight(tb));
         const el = { polygon: tb.polygon, holes: tb.holes || [], height: h, draft_angle: tb.draft_angle || 0,
                      n_lateral_sipes: 0, sipes: [], shore_a: tb.shore_a };
         idOf[tb.id] = nodes.length;
         nodes.push({ id: tb.id, kind: "tiebar", ref: tb, K: blockStiffness(el, params), height: h,
-                     engaged: tiebarEngaged(tb, wear) });
+                     in_contact: tiebarInContact(tb) });
       }
     }
     if (nodes.length < 2) return null;
@@ -70629,12 +70619,12 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     for (const tb of bars) {
       const ti = idOf[tb.id];
       if (ti == null) continue;
-      const hb = Math.max(minH, tiebarCurrentHeight(tb, wear));
+      const hb = Math.max(minH, tiebarHeight(tb));
       for (const lk of tb.links || []) {
         const other = lk.kind === "block" ? (pattern.blocks[lk.index] || {}).id
                                           : ((pattern.tiebars[lk.index] || {}).id);
         const oi = idOf[other];
-        if (oi == null || oi === ti) continue;    // worn away, or excluded by the user
+        if (oi == null || oi === ti) continue;    // excluded by the user
         const A = lk.wall_length * hb;
         if (!(A > 0) || !(lk.span > 0)) continue;
         links.push({ i: ti, j: oi,
@@ -70667,7 +70657,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     for (let i = 0; i < N; i++) { localOf[i] = members[comp[i]].length; members[comp[i]].push(i); }
 
     return { nodes: nodes, links: links, nMain: nMain, comp: comp, localOf: localOf,
-             members: members, nComp: nComp, compound: cp, wear: wear };
+             members: members, nComp: nComp, compound: cp };
   }
 
   // In-place Cholesky of a symmetric positive-definite dense matrix, then the
@@ -70711,7 +70701,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   const COUPLING_DOF_LIMIT = 1600;
 
   // Assemble and invert each component once. K does not depend on theta -- only
-  // the load does -- so this is done a single time per wear state and every
+  // the load does -- so this is done a single time and every
   // angle is then three small quadratic forms.
   function factorCouplingNetwork(net) {
     const inv = new Array(net.nComp);
@@ -70862,19 +70852,19 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   }
 
   // Build and factorise once. The network depends on geometry, compound and
-  // wear -- never on the lean angle or the patch -- so a lean sweep reuses one
+  // compound -- never on the lean angle or the patch -- so a lean sweep reuses one
   // factorisation and only the load changes.
-  function prepareCouplingNetwork(pattern, wear, params) {
+  function prepareCouplingNetwork(pattern, params) {
     const bars = (pattern.tiebars || []).filter((t) => t.enabled !== false);
     if (!bars.length) return null;
-    const net = buildCouplingNetwork(pattern, wear, params);
+    const net = buildCouplingNetwork(pattern, params);
     if (!net || !net.links.length) return null;
     return factorCouplingNetwork(net);
   }
 
   // The whole theta sweep of the coupled network.
-  function couplingSweep(pattern, pack, patch, wear, params, nTheta, prepared) {
-    const net = prepared || prepareCouplingNetwork(pattern, wear, params);
+  function couplingSweep(pattern, pack, patch, params, nTheta, prepared) {
+    const net = prepared || prepareCouplingNetwork(pattern, params);
     if (!net) return null;
 
     const grid = pack.grid, nx = grid.nx, ny = grid.ny;
@@ -70955,9 +70945,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       n_loaded: Array.prototype.slice.call(nLoaded),
       gain_kx: gain(kxC, kxU), gain_ky: gain(kyC, kyU),
       n_nodes: net.nodes.length, n_links: net.links.length, n_components: net.nComp,
-      n_engaged: net.nodes.filter(function (n) { return n.kind === "tiebar" && n.engaged; }).length,
-      n_submerged: net.nodes.filter(function (n) { return n.kind === "tiebar" && !n.engaged; }).length,
-      wear_mm: net.wear, compound: net.compound,
+      n_in_contact: net.nodes.filter(function (n) { return n.kind === "tiebar" && n.in_contact; }).length,
+      n_below: net.nodes.filter(function (n) { return n.kind === "tiebar" && !n.in_contact; }).length,
+      compound: net.compound,
     };
   }
 
@@ -72763,7 +72753,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     const nDetectedBeforeHatch = tiebarFaces.length;
     if (cls.unclassified.length)
       warnings.push(cls.unclassified.length + " small region(s) share an edge with a block but touch only one of " +
-        "them, so they were counted as blocks rather than tie bars — check 6 · Wear & tie bars if any of them is a bar");
+        "them, so they were counted as blocks rather than tie bars — check 6 · Tie bars if any of them is a bar");
 
     // Reconcile the explicit hatches with what the detector found.
     //
@@ -72885,7 +72875,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     if (uniform) warnings.push("every repeat is geometrically identical -- this drawing carries no pitch modulation; supply the production pitch sequence for a real order analysis");
 
     // Tie bars. A bar's height is measured from the groove bottom like the
-    // block's NSD, but it is lower, so on an unworn tyre its top sits
+    // block's NSD, but it is lower, so its top sits
     // (NSD - height) below the road and it carries nothing. Default it to a
     // fraction of the local block NSD and let the user set each one.
     const tbFrac = opts.tiebar_height_fraction == null ? 0.55 : opts.tiebar_height_fraction;
@@ -72918,12 +72908,12 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       });
     }
     // Which blocks each bar is bonded to. Geometry only, so it survives every
-    // later change of NSD, height or wear.
+    // later change of NSD or height.
     linkTiebars(blocks, tiebars);
     const unlinked = tiebars.filter((t) => !t.links || t.links.length < 2).length;
     if (unlinked)
       warnings.push(unlinked + " tie bar(s) touch fewer than two blocks along a shared edge, so they " +
-        "cannot couple anything; they will still add contact area once worn into, but contribute no " +
+        "cannot couple anything, so they contribute no " +
         "coupling stiffness. This usually means the bar's outline does not meet the groove walls exactly.");
 
     if (tiebars.length)
@@ -72933,8 +72923,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
           (nMergedHatches ? ", " + nMergedHatches + " of them the same bar found both ways" : "") + ")"
           : " between blocks") +
         ". They sit below the tread " +
-        "surface, so they carry nothing until the tyre has worn past (NSD - tie-bar height) — set the " +
-        "heights and the wear state in 6 · Wear & tie bars.");
+        "surface, so they add no contact area — what they do is BOND the blocks either side of them, " +
+        "which stiffens the pair. Set their heights in 6 · Tie bars.");
 
     const pattern = {
       tyre_circumference: circ, tread_width: width, pitches: pitches, blocks: blocks,
@@ -74606,9 +74596,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     centrePatchOutline, validatePatchOutline, isMeasuredSpec, CP_UNIT_SCALE, CP_LATERAL,
     crownFromArcs,
     compoundProperties, validateCompound, interpShore,
-    tiebarEngagementWear, tiebarEngaged, effectiveBlocks, validateWear, patternAtWear,
+    tiebarInContact, tiebarDepthBelowTread, effectiveBlocks, patternForSweep,
     groupTiebars, applyToTiebarGroup, tiebarMetrics, TIEBAR_GROUP_MODES,
-    linkTiebars, polygonEdgeKeys, couplingLinkMatrix, tiebarCurrentHeight,
+    linkTiebars, polygonEdgeKeys, couplingLinkMatrix, tiebarHeight,
     buildCouplingNetwork, factorCouplingNetwork, choleskyInverse, invert2x2,
     effectiveStiffnessAt, couplingSweep, prepareCouplingNetwork,
     rowRunsOfLabels, rowRunsOfMask, firstRunAfter,
@@ -75852,11 +75842,10 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     try {
       var t0 = Date.now();
       var wholePattern = m.pattern;
-      // Wear shortens every block and decides which tie bars have reached the
-      // road. Do it once, here, so the rest of the pipeline sees one block list
-      // and never has to know a tie bar from a block.
-      E.validateWear(m.wear, wholePattern);
-      var split = E.effectiveBlocks(wholePattern, m.wear, { separate: true });
+      // Any bar drawn flush with the tread joins the block list here, so the
+      // rest of the pipeline sees one list and never has to know a tie bar
+      // from a block. On a normal new-tyre design that list is empty.
+      var split = E.effectiveBlocks(wholePattern, { separate: true });
       var pattern = Object.assign({}, wholePattern, { blocks: split.blocks.concat(split.tiebars) });
       // crown arrays survive structured clone as plain arrays; the engine reads
       // them by index so no rehydration is needed.
@@ -75894,23 +75883,20 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
       var nTie = (wholePattern.tiebars || []).length;
       if (nTie) {
-        var engaged = split.tiebars.length;
-        notes.push(nTie + " tie bar(s) in this drawing; " + engaged + " in contact at " +
-          (m.wear || 0).toFixed(1) + " mm wear. A bar of height h reaches the road only once the " +
-          "tread has worn NSD - h, so at zero wear they carry nothing.");
-      }
-      if (m.wear > 0) {
-        var lost = (wholePattern.blocks || []).length - split.blocks.length;
-        notes.push("tread worn " + (+m.wear).toFixed(2) + " mm: every block's bending length is NSD - wear, " +
-          "so the tread is stiffer than new" + (lost ? " (" + lost + " block(s) worn away entirely)" : "") + ".");
+        var touching = split.tiebars.length;
+        notes.push(nTie + " tie bar(s) in this drawing" +
+          (touching ? "; " + touching + " drawn flush with the tread and so in contact"
+                    : "; none reach the tread surface, so they add no contact area") +
+          ". A tie bar's job is to BOND the blocks either side of it, which stiffens the pair " +
+          "whether or not its top touches the road.");
       }
 
-      // The coupled network depends on geometry, compound and wear -- not on
-      // the lean angle -- so it is built and factorised once for the whole
-      // sweep and only the load changes per angle.
+      // The coupled network depends on geometry and compound -- not on the
+      // lean angle -- so it is built and factorised once for the whole sweep
+      // and only the load changes per angle.
       var couplingNet = null;
       if (m.coupling !== false) {
-        try { couplingNet = E.prepareCouplingNetwork(wholePattern, m.wear, m.stiffParams); }
+        try { couplingNet = E.prepareCouplingNetwork(wholePattern, m.stiffParams); }
         catch (err) {
           notes.push("tie-bar coupling was not computed: " + (err && err.message ? err.message : err));
         }
@@ -75927,7 +75913,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         // produce it.
         if (couplingNet) {
           try {
-            coupling.push(E.couplingSweep(wholePattern, pack, r.patch, m.wear, m.stiffParams,
+            coupling.push(E.couplingSweep(wholePattern, pack, r.patch, m.stiffParams,
                                           m.couplingSamples || 720, couplingNet));
           } catch (err) {
             coupling.push(null);
@@ -75994,9 +75980,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         // Which bars this run actually had in contact. The page draws the
         // pattern strip from this, not from the live inputs, so the strip can
         // never show a bar as land that the curves above it did not include.
-        wear: { mm: m.wear || 0, n_blocks: split.blocks.length,
-                n_tiebars_total: nTie, n_tiebars_engaged: split.tiebars.length,
-                engaged_ids: split.tiebars.map(function (t) { return t.id; }) },
+        tiebars: { n_blocks: split.blocks.length,
+                   n_total: nTie, n_in_contact: split.tiebars.length,
+                   contact_ids: split.tiebars.map(function (t) { return t.id; }) },
       });
     } catch (err) {
       self.postMessage({ type: "error", message: String(err && err.message ? err.message : err) });
@@ -76418,7 +76404,6 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       c.max_reachable_lean_deg.toFixed(1) + " deg";
   }
 
-  function readWear() { var v = num("wear"); return isFinite(v) && v > 0 ? v : 0; }
   function readTiebarFrac() { var v = num("tiebarHeight"); return isFinite(v) && v > 0 ? Math.min(1, v) : 0.55; }
   function readWeldTol() { var v = num("weldTol"); return isFinite(v) && v > 0 ? v : 0.01; }
   function readTiebarAreaFrac() { var v = num("tiebarFrac"); return isFinite(v) && v > 0 ? v : 0.5; }
@@ -76860,13 +76845,12 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     }
 
     // Tie bars in the same window, so the patch can be placed knowing where
-    // they are: filled once they have worn into contact, outlined while they
-    // are still below the surface.
-    var edWear = readWear();
+    // they are: filled if drawn flush with the tread, outlined while they sit
+    // below the surface, which on a new tyre is nearly always.
     for (var tbi = 0; tbi < (p.tiebars || []).length; tbi++) {
       var tbar = p.tiebars[tbi];
       if (tbar.enabled === false) continue;
-      var tbOn = E.tiebarEngaged(tbar, edWear);
+      var tbOn = E.tiebarInContact(tbar);
       var tbColor = tiebarDisplayColor(tbar);
       var tpieces = E.splitAtSeam(tbar.polygon, C);
       for (var tpc = 0; tpc < tpieces.length; tpc++) {
@@ -76935,7 +76919,6 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     ["wheelR", "Wheel radius", "mm", function (v) { return v > 0; }, "must be greater than 0"],
     ["cpLength", "Patch length", "mm", function (v) { return v > 0; }, "must be greater than 0"],
     ["cpWidth", "Patch width", "mm", function (v) { return v > 0; }, "must be greater than 0"],
-    ["wear", "Tread worn", "mm", function (v) { return v >= 0; }, "cannot be negative"],
     ["tiebarHeight", "Tie-bar height", "frac of NSD", function (v) { return v > 0 && v <= 1; }, "must be between 0 and 1"],
     ["weldTol", "Weld tolerance", "mm", function (v) { return v > 0 && v <= 1; }, "must be between 0 and 1"],
     ["tiebarFrac", "Tie-bar area limit", "", function (v) { return v > 0 && v <= 1; }, "must be between 0 and 1"],
@@ -76980,9 +76963,6 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       catch (err) { errs.push(err.message); }
       try { readCrownArcs(state.pattern ? state.pattern.tread_width : 0); }
       catch (err) { errs.push(err.message); }
-      var w = readWear(), nsd = num("nsd");
-      if (isFinite(nsd) && nsd > 0 && w >= nsd)
-        errs.push("Tread worn (" + w + " mm) must be less than the NSD (" + nsd + " mm) — that much wear removes every block");
     }
     return errs;
   }
@@ -77113,7 +77093,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         state.results = m.results; state.stiffness = m.stiffness; state.grid = m.grid;
         state.notes = m.notes || []; state.maxLean = m.maxLean;
         state.bandEdges = m.bandEdges || null;
-        state.compound = m.compound || null; state.wear = m.wear || null;
+        state.compound = m.compound || null; state.tiebars = m.tiebars || null;
         state.coupling = m.coupling || null;
         state.running = false; $("overlay").classList.remove("on");
         $("runBtn").textContent = "▶ Run";
@@ -77143,7 +77123,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       stiffParams: readStiffParams(), cpParams: readCpParams(), spec: readSpec(),
       zoneFracs: { center: tyreClassPhysics().zone_center, intermediate: tyreClassPhysics().zone_intermediate },
       leans: currentLeans(), discreteSamples: 360, bandEdges: state.ranBands, curvatureCorrection: $("curv").checked, stride: stride,
-      wear: readWear(), coupling: true, couplingSamples: 720,
+      coupling: true, couplingSamples: 720,
     });
   }
 
@@ -77502,8 +77482,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   // -- the curves above it did not. Falls back to the live state before any run,
   // where the strip is only a preview.
   function ranEngaged(tb) {
-    if (state.wear && state.wear.engaged_ids) return state.wear.engaged_ids.indexOf(tb.id) >= 0;
-    return E.tiebarEngaged(tb, readWear());
+    if (state.tiebars && state.tiebars.contact_ids) return state.tiebars.contact_ids.indexOf(tb.id) >= 0;
+    return E.tiebarInContact(tb);
   }
 
   // Deliberately outside the zone palette (blue / green / amber): a tie bar
@@ -77550,15 +77530,14 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     ctx.closePath();
   }
 
-  function patternStripTitle(wear) {
+  function patternStripTitle() {
     var tb = (state.pattern.tiebars || []).filter(function (t) { return t.enabled !== false; });
     if (!tb.length) return "Rolled-out tread pattern (same θ axis)";
     var on = tb.filter(ranEngaged).length;
     return "Rolled-out tread pattern (same θ axis) — " +
       (anyHatchedBars() ? "coloured = hatched tie bars, violet = detected, " : "violet = tie bars, ") +
-      on + " of " + tb.length +
-      " in contact at " + (+wear).toFixed(1) + " mm wear" +
-      (on < tb.length ? " (dotted outline = still below the surface)" : "");
+      tb.length + " tie bar(s)" +
+      (on ? ", " + on + " drawn flush with the tread" : " below the tread surface, bonding only");
   }
 
   // The rolled-out tread as Plotly shapes. Shared by the sweep tab's strip, the
@@ -77570,7 +77549,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   //   pattern    a tread other than the one on screen (a held comparison run)
   //   xref/yref  which subplot row to draw into, when the caller has several
   //   engaged    how to decide a bar is in contact, for a pattern that is not
-  //              the live one and so has no live wear state
+  //              the live one, so its bars come frozen with the run
   function patternStripShapes(opts) {
     opts = opts || {};
     var p = opts.pattern || state.pattern, th = plotTheme(), C = p.tyre_circumference;
@@ -77592,7 +77571,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     // Tie bars, on the same strip as the blocks. The sweep already counts the
     // engaged ones as land -- the worker merges them into the block list before
     // rasterising -- but with nothing drawn there was no way to see it, and a
-    // step in the curves at some wear had no visible cause on the pattern.
+    // step in the curves had no visible cause on the pattern.
     // Engaged bars are filled like land; bars still below the surface are drawn
     // as outlines so you can see where they sit and what is about to arrive.
     for (var ti = 0; ti < (p.tiebars || []).length; ti++) {
@@ -77703,8 +77682,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
   function renderPatternStrip() {
     var th = plotTheme();
-    var tbWear = state.wear ? state.wear.mm : readWear();
-    var layout = stripLayout(th, patternStripTitle(tbWear), state.thetaRange || [0, 360]);
+    var layout = stripLayout(th, patternStripTitle(), state.thetaRange || [0, 360]);
     layout.shapes = patternStripShapes({});
     Plotly.react($("patternStrip"), STRIP_TRACE, layout, { responsive: true, displayModeBar: false })
       .then(linkThetaFigures);
@@ -78009,11 +77987,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     var domTxt = dom.map(function (d) { return "O" + d.order; }).join(", ");
     flags.push(flag("good", "dominant Kz orders: " + domTxt));
     if (state.pattern.meta && state.pattern.meta.uniform_array) flags.push(flag("warn", "uniform array — no pitch modulation in the drawing"));
-    if (state.wear && state.wear.n_tiebars_total)
-      flags.push(flag(state.wear.n_tiebars_engaged ? "good" : "warn",
-        state.wear.n_tiebars_engaged + " of " + state.wear.n_tiebars_total + " tie bars in contact at " +
-        state.wear.mm.toFixed(1) + " mm wear"));
-    if (state.wear && state.wear.mm > 0) flags.push(flag("good", "tread worn " + state.wear.mm.toFixed(1) + " mm"));
+    if (state.tiebars && state.tiebars.n_total)
+      flags.push(flag("good", state.tiebars.n_total + " tie bar(s) bonding the tread" +
+        (state.tiebars.n_in_contact ? ", " + state.tiebars.n_in_contact + " of them in contact" : "")));
     $("flags").innerHTML = flags.join(" ");
 
     // What the compound resolved to, and what the importer actually saw. Both
@@ -78555,22 +78531,21 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     body.style.display = tb.length ? "" : "none";
     if (!tb.length) { Plotly.purge($("tbPlot")); $("tbTable").innerHTML = ""; return; }
 
-    var wear = readWear();
     refreshTiebarSummary();
     drawTiebarPlan();
 
     renderTiebarGroups();
 
     var rows = "<table class='metrics'><tr><th>Bar</th><th>zone</th><th>θ (deg)</th><th>y (mm)</th>" +
-      "<th>area (mm²)</th><th>NSD (mm)</th><th>height (mm)</th><th>engages at wear</th>" +
+      "<th>area (mm²)</th><th>NSD (mm)</th><th>height (mm)</th><th>below tread (mm)</th>" +
       "<th>state</th>" +
       "<th title='Is this region a tie bar at all? Untick to exclude it completely — no contact " +
       "area, no coupling stiffness, not in the network. Use it for a region the detector picked " +
       "up that is really open groove.'>include</th></tr>";
     var circ = state.pattern.tyre_circumference;
     tb.forEach(function (t, i) {
-      var engaged = E.tiebarEngaged(t, wear);
-      var at = E.tiebarEngagementWear(t);
+      var engaged = E.tiebarInContact(t);
+      var at = E.tiebarDepthBelowTread(t);
       var theta = ((t.centroid_x % circ) + circ) % circ / circ * 360;
       var provenance = (t.source === "hatch"
         ? "drawn as a HATCH on the " + (t.layer || "TIEBAR") + " layer" +
@@ -78598,7 +78573,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     $("tbTable").innerHTML = rows + "</table>" + "<div class='hint tb-legend' style='margin-top:6px'>" +
       "<b>include</b> — is this a tie bar at all? Untick and it is excluded from everything: no contact " +
       "area, no coupling, not in the network. For a region that is really open groove.<br>" +
-      "<b>engages at wear</b> — the tread has to wear this far down before the bar touches the road. " +
+      "<b>below tread</b> — how far under the tread surface the bar's top sits, NSD minus its height. " +
       "A bar that reaches the surface as moulded has height = NSD and engages at 0." +
       "</div>";
 
@@ -78626,7 +78601,6 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     if (!tb.length) { host.innerHTML = ""; return; }
     var groups = currentTiebarGroups();
     state.tiebarGroups = groups;
-    var wear = readWear();
 
     if (tiebarGroupMode() === "none") {
       host.innerHTML = "<div class='hint'>Grouping off — set each bar in the list below.</div>";
@@ -78635,14 +78609,14 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
     var rows = "<table class='metrics'><tr><th>Group</th><th>bars</th><th>zone</th>" +
       "<th>shape (circ × lat)</th><th>area (mm²)</th><th>y range (mm)</th><th>NSD (mm)</th>" +
-      "<th>height (mm)</th><th>engages at wear</th><th>state</th>" +
+      "<th>height (mm)</th><th>below tread (mm)</th><th>state</th>" +
       "<th title='Is this region a tie bar at all? Untick to exclude it completely — no contact " +
       "area, no coupling stiffness, not in the network. Use it for a region the detector picked " +
       "up that is really open groove.'>include</th></tr>";
     groups.forEach(function (g, i) {
       // A group is "in contact" only if it is uniform; a mixed group says so
       // rather than picking one member's answer and presenting it as the truth.
-      var eng = g.members.filter(function (k) { return E.tiebarEngaged(tb[k], wear); }).length;
+      var eng = g.members.filter(function (k) { return E.tiebarInContact(tb[k]); }).length;
       var at = g.mixed_height ? null : Math.max(0, g.nsd - g.height);
       var state1 = eng === 0 ? ["off", "below surface"]
         : eng === g.count ? ["on", "in contact"]
@@ -78669,7 +78643,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       "group as <i>mixed</i> until the group is set again.</div>" + "<div class='hint tb-legend' style='margin-top:6px'>" +
       "<b>include</b> — is this a tie bar at all? Untick and it is excluded from everything: no contact " +
       "area, no coupling, not in the network. For a region that is really open groove.<br>" +
-      "<b>engages at wear</b> — the tread has to wear this far down before the bar touches the road. " +
+      "<b>below tread</b> — how far under the tread surface the bar's top sits, NSD minus its height. " +
       "A bar that reaches the surface as moulded has height = NSD and engages at 0." +
       "</div>";
 
@@ -78704,14 +78678,14 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   }
 
   function refreshTiebarSummary() {
-    var tb = tiebarList(), wear = readWear(), nOn = 0, nEngaged = 0;
+    var tb = tiebarList(), nOn = 0, nInContact = 0;
     tb.forEach(function (t) {
       if (t.enabled !== false) nOn++;
-      if (E.tiebarEngaged(t, wear)) nEngaged++;
+      if (E.tiebarInContact(t)) nInContact++;
     });
     var el = $("tbSummary");
-    if (el) el.innerHTML = tb.length + " found · " + nOn + " enabled · <b>" + nEngaged +
-      "</b> in contact at " + wear.toFixed(1) + " mm wear";
+    if (el) el.innerHTML = tb.length + " found · " + nOn + " enabled · <b>" + nInContact +
+      "</b> drawn flush with the tread (the rest bond without touching the road)";
   }
 
   // Update a row's derived cells in place.
@@ -78728,7 +78702,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     var table = $("tbTable");
     var row = table && table.querySelector("tr:nth-child(" + (i + 2) + ")");
     if (!t || !row || row.cells.length < 9) return;
-    var wear = readWear(), engaged = E.tiebarEngaged(t, wear), at = E.tiebarEngagementWear(t);
+    var engaged = E.tiebarInContact(t), at = E.tiebarDepthBelowTread(t);
     row.className = t.enabled === false ? "off" : engaged ? "engaged" : "";
     row.cells[5].textContent = (+t.nsd).toFixed(2);
     var hIn = row.cells[6].firstChild;
@@ -78765,11 +78739,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     });
     if (!sameShape) { renderTiebarGroups(); return; }
     state.tiebarGroups = groups;
-    var tb = tiebarList(), wear = readWear();
+    var tb = tiebarList();
     groups.forEach(function (g, i) {
       var row = host.querySelector("tr:nth-child(" + (i + 2) + ")");
       if (!row || row.cells.length < 11) return;
-      var eng = g.members.filter(function (k) { return E.tiebarEngaged(tb[k], wear); }).length;
+      var eng = g.members.filter(function (k) { return E.tiebarInContact(tb[k]); }).length;
       var at = g.mixed_height ? null : Math.max(0, g.nsd - g.height);
       row.className = g.n_enabled === 0 ? "off" : eng === g.count ? "engaged" : "";
       row.cells[6].textContent = (+g.nsd).toFixed(2);
@@ -78834,7 +78808,6 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   // against the drawing rather than taken on trust.
   function drawTiebarPlan() {
     var p = state.pattern, th = plotTheme(), tb = tiebarList();
-    var wear = readWear();
     var shapes = [];
     function poly(region, fill, line, width) {
       var d = regionPlotPath(region, p.tyre_circumference, false);
@@ -78844,7 +78817,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     for (var j = 0; j < tb.length; j++) {
       var t = tb[j];
       var on_ = t.enabled !== false;
-      var eng = E.tiebarEngaged(t, wear);
+      var eng = E.tiebarInContact(t);
       var tc = tiebarDisplayColor(t);
       poly(t, !on_ ? "rgba(128,128,128,0.25)" : eng ? hexA(tc, 0.85) : "rgba(0,0,0,0)",
            !on_ ? th.inkDim : tc, 1.2);
@@ -78854,13 +78827,13 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       y: tb.map(function (t) { return t.centroid_y; }),
       text: tb.map(function (t) { return t.id; }),
       customdata: tb.map(function (t) {
-        return [t.area.toFixed(1), (+t.height).toFixed(2), t.nsd.toFixed(2), E.tiebarEngagementWear(t).toFixed(2),
+        return [t.area.toFixed(1), (+t.height).toFixed(2), t.nsd.toFixed(2), E.tiebarDepthBelowTread(t).toFixed(2),
                 t.source === "hatch" ? "drawn on the TIEBAR layer" : "found by area and adjacency",
                 (t.holes || []).length];
       }),
       mode: "markers", type: "scatter", marker: { size: 5, color: th.ink || th.accent },
       hovertemplate: "%{text}<br>area %{customdata[0]} mm²<br>height %{customdata[1]} of %{customdata[2]} mm" +
-                     "<br>engages at %{customdata[3]} mm wear" +
+                     "<br>%{customdata[3]} mm below the tread" +
                      "<br>%{customdata[4]} · %{customdata[5]} hole(s)<extra></extra>",
       showlegend: false,
     };
@@ -78869,8 +78842,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       margin: { l: 56, r: 12, t: 30, b: 42 }, height: 240, shapes: shapes,
       title: { text: "tie bars on the rolled-out plan — " +
                      (anyHatchedBars() ? "hatched bars keep their drawn colour; " : "") +
-                     "filled = in contact at " + wear.toFixed(1) +
-                     " mm wear, outline only = still below the surface, grey = excluded", font: { size: 11 } },
+                     "filled = drawn flush with the tread, outline only = below the surface " +
+                     "(bonding only), grey = excluded", font: { size: 11 } },
       xaxis: { title: { text: "circumferential position (mm)", font: { size: 11 } },
                range: [0, p.tyre_circumference], gridcolor: th.grid },
       yaxis: { title: { text: "lateral y (mm)", font: { size: 11 } },
@@ -78938,7 +78911,6 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
                : "bars turned it " + cplAxisDelta(prU.angle_deg, prC.angle_deg).toFixed(2) + "°"),
       card("Bars in the network", String(c.n_engaged + c.n_submerged), c.n_submerged + " below the surface"),
       card("Bonded links", String(c.n_links), c.n_components + " independent group(s)"),
-      card("Tread worn", (c.wear_mm || 0).toFixed(1), "mm"),
     ].join("");
 
     // Kxy is an order of magnitude smaller than Kx/Ky, so it gets its own axis.
@@ -79068,8 +79040,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       // each design's own coupling rather than the one that happens to be live.
       coupling: state.coupling ? state.coupling.slice() : null,
       // Which bars the RUN had in contact, frozen with it -- a held design must
-      // not repaint itself when the live wear box is edited afterwards.
-      engaged_ids: state.wear && state.wear.engaged_ids ? state.wear.engaged_ids.slice() : [],
+      // not repaint itself when the live tie-bar heights are edited after.
+      engaged_ids: state.tiebars && state.tiebars.contact_ids ? state.tiebars.contact_ids.slice() : [],
     });
     renderCompare();
   }
@@ -79296,9 +79268,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       var ids = e.engaged_ids || [];
       shapes = shapes.concat(patternStripShapes({
         pattern: g, xref: "x" + (i + 1), yref: "y" + (i + 1),
-        // The wear state the RUN had, frozen with it. Reading the live wear box
-        // here would repaint a held design as though it had been run at a wear
-        // it never saw.
+        // The tie-bar state the RUN had, frozen with it. Reading the live
+        // boxes here would repaint a held design as though it had been run
+        // with heights it never saw.
         engaged: function (tb) { return ids.indexOf(tb.id) >= 0; },
       }));
       // An invisible trace per row: Plotly needs one to create the subplot, and
@@ -79427,14 +79399,13 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       load: readCpParams(),
       curvature_correction: $("curv").checked,
       crown: crownSummary(),
-      wear_and_tiebars: {
-        wear_mm: readWear(),
+      tiebars_settings: {
         default_height_fraction: readTiebarFrac(),
         weld_tolerance_mm: readWeldTol(),
         tiebar_area_fraction: readTiebarAreaFrac(),
         tiebars: tiebarList().map(function (t) {
           return { id: t.id, zone: t.zone, area_mm2: t.area, nsd_mm: t.nsd, height_mm: t.height,
-                   engages_at_wear_mm: E.tiebarEngagementWear(t), enabled: t.enabled !== false,
+                   below_tread_mm: E.tiebarDepthBelowTread(t), enabled: t.enabled !== false,
                    centroid_x_mm: t.centroid_x, centroid_y_mm: t.centroid_y,
                    // How the bar was identified travels with it: a number read
                    // off a colour the designer drew is not the same evidence as
@@ -79456,7 +79427,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       compound_and_boundary: base.compound_and_boundary,
       contact_patch: base.contact_patch,
       load: base.load,
-      wear_and_tiebars: base.wear_and_tiebars,
+      tiebars_settings: base.tiebars_settings,
       // The crown captureInputs() recorded for the run on screen. It was being
       // dropped here, so every export -- the CSV header, the JSON, the text
       // summary and the PDF cover -- has been saying "no crown resolved" while
@@ -79489,7 +79460,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     lines.push("# NSD " + s.block_defaults.height + " mm, draft " + s.block_defaults.draft_angle +
       " deg, sipes " + s.block_defaults.n_lateral_sipes + ", sipe model " + s.compound_and_boundary.sipe_model);
     lines.push("# compound: " + compoundLine(s));
-    lines.push("# wear: " + tiebarLine(s));
+    lines.push("# tie bars: " + tiebarLine(s));
     lines.push("# tie-bar coupling: " + couplingLine(s));
     lines.push("# crown: " + crownLine(s));
     lines.push("# patch: " + E.describeSpec(s.contact_patch) +
@@ -79597,7 +79568,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       runtime: state.results ? {
         results: state.results, stiffness: state.stiffness, grid: state.grid,
         notes: state.notes || [], max_lean: state.maxLean, band_edges: state.bandEdges,
-        compound: state.compound || null, wear: state.wear || null, coupling: state.coupling || null,
+        compound: state.compound || null, tiebars: state.tiebars || null, coupling: state.coupling || null,
       } : null,
     };
     download(safeName() + "_project.json", JSON.stringify(payload, null, 1), "application/json");
@@ -79633,7 +79604,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         state.stiffness = rt ? rt.stiffness : null; state.grid = rt ? rt.grid : null;
         state.notes = rt ? rt.notes || [] : []; state.maxLean = rt ? rt.max_lean : null;
         state.bandEdges = rt ? rt.band_edges : null; state.compound = rt ? rt.compound : null;
-        state.wear = rt ? rt.wear : null; state.coupling = rt ? rt.coupling : null;
+        state.tiebars = rt ? rt.tiebars : null; state.coupling = rt ? rt.coupling : null;
         state.ranInputs = j.ran_inputs || null; state.editorTheta = 0;
         syncShapeFields(); syncCompoundFields(); syncCrownFields(); syncCrownArcInfo();
         renderMeasuredInfo(); renderPitchInfo();
@@ -79670,7 +79641,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       // still be drawn beside the others rather than being a curve with no
       // pattern under it.
       pattern_geometry: comparisonGeometry(state.pattern),
-      engaged_tiebar_ids: state.wear && state.wear.engaged_ids ? state.wear.engaged_ids : [],
+      contact_tiebar_ids: state.tiebars && state.tiebars.contact_ids ? state.tiebars.contact_ids : [],
       results: state.results,
     };
     download(safeName() + "_run.json", JSON.stringify(payload, null, 1), "application/json");
@@ -79687,7 +79658,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     out.push("Blocks  : NSD " + s.block_defaults.height + " mm, draft " + s.block_defaults.draft_angle +
       " deg, " + s.block_defaults.n_lateral_sipes + " sipes");
     out.push("Compound: " + compoundLine(s));
-    out.push("Wear    : " + tiebarLine(s));
+    out.push("Tie bars: " + tiebarLine(s));
     out.push("Coupling: " + couplingLine(s));
     out.push("Crown   : " + crownLine(s));
     out.push("Patch   : " + E.describeSpec(s.contact_patch));
@@ -79761,7 +79732,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     { key: "zones",    label: "Zone area",           plot: "zones" },
     { key: "bands",    label: "Ribs",                plot: "bandsPlot" },
     // The pair. "with Tiebar" is exact -- that figure is the bonded network.
-    // "no tiebar" would not have been: a bar that has worn into contact is
+    // "no tiebar" would not have been: a bar drawn flush with the tread is
     // still rasterised as land, so it is in these numbers as RUBBER. What is
     // absent is the bonding, and that is what the name says.
     { key: "coupling", label: "Pattern Stiffness (with Tiebar) — Kx, Ky & Kxy", plot: "cplPlot",
@@ -79876,7 +79847,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     return out;
   }
 
-  // One phrasing of the compound and the wear state, shared by every export so
+  // One phrasing of the compound and the tie bars, shared by every export so
   // a CSV, a JSON and a PDF of the same run can never disagree about them.
   function compoundLine(s) {
     var c = s.compound_and_boundary || {}, r = s.compound_resolved;
@@ -79887,18 +79858,17 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     return base + ", Poisson " + c.poisson + ", " + c.mode + " boundary";
   }
   function tiebarLine(s) {
-    var w = s.wear_and_tiebars || {};
+    var w = s.tiebars_settings || {};
     var bars = w.tiebars || [];
-    var wear = +(w.wear_mm || 0);
-    if (!bars.length) return "tread worn " + wear.toFixed(2) + " mm; no tie bars in this drawing";
-    var engaged = bars.filter(function (t) {
-      return t.enabled && wear >= t.engages_at_wear_mm - 1e-9;
+    if (!bars.length) return "no tie bars in this drawing";
+    var touching = bars.filter(function (t) {
+      return t.enabled && (t.below_tread_mm || 0) <= 1e-9;
     }).length;
     var hs = bars.map(function (t) { return t.height_mm; });
     var lo = Math.min.apply(null, hs), hi = Math.max.apply(null, hs);
-    return "tread worn " + wear.toFixed(2) + " mm; " + bars.length + " tie bar(s) of height " +
-      (lo === hi ? lo.toFixed(2) : lo.toFixed(2) + "-" + hi.toFixed(2)) + " mm, " +
-      engaged + " in contact";
+    return bars.length + " tie bar(s) of height " +
+      (lo === hi ? lo.toFixed(2) : lo.toFixed(2) + "-" + hi.toFixed(2)) + " mm, bonding the blocks" +
+      (touching ? "; " + touching + " drawn flush with the tread" : " without touching the road");
   }
 
   // What the network solve found, in one shape every export can use.
@@ -79981,7 +79951,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         " deg, " + s0.block_defaults.n_lateral_sipes + " sipes"],
       ["Compound", compoundLine(s0)],
       ["Sipe model", s0.compound_and_boundary.sipe_model],
-      ["Wear state", tiebarLine(s0)],
+      ["Tie bars", tiebarLine(s0)],
       ["Tie-bar coupling", couplingLine(s0)],
       ["Tread arc / crown", crownLine(s0)],
       ["Contact patch", E.describeSpec(s0.contact_patch)],
@@ -80228,7 +80198,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     if (!state.results) return [];
     return [{ label: shortLabel(compareLabel(settingsSnapshot())), result: currentResult(),
               geometry: comparisonGeometry(state.pattern), coupling: currentCoupling(),
-              settings: settingsSnapshot(), engaged_ids: (state.wear && state.wear.engaged_ids) || [] }];
+              settings: settingsSnapshot(), engaged_ids: (state.tiebars && state.tiebars.contact_ids) || [] }];
   }
 
   // One order spectrum per design.
@@ -80284,8 +80254,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   // bonding out of the way, so a difference between designs is a difference in
   // the pattern and not in how its bars happen to tie up.
   //
-  // One caveat the chart states rather than hides: a tie bar that has worn into
-  // contact is still RUBBER in these numbers, because the sweep rasterises it
+  // One caveat the chart states rather than hides: a tie bar drawn flush with
+  // the tread is still RUBBER in these numbers, because the sweep rasterises it
   // as land. What is absent is the bonding, not the bar.
   function unbondedSeries(d, key) {
     var y = metricSeries(d.result, key);
@@ -80593,7 +80563,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
           ["Block depth", "NSD " + s0.block_defaults.height + " mm, draft " + s0.block_defaults.draft_angle +
             "°, " + s0.block_defaults.n_lateral_sipes + " sipes"],
           ["Compound", compoundLine(s0)],
-          ["Wear state", tiebarLine(s0)],
+          ["Tie bars", tiebarLine(s0)],
           ["Tie-bar coupling", couplingLine(s0)],
           ["Tread arc / crown", crownLine(s0)],
           ["Contact patch", E.describeSpec(s0.contact_patch)],
@@ -81303,7 +81273,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     // and the one thing that does not apply.
     var hint = $("emptyHint");
     if (hint && !state.pattern) hint.style.display = tab === "step" ? "none" : "";
-    if (tab === "cpatch" || tab === "wear") drawEditor();
+    if (tab === "cpatch" || tab === "tiebars") drawEditor();
     // Same story for the STEP viewport, which is a canvas and measures zero
     // while its tab is closed.
     if (tab === "step" && stepScene) { if (stepUi.needFit) stepFit(); redrawStep(); }
@@ -81459,7 +81429,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     on($("cpScaleLean"), "change", function () { drawEditor(); markStale(); });
     on($("cpAutoLoad"), "change", function () { drawEditor(); markStale(); });
     ["nsd", "draft", "sipes", "sipeDepth", "shore", "poisson", "mode", "sipeModel", "quality", "curv",
-     "wheelR", "crownCenter", "crownShoulder", "crownArcs", "nPitches", "wear",
+     "wheelR", "crownCenter", "crownShoulder", "crownArcs", "nPitches",
      "tiebarHeight", "weldTol", "tiebarFrac"].forEach(function (id) {
       on($(id), "input", function () { refreshValidation(); syncCompoundFields(); syncCrownFields(); syncCrownArcInfo(); drawEditor(); reconcileAndRedrawTiebars(); markStale(); });
       on($(id), "change", function () { refreshValidation(); syncCompoundFields(); syncCrownFields(); syncCrownArcInfo(); drawEditor(); reconcileAndRedrawTiebars(); markStale(); });
@@ -81483,7 +81453,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     $("cpY").disabled = $("cpAutoY").checked;
   }
 
-  // NSD, the tie-bar fraction and the wear state all move the bars, so the
+  // NSD and the tie-bar fraction both move the bars, so the
   // editor has to follow the inputs live. In place -- see refreshTiebarRow.
   function reconcileAndRedrawTiebars() {
     if (!state.pattern || !tiebarList().length) return;
@@ -81526,8 +81496,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       gamma: r.gamma_deg, nLeans: state.results.length,
       blocks: state.pattern.blocks.length,
       tiebars: tiebarList().length,
-      engaged: state.wear ? state.wear.n_tiebars_engaged : 0,
-      wear: state.wear ? state.wear.mm : 0,
+      engaged: state.tiebars ? state.tiebars.n_in_contact : 0,
       E: state.compound ? state.compound.E : null,
       G: state.compound ? state.compound.G : null,
       k: state.compound ? state.compound.k : null,

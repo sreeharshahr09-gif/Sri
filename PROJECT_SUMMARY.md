@@ -435,6 +435,43 @@ scale note is checked as **rendered** (its title measures 34 px, two lines),
 because a note that sits in the layout and is clipped off the page passes a
 check of the data and fails the person reading the chart.
 
+### A new-tyre tool, with the worn case taken out
+
+The tool carried a wear state throughout: a *Tread worn* input, blocks shortened
+to NSD − w, and tie bars that only came into contact once the tread had worn
+down to them. The design office uses it on new designs, so all of that is gone —
+the engine, the worker, the UI, the template, the audits and the guide.
+
+What replaces it is simpler and says more. A tie bar sits below the tread and
+**never touches the road**, so it adds no contact area; what it does is **bond**
+the two blocks either side of it, and it does that from new. Only a bar drawn
+flush (height = NSD) is in contact, which is now the single, honest way to
+express a bar that really does reach the surface as moulded.
+
+Removing the worn case made the tie-bar effect **visible rather than hidden**.
+The old audit ran its coupling checks at 6–9 mm of wear, where the blocks are
+short stubs and nearly rigid, so bonding barely moved anything — a gain of
+**×1.005**. At full block height the same drawing gives **×1.19**, and the
+review pack's four-design comparison went from ×1.0049 to ×1.1923. Measured
+across bar heights on the TBR fixture at 16 mm NSD:
+
+| bar height | top sits | Kx gain |
+|---|---|---|
+| 2 mm | 14 mm under the road | ×1.126 |
+| 8 mm | 8 mm under | ×1.299 |
+| 16 mm | flush with the tread | ×1.492 |
+
+A second thing fell out of it. A buried bar carries no load, so it never enters
+the **independent** solve — which means that on a new tyre *all* of a bonded
+cross term is the network. The old `diagonal_tiebars` finding (bonded Kxy
+over-stating the bars by 69%) was an artefact of running that check on a worn
+tread; at zero wear the independent Kxy is exactly 0 and the attribution is
+clean. The audit now records that, and notes the worn case as out of scope.
+
+Kept deliberately: `wear_proxies` in the Python metrics. It predicts wear *risk*
+from new-tyre geometry — slenderness, sipe density, block-count fluctuation —
+and is a design diagnostic, not a worn-tyre simulation.
+
 ---
 
 ## 5. How the numbers are kept honest
@@ -569,6 +606,7 @@ source of truth.
 | `4891e42` | Show the model and click the faces |
 | `2348916` | Dropdowns in the review pack |
 | `76ee368` | Name the two stiffness figures for the state each carries |
+| `pending` | A new-tyre tool: the worn case removed |
 
 ---
 

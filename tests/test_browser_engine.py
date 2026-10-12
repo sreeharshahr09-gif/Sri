@@ -750,12 +750,13 @@ def test_tie_bars_are_found_between_blocks_without_outlines_of_their_own():
     assert any("tie bar" in w for w in got["warnings"])
 
 
-def test_a_tie_bar_carries_nothing_until_the_tread_has_worn_down_to_it():
-    """Groove bottom at z = 0; the block top is at NSD - w, the bar top at h.
+def test_a_tie_bar_below_the_tread_is_not_in_the_contact_model():
+    """Groove bottom at z = 0; the block top is at NSD, the bar top at h.
 
-    So the bar reaches the road only once w >= NSD - h.  Below that it must be
-    absent from the contact model entirely -- a sub-surface bar cannot touch the
-    road, and quietly including it would overstate the area of every new tyre.
+    This is a NEW-tyre tool, so a bar shorter than the blocks around it never
+    touches the road.  It must be absent from the contact model entirely --
+    quietly including it would overstate the land of every design.  Only a bar
+    drawn flush, h = NSD, is in contact.
     """
     node = _node()
     script = f"""
@@ -765,27 +766,28 @@ const {{pattern}} = E.loadPattern(fs.readFileSync({json.dumps(TIEBAR_DXF)}, 'utf
 const out = [10, 16, 20].map(nsd => {{
   pattern.tiebars.forEach(t => {{ t.nsd = nsd; t.height = 0.55 * nsd; }});
   pattern.blocks.forEach(b => {{ b.height = nsd; }});
-  const at = E.tiebarEngagementWear(pattern.tiebars[0]);
-  return [nsd, at,
-          E.effectiveBlocks(pattern, at - 0.01).length,
-          E.effectiveBlocks(pattern, at + 0.01).length];
+  const below = E.tiebarDepthBelowTread(pattern.tiebars[0]);
+  const nBuried = E.effectiveBlocks(pattern).length;
+  pattern.tiebars.forEach(t => {{ t.height = nsd; }});
+  const nFlush = E.effectiveBlocks(pattern).length;
+  return [nsd, below, nBuried, nFlush];
 }});
 process.stdout.write(JSON.stringify(out));
 """
     res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
     assert res.returncode == 0, res.stderr[:2000]
-    for nsd, at, below, above in json.loads(res.stdout):
-        assert at == pytest.approx(0.45 * nsd), f"engagement wear should be NSD - h at NSD {nsd}"
-        assert below == 80, f"a bar below the surface must not be in the block list (NSD {nsd})"
-        assert above == 118, f"all 38 bars must join once worn past (NSD {nsd})"
+    for nsd, below, buried, flush in json.loads(res.stdout):
+        assert below == pytest.approx(0.45 * nsd), f"a 0.55-NSD bar sits 0.45 NSD under the tread (NSD {nsd})"
+        assert buried == 80, f"a bar below the surface must not be in the block list (NSD {nsd})"
+        assert flush == 118, f"all 38 bars join once drawn flush (NSD {nsd})"
 
 
-def test_engaging_the_tie_bars_adds_land_and_damps_the_fluctuation():
-    """What a tie bar is actually for.
+def test_a_flush_tie_bar_adds_land_and_damps_the_fluctuation():
+    """A bar drawn at the full NSD is land like any block.
 
-    Bridging the lateral grooves ties consecutive blocks together, so the
-    circumferential variation in contact area and stiffness falls.  If the model
-    did not reproduce that, it would not be modelling a tie bar.
+    This is the ONLY way a tie bar reaches the road on a new tyre, and it has
+    to behave like the extra rubber it is: more contact area, and less
+    circumferential variation because it bridges the lateral grooves.
     """
     node = _node()
     script = f"""
@@ -796,8 +798,9 @@ const sp = {{shore_a: 65, poisson: 0.49, mode: 'parallel', bulk_modulus: 1100, n
 const spec = {{shape: 'rectangle', length: 200, width: 200, rotation: 0, y_center: 0,
                gamma_deg: 0, load_N: null, scale_with_lean: false}};
 const cpp = {{vertical_load: 25000, wheel_radius: 500, load_rises_with_lean: false}};
-function at(w) {{
-  const blocks = E.effectiveBlocks(pattern, w);
+function at(frac) {{
+  pattern.tiebars.forEach(t => {{ t.height = frac * t.nsd; }});
+  const blocks = E.effectiveBlocks(pattern);
   const pat = Object.assign({{}}, pattern, {{blocks: blocks}});
   const grid = E.makeGrid(pat, 1024, 96);
   const pack = E.rasterise(pat, grid, sp, false, null);
@@ -805,42 +808,52 @@ function at(w) {{
   const a = E.fluctuationStats(r.contact_area), x = E.fluctuationStats(r.kx);
   return {{n: blocks.length, area: a.mean, cov: a.cov, kxCov: x.cov}};
 }}
-process.stdout.write(JSON.stringify([at(7.0), at(7.4)]));
+process.stdout.write(JSON.stringify([at(0.55), at(1)]));
 """
     res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=300)
     assert res.returncode == 0, res.stderr[:2000]
-    before, after = json.loads(res.stdout)
-    assert before["n"] == 80 and after["n"] == 118, "the bars engage between 7.0 and 7.4 mm wear"
-    assert after["area"] > before["area"], "engaged tie bars are land and must add contact area"
-    assert after["cov"] < before["cov"], "tie bars must damp the contact-area fluctuation"
-    assert after["kxCov"] < before["kxCov"], "tie bars must damp the longitudinal stiffness ripple"
+    buried, flush = json.loads(res.stdout)
+    assert buried["n"] == 80 and flush["n"] == 118, "only a flush bar joins the block list"
+    assert flush["area"] > buried["area"], "a flush tie bar is land and must add contact area"
+    assert flush["cov"] < buried["cov"], "bridging the grooves must damp the contact-area fluctuation"
+    assert flush["kxCov"] < buried["kxCov"], "and the longitudinal stiffness ripple"
 
 
-def test_wear_shortens_every_block():
-    """Kx ~ 1/L^3 for a guided beam, so a worn tread is markedly stiffer."""
+def test_a_block_with_no_height_is_dropped_rather_than_divided_by():
+    """The beam formulae stop meaning anything at zero height, so a degenerate
+    block leaves the list instead of returning an infinite stiffness."""
     node = _node()
     script = f"""
 const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
-const p = {{blocks: [{{id: 'B', polygon: [[0,0],[10,0],[10,10],[0,10]], zone: 'center',
-   height: 10, draft_angle: 0, n_lateral_sipes: 0, sipes: []}}], tiebars: []}};
-process.stdout.write(JSON.stringify([0, 2, 5].map(w => E.effectiveBlocks(p, w)[0].height)));
+const mk = (h) => ({{blocks: [{{id: 'B', polygon: [[0,0],[10,0],[10,10],[0,10]], zone: 'center',
+   height: h, draft_angle: 0, n_lateral_sipes: 0, sipes: []}}], tiebars: []}});
+process.stdout.write(JSON.stringify([10, 0.2, 0.05, 0].map(h => E.effectiveBlocks(mk(h)).length)));
 """
     res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=60)
     assert res.returncode == 0, res.stderr[:2000]
-    assert json.loads(res.stdout) == [10, 8, 5]
+    assert json.loads(res.stdout) == [1, 1, 0, 0]
 
 
-def test_wear_that_removes_the_tread_is_refused():
-    node = _node()
-    script = f"""
-const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
-const p = {{blocks: [{{height: 8, polygon: [[0,0],[1,0],[1,1]]}}], tiebars: []}};
-try {{ E.validateWear(9, p); process.stdout.write('NO ERROR'); }}
-catch (e) {{ process.stdout.write(e.message); }}
-"""
-    res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=60)
-    assert res.returncode == 0, res.stderr[:2000]
-    assert "removes every block" in res.stdout and "8.00 mm" in res.stdout
+def test_the_tool_carries_no_wear_state_at_all():
+    """This is a new-tyre tool.  A wear input, or an engine that still takes a
+    wear argument, would let a worn case back in through a side door -- and the
+    numbers it produced would be read as new-tyre numbers.
+    """
+    eng = open(os.path.join(APP, "engine.js"), encoding="utf-8").read()
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    worker = open(os.path.join(APP, "worker.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    for name, src in [("engine.js", eng), ("ui.js", ui), ("worker.js", worker),
+                      ("template.html", tpl)]:
+        assert not re.search(r"\bwear\b|\bworn\b", src, re.I), \
+            f"{name} still refers to wear"
+    assert 'id="wear"' not in tpl
+    # The replacements that took its place.
+    assert "function tiebarInContact(" in eng and "function tiebarDepthBelowTread(" in eng
+    assert "patternForSweep" in eng
+    for gone in ["tiebarEngaged", "tiebarEngagementWear", "patternAtWear", "validateWear",
+                 "tiebarCurrentHeight"]:
+        assert gone not in eng, f"{gone} is a wear-era name and should be gone"
 
 
 def test_the_tie_bar_editor_lets_every_bar_be_set_individually():
@@ -855,20 +868,20 @@ def test_the_tie_bar_editor_lets_every_bar_be_set_individually():
 
 
 def test_the_tie_bar_editor_is_an_input_not_a_result():
-    """Which regions are bars, how tall each is, and how worn the tread is all
-    feed the sweep.  Putting the editor among the result tabs meant running a
-    throwaway sweep to see what was detected, then setting the values that
-    sweep depended on, then running again."""
+    """Which regions are bars and how tall each is both feed the sweep.
+    Putting the editor among the result tabs meant running a throwaway sweep to
+    see what was detected, then setting the values that sweep depended on, then
+    running again."""
     tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
-    assert 'id="panel-tiebars"' not in tpl
     setup = _setup_markup(tpl)
-    for control in ("wear", "tiebarHeight", "tbTable", "tbPlot", "tbApplyAll"):
+    assert '<section id="panel-tiebars" class="panel setup">' in setup
+    for control in ("tiebarHeight", "tbTable", "tbPlot", "tbApplyAll"):
         assert f'id="{control}"' in setup, f"{control} belongs in the setup panel"
     # and it is reached from the SET UP row of the tab bar, not the results row
     bar = tpl[tpl.index('<nav class="tabbar"'):tpl.index("</nav>")]
     up, res = bar.split('<div class="tabrow results">')
-    assert 'data-tab="wear"' in up, "the tie-bar editor is not a setup tab"
-    assert 'data-tab="wear"' not in res, "the tie-bar editor must not be a results tab"
+    assert 'data-tab="tiebars"' in up, "the tie-bar editor is not a setup tab"
+    assert 'data-tab="tiebars"' not in res, "the tie-bar editor must not be a results tab"
 
 
 def test_tie_bars_are_drawn_on_the_rolled_out_pattern():
@@ -885,7 +898,7 @@ def test_tie_bars_are_drawn_on_the_rolled_out_pattern():
     assert "function ranEngaged(" in ui
     assert "engaged_ids" in ui
     worker = open(os.path.join(APP, "worker.js"), encoding="utf-8").read()
-    assert "engaged_ids" in worker
+    assert "contact_ids" in worker
 
 
 # ---------------------------------------------------------------------------
@@ -963,8 +976,9 @@ const spec = {{shape: 'rectangle', length: 200, width: 190, rotation: 0, y_cente
                gamma_deg: 0, load_N: null, scale_with_lean: false}};
 const cpp = {{vertical_load: 25000, wheel_radius: 500, load_rises_with_lean: false}};
 const edges = [-102, -34, 34, 102];
-function at(w) {{
-  const pat = Object.assign({{}}, pattern, {{blocks: E.effectiveBlocks(pattern, w)}});
+function at(frac) {{
+  pattern.tiebars.forEach(t => {{ t.height = frac * t.nsd; }});
+  const pat = Object.assign({{}}, pattern, {{blocks: E.effectiveBlocks(pattern)}});
   const grid = E.makeGrid(pat, 1024, 96);
   const pack = E.rasterise(pat, grid, sp, false, null);
   const r = E.sweepLean(pat, pack, 0, spec, cpp, new E.MapFFTCache(pack), 90, edges);
@@ -979,7 +993,7 @@ function at(w) {{
     stiffN: pack.stiffness.length,
   }};
 }}
-process.stdout.write(JSON.stringify([at(7.0), at(7.4)]));
+process.stdout.write(JSON.stringify([at(0.55), at(1)]));
 """
     res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=300)
     assert res.returncode == 0, res.stderr[:2000]
@@ -1174,7 +1188,7 @@ const grid = E.makeGrid(pat, 1024, 96);
 const pack = E.rasterise(pat, grid, sp, false, null);
 const patch = E.shapePatch(spec, pattern.crown, pattern.tread_width, cpp);
 const sweep = E.sweepLean(pat, pack, 0, spec, cpp, new E.MapFFTCache(pack), 90, null);
-const cs = E.couplingSweep(pattern, pack, patch, 0, sp, 360);
+const cs = E.couplingSweep(pattern, pack, patch, sp, 360);
 let worstArea = 0;
 for (let s = 0; s < cs.theta_deg.length; s++) {{
   const j = Math.round(cs.theta_deg[s] / 360 * grid.nx) % grid.nx;
@@ -1182,14 +1196,14 @@ for (let s = 0; s < cs.theta_deg.length; s++) {{
 }}
 process.stdout.write(JSON.stringify({{
   worstArea: worstArea, gainKx: cs.gain_kx, gainKy: cs.gain_ky,
-  submerged: cs.n_submerged, engaged: cs.n_engaged, links: cs.n_links,
+  below: cs.n_below, inContact: cs.n_in_contact, links: cs.n_links,
 }}));
 """
     res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=300)
     assert res.returncode == 0, res.stderr[:2000]
     got = json.loads(res.stdout)
     # at zero wear every bar is below the surface...
-    assert got["submerged"] == 38 and got["engaged"] == 0
+    assert got["below"] == 38 and got["inContact"] == 0
     assert got["links"] == 76
     # ...so the contact area is bit-identical to the uncoupled sweep...
     assert got["worstArea"] < 1e-12, f"coupling moved the contact area by {got['worstArea']:.2e}"
@@ -1519,7 +1533,7 @@ def test_the_resolved_crown_is_never_silent():
     """Which crown you got decides every lean angle in the sweep, so a blank
     field must never read as 'nothing set'."""
     ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
-    info = ui[ui.index("function syncCrownArcInfo("):ui.index("function readWear(")]
+    info = ui[ui.index("function syncCrownArcInfo("):ui.index("function readTiebarFrac(")]
     # it names the radii actually in use, whether typed or defaulted
     assert "crownLocalRadius" in info and "R centre" in info and "R edge" in info
     assert "a blank crown is not a flat one" in info
@@ -1692,15 +1706,14 @@ def test_the_include_column_is_explained():
     assert "not in the network" in ui
 
 
-def test_a_tie_bar_is_in_contact_only_when_the_tread_has_worn_to_it():
+def test_a_tie_bar_is_in_contact_only_if_drawn_flush_with_the_tread():
     """There is deliberately no override.
 
-    A bar shorter than the blocks around it cannot touch the road while they do,
-    so "in contact anyway" was not a what-if but an impossible geometry: an 8 mm
-    bar on a 16 mm NSD was analysed as an 8 mm element at the road surface.  The
-    one legitimate case -- a bar that really does reach the surface as moulded --
-    is expressed honestly by giving it height == NSD, which engages at zero wear
-    with the geometry matching the claim.
+    A bar shorter than the blocks around it cannot touch the road while they
+    do, so "in contact anyway" is not a what-if but an impossible geometry: an
+    8 mm bar on a 16 mm NSD would be analysed as an 8 mm element at the road
+    surface.  The one legitimate case -- a bar that really does reach the
+    surface as moulded -- is expressed honestly by giving it height == NSD.
     """
     node = _node()
     script = f"""
@@ -1708,28 +1721,31 @@ const E = require({json.dumps(os.path.join(APP, 'engine.js'))});
 const bar = (o) => Object.assign({{nsd: 16, height: 8, enabled: true}}, o);
 const p = (o) => ({{blocks: [], tiebars: [bar(o)]}});
 process.stdout.write(JSON.stringify({{
-  belowSurface: E.tiebarEngaged(bar({{}}), 0),
-  atEngagement: E.tiebarEngaged(bar({{}}), 8),
-  wornPast:     E.tiebarEngaged(bar({{}}), 12),
-  excluded:     E.tiebarEngaged(bar({{enabled: false}}), 12),
-  // a full-height bar is in contact from new, the honest way
-  fullHeightWear: E.tiebarEngagementWear(bar({{height: 16}})),
-  fullHeightNew:  E.tiebarEngaged(bar({{height: 16}}), 0),
-  // and once engaged it is flush with the blocks, never proud
-  heightAt10: E.effectiveBlocks(p({{height: 16}}), 10).map(b => b.height),
+  belowSurface: E.tiebarInContact(bar({{}})),
+  depth:        E.tiebarDepthBelowTread(bar({{}})),
+  flush:        E.tiebarInContact(bar({{height: 16}})),
+  flushDepth:   E.tiebarDepthBelowTread(bar({{height: 16}})),
+  // a hair short is still short
+  nearlyFlush:  E.tiebarInContact(bar({{height: 15.99}})),
+  excluded:     E.tiebarInContact(bar({{height: 16, enabled: false}})),
+  // a flush bar joins the block list at the blocks' own height, never proud
+  flushHeight:  E.effectiveBlocks(p({{height: 16}})).map(b => b.height),
+  buriedList:   E.effectiveBlocks(p({{}})).length,
   // a stale force_contact flag from an older file must be inert
-  staleFlag: E.tiebarEngaged(bar({{force_contact: true}}), 0),
+  staleFlag:    E.tiebarInContact(bar({{force_contact: true}})),
 }}));
 """
     res = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=60)
     assert res.returncode == 0, res.stderr[:2000]
     g = json.loads(res.stdout)
-    assert g["belowSurface"] is False
-    assert g["atEngagement"] is True and g["wornPast"] is True
+    assert g["belowSurface"] is False, "an 8 mm bar under a 16 mm NSD touches nothing"
+    assert g["depth"] == pytest.approx(8.0), "it sits 8 mm under the tread"
+    assert g["flush"] is True, "height == NSD is how a surface bar is expressed"
+    assert g["flushDepth"] == pytest.approx(0.0)
+    assert g["nearlyFlush"] is False, "15.99 mm under a 16 mm NSD is still below the surface"
     assert g["excluded"] is False, "'include' off must win"
-    assert g["fullHeightWear"] == pytest.approx(0.0)
-    assert g["fullHeightNew"] is True, "height == NSD is how a surface bar is expressed"
-    assert g["heightAt10"] == [pytest.approx(6.0)], "an engaged bar is flush with the blocks"
+    assert g["flushHeight"] == [pytest.approx(16.0)], "a flush bar is level with the blocks"
+    assert g["buriedList"] == 0, "a buried bar is not in the contact model at all"
     assert g["staleFlag"] is False, "the removed override must not come back through old data"
 
 
@@ -2369,7 +2385,7 @@ def test_a_region_with_holes_never_changes_a_region_without_them():
                "function effectiveKRegion(", "function computeKzRegion("):
         assert fn in eng, fn
     # the solid path is still there, untouched, and still the default
-    bs = eng[eng.index("function blockStiffness("):eng.index("function tiebarEngagementWear(")]
+    bs = eng[eng.index("function blockStiffness("):eng.index("function tiebarDepthBelowTread(")]
     assert "holes.length ? regionProps(verts, holes) : polygonProps(verts)" in bs
     assert "holes.length\n      ? effectiveKRegion(" in bs
     assert "holes.length\n      ? computeKzRegion(" in bs

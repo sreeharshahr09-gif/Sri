@@ -11,11 +11,10 @@
     try {
       var t0 = Date.now();
       var wholePattern = m.pattern;
-      // Wear shortens every block and decides which tie bars have reached the
-      // road. Do it once, here, so the rest of the pipeline sees one block list
-      // and never has to know a tie bar from a block.
-      E.validateWear(m.wear, wholePattern);
-      var split = E.effectiveBlocks(wholePattern, m.wear, { separate: true });
+      // Any bar drawn flush with the tread joins the block list here, so the
+      // rest of the pipeline sees one list and never has to know a tie bar
+      // from a block. On a normal new-tyre design that list is empty.
+      var split = E.effectiveBlocks(wholePattern, { separate: true });
       var pattern = Object.assign({}, wholePattern, { blocks: split.blocks.concat(split.tiebars) });
       // crown arrays survive structured clone as plain arrays; the engine reads
       // them by index so no rehydration is needed.
@@ -53,23 +52,20 @@
 
       var nTie = (wholePattern.tiebars || []).length;
       if (nTie) {
-        var engaged = split.tiebars.length;
-        notes.push(nTie + " tie bar(s) in this drawing; " + engaged + " in contact at " +
-          (m.wear || 0).toFixed(1) + " mm wear. A bar of height h reaches the road only once the " +
-          "tread has worn NSD - h, so at zero wear they carry nothing.");
-      }
-      if (m.wear > 0) {
-        var lost = (wholePattern.blocks || []).length - split.blocks.length;
-        notes.push("tread worn " + (+m.wear).toFixed(2) + " mm: every block's bending length is NSD - wear, " +
-          "so the tread is stiffer than new" + (lost ? " (" + lost + " block(s) worn away entirely)" : "") + ".");
+        var touching = split.tiebars.length;
+        notes.push(nTie + " tie bar(s) in this drawing" +
+          (touching ? "; " + touching + " drawn flush with the tread and so in contact"
+                    : "; none reach the tread surface, so they add no contact area") +
+          ". A tie bar's job is to BOND the blocks either side of it, which stiffens the pair " +
+          "whether or not its top touches the road.");
       }
 
-      // The coupled network depends on geometry, compound and wear -- not on
-      // the lean angle -- so it is built and factorised once for the whole
-      // sweep and only the load changes per angle.
+      // The coupled network depends on geometry and compound -- not on the
+      // lean angle -- so it is built and factorised once for the whole sweep
+      // and only the load changes per angle.
       var couplingNet = null;
       if (m.coupling !== false) {
-        try { couplingNet = E.prepareCouplingNetwork(wholePattern, m.wear, m.stiffParams); }
+        try { couplingNet = E.prepareCouplingNetwork(wholePattern, m.stiffParams); }
         catch (err) {
           notes.push("tie-bar coupling was not computed: " + (err && err.message ? err.message : err));
         }
@@ -86,7 +82,7 @@
         // produce it.
         if (couplingNet) {
           try {
-            coupling.push(E.couplingSweep(wholePattern, pack, r.patch, m.wear, m.stiffParams,
+            coupling.push(E.couplingSweep(wholePattern, pack, r.patch, m.stiffParams,
                                           m.couplingSamples || 720, couplingNet));
           } catch (err) {
             coupling.push(null);
@@ -153,9 +149,9 @@
         // Which bars this run actually had in contact. The page draws the
         // pattern strip from this, not from the live inputs, so the strip can
         // never show a bar as land that the curves above it did not include.
-        wear: { mm: m.wear || 0, n_blocks: split.blocks.length,
-                n_tiebars_total: nTie, n_tiebars_engaged: split.tiebars.length,
-                engaged_ids: split.tiebars.map(function (t) { return t.id; }) },
+        tiebars: { n_blocks: split.blocks.length,
+                   n_total: nTie, n_in_contact: split.tiebars.length,
+                   contact_ids: split.tiebars.map(function (t) { return t.id; }) },
       });
     } catch (err) {
       self.postMessage({ type: "error", message: String(err && err.message ? err.message : err) });

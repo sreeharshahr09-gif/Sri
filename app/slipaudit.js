@@ -409,13 +409,16 @@ section("7. lean, wear and bands stay consistent");
   }
   ck("the bands' C_kappa adds up to the total", worstK < 1e-9, "worst rel " + worstK.toExponential(2));
 
-  // Wear shortens every block, which stiffens it, so the tread's share of the
-  // cornering stiffness rises. Nothing about the brush weighting changes.
-  const worn = E.patternAtWear(p, 8);
-  const rw = E.sweepLean(worn, packOf(worn, 2048, 128), 0, rectSpec(180, 190), PARAMS, null, 90, null);
-  ck("wearing the tread raises C_alpha", mean(rw.c_alpha) > mean(r.c_alpha),
-     mean(r.c_alpha).toFixed(0) + " -> " + mean(rw.c_alpha).toFixed(0) + " N/rad at 8 mm wear");
-  ck("wear leaves the trail essentially alone",
+  // A shallower non-skid depth is a shorter, stiffer block, so the tread's
+  // share of the cornering stiffness rises. Nothing about the brush weighting
+  // changes, which is the point: C_alpha follows the blocks, the trail follows
+  // the patch.
+  const shallow = Object.assign({}, p, {
+    blocks: p.blocks.map((b) => Object.assign({}, b, { height: b.height - 8 })) });
+  const rw = E.sweepLean(shallow, packOf(shallow, 2048, 128), 0, rectSpec(180, 190), PARAMS, null, 90, null);
+  ck("a shallower tread raises C_alpha", mean(rw.c_alpha) > mean(r.c_alpha),
+     mean(r.c_alpha).toFixed(0) + " -> " + mean(rw.c_alpha).toFixed(0) + " N/rad with 8 mm less block");
+  ck("and leaves the trail essentially alone",
      rel(mean(rw.pneumatic_trail), mean(r.pneumatic_trail)) < 0.05,
      mean(r.pneumatic_trail).toFixed(3) + " -> " + mean(rw.pneumatic_trail).toFixed(3) +
      " mm (geometry of the patch, not of the blocks)");

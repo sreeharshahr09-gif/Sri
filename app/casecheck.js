@@ -185,16 +185,16 @@ function checkCase(tag, out, opts) {
   const A = await runCase(page, errors, {
     title: "CASE A — 2W 130/80R17, curved crown, lean sweep, new tyre",
     tyreType: "2w", dxf: null,
-    fields: { "#nsd": 8.5, "#draft": 3, "#shore": 62, "#wear": 0 },
+    fields: { "#nsd": 8.5, "#draft": 3, "#shore": 62 },
   });
   checkCase("A", A);
   await page.screenshot({ path: path.join(outDir, "case-A-stack.png"), fullPage: false });
 
-  // ---- CASE B: truck ribs, flat crown, tie bars engaged, part worn, ribs ----
+  // ---- CASE B: truck ribs, flat crown, 38 bonded tie bars, 4 ribs ----------
   const B = await runCase(page, errors, {
-    title: "CASE B — TBR rib pattern, flat crown, 38 tie bars, 9 mm worn, 4 ribs",
+    title: "CASE B — TBR rib pattern, flat crown, 38 bonded tie bars, 4 ribs",
     tyreType: "tbr", dxf: path.join(__dirname, "..", "data", "tbr_ribs_tiebars.dxf"),
-    fields: { "#nsd": 16, "#draft": 2, "#shore": 66, "#wear": 9, "#nBands": 4 },
+    fields: { "#nsd": 16, "#draft": 2, "#shore": 66, "#nBands": 4 },
   });
   checkCase("B", B);
   await page.screenshot({ path: path.join(outDir, "case-B-stack.png"), fullPage: false });

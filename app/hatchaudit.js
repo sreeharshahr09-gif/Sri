@@ -348,27 +348,30 @@ section("9. the sweep sees them");
 // ---------------------------------------------------------------------------
 {
   const p = load("hatch_only.dxf").pattern;
-  const sweepArea = (wear) => {
-    const worn = E.patternAtWear(p, wear);
-    const grid = E.makeGrid(worn, 2048, 128);
-    const r = E.rasterise(worn, grid, PARAMS, false, {});
+  const sweepArea = (pat) => {
+    const grid = E.makeGrid(pat, 2048, 128);
+    const r = E.rasterise(pat, grid, PARAMS, false, {});
     let a = 0; for (let i = 0; i < r.area.length; i++) a += r.area[i];
     return a;
   };
-  const dry = sweepArea(0), wet = sweepArea(7);
-  ck("below their engagement wear the bars carry nothing",
-     E.tiebarEngaged(p.tiebars[0], 0) === false);
-  ck("past it they do", E.tiebarEngaged(p.tiebars[0], 7) === true);
-  ck("and engaging them adds contact area", wet > dry,
+  // On a new tyre a bar below the tread adds no contact area at all; one drawn
+  // flush with it is land like any block. Those are the only two cases.
+  const flush = Object.assign({}, p, {
+    tiebars: p.tiebars.map((t) => Object.assign({}, t, { height: t.nsd })) });
+  const dry = sweepArea(E.patternForSweep(p)), wet = sweepArea(E.patternForSweep(flush));
+  ck("a bar below the tread carries nothing",
+     E.tiebarInContact(p.tiebars[0]) === false);
+  ck("one drawn flush with it does", E.tiebarInContact(flush.tiebars[0]) === true);
+  ck("and that adds contact area", wet > dry,
      dry.toFixed(0) + " -> " + wet.toFixed(0) + " mm²");
-  // The area added is the bars' NET area, holes excluded, minus what wear took
-  // off the blocks -- so the holed bars must add less than the solid ones.
+  // The area added is the bars' NET area, holes excluded, so the holed bars
+  // must add less than their outlines would.
   const netBars = p.tiebars.reduce((s, t) => s + t.area, 0);
   const grossBars = p.tiebars.reduce((s, t) => s + E.polygonArea(t.polygon), 0);
   ck("the bars' net area is less than their outlines", netBars < grossBars,
      netBars.toFixed(0) + " vs " + grossBars.toFixed(0) + " mm²");
 
-  const net = E.buildCouplingNetwork(p, 7, PARAMS);
+  const net = E.buildCouplingNetwork(p, PARAMS);
   ck("the coupling network takes them as nodes", net.nodes.length === 32 + 12,
      net.nodes.length + " nodes");
   ck("with one link per bonded wall", net.links.length === 24, net.links.length + " links");

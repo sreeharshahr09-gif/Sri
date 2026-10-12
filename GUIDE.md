@@ -56,8 +56,7 @@ the tyre upright.
 | **Kx / Ky / Kz** | Stiffness. Kx resists braking and acceleration forces, Ky resists cornering forces, Kz resists the tyre being squashed vertically. Units are N/mm: a Kx of 500 means it takes 500 newtons to shove the block 1 mm forwards. |
 | **CoV** | Coefficient of variation — the ripple size as a percentage of the average. 5% CoV means the value wobbles by about ±5%. **Lower is better.** |
 | **Zone** | The tread split into three lateral bands: **centre** (used upright, straight-line), **intermediate** (used in the transition into a corner), **shoulder** (used at full lean). |
-| **Tie bar** | A raised strip in the bottom of a groove, bridging two blocks. Its height is *less* than the NSD, so on a new tyre it sits below the road and touches nothing. It comes into contact part-worn and stiffens the block row against heel-and-toe wear. Common on TBR, sometimes on PCR. |
-| **Wear** | How much tread has been worn off, in mm. Every block's bending length is NSD − wear, so a worn tread is stiffer. Wear is also what brings tie bars into contact. |
+| **Tie bar** | A raised strip in the bottom of a groove, bridging two blocks. Its height is *less* than the NSD, so it sits below the road and touches nothing. What it does is **bond** the two blocks either side, so they deflect as one stiffer unit — which it does from new, without ever touching the road. Common on TBR, sometimes on PCR. |
 | **Cα / Cκ** | Slip stiffness. How much force the tread makes per unit of slip — Cα in N/rad for cornering, Cκ in N per unit slip ratio for braking and drive. Not the same as Ky and Kx: see *Slip response* below. |
 | **Pneumatic trail** | How far behind the centre of the contact patch the lateral force actually acts, in mm. It is what makes a steering wheel self-centre. |
 
@@ -249,13 +248,37 @@ The shear modulus is always **G = E / 2(1+ν)**. Bending uses E, shear uses G, a
 
 ---
 
-## Tie bars and the wear state
+## Tie bars: what they do on a new tyre
 
-Put the groove bottom at zero. A block's top starts at **NSD** and, after the tyre has worn *w* mm, sits at **NSD − w**. A tie bar is a raised strip of that groove bottom of height **h < NSD**, so its top starts **NSD − h below the road and touches nothing**.
+**This tool evaluates a new tyre.** There is no wear state anywhere in it, and
+that shapes what a tie bar means here.
 
-It engages once **w ≥ NSD − h**. From then on it is flush with the blocks and is simply more land at the same height — which is the point of a tie bar: it arrives part-worn and stiffens the block row against the heel-and-toe wear that is developing by then.
+Put the groove bottom at zero. A block's top is at **NSD**, so its beam length
+is **NSD**. A tie bar is a raised strip of that same groove bottom of height
+**h < NSD**, so its top sits **NSD − h below the road and touches nothing**.
 
-So at the default **wear = 0** the bars are listed and drawn but contribute nothing, which is the truth for a new tyre. Raise **Tread worn** in *6 · Wear & tie bars* and watch the contact area step up and the θ-fluctuation drop as they come in — that step is the tie bar doing its job, and its position on the wear axis is a design decision you can now see.
+So it adds **no contact area**. What it does is **bond**: the bar is joined to
+the two blocks either side of it at their base, so a push on one is resisted by
+both and the pair deflects as one stiffer unit instead of two independent ones.
+That happens whether or not its top is in contact, which is exactly why it
+matters on a tyre that has never been driven.
+
+How much it matters is a design lever you can see. On the bundled TBR rib
+pattern at 16 mm NSD, Kx rises by:
+
+| bar height | its top sits | Kx gain |
+|---|---|---|
+| 2 mm | 14 mm under the road | **×1.126** |
+| 4 mm | 12 mm under | ×1.190 |
+| 8 mm | 8 mm under | ×1.299 |
+| 12 mm | 4 mm under | ×1.399 |
+| 16 mm | flush with the tread | ×1.492 |
+
+A taller bar is a bigger glued cross-section, so it bonds harder — and even a
+bar buried 14 mm down is worth 12.6%.
+
+A bar drawn at the full **NSD** is flush with the blocks and is land as well,
+so it adds contact area too. Anything shorter adds none.
 
 **Where the bars come from.** Two routes. If the drawing marks them with a
 filled HATCH on a `TIEBAR` layer, those are read directly and taken as
@@ -299,15 +322,15 @@ is not a what-if — it is an impossible geometry, and the model would have had 
 place an 8 mm element at the road surface beside 16 mm blocks.
 
 A bar that genuinely *does* reach the tread surface as moulded is expressed
-honestly: give it **height = NSD**. Its engagement wear is then 0 and it is in
-contact from new, with the geometry matching the claim.
+honestly: give it **height = NSD**. It then sits 0 mm below the tread and is in
+contact, with the geometry matching the claim.
 
 **Show every bar individually** opens the full list underneath, so a single bar
 can still be overridden. Do that and its group reads **mixed** until you set the
 group again — the tool will not pick one member's value and present it as the
 family's.
 
-**How they are detected.** A tie bar usually has no outline of its own: its two long sides *are* the groove walls of the blocks either side. The importer builds the planar arrangement of every line in the drawing and takes its enclosed regions, so a bar falls out as its own region even though it shares most of its boundary with its neighbours. A region counts as a tie bar if it shares an edge with two or more blocks and its area is below the **tie-bar area limit** (default half the typical block). That is only the first guess — **6 · Wear & tie bars** in the setup panel lists every candidate with its area, height, engagement wear and a checkbox, so you can reject one, promote another, or set heights bar by bar. It sits with the other inputs, before **Run**, because that is what it is: the heights you set here decide what the sweep computes.
+**How they are detected.** A tie bar usually has no outline of its own: its two long sides *are* the groove walls of the blocks either side. The importer builds the planar arrangement of every line in the drawing and takes its enclosed regions, so a bar falls out as its own region even though it shares most of its boundary with its neighbours. A region counts as a tie bar if it shares an edge with two or more blocks and its area is below the **tie-bar area limit** (default half the typical block). That is only the first guess — **6 · Tie bars** in the setup panel lists every candidate with its area, height, depth below the tread and a checkbox, so you can reject one, promote another, or set heights bar by bar. It sits with the other inputs, before **Run**, because that is what it is: the heights you set here decide what the sweep computes.
 
 ---
 
@@ -591,8 +614,8 @@ as authoritative.
   edges carry their own direction flag, which is honoured — get that wrong and
   the boundary crosses itself.
 - **Holes.** A hatch with an island in it — a stone ejector through the bar —
-  comes in as a region with a hole. Its area, its stiffness and the contact area
-  it adds once worn into are all the **net** ones.
+  comes in as a region with a hole. Its area and its stiffness are both the
+  **net** ones.
 - **Colour.** Entity true colour (24-bit) first, then entity ACI, then the
   layer's own colour. Bars keep the colour they were drawn in everywhere they
   appear: on the rolled-out tread, on the tie-bar plan, on the coupling links,
@@ -816,9 +839,9 @@ Two things worth knowing:
   revolution whatever the circumference, so a 2193 mm motorcycle tread and a
   474 mm test pattern line up. The row label gives the real size so the
   normalisation is never hidden.
-- **A held design is frozen.** Its tie bars are drawn in the wear state *that
-  run* had, so editing the live wear box afterwards cannot repaint a held
-  design as something it never was.
+- **A held design is frozen.** Its tie bars are drawn in the state *that run*
+  had, so editing the live heights afterwards cannot repaint a held design as
+  something it never was.
 
 A run exported before the tread travelled with it has no geometry to draw. Those
 designs still appear in the curves and the table; the stack says how many it
@@ -882,11 +905,20 @@ bars did:
 A gain is withheld wherever the independent value passes through zero: a ratio
 to nothing is not a number. The difference always is.
 
-### Two mechanisms, at opposite ends of the tyre's life
+### The bonding is the whole mechanism
 
-The coupling works **from new**, and its relative value *falls* as the tread wears: a block stiffens as roughly 1/L³ as it shortens, while the bar only shrinks once the tread reaches it. On a 16 mm NSD with an 8.8 mm bar the model gives ×1.32 at zero wear falling to ×1.05 at 12 mm.
+On a new tyre a tie bar has exactly one job and it does it without touching the
+road: it **bonds**. A block on its own is a cantilever of length NSD; bonded to
+its neighbour through a bar, the pair resists together. The taller the bar, the
+bigger the glued cross-section and the harder it bonds — ×1.126 for a 2 mm bar
+on a 16 mm NSD, ×1.492 for one drawn flush.
 
-The contact-area contribution is the opposite — nothing until worn into, then land like any block. **Tie bars earn their keep across the whole life because the two mechanisms hand over, not because they add up.**
+This is also why the attribution here is clean. Because a buried bar carries no
+load, it never enters the **independent** solve at all, so on a new tyre
+*every* bit of the bonded cross term is the network. (On a worn tread it would
+not be: once a diagonal bar is in contact it carries a cross term of its own,
+and reading the bonded figure alone would over-state what the bonding did. That
+case is out of scope here.)
 
 ### What it does not model: block rotation
 
@@ -994,10 +1026,11 @@ engine while still being interactive.
   out of the way, so a difference between them is a difference in the
   **pattern** and not in how its bars happen to tie up.
 
-  It is not called "no tiebar", because that would not be true: a bar that has
-  worn into contact is rasterised as **land**, so it is in those numbers as
-  rubber. What is absent is the bonding. For a genuinely bar-free comparison,
-  switch the bars off in *6 · Wear & tie bars* and re-run each design.
+  It is not called "no tiebar", because that would not quite be true: a bar
+  drawn flush with the tread is rasterised as **land**, so on such a design it
+  is in those numbers as rubber. What is absent is the bonding. For a genuinely
+  bar-free comparison, switch the bars off in *6 · Tie bars* and re-run each
+  design.
 - **The lean map is not in it.** It reads well printed and badly in a review,
   so it stays in the PDF; the chip in *Include* is marked **PDF** so the list
   never silently differs from the file.

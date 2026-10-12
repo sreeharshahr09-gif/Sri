@@ -25,7 +25,7 @@
         <button data-tab="cpatch" data-grp="grp-patch">Contact patch</button>
         <button data-tab="ribs" data-grp="grp-divisions">Ribs</button>
         <button data-tab="load" data-grp="grp-load">Load &amp; advanced</button>
-        <button data-tab="wear" data-grp="grp-wear">Wear &amp; tie bars</button>
+        <button data-tab="tiebars" data-grp="grp-tiebars">Tie bars</button>
         <button data-tab="export" data-grp="grp-export">Export</button>
       </div>
       <span class="spacer"></span>
@@ -96,7 +96,7 @@
         </div>
         <div class="hint">ASCII DXF: LINE, ARC, CIRCLE, ELLIPSE, LWPOLYLINE (with bulges), old-style POLYLINE, SPLINE, INSERT references into BLOCKS, and filled <b>HATCH</b> regions on a <b>TIEBAR</b> layer, which are read as tie bars in the colour they were drawn. Depth, draft and sipes are supplied below — a 2D plan has none.</div>
         <div class="field" title="How far apart two endpoints may be and still be treated as the same corner. CAD exports routinely leave corners a few microns apart after a trim, and an unwelded corner loses the whole block. 0.01 mm is two orders below the finest tread feature and two above the usual export round-off. Raise it if outlines are reported as not closing; lower it if separate features are being merged."><label>Weld tolerance (mm)</label><input id="weldTol" type="number" value="0.01" step="0.005" min="0.0001" max="1" /></div>
-        <div class="field" title="A region between blocks counts as a tie bar if its area is below this fraction of the typical block area. Only affects the initial guess — every candidate is listed in 6 · Wear &amp; tie bars for you to confirm or reject."><label>Tie-bar area limit</label><input id="tiebarFrac" type="number" value="0.5" step="0.05" min="0.02" max="1" /></div>
+        <div class="field" title="A region between blocks counts as a tie bar if its area is below this fraction of the typical block area. Only affects the initial guess — every candidate is listed in 6 · Tie bars for you to confirm or reject."><label>Tie-bar area limit</label><input id="tiebarFrac" type="number" value="0.5" step="0.05" min="0.02" max="1" /></div>
 
         <div class="field" title="Tick this when the DXF is ONE pitch rather than the whole tread. The tool repeats it to build the complete rolled-out pattern, at the lengths and in the order you give below."><label><input id="pitchOn" type="checkbox" /> <b>the DXF is one pitch — build the tread from it</b></label></div>
         <div id="pitchBox" style="display:none">
@@ -317,20 +317,17 @@
 
       </section>
 
-      <section id="panel-wear" class="panel setup">
-      <div class="group" id="grp-wear">
-        <div class="ghead"><span class="gnum">6</span><span class="gtext"><span class="gtitle">Wear &amp; tie bars</span><span class="gsub">How worn the tread is, and which bars bridge its grooves.</span></span></div>
+      <section id="panel-tiebars" class="panel setup">
+      <div class="group" id="grp-tiebars">
+        <div class="ghead"><span class="gnum">6</span><span class="gtext"><span class="gtitle">Tie bars</span><span class="gsub">The bars bridging the grooves: how deep they sit, and which blocks they bond.</span></span></div>
         <div class="tb-setup">
           <div class="tb-setup-fields">
-            <div class="field" title="How much tread has been worn off, in mm. Every block's bending length becomes NSD − wear, so the tread stiffens as it wears. It also decides which tie bars have reached the road: a bar of height h engages once wear reaches NSD − h. Leave at 0 for a new tyre.">
-              <label>Tread worn (mm)</label><input id="wear" type="number" value="0" step="0.5" min="0" /></div>
-            <div class="field" title="Height of a newly detected tie bar as a fraction of the local NSD, measured from the groove bottom like the block height. 0.55 means the bar tops out just over halfway up the groove, so it reaches the road once the tyre has worn 45% of its NSD. Override individual bars in the table.">
+            <div class="field" title="Height of a newly detected tie bar as a fraction of the local NSD, measured from the groove bottom like the block height. 0.55 means the bar tops out just over halfway up the groove, so its top sits 45% of the NSD below the road. Override individual bars in the table.">
               <label>Tie-bar height (frac NSD)</label><input id="tiebarHeight" type="number" value="0.55" step="0.05" min="0.05" max="1" /></div>
             <details class="explain" style="margin-top:8px">
               <summary style="cursor:pointer;font-weight:600">How a tie bar is treated</summary>
-              <p style="margin-top:8px">Put the groove bottom at zero. A block's top starts at <code>NSD</code> and, after the tyre has worn <code>w</code>&nbsp;mm, sits at <code>NSD − w</code>. A tie bar is a raised strip of that groove bottom of height <code>h &lt; NSD</code>, so its top starts <code>NSD − h</code> <b>below the road and touches nothing</b>.</p>
-              <p>It engages once <code>w ≥ NSD − h</code>. From then on it is flush with the blocks and is simply more land at the same height — which is the point of a tie bar: it arrives part-worn and stiffens the block row against the heel-and-toe wear that is developing by then.</p>
-              <p style="margin-bottom:0">So at the default <b>wear = 0</b> the bars are listed and drawn but contribute nothing, which is the truth for a new tyre. <em>Force contact</em> overrides that for what-if work: the bar is analysed as a short proud block of its own height, which is as close as a surface-contact model can get.</p>
+              <p style="margin-top:8px">Put the groove bottom at zero. A block's top is at <code>NSD</code>, so its beam length is <code>NSD</code>. A tie bar is a raised strip of that same groove bottom of height <code>h &lt; NSD</code>, so its top sits <code>NSD − h</code> <b>below the road and touches nothing</b>. This tool evaluates a <b>new tyre</b>, so that is where a tie bar stays.</p>
+              <p style="margin-bottom:0">It earns its place by <b>bonding</b>. The bar is joined to the two blocks either side of it at their base, so a push on one is resisted by both — the pair deflects as one stiffer unit instead of two independent ones. That happens whether or not the bar's top is in contact, which is why it matters on a tyre that has never been driven. A bar drawn at the full <code>NSD</code> is flush with the blocks and <em>also</em> counts as land; anything shorter adds no contact area at all.</p>
             </details>
           </div>
           <div class="tb-setup-detail">
@@ -521,7 +518,7 @@
               <li>The gain is <b>largest when few blocks are loaded</b> and smallest when the patch covers a whole tied rib. That is not an artefact — blocks moving together put no load into the bars at all.</li>
             </ul>
             <h4>Two mechanisms, at opposite ends of the tyre's life</h4>
-            <p style="margin-bottom:0">The coupling here works <b>from new</b> and its relative value <em>falls</em> as the tread wears: a block stiffens as roughly 1/L³ as it shortens, while the bar only shrinks once the tread reaches it. The contact-area contribution is the opposite — nothing until worn into, then land like any block. Tie bars are useful across the whole life because the two mechanisms hand over, not because they add up.</p>
+            <p style="margin-bottom:0">This is the whole of what a tie bar does on a new tyre: it <b>bonds</b>, and it adds no contact area unless it was drawn flush with the tread. Everything on this tab is that bonding and its consequences.</p>
           </div>
           <div class="banner warn" style="margin-top:12px">
             <b>What this model assumes.</b>

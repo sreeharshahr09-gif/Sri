@@ -720,56 +720,56 @@
   }
 
   // ---------------------------------------------------------------------
-  // wear state and tie bars
+  // tie bars
   // ---------------------------------------------------------------------
-  // Put the groove bottom at z = 0. A block's top starts at z = NSD and, after
-  // the tyre has worn w mm, sits at z = NSD - w; its beam length is therefore
-  // NSD - w. A tie bar is a raised strip of the groove bottom of height h < NSD,
-  // so its top starts at z = h -- (NSD - h) BELOW the road. It touches nothing
-  // until the tread has worn that far. Once it does, it is flush with the blocks
-  // and is simply more land at the same height, which is exactly why tie bars
-  // are used: they arrive part-worn and stiffen the block row against the
-  // heel-and-toe wear that is developing by then.
-  //
-  // So the whole model is: main blocks lose w off their height; a tie bar joins
-  // the block list, at the blocks' current height, once w >= NSD - h. Nothing
-  // else about the pipeline changes. At the default w = 0 the tie bars are drawn
-  // and listed but contribute nothing, which is the truth for a new tyre.
-  function tiebarEngagementWear(tb) {
+  // Put the groove bottom at z = 0. A block's top is at z = NSD, so its beam
+  // length is NSD. A tie bar is a raised strip of the groove bottom of height
+  // h, so its top sits at z = h -- (NSD - h) BELOW the road, touching nothing.
+  // It still joins the two blocks either side of it at their base, which is
+  // what it is for.
+  // How far below the tread surface a tie bar's top sits: NSD minus its height,
+  // and zero if it is drawn flush. This is the number that decides whether it
+  // touches the road, and on a new tyre it is also just a dimension of the
+  // design -- how deep in the groove the bar was put.
+  function tiebarDepthBelowTread(tb) {
     const nsd = Number.isFinite(+tb.nsd) ? +tb.nsd : 0;
     const h = Number.isFinite(+tb.height) ? +tb.height : 0;
     return Math.max(0, nsd - h);
   }
 
-  // A bar is in contact when the tread has worn down to it, and at no other
-  // time. There is deliberately no override: a bar shorter than the blocks
-  // around it cannot touch the road while they do, so "in contact anyway" is
-  // not a what-if, it is an impossible geometry. A bar that really does reach
-  // the surface has height == NSD, which engages here at zero wear with the
-  // geometry actually matching the claim.
-  function tiebarEngaged(tb, wear) {
-    if (tb.enabled === false) return false;
-    return (wear || 0) >= tiebarEngagementWear(tb) - 1e-9;
+  // Whether a tie bar touches the road.
+  //
+  // This tool evaluates a NEW tyre, so the only bar in contact is one drawn
+  // flush with the tread surface -- height equal to the non-skid depth. A bar
+  // shorter than the blocks around it cannot touch the road while they do;
+  // that is not a what-if, it is an impossible geometry.
+  //
+  // So on a normal design the answer here is no, and a tie bar earns its place
+  // entirely by BONDING the blocks either side of it. It is joined to them at
+  // the base whether or not its top is in contact, which is why it stiffens the
+  // pair without adding any contact area.
+  function tiebarInContact(tb) {
+    if (!tb || tb.enabled === false) return false;
+    const nsd = Number.isFinite(+tb.nsd) ? +tb.nsd : 0;
+    const h = Number.isFinite(+tb.height) ? +tb.height : 0;
+    return nsd > 0 && h >= nsd - 1e-9;
   }
 
-  // The block list the rest of the pipeline should see at this wear state.
-  function effectiveBlocks(pattern, wear, opts) {
-    wear = Number.isFinite(+wear) ? Math.max(0, +wear) : 0;
+  // The block list the rest of the pipeline should see.
+  function effectiveBlocks(pattern, opts) {
     opts = opts || {};
     const minH = 0.1;
     const out = [];
     for (const b of pattern.blocks || []) {
-      const h = (b.height || 0) - wear;
-      if (h < minH) continue;                      // worn past this block entirely
-      out.push(wear > 0 ? Object.assign({}, b, { height: h }) : b);
+      if ((b.height || 0) < minH) continue;
+      out.push(b);
     }
-    const engaged = [];
+    const touching = [];
     for (const tb of pattern.tiebars || []) {
-      if (!tiebarEngaged(tb, wear)) continue;
-      // Engaged means worn into, so the bar is flush with the blocks and has
-      // their current height. There is no other way to be in contact.
-      const h = Math.max(minH, (tb.nsd || 0) - wear);
-      engaged.push({
+      if (!tiebarInContact(tb)) continue;
+      // Flush with the blocks, so it carries their height.
+      const h = Math.max(minH, tb.nsd || 0);
+      touching.push({
         id: tb.id, pitch_id: tb.pitch_id || "", polygon: tb.polygon, holes: tb.holes || [], zone: tb.zone,
         height: h, draft_angle: tb.draft_angle || 0,
         n_lateral_sipes: tb.n_lateral_sipes || 0,
@@ -777,27 +777,15 @@
         shore_a: tb.shore_a, sipes: tb.sipes || [], is_tiebar: true,
       });
     }
-    return opts.separate ? { blocks: out, tiebars: engaged } : out.concat(engaged);
+    return opts.separate ? { blocks: out, tiebars: touching } : out.concat(touching);
   }
 
-  function validateWear(wear, pattern) {
-    if (wear == null) return null;
-    const w = +wear;
-    if (!Number.isFinite(w) || w < 0)
-      throw new Error("tread wear must be a non-negative number of mm, got " + wear);
-    const maxH = (pattern && pattern.blocks || []).reduce((m, b) => Math.max(m, b.height || 0), 0);
-    if (maxH > 0 && w >= maxH)
-      throw new Error("tread wear of " + w + " mm removes every block (the deepest is " +
-        maxH.toFixed(2) + " mm). Enter a wear less than the NSD.");
-    return null;
-  }
-
-  // Apply the wear state to a pattern, returning a pattern the sweep can use
-  // directly. Kept separate so the untouched original stays available to draw.
-  function patternAtWear(pattern, wear) {
-    if (!wear && !(pattern.tiebars || []).some((t) => tiebarEngaged(t, 0))) return pattern;
-    validateWear(wear, pattern);
-    return Object.assign({}, pattern, { blocks: effectiveBlocks(pattern, wear), wear_mm: wear || 0 });
+  // The pattern the sweep should run on: the blocks, plus any bar drawn flush
+  // enough to be in contact. Kept separate so the untouched original stays
+  // available to draw.
+  function patternForSweep(pattern) {
+    if (!(pattern.tiebars || []).some(tiebarInContact)) return pattern;
+    return Object.assign({}, pattern, { blocks: effectiveBlocks(pattern) });
   }
 
   // =====================================================================
@@ -959,12 +947,12 @@
     };
   }
 
-  // Bar height above the groove bottom at this wear state: its own height until
-  // the tread wears down to it, and thereafter the same as the blocks, because
-  // from then on it wears with them.
-  function tiebarCurrentHeight(tb, wear) {
+  // Bar height above the groove bottom. On a new tyre that is simply the height
+  // it was drawn at, capped by the non-skid depth -- a bar cannot stand proud
+  // of the blocks it sits between.
+  function tiebarHeight(tb) {
     const nsd = +tb.nsd || 0, h = +tb.height || 0;
-    return Math.min(h, Math.max(0, nsd - (wear || 0)));
+    return nsd > 0 ? Math.min(h, nsd) : h;
   }
 
   // Floor on any element height, block or bar. Below this the beam formulae
@@ -1079,8 +1067,7 @@
     return group.members.length;
   }
 
-  function buildCouplingNetwork(pattern, wear, params) {
-    wear = Math.max(0, +wear || 0);
+  function buildCouplingNetwork(pattern, params) {
     const cp = compoundProperties(params);
     const minH = COUPLING_MIN_HEIGHT;
     const nodes = [];
@@ -1089,26 +1076,28 @@
     // Main blocks, in the same order effectiveBlocks() emits them, so a raster
     // label maps straight onto a node.
     for (const b of pattern.blocks || []) {
-      const h = (b.height || 0) - wear;
+      const h = b.height || 0;
       if (h < minH) continue;
-      const blk = wear > 0 ? Object.assign({}, b, { height: h }) : b;
       idOf[b.id] = nodes.length;
-      nodes.push({ id: b.id, kind: "block", ref: b, K: blockStiffness(blk, params), height: h });
+      nodes.push({ id: b.id, kind: "block", ref: b, K: blockStiffness(b, params), height: h });
     }
     const nMain = nodes.length;
 
     // Then the engaged bars (also matching effectiveBlocks), then the rest.
     const bars = (pattern.tiebars || []).filter((t) => t.enabled !== false);
-    const engaged = bars.filter((t) => tiebarEngaged(t, wear));
-    const submerged = bars.filter((t) => !tiebarEngaged(t, wear));
-    for (const list of [engaged, submerged]) {
+    // In contact first, then the rest -- same order as effectiveBlocks. On a
+    // new tyre the first list is normally empty and every bar is below the
+    // surface, bonding its neighbours without touching the road.
+    const touching = bars.filter(tiebarInContact);
+    const below = bars.filter((t) => !tiebarInContact(t));
+    for (const list of [touching, below]) {
       for (const tb of list) {
-        const h = Math.max(minH, tiebarCurrentHeight(tb, wear));
+        const h = Math.max(minH, tiebarHeight(tb));
         const el = { polygon: tb.polygon, holes: tb.holes || [], height: h, draft_angle: tb.draft_angle || 0,
                      n_lateral_sipes: 0, sipes: [], shore_a: tb.shore_a };
         idOf[tb.id] = nodes.length;
         nodes.push({ id: tb.id, kind: "tiebar", ref: tb, K: blockStiffness(el, params), height: h,
-                     engaged: tiebarEngaged(tb, wear) });
+                     in_contact: tiebarInContact(tb) });
       }
     }
     if (nodes.length < 2) return null;
@@ -1117,12 +1106,12 @@
     for (const tb of bars) {
       const ti = idOf[tb.id];
       if (ti == null) continue;
-      const hb = Math.max(minH, tiebarCurrentHeight(tb, wear));
+      const hb = Math.max(minH, tiebarHeight(tb));
       for (const lk of tb.links || []) {
         const other = lk.kind === "block" ? (pattern.blocks[lk.index] || {}).id
                                           : ((pattern.tiebars[lk.index] || {}).id);
         const oi = idOf[other];
-        if (oi == null || oi === ti) continue;    // worn away, or excluded by the user
+        if (oi == null || oi === ti) continue;    // excluded by the user
         const A = lk.wall_length * hb;
         if (!(A > 0) || !(lk.span > 0)) continue;
         links.push({ i: ti, j: oi,
@@ -1155,7 +1144,7 @@
     for (let i = 0; i < N; i++) { localOf[i] = members[comp[i]].length; members[comp[i]].push(i); }
 
     return { nodes: nodes, links: links, nMain: nMain, comp: comp, localOf: localOf,
-             members: members, nComp: nComp, compound: cp, wear: wear };
+             members: members, nComp: nComp, compound: cp };
   }
 
   // In-place Cholesky of a symmetric positive-definite dense matrix, then the
@@ -1199,7 +1188,7 @@
   const COUPLING_DOF_LIMIT = 1600;
 
   // Assemble and invert each component once. K does not depend on theta -- only
-  // the load does -- so this is done a single time per wear state and every
+  // the load does -- so this is done a single time and every
   // angle is then three small quadratic forms.
   function factorCouplingNetwork(net) {
     const inv = new Array(net.nComp);
@@ -1350,19 +1339,19 @@
   }
 
   // Build and factorise once. The network depends on geometry, compound and
-  // wear -- never on the lean angle or the patch -- so a lean sweep reuses one
+  // compound -- never on the lean angle or the patch -- so a lean sweep reuses one
   // factorisation and only the load changes.
-  function prepareCouplingNetwork(pattern, wear, params) {
+  function prepareCouplingNetwork(pattern, params) {
     const bars = (pattern.tiebars || []).filter((t) => t.enabled !== false);
     if (!bars.length) return null;
-    const net = buildCouplingNetwork(pattern, wear, params);
+    const net = buildCouplingNetwork(pattern, params);
     if (!net || !net.links.length) return null;
     return factorCouplingNetwork(net);
   }
 
   // The whole theta sweep of the coupled network.
-  function couplingSweep(pattern, pack, patch, wear, params, nTheta, prepared) {
-    const net = prepared || prepareCouplingNetwork(pattern, wear, params);
+  function couplingSweep(pattern, pack, patch, params, nTheta, prepared) {
+    const net = prepared || prepareCouplingNetwork(pattern, params);
     if (!net) return null;
 
     const grid = pack.grid, nx = grid.nx, ny = grid.ny;
@@ -1443,9 +1432,9 @@
       n_loaded: Array.prototype.slice.call(nLoaded),
       gain_kx: gain(kxC, kxU), gain_ky: gain(kyC, kyU),
       n_nodes: net.nodes.length, n_links: net.links.length, n_components: net.nComp,
-      n_engaged: net.nodes.filter(function (n) { return n.kind === "tiebar" && n.engaged; }).length,
-      n_submerged: net.nodes.filter(function (n) { return n.kind === "tiebar" && !n.engaged; }).length,
-      wear_mm: net.wear, compound: net.compound,
+      n_in_contact: net.nodes.filter(function (n) { return n.kind === "tiebar" && n.in_contact; }).length,
+      n_below: net.nodes.filter(function (n) { return n.kind === "tiebar" && !n.in_contact; }).length,
+      compound: net.compound,
     };
   }
 
@@ -3251,7 +3240,7 @@
     const nDetectedBeforeHatch = tiebarFaces.length;
     if (cls.unclassified.length)
       warnings.push(cls.unclassified.length + " small region(s) share an edge with a block but touch only one of " +
-        "them, so they were counted as blocks rather than tie bars — check 6 · Wear & tie bars if any of them is a bar");
+        "them, so they were counted as blocks rather than tie bars — check 6 · Tie bars if any of them is a bar");
 
     // Reconcile the explicit hatches with what the detector found.
     //
@@ -3373,7 +3362,7 @@
     if (uniform) warnings.push("every repeat is geometrically identical -- this drawing carries no pitch modulation; supply the production pitch sequence for a real order analysis");
 
     // Tie bars. A bar's height is measured from the groove bottom like the
-    // block's NSD, but it is lower, so on an unworn tyre its top sits
+    // block's NSD, but it is lower, so its top sits
     // (NSD - height) below the road and it carries nothing. Default it to a
     // fraction of the local block NSD and let the user set each one.
     const tbFrac = opts.tiebar_height_fraction == null ? 0.55 : opts.tiebar_height_fraction;
@@ -3406,12 +3395,12 @@
       });
     }
     // Which blocks each bar is bonded to. Geometry only, so it survives every
-    // later change of NSD, height or wear.
+    // later change of NSD or height.
     linkTiebars(blocks, tiebars);
     const unlinked = tiebars.filter((t) => !t.links || t.links.length < 2).length;
     if (unlinked)
       warnings.push(unlinked + " tie bar(s) touch fewer than two blocks along a shared edge, so they " +
-        "cannot couple anything; they will still add contact area once worn into, but contribute no " +
+        "cannot couple anything, so they contribute no " +
         "coupling stiffness. This usually means the bar's outline does not meet the groove walls exactly.");
 
     if (tiebars.length)
@@ -3421,8 +3410,8 @@
           (nMergedHatches ? ", " + nMergedHatches + " of them the same bar found both ways" : "") + ")"
           : " between blocks") +
         ". They sit below the tread " +
-        "surface, so they carry nothing until the tyre has worn past (NSD - tie-bar height) — set the " +
-        "heights and the wear state in 6 · Wear & tie bars.");
+        "surface, so they add no contact area — what they do is BOND the blocks either side of them, " +
+        "which stiffens the pair. Set their heights in 6 · Tie bars.");
 
     const pattern = {
       tyre_circumference: circ, tread_width: width, pitches: pitches, blocks: blocks,
@@ -5094,9 +5083,9 @@
     centrePatchOutline, validatePatchOutline, isMeasuredSpec, CP_UNIT_SCALE, CP_LATERAL,
     crownFromArcs,
     compoundProperties, validateCompound, interpShore,
-    tiebarEngagementWear, tiebarEngaged, effectiveBlocks, validateWear, patternAtWear,
+    tiebarInContact, tiebarDepthBelowTread, effectiveBlocks, patternForSweep,
     groupTiebars, applyToTiebarGroup, tiebarMetrics, TIEBAR_GROUP_MODES,
-    linkTiebars, polygonEdgeKeys, couplingLinkMatrix, tiebarCurrentHeight,
+    linkTiebars, polygonEdgeKeys, couplingLinkMatrix, tiebarHeight,
     buildCouplingNetwork, factorCouplingNetwork, choleskyInverse, invert2x2,
     effectiveStiffnessAt, couplingSweep, prepareCouplingNetwork,
     rowRunsOfLabels, rowRunsOfMask, firstRunAfter,

@@ -276,12 +276,12 @@ section("6. the coupling network in the same units");
 {
   const p = E.loadPattern(fs.readFileSync(path.join(DATA, "tbr_ribs_tiebars.dxf"), "utf8"),
                           { height: 16, shore_a: 60, draft_angle: 0 }, {}).pattern;
-  const net = E.buildCouplingNetwork(p, 9, SP);
+  const net = E.buildCouplingNetwork(p, SP);
   const cp = E.compoundProperties(SP);
   // Reproduce one link by hand from E, an area and a length.
   const tb = p.tiebars.find((t) => t.links && t.links.length);
   const lk = tb.links[0];
-  const hb = E.tiebarCurrentHeight(tb, 9);
+  const hb = E.tiebarHeight(tb);
   const Alink = lk.wall_length * hb;
   const kAx = (cp.E * Alink) / lk.span, kTr = (cp.G * Alink) / lk.span;
   ck("k_ax = E * A / d  [N/mm^2 * mm^2 / mm = N/mm]",
@@ -315,8 +315,8 @@ section("6. the coupling network in the same units");
   const specOf = (s) => ({ shape: "rectangle", length: 180 * s, width: 190 * s,
                            gamma_deg: 0, scale_with_lean: false, y_center: 0 });
   const parOf = (s) => ({ vertical_load: 4000 * s * s, wheel_radius: 320 * s, load_rises_with_lean: false });
-  const c1 = E.couplingSweep(p, packS(p, 1), E.shapePatch(specOf(1), p.crown, p.tread_width, parOf(1)), 9, SP, 180);
-  const c2 = E.couplingSweep(big, packS(big, scale), E.shapePatch(specOf(scale), big.crown, big.tread_width, parOf(scale)), 9 * scale, SP, 180);
+  const c1 = E.couplingSweep(p, packS(p, 1), E.shapePatch(specOf(1), p.crown, p.tread_width, parOf(1)), SP, 180);
+  const c2 = E.couplingSweep(big, packS(big, scale), E.shapePatch(specOf(scale), big.crown, big.tread_width, parOf(scale)), SP, 180);
   ck("the coupling gain is dimensionless and scale-invariant",
      rel(c1.gain_kx, c2.gain_kx) < 5e-3,
      "x" + c1.gain_kx.toFixed(4) + " at 1:1, x" + c2.gain_kx.toFixed(4) + " at " + scale + ":1");
