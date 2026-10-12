@@ -541,7 +541,7 @@ source of truth.
 | `94e4cc9` | Read the 2×2 rather than staring at Kxy |
 | `7cef093` | **Land and sea from a STEP model** |
 | `4891e42` | Show the model and click the faces |
-| `pending` | Dropdowns in the review pack |
+| `2348916` | Dropdowns in the review pack |
 
 ---
 
