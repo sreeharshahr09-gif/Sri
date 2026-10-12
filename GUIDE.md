@@ -960,9 +960,49 @@ inputs, no compute engine, no DXF and no way back to them: a read-only view of
 one run, which is what should leave the department.
 
 Open it by double-clicking. It needs nothing installed and touches no network —
-the plotting library travels inside it, which is why it is about 5 MB whatever
-it contains. The contact-patch band is drawn in, so where the patch sits is
-visible without having to ask.
+the plotting library travels inside it, which is why it is several MB whatever
+it contains.
+
+#### The dropdowns
+
+Four of its figures carry a dropdown, because a review is usually about several
+designs and a chart that shows only one of them, or all ten outputs at once,
+answers nothing:
+
+| Figure | Dropdown | Why |
+|---|---|---|
+| **θ sweep** | Output | Ten rows stacked in one card came out as ten ribbons forty pixels tall. One output at a readable height, pick which. |
+| **Order content** | Design | A bar chart of orders with nothing on it to say whose orders they were. |
+| **Tie-bar coupling** | Design | Same, and now each design's own rolled-out footprint is drawn beneath its curves, with its bonded links, so a bump in the curve can be traced to the bars that made it. |
+| **Comparison** | Parameter | Twelve parameters, one at a time, every compared design overlaid. |
+
+Every option is a **complete figure built when the file was written**. Switching
+one is a redraw, never a calculation — which is what lets the file carry no
+engine while still being interactive.
+
+#### Three other things it now does
+
+- **Every compared design's tread is drawn**, not just the live one, and all of
+  them at **true shape and one scale**: millimetres on both axes with the
+  vertical locked to the horizontal. A block comes out the shape it really is,
+  and two designs can be compared by eye. (Against rotation angle in a fixed
+  box, a 1194 × 204 mm tread was stretched about 1.6× across the page.)
+- **The comparison is the bonded stiffness** — tie bars doing their job — for
+  Kx, Ky, Kxy, Cxy and the anisotropy, and the chart title says so. This is not
+  the same as the sweep's Kx, which has the engaged bars in it as *rubber* but
+  not as a *network*; a design with no bars is marked "(unbonded)" rather than
+  quietly mixed in. Everything else — Kz, areas, counts — bonding does not move.
+- **The lean map is not in it.** It reads well printed and badly in a review,
+  so it stays in the PDF; the chip in *Include* is marked **PDF** so the list
+  never silently differs from the file.
+
+#### Zones and TBR
+
+The zone split — centre, intermediate, shoulder — is only interesting when the
+crown is curved enough for those zones to carry different pressure. A TBR crown
+is nearly flat, so the three move together and the chart says nothing. With
+**TBR** selected the section is withdrawn from the report entirely, and the chip
+says why.
 
 ---
 

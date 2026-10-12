@@ -1231,6 +1231,249 @@ const fs = require("fs");
     await openTab("plan");
   }
 
+  // ---------------------------------------------------------------------
+  // The review pack, as a design review actually builds it: four designs
+  // compared, every section on.
+  //
+  // The pack used to be a pile of snapshots of whatever happened to be on
+  // screen -- ten sweep rows crushed into one card, one design's pattern, an
+  // order chart with nothing to say whose orders those were. It is now a set of
+  // figures with dropdowns over them, and every one of those claims is checked
+  // here against the run that produced it.
+  {
+    const packDesigns = [
+      { file: "tbr_ribs_tiebars.dxf", tread: "TBR ribs" },
+      { file: "hatch_only.dxf", tread: "Hatch bars" },
+      { file: "diagonal_tiebars.dxf", tread: "Diagonal bars" },
+      { file: "asym_tiebars.dxf", tread: "Asym bars" },
+    ];
+    // Start from an empty comparison. Clicked through the DOM rather than the
+    // tab, because at this point in the run there are no results and the
+    // Compare tab is correctly disabled.
+    await page.evaluate(() => { const b = document.getElementById("clearCompare"); if (b) b.click(); });
+    for (const d of packDesigns) {
+      await openTab("plan");
+      await setInputFiles("#fileInput", path.join(__dirname, "..", "data", d.file));
+      await page.waitForTimeout(450);
+      await fill("#treadName", d.tread);
+      await fill("#nsd", "10");
+      await fill("#tiebarHeight", "0.6");
+      await fill("#wear", "9");
+      await page.waitForTimeout(200);
+      if (await page.isDisabled("#runBtn"))
+        errors.push(`pack design ${d.tread} could not be run: ` +
+          (await page.$eval("#specError", (e) => e.textContent.replace(/\s+/g, " ")).catch(() => "?")));
+      await click("#runBtn");
+      await page.waitForFunction(() => !document.querySelector("#overlay").classList.contains("on"), { timeout: 120000 });
+      await click("#addCompare");
+      await page.waitForTimeout(150);
+    }
+    const nHeld = await page.evaluate(() => (window.__ttCompare && window.__ttCompare().length) || 0);
+    if (nHeld !== 4) errors.push(`expected 4 held designs, got ${nHeld}`);
+
+    // What the run says, to check the pack against.
+    const truth = await page.evaluate(() => {
+      const st = window.__ttState();
+      return { area: +st.area.toFixed(4), kz: +st.kz.toFixed(4) };
+    });
+
+    const dl3 = require("fs").mkdtempSync(require("path").join(require("os").tmpdir(), "tt-pack4-"));
+    await reveal("#exportPack");
+    const [packDl] = await Promise.all([page.waitForEvent("download"), page.click("#exportPack")]);
+    const packFour = require("path").join(dl3, "four.html");
+    await packDl.saveAs(packFour);
+    console.log("four-design pack:", (fs.statSync(packFour).size / 1e6).toFixed(2), "MB");
+
+    const rp = await ctx.newPage();
+    const rpErr = [];
+    rp.on("pageerror", (e) => rpErr.push(e.message));
+    rp.on("console", (m) => { if (m.type() === "error") rpErr.push(m.text()); });
+    await rp.goto("file://" + packFour, { waitUntil: "load" });
+    await rp.waitForTimeout(2000);
+
+    const shape = await rp.evaluate(() => {
+      const figs = Array.from(document.querySelectorAll("[id^=fig]"));
+      return figs.map((f) => {
+        const card = f.closest(".fig");
+        const sel = card ? card.querySelector("select") : null;
+        return { id: f.id, title: (card.querySelector("h2") || {}).textContent,
+                 drawn: !!f.querySelector(".plot-container"),
+                 pickLabel: sel ? (sel.closest("label").textContent || "").replace(/\s+/g, " ").trim().split(/[A-Z]/)[0] : null,
+                 options: sel ? Array.from(sel.options).map((o) => o.textContent) : null };
+      });
+    });
+    console.log("pack figures:", shape.map((f) =>
+      f.title + (f.options ? ` [${f.options.length} options]` : "")).join(" · "));
+    if (shape.some((f) => !f.drawn)) errors.push("a pack figure did not draw");
+
+    const byTitle = (t) => shape.find((f) => f.title === t);
+
+    // 1. The theta sweep is ONE chart with a dropdown, not a stack.
+    const sweep = byTitle("θ sweep");
+    if (!sweep || !sweep.options) errors.push("the θ sweep has no output dropdown");
+    else if (sweep.options.length < 8)
+      errors.push(`the θ sweep dropdown offers only ${sweep.options.length} outputs`);
+    const sweepRows = await rp.evaluate(() => {
+      const gd = document.getElementById("fig0");
+      return Object.keys(gd._fullLayout).filter((k) => /^yaxis\d*$/.test(k)).length;
+    });
+    if (sweepRows !== 1) errors.push(`the θ sweep still stacks ${sweepRows} rows in one card`);
+
+    // ...and every option is a different chart, with its own axis label.
+    const states = [];
+    for (let i = 0; i < sweep.options.length; i++) {
+      await rp.selectOption("#pick0", String(i));
+      await rp.waitForTimeout(90);
+      states.push(await rp.evaluate(() => {
+        const gd = document.getElementById("fig0");
+        const y = gd.data[0].y;
+        return (gd.layout.yaxis.title || {}).text + "|" +
+               y.reduce((a, v) => a + v, 0).toFixed(3);
+      }));
+    }
+    if (new Set(states).size !== states.length)
+      errors.push("two θ-sweep outputs draw the same chart");
+
+    // 2. The pack carries the run's own numbers, not a redrawn approximation.
+    const packNums = await rp.evaluate(() => {
+      const f = FIGS.find((g) => g.variants && g.variants.some((v) => v.key === "area"));
+      const mean = (k) => {
+        const y = f.variants.find((q) => q.key === k).data[0].y;
+        return +(y.reduce((a, b) => a + b, 0) / y.length).toFixed(4);
+      };
+      return { area: mean("area"), kz: mean("kz") };
+    });
+    if (Math.abs(packNums.area - truth.area) > 1e-3 || Math.abs(packNums.kz - truth.kz) > 1e-3)
+      errors.push(`the pack's numbers are not the run's: ${JSON.stringify(packNums)} vs ${JSON.stringify(truth)}`);
+    console.log("  pack numbers match the run:", JSON.stringify(packNums));
+
+    // 3. Every compared pattern is drawn, and every one at TRUE SHAPE and the
+    //    same scale -- the distortion was the complaint.
+    const aspect = await rp.evaluate(() => {
+      const gd = Array.from(document.querySelectorAll("[id^=fig]"))
+        .find((g) => ((g.layout.title || {}).text || "").indexOf("Rolled-out") >= 0);
+      if (!gd) return null;
+      const fl = gd._fullLayout, out = [];
+      Object.keys(fl).filter((k) => /^xaxis\d*$/.test(k)).forEach((xk) => {
+        const xa = fl[xk], ya = fl[xk.replace("xaxis", "yaxis")];
+        if (!xa || !ya || !xa._length || !ya._length) return;
+        out.push({ x: xa._length / Math.abs(xa.range[1] - xa.range[0]),
+                   y: ya._length / Math.abs(ya.range[1] - ya.range[0]) });
+      });
+      return out;
+    });
+    if (!aspect || aspect.length !== 4)
+      errors.push(`the pack draws ${aspect ? aspect.length : 0} patterns, not the 4 compared`);
+    else {
+      const worst = Math.max(...aspect.map((a) => Math.abs(a.y / a.x - 1)));
+      const scales = aspect.map((a) => a.x);
+      const spread = Math.max(...scales) / Math.min(...scales) - 1;
+      console.log(`  pattern rows: ${aspect.length}, aspect error ${(100 * worst).toFixed(3)}%,` +
+                  ` scale spread ${(100 * spread).toFixed(3)}%`);
+      if (worst > 1e-3) errors.push(`the rolled-out patterns are distorted by ${(100 * worst).toFixed(1)}%`);
+      if (spread > 1e-3) errors.push("the compared patterns are not all at the same scale");
+    }
+
+    // 4. The lean map is out of the pack -- and still in the PDF.
+    if (byTitle("Lean map")) errors.push("the lean map is still in the review pack");
+    const leanChip = await page.$eval('#reportSections .rowchip[data-sec="lean"]',
+      (c) => ({ on: c.classList.contains("on"), title: c.title }));
+    if (!leanChip.on || !/PDF only/.test(leanChip.title))
+      errors.push("the lean map is not marked as PDF-only on the chip");
+
+    // 5. Order content names its design, one option per design.
+    const orders = byTitle("Order content");
+    if (!orders || !orders.options || orders.options.length !== 4)
+      errors.push("order content does not offer one option per design");
+    else {
+      const ix = shape.indexOf(orders);
+      const seen = [];
+      for (let i = 0; i < 4; i++) {
+        await rp.selectOption("#pick" + ix, String(i));
+        await rp.waitForTimeout(90);
+        seen.push(await rp.evaluate((id) => {
+          const gd = document.getElementById(id);
+          return (gd.layout.title.text || "").slice(0, 24) + "|" +
+                 gd.data[0].y.reduce((a, v) => a + v, 0).toFixed(4);
+        }, orders.id));
+      }
+      if (new Set(seen).size !== 4) errors.push("two designs show the same order spectrum");
+      if (!seen.every((s, i) => s.indexOf(orders.options[i].slice(0, 10)) >= 0))
+        errors.push("the order chart's title does not name the design selected");
+    }
+
+    // 6. Coupling: one option per design, each with its own footprint beneath.
+    const cpl = byTitle("Tie-bar coupling");
+    if (!cpl || !cpl.options || cpl.options.length !== 4)
+      errors.push("tie-bar coupling does not offer one option per design");
+    else {
+      const ix = shape.indexOf(cpl), shapesPer = [];
+      for (let i = 0; i < 4; i++) {
+        await rp.selectOption("#pick" + ix, String(i));
+        await rp.waitForTimeout(120);
+        const got = await rp.evaluate((id) => {
+          const gd = document.getElementById(id);
+          return { rows: Object.keys(gd._fullLayout).filter((k) => /^yaxis\d*$/.test(k)).length,
+                   shapes: (gd.layout.shapes || []).length,
+                   footprint: !!gd._fullLayout.yaxis2,
+                   title: (gd.layout.title.text || "").slice(0, 24) };
+        }, cpl.id);
+        if (!got.footprint) errors.push(`coupling design ${i} has no footprint row`);
+        // Every design draws SOMETHING (the smallest fixture is four blocks and
+        // two bars); the first is the 80-block TBR tread with 38 bars and 76
+        // bonded links, so it must be richly drawn or the links are missing.
+        if (got.shapes < 3) errors.push(`coupling design ${i} footprint drew ${got.shapes} shapes`);
+        if (i === 0 && got.shapes < 100)
+          errors.push(`the TBR footprint drew only ${got.shapes} shapes — blocks, bars or links are missing`);
+        if (got.title.indexOf(cpl.options[i].slice(0, 10)) < 0)
+          errors.push("the coupling chart's title does not name the design selected");
+        shapesPer.push(got.shapes);
+      }
+      console.log("  coupling: 4 designs, footprint shapes " + shapesPer.join(" / "));
+    }
+
+    // 7. The comparison offers a parameter, and plots the BONDED stiffness --
+    //    checked against the coupling figure's own two curves, not its label.
+    const cmp = byTitle("Comparison");
+    if (!cmp || !cmp.options || cmp.options.length < 10)
+      errors.push("the comparison has no parameter dropdown");
+    const bonded = await rp.evaluate(() => {
+      const c = FIGS.find((f) => f.pick === "Parameter");
+      const k = FIGS.find((f) => f.pick === "Design" && /coupling/i.test(f.variants[0].layout.title.text));
+      if (!c || !k) return null;
+      const kx = c.variants.find((v) => v.key === "kx");
+      const d0 = k.variants[0];
+      const of = (n) => (d0.data.find((t) => t.name === n) || {}).y;
+      const same = (a, b) => a && b && a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) < 1e-9);
+      return { matchesBonded: same(kx.data[0].y, of("Kx bonded")),
+               matchesIndependent: same(kx.data[0].y, of("Kx independent")),
+               differ: !same(of("Kx bonded"), of("Kx independent")),
+               says: kx.layout.title.text };
+    });
+    if (!bonded || !bonded.matchesBonded || bonded.matchesIndependent || !bonded.differ)
+      errors.push("the comparison does not plot the bonded (tie-barred) stiffness: " + JSON.stringify(bonded));
+    else console.log("  comparison is bonded:", bonded.says);
+
+    if (rpErr.length) errors.push("four-design pack page errors: " + rpErr.join(" | "));
+    await rp.close();
+
+    // 8. Zones are withdrawn for TBR and offered otherwise.
+    const zoneFor = async (type) => {
+      await openTab("project");
+      await selectOption("#tyreType", type);
+      await page.waitForTimeout(120);
+      await openTab("export");
+      return page.$eval('#reportSections .rowchip[data-sec="zones"]',
+        (c) => ({ off: c.classList.contains("off"), title: c.title }));
+    };
+    const z2w = await zoneFor("2w"), ztbr = await zoneFor("tbr");
+    console.log("  zones: 2W off=" + z2w.off + ", TBR off=" + ztbr.off);
+    if (z2w.off) errors.push("the zone section is withdrawn for 2W, where it matters");
+    if (!ztbr.off) errors.push("the zone section is still offered for TBR");
+    if (!/TBR/.test(ztbr.title)) errors.push("withdrawing zones for TBR gives no reason");
+    await zoneFor("2w");
+  }
+
   console.log(errors.length ? "ERRORS:\n" + errors.join("\n") : "no page errors");
   await browser.close();
   process.exitCode = errors.length ? 1 : 0;

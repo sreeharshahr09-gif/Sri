@@ -1321,8 +1321,13 @@
     setTimeout(function () { moveCursor(null); drawPatchBand(); }, 60);
   }
 
-  function renderThetaStack() {
-    var r = currentResult(), th = plotTheme();
+  // The rows the θ sweep can show, for one result.
+  //
+  // Pulled out of the renderer because the review pack needs exactly the same
+  // list: on the page they are stacked and chosen with chips, in the pack they
+  // are chosen from a dropdown, and the two must never drift into offering
+  // different outputs under the same names.
+  function thetaRowDefs(r, th) {
     var x = r.theta_deg;
     // Land percentage: how much of the contact patch is rubber rather than
     // groove at this instant. It is the contact area normalised by the patch,
@@ -1366,6 +1371,13 @@
         extra: { x: [x[0], x[x.length - 1]], y: [tMean, tMean],
                  name: "mean " + tMean.toFixed(2) + " mm", color: th.inkDim } });
     }
+    return all;
+  }
+
+  function renderThetaStack() {
+    var r = currentResult(), th = plotTheme();
+    var x = r.theta_deg;
+    var all = thetaRowDefs(r, th);
     // Only the rows the user has left switched on, and never none of them.
     // toggleStackRow() will not let the last one be switched off, so this is a
     // guard against stale state from a run that carried different rows -- and it
@@ -1492,12 +1504,18 @@
     opts = opts || {};
     var p = opts.pattern || state.pattern, th = plotTheme(), C = p.tyre_circumference;
     var xref = opts.xref || "x", yref = opts.yref || "y";
+    // The strip is normally drawn against rotation angle, so it lines up with
+    // the sweep curves above it. Against MILLIMETRES instead, the axes can be
+    // locked to the same scale and the tread comes out at its true shape --
+    // which is what the review pack needs, where there is no curve to line up
+    // with and four designs of different circumference to compare by eye.
+    var thetaScale = opts.thetaScale !== false;
     var isEngaged = opts.engaged || ranEngaged;
     var shapes = [], zoneColor = { center: th.accent, intermediate: th.good, shoulder: th.accent2 };
     var blockAlpha = opts.dimBlocks ? 0.20 : 0.55;
     for (var bi = 0; bi < p.blocks.length; bi++) {
       var blk = p.blocks[bi];
-      shapes.push({ type: "path", path: regionPlotPath(blk, C, true), xref: xref, yref: yref,
+      shapes.push({ type: "path", path: regionPlotPath(blk, C, thetaScale), xref: xref, yref: yref,
         fillcolor: hexA(zoneColor[blk.zone] || th.accent, blockAlpha), line: { width: 0 } });
     }
     // Tie bars, on the same strip as the blocks. The sweep already counts the
@@ -1511,14 +1529,15 @@
       if (tb.enabled === false) continue;
       var engaged = isEngaged(tb);
       var tc = tiebarDisplayColor(tb);
-      shapes.push({ type: "path", path: regionPlotPath(tb, C, true), xref: xref, yref: yref,
+      shapes.push({ type: "path", path: regionPlotPath(tb, C, thetaScale), xref: xref, yref: yref,
         fillcolor: engaged ? hexA(tc, 0.85) : "rgba(0,0,0,0)",
         line: { width: 1.1, color: tc, dash: engaged ? undefined : "dot" } });
     }
     // The bonded links, drawn exactly as the solver assembled them: one line per
     // shared wall, from the bar's centre out to that wall. Submerged bars carry
     // links too -- that is the whole point of the tab.
-    if (opts.links) shapes = shapes.concat(couplingLinkShapes(C));
+    if (opts.links) shapes = shapes.concat(couplingLinkShapes(C, {
+      pattern: p, xref: xref, yref: yref, thetaScale: thetaScale }));
     // The designer's rib cuts, drawn where they actually fall on the tread.
     // Only for the live pattern: a held comparison run had its own cuts.
     if (state.bandEdges && !opts.pattern) {
@@ -1554,24 +1573,41 @@
   // These are the solver's own links, read straight off tb.links -- so a bar
   // whose outline misses the groove wall shows no line here, which is exactly
   // why it contributes no coupling stiffness above.
-  function couplingLinkShapes(C) {
-    var p = state.pattern, bars = p.tiebars || [], out = [];
+  // The bonded links of ANY pattern, live or held.
+  //
+  // It used to read the live pattern straight out of state, which is why the
+  // review pack could only ever show one design's network. Everything it needs
+  // now comes in as an argument, and comparisonGeometry() carries the same
+  // fields on a held design.
+  function couplingLinkShapes(C, opts) {
+    opts = opts || {};
+    var p = opts.pattern || state.pattern, bars = p.tiebars || [], out = [];
+    var xref = opts.xref || "x", yref = opts.yref || "y";
+    var thetaScale = opts.thetaScale !== false;
+    var cents = (p.blocks || []).map(function (b) { return b.centroid || null; });
+    var centroidOf = function (ix) {
+      if (!p.blocks[ix]) return null;
+      if (!cents[ix]) cents[ix] = E.polygonCentroid(p.blocks[ix].polygon);
+      return cents[ix];
+    };
+    var mapX = function (x) { return thetaScale ? (x / C) * 360 : x; };
+    var span = thetaScale ? LINK_MAX_SPAN_DEG : (LINK_MAX_SPAN_DEG / 360) * C;
     for (var i = 0; i < bars.length; i++) {
       var tb = bars[i];
       if (tb.enabled === false || !tb.links) continue;
       for (var k = 0; k < tb.links.length; k++) {
         var lk = tb.links[k], oc;
         if (lk.kind === "block") {
-          if (!p.blocks[lk.index]) continue;
-          oc = blockCentroid(lk.index);
+          oc = centroidOf(lk.index);
+          if (!oc) continue;
         } else {
           var ob = bars[lk.index];
           if (!ob || ob.enabled === false) continue;
           oc = [ob.centroid_x, ob.centroid_y];
         }
-        var x0 = (tb.centroid_x / C) * 360, x1 = (oc[0] / C) * 360;
-        if (Math.abs(x1 - x0) > LINK_MAX_SPAN_DEG) continue;
-        out.push({ type: "line", xref: "x", yref: "y",
+        var x0 = mapX(tb.centroid_x), x1 = mapX(oc[0]);
+        if (Math.abs(x1 - x0) > span) continue;
+        out.push({ type: "line", xref: xref, yref: yref,
           x0: x0, y0: tb.centroid_y, x1: x1, y1: oc[1],
           line: { color: hexA(tiebarDisplayColor(tb), 0.6), width: 1.2 } });
       }
@@ -2929,9 +2965,18 @@
       tiebars: (p.tiebars || []).map(function (tb) {
         return { id: tb.id, polygon: tb.polygon, holes: tb.holes || [], zone: tb.zone,
                  enabled: tb.enabled, color: tb.color || null, source: tb.source || "automatic",
-                 nsd: tb.nsd, height: tb.height };
+                 nsd: tb.nsd, height: tb.height,
+                 // So a held design can draw its OWN bonded network in the
+                 // review pack instead of borrowing the live pattern's.
+                 centroid_x: tb.centroid_x, centroid_y: tb.centroid_y,
+                 links: (tb.links || []).map(function (lk) {
+                   return { kind: lk.kind, index: lk.index };
+                 }) };
       }),
       n_pitches: (p.pitches || []).length, name: p.name,
+      // So a held design can mark its own pitch count and geometric repeat on
+      // an order chart, instead of borrowing the live run's.
+      geometric_repeat_mm: p.meta ? p.meta.geometric_repeat_mm : null,
     }));
   }
 
@@ -2948,6 +2993,9 @@
       settings: settingsSnapshot(),
       results: state.results,
       geometry: comparisonGeometry(state.pattern),
+      // The tie-bar network as this run solved it, so the review pack can show
+      // each design's own coupling rather than the one that happens to be live.
+      coupling: state.coupling ? state.coupling.slice() : null,
       // Which bars the RUN had in contact, frozen with it -- a held design must
       // not repaint itself when the live wear box is edited afterwards.
       engaged_ids: state.wear && state.wear.engaged_ids ? state.wear.engaged_ids.slice() : [],
@@ -3623,26 +3671,53 @@
     { key: "summary",  label: "Headline numbers" },
     { key: "perlean",  label: "Per-lean table" },
     { key: "notes",    label: "Physics notes" },
-    { key: "stack",    label: "θ sweep",             plot: "thetaStack" },
-    { key: "pattern",  label: "Rolled-out pattern",  plot: "patternStrip", strip: true },
-    { key: "lean",     label: "Lean map",            plot: "leanHeat" },
-    { key: "orders",   label: "Order content",       plot: "orders" },
+    { key: "stack",    label: "θ sweep",             plot: "thetaStack",
+      // In the pack this becomes one chart with a dropdown over the outputs --
+      // see stackVariants(). `plot` stays, because availability and the PDF
+      // still go through the on-page figure.
+      pick: "Output", variants: function () { return stackVariants(); } },
+    { key: "pattern",  label: "Rolled-out pattern",  plot: "patternStrip", strip: true,
+      // In the pack this is rebuilt rather than copied: every compared design,
+      // in millimetres, at true shape -- see packPatternFigure().
+      build: function () { return packPatternFigure(); } },
+    // The lean map is a theta-by-gamma heatmap. It reads well as a printed
+    // picture and badly as a review chart -- on a PCR or TBR the lean range is
+    // a few degrees and the map is one flat band -- so it stays in the PDF and
+    // is kept out of the interactive pack, which the chip says.
+    { key: "lean",     label: "Lean map",            plot: "leanHeat", pack: false },
+    { key: "orders",   label: "Order content",       plot: "orders",
+      pick: "Design", variants: function () { return orderVariants(); } },
     { key: "zones",    label: "Zone area",           plot: "zones" },
     { key: "bands",    label: "Ribs",                plot: "bandsPlot" },
-    { key: "coupling", label: "Tie-bar coupling",    plot: "cplPlot" },
-    { key: "compare",  label: "Comparison",          plot: "comparePlot" },
+    { key: "coupling", label: "Tie-bar coupling",    plot: "cplPlot",
+      pick: "Design", variants: function () { return couplingVariants(); } },
+    { key: "compare",  label: "Comparison",          plot: "comparePlot",
+      pick: "Parameter", variants: function () { return compareVariants(); } },
     { key: "patch",    label: "Contact patch",       plot: "patchPrev" },
   ];
 
   function reportOn(key) { return state.reportSections[key] !== false; }
 
+  // Why a section is not on offer, in words, or null when it is.
+  //
+  // The zone split is a lateral one -- centre, intermediate, shoulder -- and it
+  // is only interesting when the crown is curved enough for those zones to see
+  // different pressure. A TBR crown is nearly flat, so the three bands move
+  // together and the chart says nothing; it is dropped rather than printed as a
+  // flat ribbon somebody has to interpret.
+  function sectionBlocked(sec) {
+    if (sec.key === "zones" && $("tyreType") && $("tyreType").value === "tbr")
+      return "a TBR crown is nearly flat, so its zones barely differ — left out for this tyre type";
+    if (!sec.plot) return null;
+    var el = $(sec.plot);
+    if (!(el && el.data && el.data.length && el.querySelector(".plot-container")))
+      return "nothing to include — this chart has not been produced";
+    return null;
+  }
+
   // A section with a chart is only offered when that chart exists: the coupling
   // tab is empty without tie bars, the comparison without a second run.
-  function sectionAvailable(sec) {
-    if (!sec.plot) return true;
-    var el = $(sec.plot);
-    return !!(el && el.data && el.data.length && el.querySelector(".plot-container"));
-  }
+  function sectionAvailable(sec) { return !sectionBlocked(sec); }
 
   function selectedSections() {
     return REPORT_SECTIONS.filter(function (sec) { return sectionAvailable(sec) && reportOn(sec.key); });
@@ -3653,11 +3728,13 @@
     if (!host) return;
     var html = "";
     for (var i = 0; i < REPORT_SECTIONS.length; i++) {
-      var sec = REPORT_SECTIONS[i], avail = sectionAvailable(sec);
+      var sec = REPORT_SECTIONS[i], blocked = sectionBlocked(sec), avail = !blocked;
+      var tip = blocked ||
+        (sec.pack === false ? "goes in the PDF only — the interactive pack leaves it out" : "");
       html += "<span class='rowchip" + (avail && reportOn(sec.key) ? " on" : "") +
         (avail ? "" : " off") + "' data-sec='" + escapeHtml(sec.key) + "'" +
-        (avail ? "" : " title='nothing to include — this chart has not been produced'") +
-        ">" + escapeHtml(sec.label) + "</span>";
+        (tip ? " title='" + escapeHtml(tip) + "'" : "") +
+        ">" + escapeHtml(sec.label) + (sec.pack === false ? " <i>PDF</i>" : "") + "</span>";
     }
     host.innerHTML = html;
     var n = selectedSections().length;
@@ -4005,7 +4082,22 @@
   }
 
   // The figure as Plotly holds it, trimmed to what a viewer needs to redraw it.
+  //
+  // A section can instead supply VARIANTS: several complete figure specs with a
+  // dropdown over them. That is how one chart answers "which output?" or "which
+  // design?" in the pack without stacking ten rows nobody can tell apart. Each
+  // variant is a finished {data, layout} pair, so the pack never computes
+  // anything -- it just swaps which one is drawn.
   function figureSpec(sec) {
+    if (sec.build) {
+      var built = sec.build();
+      return built ? { title: sec.label, data: built.data, layout: built.layout } : null;
+    }
+    if (sec.variants) {
+      var vs = sec.variants();
+      if (!vs || !vs.length) return null;
+      return { title: sec.label, pick: sec.pick || "Show", variants: vs };
+    }
     var gd = $(sec.plot);
     if (!gd || !gd.data || !gd.data.length) return null;
     var layout = JSON.parse(JSON.stringify(gd.layout || {}));
@@ -4033,6 +4125,359 @@
     return { title: sec.label, data: JSON.parse(JSON.stringify(gd.data)), layout: layout };
   }
 
+  // The designs a pack dropdown offers: the held comparison when there is one,
+  // otherwise the run on screen. Written once because three sections need the
+  // same list and they must agree on the labels and the order.
+  function packDesigns() {
+    function atGamma(results) {
+      if (!results || !results.length) return null;
+      for (var i = 0; i < results.length; i++)
+        if (results[i].gamma_deg === state.gammaShown) return results[i];
+      return results[0];
+    }
+    // The coupling solved at the same lean as the result beside it.
+    function couplingAt(results, coupling) {
+      if (!coupling || !coupling.length || !results) return null;
+      for (var i = 0; i < results.length; i++)
+        if (results[i].gamma_deg === state.gammaShown) return coupling[i] || null;
+      return coupling[0] || null;
+    }
+    var held = state.compare || [];
+    if (held.length) {
+      return held.map(function (e) {
+        return { label: shortLabel(e.label), result: atGamma(e.results), geometry: e.geometry,
+                 coupling: couplingAt(e.results, e.coupling),
+                 settings: e.settings || {}, engaged_ids: e.engaged_ids || [] };
+      }).filter(function (d) { return d.result; });
+    }
+    if (!state.results) return [];
+    return [{ label: shortLabel(compareLabel(settingsSnapshot())), result: currentResult(),
+              geometry: comparisonGeometry(state.pattern), coupling: currentCoupling(),
+              settings: settingsSnapshot(), engaged_ids: (state.wear && state.wear.engaged_ids) || [] }];
+  }
+
+  // One order spectrum per design.
+  //
+  // The old pack carried a single bar chart with nothing on it to say whose
+  // orders those were -- useless the moment four designs are being reviewed,
+  // which is the only time anyone opens this chart.
+  function orderVariants() {
+    var designs = packDesigns();
+    if (!designs.length) return null;
+    var th = plotTheme(), metric = state.orderMetric, label = ORDER_LABEL[metric] || metric;
+    var out = [];
+    designs.forEach(function (d, i) {
+      var y = metricSeries(d.result, metric);
+      if (!y || !y.length) return;
+      var spec = E.orderSpectrum(y, 60);
+      var g = d.geometry || {};
+      var nPitch = g.n_pitches || null;
+      var repeatOrder = g.geometric_repeat_mm && g.tyre_circumference
+        ? Math.round(g.tyre_circumference / g.geometric_repeat_mm) : null;
+      var colors = spec.orders.map(function (o) {
+        if (nPitch && o === nPitch) return th.bad;
+        if (repeatOrder && o === repeatOrder) return th.accent2;
+        return th.accent;
+      });
+      out.push({
+        key: "d" + i, label: d.label,
+        data: [{ x: spec.orders, y: spec.amplitude, type: "bar", marker: { color: colors } }],
+        layout: {
+          paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+          margin: { l: 60, r: 16, t: 44, b: 46 }, height: 380, autosize: true,
+          title: { text: d.label + " — order content of " + label +
+                   " (γ = " + d.result.gamma_deg + "°)" +
+                   (nPitch ? "<br><sub>red = pitch count " + nPitch +
+                     (repeatOrder ? ", orange = geometric repeat " + repeatOrder : "") + "</sub>" : ""),
+                   font: { size: 12 } },
+          xaxis: { title: { text: "order (events per revolution)", font: { size: 11 } }, gridcolor: th.grid },
+          yaxis: { title: { text: "amplitude (fraction of mean)", font: { size: 11 } },
+                   gridcolor: th.grid, tickformat: ".1%" },
+        },
+      });
+    });
+    return out;
+  }
+
+  // The in-plane stiffnesses have two versions: the one the sweep produces,
+  // where every element stands alone, and the one the coupling solver produces,
+  // where the tie bars are bonded and the tread acts as a network. The
+  // comparison used to show the first without saying so -- which reads as "with
+  // tie bars", because the engaged bars ARE in it as rubber, when what is
+  // missing is the bonding they exist to provide.
+  var BONDED_OF = { kx: "kx_coupled", ky: "ky_coupled", kxy: "kxy_coupled" };
+
+  function comparableSeries(d, key) {
+    var c = d.coupling;
+    if (c && c.theta_deg) {
+      if (BONDED_OF[key] && c[BONDED_OF[key]])
+        return { x: c.theta_deg, y: c[BONDED_OF[key]], bonded: true };
+      // Cxy and the anisotropy are functions of the 2x2, so the bonded matrix
+      // gives bonded versions of them too.
+      if ((key === "c_xy" || key === "anisotropy") && c.kx_coupled) {
+        var out = new Array(c.theta_deg.length);
+        for (var i = 0; i < out.length; i++) {
+          var p = E.principalStiffness(c.kx_coupled[i], c.ky_coupled[i], c.kxy_coupled[i]);
+          out[i] = key === "c_xy" ? p.cxy * 100 : (isFinite(p.anisotropy) ? p.anisotropy : 0);
+        }
+        return { x: c.theta_deg, y: out, bonded: true };
+      }
+    }
+    var y = metricSeries(d.result, key);
+    return y && y.length ? { x: d.result.theta_deg, y: y, bonded: false } : null;
+  }
+
+  // One comparison chart per parameter.
+  function compareVariants() {
+    var designs = packDesigns();
+    if (!designs.length) return null;
+    var th = plotTheme();
+    var palette = [th.accent, th.good, th.accent2, th.bad, th.inkDim, "#9b6bff", "#00b3a4", "#e2679a"];
+    var keys = ["kz", "kx", "ky", "kxy", "c_xy", "anisotropy", "contact_area", "land_ratio",
+                "block_count", "c_alpha", "c_kappa", "pneumatic_trail"];
+    var gammas = designs.map(function (d) { return d.result.gamma_deg; });
+    var oneGamma = gammas.every(function (g) { return g === gammas[0]; });
+    var out = [];
+    keys.forEach(function (key) {
+      var data = [], nBonded = 0, nPlain = 0;
+      designs.forEach(function (d, i) {
+        var s = comparableSeries(d, key);
+        if (!s) return;
+        if (s.bonded) nBonded++; else nPlain++;
+        data.push({ x: s.x, y: s.y, type: "scatter", mode: "lines",
+                    name: d.label.slice(0, 42) + (s.bonded ? "" : " (unbonded)"),
+                    line: { color: palette[i % palette.length], width: 1.5 } });
+      });
+      if (!data.length) return;
+      // Say which of the two it is, every time, on the chart itself.
+      var state_ = nBonded && !nPlain ? " — tie bars bonded"
+                 : nBonded && nPlain ? " — tie bars bonded where the design has them"
+                 : BONDED_OF[key] || key === "c_xy" || key === "anisotropy"
+                   ? " — no tie bars in these designs" : "";
+      out.push({
+        key: key, label: METRIC_LABEL[key] || key,
+        data: data,
+        layout: {
+          paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+          margin: { l: 76, r: 16, t: 44, b: 96 }, height: 440, autosize: true,
+          legend: { orientation: "h", y: -0.16, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
+          title: { text: (METRIC_LABEL[key] || key) + " compared" +
+                   (oneGamma ? " at γ = " + gammas[0] + "°" : " (designs shown at their own lean)") +
+                   state_, font: { size: 13 } },
+          xaxis: { title: { text: "rotation angle θ (deg)", font: { size: 11 } },
+                   range: [0, 360], gridcolor: th.grid,
+                   tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
+          yaxis: { title: { text: METRIC_LABEL[key] || key, font: { size: 11 } }, gridcolor: th.grid },
+        },
+      });
+    });
+    return out;
+  }
+
+  // One coupling chart per design, each with ITS OWN footprint underneath.
+  //
+  // The pack used to copy whichever design happened to be live, with nothing on
+  // it to say which that was, and no tread under it -- so the curves could not
+  // be tied to the bars that caused them. Here every design that was run with
+  // tie bars gets a variant: the four stiffness curves on top, that design's
+  // rolled-out tread with its own bonded links below, on the same θ axis.
+  function couplingVariants() {
+    var designs = packDesigns().filter(function (d) { return d.coupling && d.geometry; });
+    if (!designs.length) return null;
+    var th = plotTheme();
+    return designs.map(function (d, i) {
+      var c = d.coupling, g = d.geometry, ids = d.engaged_ids || [];
+      var series = [
+        { y: c.kx_uncoupled, name: "Kx independent", color: th.accent, dash: "dot", axis: "y" },
+        { y: c.kx_coupled, name: "Kx bonded", color: th.accent, dash: undefined, axis: "y" },
+        { y: c.ky_uncoupled, name: "Ky independent", color: th.bad, dash: "dot", axis: "y" },
+        { y: c.ky_coupled, name: "Ky bonded", color: th.bad, dash: undefined, axis: "y" },
+        { y: c.kxy_uncoupled, name: "Kxy independent (right)", color: th.accent2, dash: "dot", axis: "y3" },
+        { y: c.kxy_coupled, name: "Kxy bonded (right)", color: th.accent2, dash: undefined, axis: "y3" },
+      ];
+      var data = series.map(function (s) {
+        return { x: c.theta_deg, y: s.y, name: s.name, type: "scatter", mode: "lines",
+                 xaxis: "x", yaxis: s.axis,
+                 line: { color: s.color, width: s.dash ? 1.4 : 2, dash: s.dash } };
+      });
+      // The footprint row. One invisible trace to create the subplot; the tread
+      // itself is shapes, exactly as the page draws it.
+      data.push({ x: [0, 360], y: [0, 0], xaxis: "x2", yaxis: "y2",
+                  type: "scatter", mode: "lines", line: { width: 0 },
+                  // It exists only to bring the subplot into being; in the
+                  // legend it read as a mystery seventh series called "trace 6".
+                  showlegend: false, hoverinfo: "skip" });
+      var shapes = patternStripShapes({
+        pattern: g, xref: "x2", yref: "y2", dimBlocks: true, links: true,
+        engaged: function (tb) { return ids.indexOf(tb.id) >= 0; },
+      });
+      var bars = (g.tiebars || []).filter(function (t) { return t.enabled !== false; });
+      return {
+        key: "d" + i, label: d.label,
+        data: data,
+        layout: {
+          paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+          height: 600, autosize: true, shapes: shapes,
+          margin: { l: 76, r: 76, t: 46, b: 100 },
+          // Under everything: against the top it sat on the title, and six
+          // series of four words do not fit beside one.
+          legend: { orientation: "h", y: -0.1, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
+          title: { text: d.label + " — tie-bar coupling (γ = " + d.result.gamma_deg + "°), " +
+                   bars.length + " bar(s), " + c.n_links + " bonded link(s)", font: { size: 13 } },
+          xaxis: { domain: [0, 1], anchor: "y", range: [0, 360], gridcolor: th.grid,
+                   showticklabels: false, tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
+          yaxis: { domain: [0.42, 1], anchor: "x", gridcolor: th.grid,
+                   title: { text: "Kx, Ky (N/mm)", font: { size: 11 } } },
+          yaxis3: { domain: [0.42, 1], anchor: "x", overlaying: "y", side: "right",
+                    title: { text: "Kxy (N/mm)", font: { size: 11 } }, showgrid: false },
+          xaxis2: { domain: [0, 1], anchor: "y2", range: [0, 360], gridcolor: th.grid,
+                    title: { text: "rotation angle θ (deg)", font: { size: 11 } },
+                    tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
+          yaxis2: { domain: [0, 0.34], anchor: "x2", gridcolor: th.grid,
+                    range: [-g.tread_width / 2, g.tread_width / 2],
+                    title: { text: "its footprint<br>(mm across)", font: { size: 9 } },
+                    tickfont: { size: 8 } },
+        },
+      };
+    });
+  }
+
+  // Every design that was compared, as a rolled-out tread, at TRUE SHAPE.
+  //
+  // Two faults in what this used to be. It drew the live run only, so a review
+  // of four designs carried one picture; and it drew against rotation angle in
+  // a box of fixed height, which stretches the tread across the page -- on a
+  // 1194 x 204 mm tread the blocks came out about 1.6x too tall.
+  //
+  // Both go away by drawing in millimetres and locking the y axis to the x
+  // scale: Plotly then guarantees a millimetre is the same length in both
+  // directions whatever the window does. One shared x range across the rows
+  // means the designs are at the same scale as each other too, so a short tread
+  // takes up less of the width -- which is the truth about it.
+  function packPatternRows() {
+    var held = (state.compare || []).filter(function (e) {
+      return e.geometry && e.geometry.blocks && e.geometry.blocks.length;
+    });
+    if (held.length) return held.map(function (e) {
+      var ids = e.engaged_ids || [];
+      return { label: shortLabel(e.label), geometry: e.geometry,
+               engaged: function (tb) { return ids.indexOf(tb.id) >= 0; } };
+    });
+    if (!state.pattern) return [];
+    return [{ label: shortLabel(compareLabel(settingsSnapshot())),
+              geometry: state.pattern, engaged: ranEngaged }];
+  }
+
+  function packPatternFigure() {
+    var rows = packPatternRows();
+    if (!rows.length) return null;
+    var th = plotTheme();
+    var Cmax = 0;
+    rows.forEach(function (r) {
+      var C = r.geometry.tyre_circumference;
+      if (C > Cmax) Cmax = C;
+    });
+    if (!(Cmax > 0)) return null;
+
+    // One scale for the whole figure: the widest tread exactly fills the width,
+    // and every row is then given the height its own width needs at that same
+    // scale. Plotly's `grid` cannot do this -- it splits the height evenly, so
+    // a wide tread and a narrow one end up at different scales even though each
+    // is individually true-shaped -- so the row domains are computed here.
+    var PLOTW = 1040;                      // the pack's plot area at its natural width
+    var MINROW = 46, GAP = 18;             // 46 px: two lines of 9 px label, clear of its neighbour
+    var s = PLOTW / Cmax;                  // pixels per millimetre, for every row
+    var floored = false;
+    var heights = rows.map(function (r) {
+      var h = r.geometry.tread_width * s;
+      if (h < MINROW) { floored = true; return MINROW; }
+      return h;
+    });
+    var plotPx = heights.reduce(function (a, b) { return a + b; }, 0) + GAP * (rows.length - 1);
+    var marginTop = 40, marginBot = 48;
+
+    var shapes = [], data = [], layout = {
+      paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+      showlegend: false, margin: { l: 150, r: 16, t: marginTop, b: marginBot },
+      height: Math.round(plotPx + marginTop + marginBot), autosize: true,
+      title: { text: rows.length > 1
+        ? "Rolled-out tread of each design — true shape, all at the same scale" +
+          (floored ? "<br><sub>except the thinnest, raised to stay legible</sub>" : "")
+        : "Rolled-out tread — true shape", font: { size: 13 } },
+    };
+
+    var offset = 0;
+    rows.forEach(function (r, i) {
+      var g = r.geometry, w = g.tread_width;
+      // Plotly's first axis is "x"/"xaxis", NOT "x1"/"xaxis1". The alias works
+      // in most places but scaleanchor does not resolve it, and the first row
+      // silently came out 26% too tall while every other row was exact.
+      var sfx = i === 0 ? "" : String(i + 1);
+      var top = 1 - offset / plotPx, bottom = 1 - (offset + heights[i]) / plotPx;
+      offset += heights[i] + GAP;
+      shapes = shapes.concat(patternStripShapes({
+        pattern: g, xref: "x" + sfx, yref: "y" + sfx,
+        thetaScale: false, engaged: r.engaged,
+      }));
+      // Plotly needs a trace to create a subplot; shapes alone do not.
+      data.push({ x: [0, Cmax], y: [0, 0], xaxis: "x" + sfx, yaxis: "y" + sfx,
+                  type: "scatter", mode: "lines", line: { width: 0 }, hoverinfo: "skip" });
+      layout["xaxis" + sfx] = {
+        gridcolor: th.grid, zeroline: false, range: [0, Cmax], domain: [0, 1],
+        anchor: "y" + sfx,
+        showticklabels: i === rows.length - 1,
+        title: i === rows.length - 1
+          ? { text: "distance round the tyre (mm)", font: { size: 11 } } : undefined,
+      };
+      layout["yaxis" + sfx] = {
+        gridcolor: th.grid, zeroline: false, range: [-w / 2, w / 2],
+        domain: [Math.max(0, bottom), Math.min(1, top)], anchor: "x" + sfx,
+        // The belt and braces on true shape: the domains above already give the
+        // right aspect, and this holds it if the window is a different width.
+        scaleanchor: "x" + sfx, scaleratio: 1, constrain: "domain",
+        title: { text: r.label + "<br>" + g.tyre_circumference.toFixed(0) + " × " + w.toFixed(0) + " mm",
+                 font: { size: 9 }, standoff: 4 },
+        tickfont: { size: 8 },
+      };
+    });
+    layout.shapes = shapes;
+    return { data: data, layout: layout };
+  }
+
+  // One variant per θ-sweep output.
+  //
+  // On the page the rows are stacked, which works because the panel is as tall
+  // as it needs to be. In the pack ten rows land in one card and come out as
+  // ten near-identical ribbons about forty pixels tall -- so here they become
+  // one chart at a readable height with a dropdown over them.
+  function stackVariants() {
+    var r = currentResult(), th = plotTheme();
+    var rows = thetaRowDefs(r, th), x = r.theta_deg;
+    return rows.map(function (rw) {
+      var data = [{ x: x, y: rw.y, type: "scatter", mode: "lines",
+                    line: { color: rw.color, width: 1.6 }, name: rw.name }];
+      if (rw.extra && rw.extra.y && rw.extra.y.length)
+        data.push({ x: rw.extra.x, y: rw.extra.y, type: "scatter", mode: "lines",
+                    line: { color: rw.extra.color, width: 1.2, shape: rw.extra.shape, dash: "dot" },
+                    name: rw.extra.name });
+      return {
+        key: rw.key, label: rw.name,
+        data: data,
+        layout: {
+          paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+          height: 380, autosize: true,
+          margin: { l: 78, r: 16, t: 30, b: 56 },
+          showlegend: true,
+          legend: { orientation: "h", y: -0.18, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
+          title: { text: rw.name + "  (γ = " + r.gamma_deg + "°)", font: { size: 13 } },
+          xaxis: { gridcolor: th.grid, zeroline: false, title: { text: "rotation angle θ (deg)", font: { size: 11 } },
+                   tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360], range: [0, 360] },
+          yaxis: { gridcolor: th.grid, zeroline: false, title: { text: rw.axis, font: { size: 11 } }, automargin: true },
+        },
+      };
+    });
+  }
+
   function exportPack() {
     if (!state.results) return;
     var btn = $("exportPack"), old = btn.textContent;
@@ -4042,7 +4487,7 @@
       var secs = selectedSections();
       var figs = [];
       for (var i = 0; i < secs.length; i++) {
-        if (!secs[i].plot) continue;
+        if (!secs[i].plot || secs[i].pack === false) continue;
         var f = figureSpec(secs[i]);
         if (f) figs.push(f);
       }
@@ -4139,6 +4584,11 @@
       "table.num th{color:#5b6b7d;font-weight:600}" +
       ".fig{background:#fff;border:1px solid #e3e9ef;border-radius:10px;padding:12px;margin:0 0 16px}" +
       ".fig h2{font-size:15px;margin:0 0 8px}" +
+      ".fighead{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 8px}" +
+      ".fighead h2{margin:0}" +
+      ".pick{margin-left:auto;font-size:12.5px;color:#5b6b7d}" +
+      ".pick select{font:inherit;color:#16202b;background:#fff;border:1px solid #ccd5df;" +
+      "border-radius:6px;padding:4px 8px;margin-left:6px;max-width:320px}" +
       ".notes{background:#fff8e6;border:1px solid #f0dca8;border-radius:8px;padding:10px 14px;margin:0 0 20px}" +
       ".notes li{margin:3px 0}" +
       ".conf{background:#f7e6e6;color:#96201e;border-radius:6px;padding:9px 14px;margin:22px 0 0;text-align:center;font-size:13px}" +
@@ -4179,18 +4629,38 @@
       body += "</ul></div>";
     }
 
-    for (var i = 0; i < payload.figures.length; i++)
-      body += "<div class='fig'><h2>" + escapeHtml(payload.figures[i].title) +
-        "</h2><div id='fig" + i + "'></div></div>";
+    for (var i = 0; i < payload.figures.length; i++) {
+      var fg = payload.figures[i];
+      body += "<div class='fig'>";
+      if (fg.variants) {
+        body += "<div class='fighead'><h2>" + escapeHtml(fg.title) + "</h2>" +
+          "<label class='pick'>" + escapeHtml(fg.pick) + "<select id='pick" + i + "'>";
+        for (var v = 0; v < fg.variants.length; v++)
+          body += "<option value='" + v + "'>" + escapeHtml(fg.variants[v].label) + "</option>";
+        body += "</select></label></div>";
+      } else {
+        body += "<h2>" + escapeHtml(fg.title) + "</h2>";
+      }
+      body += "<div id='fig" + i + "'></div></div>";
+    }
 
     body += "<p class='hint'>The charts above are live: hover for values, drag to zoom, double-click to reset. " +
       "This file contains one run and nothing else — no inputs, no geometry and no way to recompute.</p>";
     body += "<div class='conf'>" + escapeHtml(payload.confidential) + "</div>";
 
+    // The whole pack is static: every dropdown option is a figure that was
+    // already built when the file was written, so switching one is a redraw and
+    // never a calculation. That is what lets this file carry no engine.
     var boot = "<script>" + plotlyJs + "<\/script><script>var FIGS=" +
       escapeForScript(JSON.stringify(payload.figures)) + ";" +
-      "for(var i=0;i<FIGS.length;i++){Plotly.newPlot('fig'+i,FIGS[i].data,FIGS[i].layout," +
-      "{responsive:true,displayModeBar:false});}<\/script>";
+      "var OPTS={responsive:true,displayModeBar:false};" +
+      "function mountFig(i){var f=FIGS[i],id='fig'+i;" +
+      "if(!f.variants){Plotly.newPlot(id,f.data,f.layout,OPTS);return;}" +
+      "var sel=document.getElementById('pick'+i);" +
+      "function draw(){var v=f.variants[sel.selectedIndex]||f.variants[0];" +
+      "Plotly.react(id,v.data,v.layout,OPTS);}" +
+      "sel.addEventListener('change',draw);draw();}" +
+      "for(var i=0;i<FIGS.length;i++)mountFig(i);<\/script>";
 
     return head + body + "</div>" + boot + "</body></html>";
   }
@@ -4819,7 +5289,9 @@
     // The class sets the crown the blank fields fall back to, so changing it
     // changes the crown -- and the readout has to say so straight away.
     on($("tyreType"), "change", function () {
-      syncCrownArcInfo(); refreshValidation(); drawEditor(); markStale();
+      // The zone section is offered or withdrawn by tyre type, so the chips
+      // have to be rebuilt here or the list disagrees with what is exported.
+      syncCrownArcInfo(); refreshValidation(); drawEditor(); renderReportChips(); markStale();
     });
     on($("modulusMode"), "change", function () { syncCompoundFields(); refreshValidation(); markStale(); });
     ["eModulus", "gentK"].forEach(function (id) {
@@ -4984,6 +5456,14 @@
   // The imported tread itself -- geometry, tie bars, colours, holes -- so a test
   // can check what came out of a drawing rather than what the charts made of it.
   window.__ttPattern = function () { return state.pattern; };
+  // How many designs are held for comparison, and what the review pack would
+  // therefore build a dropdown over.
+  window.__ttCompare = function () {
+    return (state.compare || []).map(function (e) {
+      return { label: e.label, leans: e.results.length, hasGeometry: !!e.geometry,
+               hasCoupling: !!e.coupling };
+    });
+  };
   window.__ttSetPatchTheta = setPatchTheta;
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

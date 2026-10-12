@@ -372,6 +372,43 @@ cylindrical band (24818.5820), a B-spline edge through collinear controls
 six measure exactly, and the same areas come out again from point sampling,
 which shares no code with the contour integral that produced them.
 
+### A review pack you can interrogate
+
+The pack is the file that leaves the department, and it was a pile of snapshots
+of whatever happened to be on screen. Seven changes, from the design office
+reading a real one:
+
+- **The θ sweep is one chart with an Output dropdown.** Ten rows stacked into a
+  450 px card came out as ten near-identical ribbons about forty pixels tall.
+- **Every compared design's tread is drawn**, at **true shape and one scale** —
+  millimetres on both axes, vertical locked to horizontal. Previously one
+  design, drawn against rotation angle in a fixed box, which stretched a
+  1194 × 204 mm tread about 1.6× laterally.
+- **Order content and tie-bar coupling carry a Design dropdown**, and the
+  coupling figure draws that design's own footprint with its own bonded links
+  beneath its curves.
+- **The comparison carries a Parameter dropdown and plots the BONDED
+  stiffness.** The sweep's Kx has engaged tie bars in it as rubber but not as a
+  network, which reads as "with tie bars" and is not; the title now states
+  which version it is, and a design without bars is labelled rather than mixed
+  in silently.
+- **The lean map is PDF-only** and the chip says so; **zones are withdrawn for
+  TBR**, whose flat crown makes the three bands move together, with the reason
+  on the chip.
+
+Every dropdown option is a complete figure built at export time, so the file
+still carries no engine: switching one is a redraw, never a calculation. The
+audit checks that directly — the pack's boot script is asserted free of
+`orderSpectrum`, `principalStiffness` and `fluctuationStats`.
+
+Checked in a real browser against a four-design review, not on the markup:
+the pack's numbers equal the run's to 1e-3; all four pattern rows measure
+**0.000% aspect error and 0.000% scale spread** in rendered pixels; the TBR
+footprint draws exactly 194 shapes (80 blocks + 38 bars + 76 bonded links); and
+the comparison's Kx is byte-identical to the coupling figure's *bonded* curve
+and demonstrably different from its *independent* one — the label is never
+taken at its word.
+
 ---
 
 ## 5. How the numbers are kept honest
@@ -384,7 +421,7 @@ v6.4 reference JS  ──(~1e-9)──  Python engine  ──(<2e-3)──  Brow
   verify/tool_v64_reference.js   tread_eval/*.py              app/engine.js
 ```
 
-- **357 tests** (from 153 at the start of the audit).
+- **363 tests** (from 153 at the start of the audit).
 - `tests/test_physics.py` checks every equation against a **closed form worked
   out by hand**, not against a previous run — a golden-value test would have
   blessed the bugs above.
@@ -504,6 +541,7 @@ source of truth.
 | `94e4cc9` | Read the 2×2 rather than staring at Kxy |
 | `7cef093` | **Land and sea from a STEP model** |
 | `4891e42` | Show the model and click the faces |
+| `pending` | Dropdowns in the review pack |
 
 ---
 
@@ -537,7 +575,7 @@ app/
 tread_eval/              the Python pipeline (schema, stiffness, dxf, raster,
                          sweep, metrics, contact_patch, cp_shapes, report, config)
 verify/                  v6.4 functions extracted verbatim, the reference oracle
-tests/                   357 tests
+tests/                   363 tests
 data/                    the Tramplr sample DXF, tie-bar and pitch fixtures,
                          hatch and STEP fixtures and their generators, footprints
 GUIDE.md                 plain-language guide, embedded in the app as a tab

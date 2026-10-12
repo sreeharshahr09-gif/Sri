@@ -1206,10 +1206,14 @@ def test_land_percentage_has_its_own_row_in_the_theta_stack():
     separates the two.
     """
     ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    # The rows are defined once and used twice -- stacked on the page, offered
+    # from a dropdown in the review pack -- so the definition is what to check.
+    defs = ui[ui.index("function thetaRowDefs("):ui.index("function renderThetaStack(")]
+    assert "Land in patch" in defs and 'axis: "Land (%)"' in defs
+    assert "land_ratio[li] * 100" in defs, "must be shown as a percentage"
+    assert "landMean" in defs, "the mean belongs on the row, so the swing can be read off it"
     stack = ui[ui.index("function renderThetaStack("):ui.index("function patternStripTitle(")]
-    assert "Land in patch" in stack and 'axis: "Land (%)"' in stack
-    assert "land_ratio[li] * 100" in stack, "must be shown as a percentage"
-    assert "landMean" in stack, "the mean belongs on the row, so the swing can be read off it"
+    assert "thetaRowDefs(r, th)" in stack, "the page must draw the shared definitions"
     # the row height must scale with the row count, or adding one squeezes the rest
     assert "120 * rows.length" in stack
     # and the value is reported at the cursor and under the patch band
@@ -1523,7 +1527,7 @@ def test_the_resolved_crown_is_never_silent():
     # and it refreshes when the class changes, because the class IS the fallback
     init = ui[ui.index("function init()"):]
     tyre = init[init.index('on($("tyreType")'):]
-    assert "syncCrownArcInfo();" in tyre[:200]
+    assert "syncCrownArcInfo();" in tyre[:400]
     preset = init[init.index('on($("applyPreset")'):]
     assert "syncCrownArcInfo();" in preset[:220]
     # the class radii live in one place, not two
@@ -3149,3 +3153,159 @@ def test_the_measured_depth_is_offered_as_the_nsd():
     assert 'dispatchEvent(new Event("input"))' in fn, \
         "setting the box without the event would leave every dependent readout stale"
     assert "groove_depth_mm > 0" in fn, "a missing or inverted depth must not be offered"
+
+
+# ---------------------------------------------------------------------------
+# The interactive review pack: what a design review can actually interrogate
+# ---------------------------------------------------------------------------
+
+
+def test_the_pack_offers_figures_with_a_picker_rather_than_a_pile():
+    """A review pack is read by people deciding between designs, so the figures
+    have to answer "which output?" and "which design?" without being a stack of
+    ten ribbons or a chart with nothing on it to say whose numbers those are.
+
+    Every dropdown option is a COMPLETE figure built at export time, so the
+    exported file still carries no engine and computes nothing.
+    """
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+
+    # The mechanism: a section may supply variants, and figureSpec passes them
+    # through as finished {data, layout} pairs.
+    spec = ui[ui.index("function figureSpec("):ui.index("function stackVariants(")]
+    assert "sec.variants" in spec and "sec.build" in spec
+    assert "pick: sec.pick" in spec
+
+    # The pack's boot script switches between pre-built figures and does not
+    # recompute -- that is what keeps the file self-contained.
+    boot = ui[ui.index("var boot = "):ui.index("return head + body")]
+    assert "Plotly.react(id,v.data,v.layout" in boot
+    assert "sel.addEventListener('change',draw)" in boot
+    for forbidden in ["orderSpectrum", "principalStiffness", "fluctuationStats"]:
+        assert forbidden not in boot, f"the pack must not compute {forbidden} on open"
+
+    sections = ui[ui.index("var REPORT_SECTIONS = ["):ui.index("function reportOn(")]
+    # One entry at a time: a single greedy match would read the pick of a later
+    # section as belonging to an earlier one.
+    picks = {}
+    for chunk in sections.split('{ key: "')[1:]:
+        key = chunk[:chunk.index('"')]
+        m = re.search(r'pick: "(\w+)"', chunk)
+        if m:
+            picks[key] = m.group(1)
+    assert picks.get("stack") == "Output", "the θ sweep must choose its output"
+    assert picks.get("orders") == "Design", "order content must say which design"
+    assert picks.get("coupling") == "Design", "coupling must say which design"
+    assert picks.get("compare") == "Parameter", "the comparison must choose its parameter"
+
+
+def test_the_pack_draws_every_compared_design_not_just_the_live_one():
+    """Four designs were compared; one picture of one of them is not a review.
+
+    The rolled-out pattern is rebuilt for the pack from every held design, and
+    the per-design dropdowns are driven from one shared list so they cannot
+    disagree about which designs exist or what they are called.
+    """
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    designs = ui[ui.index("function packDesigns("):ui.index("// One order spectrum per design")]
+    assert "state.compare" in designs, "held designs are the list"
+    assert "state.gammaShown" in designs, "each design is read at the lean on screen"
+    # ...and falls back to the live run when nothing is held, rather than
+    # producing an empty dropdown.
+    assert "currentResult()" in designs
+
+    rows = ui[ui.index("function packPatternRows("):ui.index("function packPatternFigure(")]
+    assert "state.compare" in rows and "state.pattern" in rows
+
+    for fn in ["orderVariants", "couplingVariants", "compareVariants"]:
+        body = ui[ui.index("function %s(" % fn):]
+        assert "packDesigns()" in body[:600], f"{fn} must use the shared design list"
+
+
+def test_the_rolled_out_pattern_in_the_pack_is_true_shape():
+    """It used to be drawn against rotation angle in a box of fixed height,
+    which stretches a 1194 x 204 mm tread about 1.6x in the lateral direction.
+
+    Millimetres on both axes with the y axis locked to the x scale is what makes
+    a block come out the shape it really is -- and one scale across the rows is
+    what makes two designs comparable by eye.
+    """
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    fig = ui[ui.index("function packPatternFigure("):ui.index("// One variant per θ-sweep output")]
+    assert "thetaScale: false" in fig, "the pack strip is drawn in millimetres"
+    assert 'scaleanchor: "x" + sfx' in fig and "scaleratio: 1" in fig
+    assert 'constrain: "domain"' in fig, "the box gives way, not the range"
+    # The first axis is "x", never "x1" -- scaleanchor does not resolve the
+    # alias, and the first row came out 26% too tall when it was written that way.
+    assert 'var sfx = i === 0 ? "" : String(i + 1)' in fig
+    # One scale for every row, so the rows are comparable and not just each
+    # internally correct.
+    assert "PLOTW / Cmax" in fig
+
+    # The strip builder has to be able to draw in millimetres at all.
+    strip = ui[ui.index("function patternStripShapes("):ui.index("function stripLayout(")]
+    assert "opts.thetaScale !== false" in strip
+    assert "regionPlotPath(blk, C, thetaScale)" in strip
+
+
+def test_a_held_design_carries_what_the_pack_needs_to_draw_it():
+    """A held design used to carry only its curves and its outlines, so the pack
+    could not show its tie-bar network or mark its own pitch order."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    geom = ui[ui.index("function comparisonGeometry("):ui.index("function compareLabel(")]
+    assert "geometric_repeat_mm" in geom, "so an order chart can mark its own repeat"
+    assert "centroid_x: tb.centroid_x" in geom and "links:" in geom, \
+        "so the bonded network can be drawn for a held design"
+
+    add = ui[ui.index("function addCurrentToComparison("):ui.index("function loadComparisonFiles(")]
+    assert "coupling: state.coupling" in add, "the design's own coupling travels with it"
+
+    # ...and the link drawing must take a pattern rather than reading the live one.
+    links = ui[ui.index("function couplingLinkShapes("):ui.index("function stripLayout(")]
+    assert "opts.pattern || state.pattern" in links
+
+
+def test_the_pack_comparison_is_the_bonded_stiffness_and_says_so():
+    """The sweep's Kx has the engaged tie bars in it as rubber but not bonded.
+    Reading that as "with tie bars" is the easy mistake -- bonding is the whole
+    thing a tie bar is for -- so the comparison uses the coupled series where
+    there is one, and the chart title states which it is.
+    """
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    assert 'var BONDED_OF = { kx: "kx_coupled", ky: "ky_coupled", kxy: "kxy_coupled" };' in ui
+    body = ui[ui.index("function comparableSeries("):ui.index("// One comparison chart per parameter")]
+    assert "d.coupling" in body and "bonded: true" in body
+    # Cxy and the anisotropy are functions of the 2x2, so they get bonded
+    # versions too rather than silently staying unbonded.
+    assert 'key === "c_xy" || key === "anisotropy"' in body
+    assert "principalStiffness(c.kx_coupled[i]" in body
+
+    variants = ui[ui.index("function compareVariants("):ui.index("// One coupling chart per design")]
+    assert "tie bars bonded" in variants, "the chart has to say which version it is"
+    assert "(unbonded)" in variants, "a design without bars must be marked, not quietly mixed in"
+
+
+def test_the_lean_map_is_pdf_only_and_zones_go_for_tbr():
+    """Two sections the design office asked to stop seeing: the lean map in the
+    interactive pack, and the zone split on a TBR, whose crown is flat enough
+    that its three zones move together and the chart says nothing."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    sections = ui[ui.index("var REPORT_SECTIONS = ["):ui.index("function reportOn(")]
+    assert re.search(r'key: "lean".*?pack: false', sections, re.S), "the lean map is out of the pack"
+
+    export = ui[ui.index("function exportPack("):ui.index("function reviewPackHtml(")]
+    assert 'secs[i].pack === false' in export, "and the export has to honour the flag"
+
+    blocked = ui[ui.index("function sectionBlocked("):ui.index("function sectionAvailable(")]
+    assert '"zones"' in blocked and '"tbr"' in blocked
+    assert "TBR crown is nearly flat" in blocked, "a withdrawn section must give its reason"
+
+    # The chips are rebuilt when the tyre type changes, or the list on screen
+    # disagrees with what the export actually contains.
+    init = ui[ui.index("function init()"):]
+    tyre = init[init.index('on($("tyreType")'):]
+    assert "renderReportChips();" in tyre[:400]
+
+    # The chip says when a section is PDF-only rather than silently differing.
+    chips = ui[ui.index("function renderReportChips("):ui.index("function toggleReportSection(")]
+    assert "PDF only" in chips
