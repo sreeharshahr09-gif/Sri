@@ -894,6 +894,59 @@ const fs = require("fs");
     });
     if (!kxySigned) errors.push("Kxy came out non-negative everywhere — it is being clamped like Kx and Ky");
 
+    // The bonded comparison: a SECOND chart, so coupled stiffness can be
+    // compared across designs without opening the review pack.
+    //
+    // Deliberately not more lines on the first chart. The two reach Kx by
+    // different routes and run 2.5x to 5x apart, so a dotted sweep curve
+    // beside a solid network one would read as the bars tripling the
+    // stiffness. Both curves here come from the network, so the gap between a
+    // design's pair is the bonding and nothing else -- which is what this
+    // checks, by comparing the gap against that design's own reported gain.
+    await selectOption("#compareMetric", "kx");
+    await page.waitForTimeout(500);
+    const coupled = await page.evaluate(() => {
+      const host = document.getElementById("compareCoupledHost");
+      const gd = document.getElementById("compareCoupledPlot");
+      const mean = (y) => y.reduce((a, b) => a + b, 0) / y.length;
+      return {
+        shown: host.style.display !== "none",
+        traces: (gd.data || []).length,
+        names: (gd.data || []).map((t) => t.name),
+        dashes: (gd.data || []).map((t) => t.line.dash || "solid"),
+        means: (gd.data || []).map((t) => mean(t.y)),
+        title: ((gd.layout || {}).title || {}).text || "",
+      };
+    });
+    console.log("compare coupled:", coupled.traces, "traces |", coupled.title.slice(0, 70));
+    if (!coupled.shown) errors.push("the bonded comparison chart did not appear for Kx");
+    // One pair per design THAT HAS TIE BARS -- the bundled 2W sample has none,
+    // so the count follows the drawings held, not the number of designs.
+    if (!coupled.traces || coupled.traces % 2)
+      errors.push(`the bonded chart must carry an independent+bonded pair per design, got ${coupled.traces} traces`);
+    if (!coupled.dashes.filter((d) => d === "dot").length ||
+        !coupled.dashes.filter((d) => d === "solid").length)
+      errors.push("the bonded chart does not distinguish independent from bonded");
+    // Bonding must raise the curve, for every design, by that design's gain.
+    for (let i = 0; i + 1 < coupled.means.length; i += 2) {
+      const gain = coupled.means[i + 1] / coupled.means[i];
+      console.log(`   ${coupled.names[i + 1]}: gain ×${gain.toFixed(4)}`);
+      if (!(gain > 1.0005))
+        errors.push(`bonding did not stiffen ${coupled.names[i + 1]} (×${gain.toFixed(4)})`);
+    }
+    // ...and a metric bonding does not move must not pretend otherwise.
+    await selectOption("#compareMetric", "kz");
+    await page.waitForTimeout(400);
+    const kzCoupled = await page.evaluate(() => ({
+      shown: document.getElementById("compareCoupledHost").style.display !== "none",
+      title: (document.getElementById("comparePlot").layout.title.text || ""),
+    }));
+    if (kzCoupled.shown) errors.push("Kz has no bonded counterpart but the bonded chart is showing");
+    if (/bonded/.test(kzCoupled.title))
+      errors.push("the Kz comparison claims something about bonding: " + kzCoupled.title);
+    await selectOption("#compareMetric", "kxy");
+    await page.waitForTimeout(400);
+
     // Zooming the curve chart re-frames every pattern, and back again.
     await page.evaluate(() => Plotly.relayout(document.getElementById("comparePlot"), { "xaxis.range": [90, 150] }));
     await page.waitForTimeout(600);
@@ -1288,6 +1341,55 @@ const fs = require("fs");
     rp.on("console", (m) => { if (m.type() === "error") rpErr.push(m.text()); });
     await rp.goto("file://" + packFour, { waitUntil: "load" });
     await rp.waitForTimeout(2000);
+
+    // 0. Settings and headline numbers must cover EVERY variant, not whichever
+    //    ran last -- one column per design, and the title must not be named
+    //    after the last one either.
+    const tables = await rp.evaluate(() => Array.from(document.querySelectorAll("table.grid")).map((t) => ({
+      caption: (t.closest(".scroll").previousElementSibling || {}).textContent || "",
+      cols: t.rows[0].cells.length,
+      head: Array.from(t.rows[0].cells).map((c) => c.textContent),
+      labels: Array.from(t.rows).slice(1).map((r) => r.cells[0].textContent),
+      values: Array.from(t.rows).slice(1).map((r) => Array.from(r.cells).slice(1).map((c) => c.textContent)),
+    })));
+    console.log("pack tables:", tables.map((t) => `${t.caption} (${t.cols} cols)`).join(" · "));
+    if (tables.length !== 2)
+      errors.push(`the pack should carry a settings and a headline table, found ${tables.length}`);
+    tables.forEach((t) => {
+      if (t.cols !== 5)
+        errors.push(`${t.caption}: expected 1 label + 4 design columns, got ${t.cols}`);
+      // The columns must be the four designs, in order, not the same one four times.
+      const names = t.head.slice(1);
+      if (new Set(names).size !== 4)
+        errors.push(`${t.caption}: columns are not four distinct designs: ${names.join(", ")}`);
+      packDesigns.forEach((d, i) => {
+        if (names[i].indexOf(d.tread) !== 0)
+          errors.push(`${t.caption}: column ${i} is "${names[i]}", expected ${d.tread}`);
+      });
+    });
+    const settings = tables[0], headline = tables[1];
+    if (settings) {
+      // ...and the columns must actually DIFFER, or they are one variant copied.
+      const geom = settings.values[settings.labels.indexOf("Geometry")];
+      console.log("  geometry per design:", geom.join(" | "));
+      if (geom && new Set(geom).size !== 4)
+        errors.push("the settings table repeats one design's geometry: " + geom.join(" | "));
+    }
+    if (headline) {
+      const kz = headline.values[headline.labels.indexOf("Mean Kz (N/mm)")];
+      const gain = headline.values[headline.labels.indexOf("Tie bars: Kx gain")];
+      console.log("  mean Kz per design:", kz.join(" | "), "| Kx gain:", gain.join(" | "));
+      if (!kz || new Set(kz).size !== 4)
+        errors.push("the headline table repeats one design's Kz: " + (kz || []).join(" | "));
+      if (!gain || gain.some((g) => !/^×\d/.test(g)))
+        errors.push("the headline table does not give each design's tie-bar gain: " + (gain || []).join(" | "));
+    }
+    const h1 = await rp.$eval("h1", (e) => e.textContent);
+    console.log("  pack title:", h1);
+    if (/Asym bars/.test(h1))
+      errors.push("the pack is still titled after the last variant run: " + h1);
+    if (!/4 designs compared/.test(h1))
+      errors.push("the pack title does not say how many designs it carries: " + h1);
 
     const shape = await rp.evaluate(() => {
       const figs = Array.from(document.querySelectorAll("[id^=fig]"));

@@ -3361,3 +3361,76 @@ def test_the_lean_map_is_pdf_only_and_zones_go_for_tbr():
     # The chip says when a section is PDF-only rather than silently differing.
     chips = ui[ui.index("function renderReportChips("):ui.index("function toggleReportSection(")]
     assert "PDF only" in chips
+
+
+def test_the_compare_tab_shows_the_bonded_stiffness_in_its_own_chart():
+    """Comparing coupled stiffness across variants without opening the pack.
+
+    It is a SECOND chart on purpose.  The sweep and the tie-bar network reach
+    Kx by different routes and their absolutes run 2.5x to 5x apart, so a
+    dotted sweep curve beside a solid network one would read as the bars
+    tripling the stiffness.  Both curves in the bonded chart come out of the
+    network, so the gap between a design's pair is the bonding and nothing
+    else.
+    """
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+    tpl = open(os.path.join(APP, "template.html"), encoding="utf-8").read()
+    assert 'id="compareCoupledPlot"' in tpl and 'id="compareCoupledHost"' in tpl
+    assert 'id="compareCoupledNote"' in tpl
+
+    fn = ui[ui.index("function renderCompareCoupled("):ui.index("// The coupling a held design solved")]
+    assert "networkSeries(c, metric, false)" in fn and "networkSeries(c, metric, true)" in fn, \
+        "both curves must come from the network, or the gap is not the bonding"
+    assert 'dash: "dot"' in fn, "independent is dotted, bonded is solid -- as on the coupling tab"
+    assert "network scale" in fn, "the axis must say the absolutes are the network's own"
+
+    # The first chart stays the sweep's, and says so for the metrics where the
+    # distinction exists.
+    top = ui[ui.index("    var missing = 0;"):ui.index("    renderCompareCoupled(")]
+    assert "metricSeries(r, metric)" in top
+    assert "blocks alone, tie bars not bonded" in top
+    assert "coupled" not in top, "the top chart must not reach for a bonded series"
+
+    # Only the parameters bonding actually moves get a pair.
+    ns = ui[ui.index("function networkSeries("):ui.index("function renderComparePatterns(")]
+    assert 'key !== "c_xy" && key !== "anisotropy"' in ns and "BONDED_OF[key]" in ns
+
+    # The note has to warn that the two charts are on different scales.
+    note = tpl[tpl.index('id="compareCoupledNote"'):tpl.index('id="compareCoupledHost"')]
+    assert "not</b> comparable" in note or "not comparable" in note.replace("<b>", "").replace("</b>", "")
+
+
+def test_the_pack_describes_every_variant_not_just_the_last_one():
+    """A review of four variants carried one variant's settings and one
+    variant's headline numbers, with nothing on the page saying which."""
+    ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
+
+    for fn in ("variantSettingsTable", "variantHeadlineTable"):
+        assert f"function {fn}(designs)" in ui, f"{fn} must take the whole design list"
+        body = ui[ui.index(f"function {fn}(designs)"):]
+        body = body[:body.index("\n  }\n")]
+        assert "designs.map(function (d)" in body, f"{fn} must build one column per design"
+
+    settings = ui[ui.index("function variantSettingsTable(designs)"):ui.index("function variantHeadlineTable(")]
+    for label in ["Tread / design", "Geometry", "Block depth", "Compound", "Tie bars",
+                  "Contact patch", "Load", "Lean angles"]:
+        assert f'row("{label}"' in settings, f"the settings table does not carry {label}"
+
+    headline = ui[ui.index("function variantHeadlineTable(designs)"):ui.index("function exportPack(")]
+    for label in ["Patch area", "Mean contact area", "Mean Kz", "Kz fluctuation",
+                  "Mean Kx", "Mean Ky", "Blocks in patch"]:
+        assert label in headline, f"the headline table does not carry {label}"
+    # The one network number that IS comparable with anything, because a ratio
+    # cancels the scale difference between the two routes to Kx.
+    assert "Tie bars: Kx gain" in headline and "gain_kx" in headline
+
+    # Both reach the pack, and the old single-variant card strip is gone.
+    pack = ui[ui.index("function exportPack("):ui.index("function reviewPackHtml(")]
+    assert "settings_table: settingsTable" in pack and "headline_table: headlineTable" in pack
+    assert "var cards = [" not in pack, "the single-variant card strip is replaced by the tables"
+    # ...and the report is not titled after whichever variant ran last.
+    assert "designs.length > 1" in pack and "designs compared" in pack
+
+    html = ui[ui.index("function reviewPackHtml("):ui.index("function refreshExportButtons(")]
+    assert "payload.settings_table" in html and "payload.headline_table" in html
+    assert "payload.cards" not in html

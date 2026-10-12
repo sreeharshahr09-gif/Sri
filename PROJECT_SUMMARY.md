@@ -472,6 +472,35 @@ Kept deliberately: `wear_proxies` in the Python metrics. It predicts wear *risk*
 from new-tyre geometry — slenderness, sipe density, block-count fluctuation —
 and is a design diagnostic, not a worn-tyre simulation.
 
+### Comparing variants, not just the last one
+
+Three gaps the design office found on the same pass.
+
+**The Compare tab could not show coupled stiffness.** It now draws a second
+chart: per design, a dotted independent curve and a solid bonded one, both out
+of the tie-bar network. Deliberately a second chart rather than more lines on
+the first — the sweep and the network run 2.5× to 5× apart, so a dotted sweep
+curve beside a solid network one reads as the bars tripling the stiffness. I
+built that mixed version first, looked at it, and threw it away. With both
+curves from one route the gap is the bonding and nothing else, and it is
+comparable across variants: ×1.193 TBR, ×1.068 hatch, ×1.036 diagonal.
+
+**The pack described one variant.** Settings and headline numbers now come as
+two tables with **one column per compared design** — geometry, land ratio,
+block depth, compound, tie bars and network, crown, patch, load and leans; then
+patch area, contact area, Kz and its CoV, Kx, Ky, blocks, dominant order, slip
+response, and each design's tie-bar Kx/Ky gain. The single-variant card strip
+is gone, and the report is no longer titled after whichever run happened to be
+last ("Tread evaluation — 4 designs compared").
+
+Checked in the browser against a four-design review: both tables carry five
+columns, the column headings are the four designs in order, and the values
+genuinely differ down each row — the audit fails if any row repeats one
+design's numbers four times, which is exactly the bug being fixed. The bonded
+chart is checked pair by pair, each design's gap matched against its own
+reported gain, and a parameter bonding does not move (Kz) must hide the chart
+rather than imply something about bonding.
+
 ---
 
 ## 5. How the numbers are kept honest
@@ -484,7 +513,7 @@ v6.4 reference JS  ──(~1e-9)──  Python engine  ──(<2e-3)──  Brow
   verify/tool_v64_reference.js   tread_eval/*.py              app/engine.js
 ```
 
-- **363 tests** (from 153 at the start of the audit).
+- **365 tests** (from 153 at the start of the audit).
 - `tests/test_physics.py` checks every equation against a **closed form worked
   out by hand**, not against a previous run — a golden-value test would have
   blessed the bugs above.
@@ -607,6 +636,7 @@ source of truth.
 | `2348916` | Dropdowns in the review pack |
 | `76ee368` | Name the two stiffness figures for the state each carries |
 | `85ed1cb` | A new-tyre tool: the worn case removed |
+| `pending` | Compare coupled stiffness, and describe every variant |
 
 ---
 
@@ -640,7 +670,7 @@ app/
 tread_eval/              the Python pipeline (schema, stiffness, dxf, raster,
                          sweep, metrics, contact_patch, cp_shapes, report, config)
 verify/                  v6.4 functions extracted verbatim, the reference oracle
-tests/                   363 tests
+tests/                   365 tests
 data/                    the Tramplr sample DXF, tie-bar and pitch fixtures,
                          hatch and STEP fixtures and their generators, footprints
 GUIDE.md                 plain-language guide, embedded in the app as a tab

@@ -3085,12 +3085,16 @@
       margin: { l: 72, r: 16, t: 40, b: 92 }, height: 460,
       legend: { orientation: "h", y: -0.18, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
       title: { text: METRIC_LABEL[metric] + " compared at γ = " + gamma + "°" +
+               (BONDED_OF[metric] || metric === "c_xy" || metric === "anisotropy"
+                 ? "  —  blocks alone, tie bars not bonded" : "") +
                (common.length ? "" : "  (runs share no lean angle — first of each shown)") +
                (missing ? "  — " + missing + " run(s) predate this metric and are not shown" : ""),
                font: { size: 13 } },
       xaxis: { title: { text: "rotation angle θ (deg)", font: { size: 11 } }, range: [0, 360], gridcolor: th.grid },
       yaxis: { title: { text: METRIC_LABEL[metric], font: { size: 11 } }, gridcolor: th.grid },
     }, { responsive: true, displayModeBar: false });
+
+    renderCompareCoupled(list, gamma, metric, palette, th);
 
     var base = null, baseSwing = 0, isBase = true;
     var rows = "<table class='metrics'><tr><th>Design</th><th>mean</th><th>CoV</th><th>min</th>" +
@@ -3169,6 +3173,78 @@
     var cut = name.slice(0, 24);
     var sp = cut.lastIndexOf(" ");
     return (sp > 12 ? cut.slice(0, sp) : cut) + "…";
+  }
+
+  // The same parameter with the tie bars bonded, one pair of curves per design.
+  //
+  // Deliberately a SECOND chart rather than more lines on the first. Both
+  // curves here come out of the tie-bar network, so the gap between a design's
+  // dotted and solid line is the bonding and nothing else. Put the network's
+  // bonded curve on the chart above -- which is the sweep's -- and the gap
+  // would be mostly the difference between two routes to "Kx", which run 2.5x
+  // to 5x apart, and it would read as the bars tripling the stiffness.
+  function renderCompareCoupled(list, gamma, metric, palette, th) {
+    var host = $("compareCoupledHost"), note = $("compareCoupledNote");
+    if (!host) return;
+    var pairs = [];
+    list.forEach(function (e, i) {
+      var c = couplingOfEntry(e, gamma);
+      if (!c) return;
+      var un = networkSeries(c, metric, false), bo = networkSeries(c, metric, true);
+      if (!un || !bo) return;
+      pairs.push({ label: shortLabel(e.label), colour: palette[i % palette.length],
+                   x: c.theta_deg, un: un, bo: bo });
+    });
+    if (!pairs.length) {
+      host.style.display = "none";
+      if (note) note.style.display = "none";
+      Plotly.purge($("compareCoupledPlot"));
+      return;
+    }
+    host.style.display = ""; if (note) note.style.display = "";
+    var data = [];
+    pairs.forEach(function (q) {
+      data.push({ x: q.x, y: q.un, type: "scatter", mode: "lines", name: q.label + " — independent",
+                  line: { color: q.colour, width: 1.2, dash: "dot" } });
+      data.push({ x: q.x, y: q.bo, type: "scatter", mode: "lines", name: q.label + " — bonded",
+                  line: { color: q.colour, width: 2 } });
+    });
+    Plotly.react($("compareCoupledPlot"), data, {
+      paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
+      margin: { l: 72, r: 16, t: 40, b: 104 }, height: 420,
+      legend: { orientation: "h", y: -0.18, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
+      title: { text: METRIC_LABEL[metric] + " with the tie bars bonded, at γ = " + gamma +
+               "°  —  dotted = independent, solid = bonded", font: { size: 13 } },
+      xaxis: { title: { text: "rotation angle θ (deg)", font: { size: 11 } }, range: [0, 360],
+               gridcolor: th.grid, tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
+      yaxis: { title: { text: METRIC_LABEL[metric] + " (network scale)", font: { size: 11 } }, gridcolor: th.grid },
+    }, { responsive: true, displayModeBar: false });
+  }
+
+  // The coupling a held design solved at this lean, or null.
+  function couplingOfEntry(entry, gamma) {
+    if (!entry.coupling || !entry.results) return null;
+    var ix = -1;
+    for (var i = 0; i < entry.results.length; i++)
+      if (entry.results[i].gamma_deg === gamma) { ix = i; break; }
+    var c = entry.coupling[ix < 0 ? 0 : ix];
+    return c && c.theta_deg ? c : null;
+  }
+
+  // One series out of a coupling result: the bonded version or the independent
+  // one, for whichever parameters bonding actually moves.
+  function networkSeries(c, key, bonded) {
+    var suffix = bonded ? "_coupled" : "_uncoupled";
+    if (BONDED_OF[key]) return c["" + key + suffix] || null;
+    if (key !== "c_xy" && key !== "anisotropy") return null;
+    var kx = c["kx" + suffix], ky = c["ky" + suffix], kxy = c["kxy" + suffix];
+    if (!kx || !ky || !kxy) return null;
+    var out = new Array(kx.length);
+    for (var i = 0; i < out.length; i++) {
+      var pr = E.principalStiffness(kx[i], ky[i], kxy[i]);
+      out[i] = key === "c_xy" ? pr.cxy * 100 : (isFinite(pr.anisotropy) ? pr.anisotropy : 0);
+    }
+    return out;
   }
 
   function renderComparePatterns(list) {
@@ -4200,6 +4276,8 @@
   // One caveat the chart states rather than hides: a tie bar drawn flush with
   // the tread is still RUBBER in these numbers, because the sweep rasterises it
   // as land. What is absent is the bonding, not the bar.
+  var BONDED_OF = { kx: "kx_coupled", ky: "ky_coupled", kxy: "kxy_coupled" };
+
   function unbondedSeries(d, key) {
     var y = metricSeries(d.result, key);
     return y && y.length ? { x: d.result.theta_deg, y: y } : null;
@@ -4477,12 +4555,117 @@
     });
   }
 
+  // Settings and headline numbers for EVERY compared design, one column each.
+  //
+  // Both used to describe whichever run happened to be live, which in a review
+  // of four variants is three quarters missing -- and nothing on the page said
+  // which quarter you were reading.
+  function variantSettingsTable(designs) {
+    var row = function (label, fn) {
+      return [label].concat(designs.map(function (d) {
+        try { return fn(d.settings || {}, d); } catch (e) { return "—"; }
+      }));
+    };
+    return {
+      head: ["Setting"].concat(designs.map(function (d) { return d.label; })),
+      rows: [
+        row("Tread / design", function (s) { return (s.project || {}).tread || (s.pattern || {}).name || "—"; }),
+        row("Tyre type", function (s) { return (s.project || {}).tyre_type_label || "—"; }),
+        row("Size", function (s) { return (s.project || {}).size || "—"; }),
+        row("Geometry", function (s) {
+          var p = s.pattern || {};
+          return p.circumference_mm == null ? "—"
+            : p.circumference_mm.toFixed(1) + " × " + p.tread_width_mm.toFixed(1) + " mm, " +
+              p.n_blocks + " blocks, " + p.n_pitches + " pitches";
+        }),
+        row("Land ratio", function (s, d) {
+          var lr = metricSeries(d.result, "land_ratio");
+          return lr ? (100 * E.fluctuationStats(lr).mean).toFixed(1) + "%" : "—";
+        }),
+        row("Block depth", function (s) {
+          var b = s.block_defaults || {};
+          return b.height == null ? "—"
+            : "NSD " + b.height + " mm, draft " + b.draft_angle + "°, " + b.n_lateral_sipes + " sipes";
+        }),
+        row("Compound", function (s) { return s.compound_and_boundary ? compoundLine(s) : "—"; }),
+        row("Tie bars", function (s) { return s.tiebars_settings ? tiebarLine(s) : "—"; }),
+        row("Tie-bar network", function (s, d) {
+          if (!d.coupling) return "no tie bars";
+          return d.coupling.n_links + " bonded link(s) over " + d.coupling.n_nodes +
+                 " elements in " + d.coupling.n_components + " group(s)";
+        }),
+        row("Tread arc / crown", function (s) { return crownLine(s); }),
+        row("Contact patch", function (s) { return s.contact_patch ? E.describeSpec(s.contact_patch) : "—"; }),
+        row("Load", function (s) {
+          var l = s.load || {};
+          return l.vertical_load == null ? "—"
+            : l.vertical_load + " N" + (l.load_rises_with_lean ? " (rises with lean)" : " (constant)");
+        }),
+        row("Lean angles", function (s) {
+          var a = (s.analysis || {}).lean_angles_deg;
+          return a ? a.join("°, ") + "°" : "—";
+        }),
+      ],
+    };
+  }
+
+  function variantHeadlineTable(designs) {
+    var anySlip = designs.some(function (d) { return d.result.c_alpha && d.result.c_alpha.length; });
+    var anyBond = designs.some(function (d) { return d.coupling; });
+    var row = function (label, fn) {
+      return [label].concat(designs.map(function (d) {
+        var v = fn(d.result, d);
+        return v == null ? "—" : v;
+      }));
+    };
+    var mean = function (a) { return a ? E.fluctuationStats(a).mean : null; };
+    var out = [
+      row("Lean γ shown", function (r) { return r.gamma_deg + "°"; }),
+      row("Patch area (mm²)", function (r) { return r.patch_area.toFixed(0); }),
+      row("Mean contact area (mm²)", function (r) { return mean(r.contact_area).toFixed(0); }),
+      row("Mean land in patch (%)", function (r) {
+        var lr = metricSeries(r, "land_ratio");
+        return lr ? (100 * E.fluctuationStats(lr).mean).toFixed(1) : null;
+      }),
+      row("Mean Kz (N/mm)", function (r) { return mean(r.kz).toFixed(0); }),
+      row("Kz fluctuation (% CoV)", function (r) { return (E.fluctuationStats(r.kz).cov * 100).toFixed(2); }),
+      row("Mean Kx (N/mm)", function (r) { return mean(r.kx).toFixed(0); }),
+      row("Mean Ky (N/mm)", function (r) { return mean(r.ky).toFixed(0); }),
+      row("Blocks in patch", function (r) { return mean(r.block_count).toFixed(2); }),
+      row("Dominant Kz order", function (r) {
+        var d0 = E.dominantOrders(E.orderSpectrum(r.kz, 60), 1)[0];
+        return d0 ? String(d0.order) : null;
+      }),
+    ];
+    if (anySlip) {
+      out.push(row("Mean Cα (N/rad)", function (r) {
+        return r.c_alpha && r.c_alpha.length ? mean(r.c_alpha).toFixed(0) : null; }));
+      out.push(row("Cα fluctuation (% CoV)", function (r) {
+        return r.c_alpha && r.c_alpha.length ? (E.fluctuationStats(r.c_alpha).cov * 100).toFixed(2) : null; }));
+      out.push(row("Pneumatic trail (mm)", function (r) {
+        return r.pneumatic_trail && r.pneumatic_trail.length ? mean(r.pneumatic_trail).toFixed(2) : null; }));
+    }
+    if (anyBond) {
+      // What the tie bars are worth, as a ratio -- which is the one number
+      // from the network that IS comparable with anything else, because a
+      // ratio cancels the scale difference between the two routes to Kx.
+      out.push(row("Tie bars: Kx gain", function (r, d) {
+        return d.coupling ? "×" + d.coupling.gain_kx.toFixed(3) : null; }));
+      out.push(row("Tie bars: Ky gain", function (r, d) {
+        return d.coupling ? "×" + d.coupling.gain_ky.toFixed(3) : null; }));
+      out.push(row("Bonded links", function (r, d) {
+        return d.coupling ? String(d.coupling.n_links) : null; }));
+    }
+    return { head: ["Headline"].concat(designs.map(function (d) { return d.label; })), rows: out };
+  }
+
   function exportPack() {
     if (!state.results) return;
     var btn = $("exportPack"), old = btn.textContent;
     btn.disabled = true; btn.textContent = "Building…";
     try {
       var s0 = settingsSnapshot(), proj = s0.project || {}, r0 = currentResult();
+      var designs = packDesigns();
       var secs = selectedSections();
       var figs = [];
       for (var i = 0; i < secs.length; i++) {
@@ -4491,46 +4674,16 @@
         if (f) figs.push(f);
       }
 
+      // Who the report is for, which is one answer however many variants it
+      // carries. Everything that differs between them is in the tables below.
       var rows = [
         ["Project", proj.project || "—"],
-        ["Tread / design", proj.tread || s0.pattern.name || "—"],
-        ["Tyre type", proj.tyre_type_label || "—"],
-        ["Size", proj.size || "—"],
         ["Designer", proj.designer || "—"],
         ["Created", new Date().toLocaleString()],
+        ["Designs compared", String(designs.length)],
       ];
-      if (reportOn("cover")) {
-        rows = rows.concat([
-          ["Geometry", s0.pattern.circumference_mm.toFixed(1) + " × " + s0.pattern.tread_width_mm.toFixed(1) +
-            " mm, " + s0.pattern.n_blocks + " blocks, " + s0.pattern.n_pitches + " pitches"],
-          ["Block depth", "NSD " + s0.block_defaults.height + " mm, draft " + s0.block_defaults.draft_angle +
-            "°, " + s0.block_defaults.n_lateral_sipes + " sipes"],
-          ["Compound", compoundLine(s0)],
-          ["Tie bars", tiebarLine(s0)],
-          ["Tie-bar coupling", couplingLine(s0)],
-          ["Tread arc / crown", crownLine(s0)],
-          ["Contact patch", E.describeSpec(s0.contact_patch)],
-          ["Load", s0.load.vertical_load + " N" + (s0.load.load_rises_with_lean ? " (rises with lean)" : " (constant)")],
-          ["Lean angles", s0.analysis.lean_angles_deg.join("°, ") + "°"],
-        ]);
-      }
-
-      var cards = [];
-      if (reportOn("summary")) {
-        cards = [
-          ["Patch area", r0.patch_area.toFixed(0), "mm²"],
-          ["Mean contact area", E.fluctuationStats(r0.contact_area).mean.toFixed(0), "mm²"],
-          ["Mean Kz", E.fluctuationStats(r0.kz).mean.toFixed(0), "N/mm"],
-          ["Kz fluctuation", (E.fluctuationStats(r0.kz).cov * 100).toFixed(2), "% CoV over θ"],
-          ["Blocks in patch", E.fluctuationStats(r0.block_count).mean.toFixed(2), "avg"],
-        ];
-        if (r0.c_alpha && r0.c_alpha.length) {
-          var ca = E.fluctuationStats(r0.c_alpha);
-          cards.push(["Mean Cα (tread only)", ca.mean.toFixed(0), "N/rad"]);
-          cards.push(["Cα fluctuation", (ca.cov * 100).toFixed(2), "% CoV over θ"]);
-          cards.push(["Pneumatic trail", E.fluctuationStats(r0.pneumatic_trail).mean.toFixed(2), "mm"]);
-        }
-      }
+      var settingsTable = reportOn("cover") ? variantSettingsTable(designs) : null;
+      var headlineTable = reportOn("summary") ? variantHeadlineTable(designs) : null;
 
       var perLean = null;
       if (reportOn("perlean")) {
@@ -4545,9 +4698,16 @@
       }
 
       var payload = {
-        title: [proj.project, proj.tread].filter(Boolean).join(" · ") || s0.pattern.name || "Tread evaluation",
+        // With several variants held, naming the title after whichever ran
+        // last is the same fault the tables fix.
+        title: designs.length > 1
+          ? (proj.project || "Tread evaluation") + " — " + designs.length + " designs compared"
+          : ([proj.project, proj.tread].filter(Boolean).join(" · ") || s0.pattern.name || "Tread evaluation"),
         gamma: r0.gamma_deg,
-        rows: rows, cards: cards,
+        rows: rows,
+        settings_table: settingsTable,
+        headline_table: headlineTable,
+        n_designs: designs.length,
         per_lean: perLean,
         notes: reportOn("notes") ? (s0.physics_notes || []) : [],
         figures: figs,
@@ -4577,6 +4737,15 @@
       ".card{background:#fff;border:1px solid #e3e9ef;border-radius:8px;padding:10px 12px}" +
       ".card .k{font-size:11px;color:#5b6b7d;text-transform:uppercase;letter-spacing:.5px}" +
       ".card .v{font-size:20px;font-weight:650}.card .u{font-size:12px;color:#5b6b7d}" +
+      "h2.sec{font-size:15px;margin:22px 0 8px}" +
+      ".scroll{overflow-x:auto;margin:0 0 20px}" +
+      "table.grid{border-collapse:collapse;font-size:12.5px;min-width:100%}" +
+      "table.grid th,table.grid td{border:1px solid #e3e9ef;padding:5px 10px;text-align:left;" +
+      "vertical-align:top;min-width:120px;max-width:300px}" +
+      "table.grid td.num{text-align:right;white-space:nowrap}" +
+      "table.grid th{background:#f7f9fc;font-weight:600}" +
+      "table.grid th.rowhead{text-align:left;color:#5b6b7d;position:sticky;left:0;background:#f7f9fc}" +
+      "table.grid tr:nth-child(even) td{background:#fbfcfe}" +
       "table.num{border-collapse:collapse;font-size:13px;margin:0 0 20px}" +
       "table.num th,table.num td{border-bottom:1px solid #e3e9ef;padding:5px 12px;text-align:right}" +
       "table.num th:first-child,table.num td:first-child{text-align:left}" +
@@ -4604,14 +4773,33 @@
     });
     body += "</table>";
 
-    if (payload.cards.length) {
-      body += "<div class='cards'>";
-      payload.cards.forEach(function (c) {
-        body += "<div class='card'><div class='k'>" + escapeHtml(c[0]) + "</div><div class='v'>" +
-          escapeHtml(c[1]) + "</div><div class='u'>" + escapeHtml(c[2]) + "</div></div>";
+    // One column per compared design, for both the settings and the headline
+    // numbers. With a single run it degenerates to the label-and-value table
+    // it always was; with four it is the comparison the review is actually
+    // about, instead of whichever run happened to be live.
+    function variantTable(t, caption) {
+      if (!t || !t.rows.length) return "";
+      var h = "<h2 class='sec'>" + escapeHtml(caption) + "</h2>" +
+        "<div class='scroll'><table class='grid'><tr>";
+      t.head.forEach(function (c, i) {
+        h += "<th" + (i ? "" : " class='rowhead'") + ">" + escapeHtml(c) + "</th>";
       });
-      body += "</div>";
+      h += "</tr>";
+      t.rows.forEach(function (r) {
+        h += "<tr>";
+        r.forEach(function (c, i) {
+          var numeric = i > 0 && /^[\u00d7x]?[-+]?[\d.,]+%?\u00b0?$/.test(String(c).trim());
+          h += i ? "<td" + (numeric ? " class='num'" : "") + ">" + escapeHtml(String(c)) + "</td>"
+                 : "<th class='rowhead'>" + escapeHtml(String(c)) + "</th>";
+        });
+        h += "</tr>";
+      });
+      return h + "</table></div>";
     }
+    body += variantTable(payload.settings_table,
+      payload.n_designs > 1 ? "Settings, design by design" : "Settings");
+    body += variantTable(payload.headline_table,
+      payload.n_designs > 1 ? "Headline numbers, design by design" : "Headline numbers");
 
     if (payload.per_lean) {
       body += "<table class='num'><tr><th>γ</th><th>area mean</th><th>area CoV</th><th>Kz mean</th>" +

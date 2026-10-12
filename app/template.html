@@ -544,6 +544,12 @@
           <select id="compareMetric"><option value="kz">Kz — vertical (N/mm)</option><option value="kx">Kx — longitudinal (N/mm)</option><option value="ky">Ky — lateral (N/mm)</option><option value="kxy">Kxy — cross term (N/mm)</option><option value="c_xy">Cxy — normalised coupling (%)</option><option value="anisotropy">anisotropy K₁/K₂</option><option value="contact_area">contact area (mm²)</option><option value="land_ratio">land ratio</option><option value="block_count">blocks in patch</option><option value="c_alpha">Cα — cornering stiffness (N/rad)</option><option value="c_kappa">Cκ — longitudinal slip stiffness (N)</option><option value="pneumatic_trail">pneumatic trail (mm)</option></select>
         </div>
         <div class="plot-host"><div id="comparePlot" class="plot"></div></div>
+        <div id="compareCoupledNote" class="hint" style="display:none;margin-top:10px">The same parameter with the
+          <b>tie bars bonded</b>, design by design. Both curves below come from the tie-bar network, so the gap between
+          a design's dotted and solid line <em>is</em> what its bars are worth. Those absolutes are on the network's own
+          scale and are <b>not</b> comparable with the chart above, which is the sweep's — compare designs within a
+          chart, never a number across the two.</div>
+        <div class="plot-host" id="compareCoupledHost" style="display:none"><div id="compareCoupledPlot" class="plot"></div></div>
         <div id="compareTable"></div>
         <div id="comparePatternNote" class="banner warn" style="display:none;margin-top:12px"></div>
         <div class="hint" style="margin-top:12px">The rolled-out tread of every design below, on the same θ axis — so a

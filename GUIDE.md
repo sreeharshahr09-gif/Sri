@@ -849,6 +849,28 @@ could not draw rather than leaving a silent gap.
 
 ---
 
+### Two charts: blocks alone, and tie bars bonded
+
+The **metric** dropdown drives two charts, and they answer different questions.
+
+The **first** is every design on the sweep's own numbers, with the tie bars
+present as rubber but **not bonded** — so a difference between designs there is
+a difference in the *pattern*.
+
+The **second** appears whenever the parameter is one that bonding moves (Kx,
+Ky, Kxy, Cxy, anisotropy) and the designs have tie bars. It shows, per design,
+a **dotted** independent curve and a **solid** bonded one — same convention as
+the tie-bar coupling tab. The gap between a design's pair is what *its* bars
+are worth, and you can read that across variants at a glance.
+
+> **Do not read a number across the two charts.** Both curves in the second one
+> come out of the tie-bar network, which shares the load across the loaded
+> elements and so divides out how much of each block is actually in the patch;
+> the sweep keeps that fraction. The network's absolutes run **2.5× to 5×** the
+> sweep's. Compare designs *within* a chart; the one network number that is
+> safe to carry anywhere is the **gain**, because a ratio cancels the scale.
+
+
 ## Tie-bar coupling: the tread as a network
 
 Everywhere else this tool treats a block as an **independent spring**. Its stiffness comes from its own outline and nothing else, and the patch total is the sum of the springs it covers. That assumption is what makes the θ sweep a single FFT — and it is exactly wrong for a tie bar, whose whole purpose is to make neighbouring blocks *not* independent.
@@ -1011,6 +1033,23 @@ answers nothing:
 Every option is a **complete figure built when the file was written**. Switching
 one is a redraw, never a calculation — which is what lets the file carry no
 engine while still being interactive.
+
+#### Every variant, not just the last one
+
+Two tables near the top carry **one column per compared design**:
+
+- **Settings, design by design** — tread name, tyre type, geometry, land ratio,
+  block depth, compound, tie bars and their network, crown, contact patch, load
+  and lean angles.
+- **Headline numbers, design by design** — patch area, mean contact area, land
+  in patch, Kz and its fluctuation, Kx, Ky, blocks in patch, dominant order,
+  the slip response where it exists, and each design's **tie-bar Kx and Ky
+  gain**.
+
+Before, both described whichever run happened to be live, with nothing on the
+page to say which — so a review of four variants carried one variant's numbers.
+The report is titled by its project and the number of designs for the same
+reason.
 
 #### Three other things it now does
 
