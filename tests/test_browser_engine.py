@@ -3265,24 +3265,60 @@ def test_a_held_design_carries_what_the_pack_needs_to_draw_it():
     assert "opts.pattern || state.pattern" in links
 
 
-def test_the_pack_comparison_is_the_bonded_stiffness_and_says_so():
-    """The sweep's Kx has the engaged tie bars in it as rubber but not bonded.
-    Reading that as "with tie bars" is the easy mistake -- bonding is the whole
-    thing a tie bar is for -- so the comparison uses the coupled series where
-    there is one, and the chart title states which it is.
+def test_the_pack_splits_bonded_and_unbonded_between_two_named_figures():
+    """Two figures, one state each, and each named for the state it carries.
+
+    "Pattern Stiffness (with Tiebar)" is the bonded network, design by design.
+    "Pattern Comparison (no tie-bar bonding)" sets the patterns against each
+    other with the bonding out of the way, so a difference between designs is a
+    difference in the pattern rather than in how its bars tie up.
+
+    The second is NOT called "no tiebar": a bar worn into contact is rasterised
+    as land, so it is in those numbers as rubber.  What is absent is the
+    bonding, and the name has to say the thing that is true.
     """
     ui = open(os.path.join(APP, "ui.js"), encoding="utf-8").read()
-    assert 'var BONDED_OF = { kx: "kx_coupled", ky: "ky_coupled", kxy: "kxy_coupled" };' in ui
-    body = ui[ui.index("function comparableSeries("):ui.index("// One comparison chart per parameter")]
-    assert "d.coupling" in body and "bonded: true" in body
-    # Cxy and the anisotropy are functions of the 2x2, so they get bonded
-    # versions too rather than silently staying unbonded.
-    assert 'key === "c_xy" || key === "anisotropy"' in body
-    assert "principalStiffness(c.kx_coupled[i]" in body
+    sections = ui[ui.index("var REPORT_SECTIONS = ["):ui.index("function reportOn(")]
+    labels = {}
+    for chunk in sections.split('{ key: "')[1:]:
+        key = chunk[:chunk.index('"')]
+        m = re.search(r'label: "([^"]+)"', chunk)
+        if m:
+            labels[key] = m.group(1)
+    assert labels["coupling"] == "Pattern Stiffness (with Tiebar) — Kx, Ky & Kxy"
+    assert labels["compare"] == "Pattern Comparison (no tie-bar bonding)"
+    assert "no tiebar)" not in labels["compare"], \
+        "the bars are present as rubber; only the bonding is absent"
 
+    # The comparison reads the sweep series for every parameter -- there is no
+    # route left by which a bonded series could reach it.
+    body = ui[ui.index("function unbondedSeries("):ui.index("// One comparison chart per parameter")]
+    assert "metricSeries(d.result, key)" in body
     variants = ui[ui.index("function compareVariants("):ui.index("// One coupling chart per design")]
-    assert "tie bars bonded" in variants, "the chart has to say which version it is"
-    assert "(unbonded)" in variants, "a design without bars must be marked, not quietly mixed in"
+    assert "unbondedSeries(d, key)" in variants
+    assert "coupled" not in variants, "the comparison must not reach for a bonded series"
+    assert "tie bars not bonded" in variants, "the chart has to say which state it is"
+    # Only the in-plane terms have a bonded counterpart to be distinguished
+    # from; saying it on Kz or an area would be noise dressed as rigour.
+    assert "var INPLANE = { kx: 1, ky: 1, kxy: 1, c_xy: 1, anisotropy: 1 };" in variants
+
+    # ...and the stiffness figure still carries both curves, which is what makes
+    # the pair readable: the gap between them IS what the bars do.
+    cpl = ui[ui.index("function couplingVariants("):ui.index("// Every design that was compared")]
+    for name in ["Kx independent", "Kx bonded", "Ky independent", "Ky bonded"]:
+        assert name in cpl, f"the stiffness figure must show {name}"
+    assert "tie bars bonded" in cpl
+
+    # The two figures are NOT on one scale, and the document has to say so.
+    # The sweep spreads a block's stiffness over its pixels, so it sums the
+    # fraction of each block actually in the patch; the network normalises its
+    # load weights to sum to one and divides that fraction out.  Measured on
+    # the TBR fixture the network runs 2.56x the sweep at a 320 mm patch and
+    # 5.08x at 40 mm.  Putting both in one pack without a word on it invites a
+    # reader to compare 21.6 kN/mm against 7.1 kN/mm for the same tyre.
+    assert "not the sweep" in cpl, \
+        "the stiffness figure must say its absolutes are on its own scale"
+    assert "read the gap between bonded and independent" in cpl
 
 
 def test_the_lean_map_is_pdf_only_and_zones_go_for_tbr():

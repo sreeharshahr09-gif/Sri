@@ -387,11 +387,13 @@ reading a real one:
 - **Order content and tie-bar coupling carry a Design dropdown**, and the
   coupling figure draws that design's own footprint with its own bonded links
   beneath its curves.
-- **The comparison carries a Parameter dropdown and plots the BONDED
-  stiffness.** The sweep's Kx has engaged tie bars in it as rubber but not as a
-  network, which reads as "with tie bars" and is not; the title now states
-  which version it is, and a design without bars is labelled rather than mixed
-  in silently.
+- **Two stiffness figures, one state each, named for it.** *Pattern Stiffness
+  (with Tiebar) — Kx, Ky & Kxy* is the bonded network per design; *Pattern
+  Comparison (no tie-bar bonding)* is the designs set against each other with
+  bonding out of the way, over a Parameter dropdown of twelve. The second is
+  deliberately **not** called "no tiebar": a bar worn into contact is
+  rasterised as land, so it is in those numbers as rubber — only the bonding is
+  absent, and the name says the thing that is true.
 - **The lean map is PDF-only** and the chip says so; **zones are withdrawn for
   TBR**, whose flat crown makes the three bands move together, with the reason
   on the chip.
@@ -401,13 +403,37 @@ still carries no engine: switching one is a redraw, never a calculation. The
 audit checks that directly — the pack's boot script is asserted free of
 `orderSpectrum`, `principalStiffness` and `fluctuationStats`.
 
+**A cross-figure scale difference, found while checking the rename.** The two
+figures reach Kx by different routes: the sweep spreads a block's stiffness
+across its pixels and so sums the fraction of each block actually inside the
+patch, while the coupling network normalises its load weights to sum to one and
+divides that fraction back out. Measured on the TBR fixture, the network's Kx
+is **2.56× the sweep's at a 320 mm patch and 5.08× at 40 mm**, widening as
+blocks sit more partly inside the patch:
+
+| patch | blocks in patch | sweep Kx | network Kx | ratio |
+|---|---|---|---|---|
+| 40 mm | 0.68 | 2 976 | 15 115 | 5.08 |
+| 80 mm | 1.52 | 6 278 | 19 975 | 3.18 |
+| 160 mm | 3.16 | 12 797 | 34 932 | 2.73 |
+| 320 mm | 6.46 | 25 883 | 66 243 | 2.56 |
+
+This predates the pack work and neither route is wrong on its own terms — the
+stiffness figure answers a **ratio** (bonded ÷ independent), which cancels the
+scale, and the sweep's absolute is the one checked against the v6.4 reference.
+But the two now sit in one document, so the stiffness figure carries a line
+under its title saying its absolutes are the network's own and not the sweep's.
+Reconciling the two definitions is a physics decision and is **not** done.
+
 Checked in a real browser against a four-design review, not on the markup:
 the pack's numbers equal the run's to 1e-3; all four pattern rows measure
 **0.000% aspect error and 0.000% scale spread** in rendered pixels; the TBR
 footprint draws exactly 194 shapes (80 blocks + 38 bars + 76 bonded links); and
-the comparison's Kx is byte-identical to the coupling figure's *bonded* curve
-and demonstrably different from its *independent* one — the label is never
-taken at its word.
+and the comparison's Kx is byte-identical to the sweep's own series while
+differing from the bonded one — the label is never taken at its word. The
+scale note is checked as **rendered** (its title measures 34 px, two lines),
+because a note that sits in the layout and is clipped off the page passes a
+check of the data and fails the person reading the chart.
 
 ---
 
@@ -542,6 +568,7 @@ source of truth.
 | `7cef093` | **Land and sea from a STEP model** |
 | `4891e42` | Show the model and click the faces |
 | `2348916` | Dropdowns in the review pack |
+| `pending` | Name the two stiffness figures for the state each carries |
 
 ---
 

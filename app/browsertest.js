@@ -1403,7 +1403,7 @@ const fs = require("fs");
     }
 
     // 6. Coupling: one option per design, each with its own footprint beneath.
-    const cpl = byTitle("Tie-bar coupling");
+    const cpl = byTitle("Pattern Stiffness (with Tiebar) — Kx, Ky & Kxy");
     if (!cpl || !cpl.options || cpl.options.length !== 4)
       errors.push("tie-bar coupling does not offer one option per design");
     else {
@@ -1434,25 +1434,67 @@ const fs = require("fs");
 
     // 7. The comparison offers a parameter, and plots the BONDED stiffness --
     //    checked against the coupling figure's own two curves, not its label.
-    const cmp = byTitle("Comparison");
+    const cmp = byTitle("Pattern Comparison (no tie-bar bonding)");
     if (!cmp || !cmp.options || cmp.options.length < 10)
       errors.push("the comparison has no parameter dropdown");
-    const bonded = await rp.evaluate(() => {
+    // The two figures take one state each, and the check is numeric rather than
+    // a reading of the labels.
+    //
+    // They are NOT on one scale and must not be checked as though they were:
+    // the sweep spreads each block's stiffness over its pixels, so it sums the
+    // fraction of each block actually in the patch, while the coupling network
+    // normalises its load weights to sum to one and so divides that fraction
+    // out. The network's absolutes run 2.5x to 5x the sweep's, widening as the
+    // patch shrinks. So the comparison is pinned to the SWEEP series exactly,
+    // and only required to differ from the bonded one.
+    const split = await rp.evaluate(() => {
       const c = FIGS.find((f) => f.pick === "Parameter");
-      const k = FIGS.find((f) => f.pick === "Design" && /coupling/i.test(f.variants[0].layout.title.text));
-      if (!c || !k) return null;
+      const k = FIGS.find((f) => f.pick === "Design" && /bonded/i.test(f.variants[0].layout.title.text));
+      const sw = FIGS.find((f) => f.variants && f.variants.some((v) => v.key === "area"));
+      if (!c || !k || !sw) return null;
+      const avg = (y) => y.reduce((a, b) => a + b, 0) / y.length;
+      const same = (a, b) => a && b && a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) < 1e-9);
       const kx = c.variants.find((v) => v.key === "kx");
+      // The theta sweep is built from the live run, which is the LAST design
+      // held -- so that design's comparison curve must be the same array.
+      const live = kx.data[kx.data.length - 1].y;
+      const sweepKx = sw.variants.find((v) => v.key === "kx").data[0].y;
       const d0 = k.variants[0];
       const of = (n) => (d0.data.find((t) => t.name === n) || {}).y;
-      const same = (a, b) => a && b && a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) < 1e-9);
-      return { matchesBonded: same(kx.data[0].y, of("Kx bonded")),
-               matchesIndependent: same(kx.data[0].y, of("Kx independent")),
-               differ: !same(of("Kx bonded"), of("Kx independent")),
-               says: kx.layout.title.text };
+      return { isSweep: same(live, sweepKx),
+               isBonded: same(kx.data[0].y, of("Kx bonded")),
+               gain: avg(of("Kx bonded")) / avg(of("Kx independent")),
+               says: kx.layout.title.text,
+               note: d0.layout.title.text };
     });
-    if (!bonded || !bonded.matchesBonded || bonded.matchesIndependent || !bonded.differ)
-      errors.push("the comparison does not plot the bonded (tie-barred) stiffness: " + JSON.stringify(bonded));
-    else console.log("  comparison is bonded:", bonded.says);
+    if (!split) errors.push("could not find both halves of the stiffness/comparison pair");
+    else {
+      console.log(`  comparison is the sweep series: ${split.isSweep}; bonding gain ${split.gain.toFixed(4)}×`);
+      console.log("  comparison says:", split.says);
+      if (!split.isSweep)
+        errors.push("the comparison is not the sweep's own unbonded series");
+      if (split.isBonded)
+        errors.push("the comparison is sitting on the BONDED curve, not the unbonded one");
+      if (!(split.gain > 1.001))
+        errors.push(`bonding did not stiffen the tread (gain ${split.gain.toFixed(4)}), so the pair proves nothing`);
+      if (!/not bonded/.test(split.says))
+        errors.push("the comparison does not state that its tie bars are unbonded");
+      // ...and the stiffness figure must warn that its absolutes are its own.
+      if (!/not the sweep/.test(split.note))
+        errors.push("the stiffness figure does not say its absolutes are on a different scale");
+    }
+
+    // The note has to be VISIBLE. It lives on a second line of the chart title,
+    // and a top margin too small for two lines clips it -- which leaves it in
+    // the layout, passing the check above, and off the page for the reader.
+    const titleHeight = await rp.evaluate((id) => {
+      const el = document.getElementById(id).querySelector(".gtitle");
+      if (!el) return 0;
+      return Math.round(el.getBoundingClientRect().height);
+    }, cpl ? cpl.id : "fig0");
+    console.log("  stiffness title renders", titleHeight, "px tall");
+    if (titleHeight < 24)
+      errors.push(`the stiffness figure's scale note is clipped (title ${titleHeight} px, needs two lines)`);
 
     if (rpErr.length) errors.push("four-design pack page errors: " + rpErr.join(" | "));
     await rp.close();

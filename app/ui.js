@@ -3689,9 +3689,13 @@
       pick: "Design", variants: function () { return orderVariants(); } },
     { key: "zones",    label: "Zone area",           plot: "zones" },
     { key: "bands",    label: "Ribs",                plot: "bandsPlot" },
-    { key: "coupling", label: "Tie-bar coupling",    plot: "cplPlot",
+    // The pair. "with Tiebar" is exact -- that figure is the bonded network.
+    // "no tiebar" would not have been: a bar that has worn into contact is
+    // still rasterised as land, so it is in these numbers as RUBBER. What is
+    // absent is the bonding, and that is what the name says.
+    { key: "coupling", label: "Pattern Stiffness (with Tiebar) — Kx, Ky & Kxy", plot: "cplPlot",
       pick: "Design", variants: function () { return couplingVariants(); } },
-    { key: "compare",  label: "Comparison",          plot: "comparePlot",
+    { key: "compare",  label: "Pattern Comparison (no tie-bar bonding)", plot: "comparePlot",
       pick: "Parameter", variants: function () { return compareVariants(); } },
     { key: "patch",    label: "Contact patch",       plot: "patchPrev" },
   ];
@@ -4201,30 +4205,20 @@
 
   // The in-plane stiffnesses have two versions: the one the sweep produces,
   // where every element stands alone, and the one the coupling solver produces,
-  // where the tie bars are bonded and the tread acts as a network. The
-  // comparison used to show the first without saying so -- which reads as "with
-  // tie bars", because the engaged bars ARE in it as rubber, when what is
-  // missing is the bonding they exist to provide.
-  var BONDED_OF = { kx: "kx_coupled", ky: "ky_coupled", kxy: "kxy_coupled" };
-
-  function comparableSeries(d, key) {
-    var c = d.coupling;
-    if (c && c.theta_deg) {
-      if (BONDED_OF[key] && c[BONDED_OF[key]])
-        return { x: c.theta_deg, y: c[BONDED_OF[key]], bonded: true };
-      // Cxy and the anisotropy are functions of the 2x2, so the bonded matrix
-      // gives bonded versions of them too.
-      if ((key === "c_xy" || key === "anisotropy") && c.kx_coupled) {
-        var out = new Array(c.theta_deg.length);
-        for (var i = 0; i < out.length; i++) {
-          var p = E.principalStiffness(c.kx_coupled[i], c.ky_coupled[i], c.kxy_coupled[i]);
-          out[i] = key === "c_xy" ? p.cxy * 100 : (isFinite(p.anisotropy) ? p.anisotropy : 0);
-        }
-        return { x: c.theta_deg, y: out, bonded: true };
-      }
-    }
+  // where the tie bars are bonded and the tread acts as a network.
+  //
+  // The two review-pack figures deliberately take one each. "Pattern Stiffness
+  // (with Tiebar)" is the bonded state, design by design. "Pattern Comparison
+  // (no tiebar)" is this one -- the patterns set against each other with the
+  // bonding out of the way, so a difference between designs is a difference in
+  // the pattern and not in how its bars happen to tie up.
+  //
+  // One caveat the chart states rather than hides: a tie bar that has worn into
+  // contact is still RUBBER in these numbers, because the sweep rasterises it
+  // as land. What is absent is the bonding, not the bar.
+  function unbondedSeries(d, key) {
     var y = metricSeries(d.result, key);
-    return y && y.length ? { x: d.result.theta_deg, y: y, bonded: false } : null;
+    return y && y.length ? { x: d.result.theta_deg, y: y } : null;
   }
 
   // One comparison chart per parameter.
@@ -4238,22 +4232,27 @@
     var gammas = designs.map(function (d) { return d.result.gamma_deg; });
     var oneGamma = gammas.every(function (g) { return g === gammas[0]; });
     var out = [];
+    // Which parameters bonding would have moved, so the chart can be explicit
+    // that this is the version where it has not.
+    var INPLANE = { kx: 1, ky: 1, kxy: 1, c_xy: 1, anisotropy: 1 };
     keys.forEach(function (key) {
-      var data = [], nBonded = 0, nPlain = 0;
+      var data = [], anyBars = false;
       designs.forEach(function (d, i) {
-        var s = comparableSeries(d, key);
+        var s = unbondedSeries(d, key);
         if (!s) return;
-        if (s.bonded) nBonded++; else nPlain++;
+        if (d.coupling) anyBars = true;
         data.push({ x: s.x, y: s.y, type: "scatter", mode: "lines",
-                    name: d.label.slice(0, 42) + (s.bonded ? "" : " (unbonded)"),
+                    name: d.label.slice(0, 42),
                     line: { color: palette[i % palette.length], width: 1.5 } });
       });
       if (!data.length) return;
-      // Say which of the two it is, every time, on the chart itself.
-      var state_ = nBonded && !nPlain ? " — tie bars bonded"
-                 : nBonded && nPlain ? " — tie bars bonded where the design has them"
-                 : BONDED_OF[key] || key === "c_xy" || key === "anisotropy"
-                   ? " — no tie bars in these designs" : "";
+      // Say what it is, every time, on the chart itself. Only the in-plane
+      // terms have a bonded counterpart to be distinguished from; Kz, areas and
+      // counts are the same either way, so claiming anything there would be
+      // noise dressed up as rigour.
+      var state_ = !INPLANE[key] ? ""
+                 : anyBars ? " — patterns alone, tie bars not bonded"
+                           : " — no tie bars in these designs";
       out.push({
         key: key, label: METRIC_LABEL[key] || key,
         data: data,
@@ -4317,13 +4316,29 @@
         data: data,
         layout: {
           paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
-          height: 600, autosize: true, shapes: shapes,
-          margin: { l: 76, r: 76, t: 46, b: 100 },
+          height: 625, autosize: true, shapes: shapes,
+          // Two lines of title: the margin has to hold both, or the second one
+          // is clipped and the note is there in the data and invisible on the
+          // page -- which passes a test that reads the layout and fails the
+          // person reading the chart.
+          margin: { l: 76, r: 76, t: 72, b: 100 },
           // Under everything: against the top it sat on the title, and six
           // series of four words do not fit beside one.
           legend: { orientation: "h", y: -0.1, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
-          title: { text: d.label + " — tie-bar coupling (γ = " + d.result.gamma_deg + "°), " +
-                   bars.length + " bar(s), " + c.n_links + " bonded link(s)", font: { size: 13 } },
+          title: { text: d.label + " — pattern stiffness with tie bars bonded (γ = " +
+                   d.result.gamma_deg + "°), " +
+                   bars.length + " bar(s), " + c.n_links + " bonded link(s)" +
+                   // These absolutes come from the network solution, which
+                   // shares out the load across the loaded elements and so
+                   // divides out how much of each is actually in the patch.
+                   // The sweep keeps that fraction, so its Kx is the smaller
+                   // number -- 2.5x to 5x smaller, widening as the patch
+                   // shrinks. Read the GAP between these two curves, which is
+                   // what the bars do; do not read the absolute across to the
+                   // comparison chart, which is on the sweep's scale.
+                   "<br><sub>read the gap between bonded and independent — these absolutes are the " +
+                   "network's own scale, not the sweep's</sub>",
+                   font: { size: 13 } },
           xaxis: { domain: [0, 1], anchor: "y", range: [0, 360], gridcolor: th.grid,
                    showticklabels: false, tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
           yaxis: { domain: [0.42, 1], anchor: "x", gridcolor: th.grid,

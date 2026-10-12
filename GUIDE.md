@@ -973,8 +973,8 @@ answers nothing:
 |---|---|---|
 | **θ sweep** | Output | Ten rows stacked in one card came out as ten ribbons forty pixels tall. One output at a readable height, pick which. |
 | **Order content** | Design | A bar chart of orders with nothing on it to say whose orders they were. |
-| **Tie-bar coupling** | Design | Same, and now each design's own rolled-out footprint is drawn beneath its curves, with its bonded links, so a bump in the curve can be traced to the bars that made it. |
-| **Comparison** | Parameter | Twelve parameters, one at a time, every compared design overlaid. |
+| **Pattern Stiffness (with Tiebar)** | Design | Same, and now each design's own rolled-out footprint is drawn beneath its curves, with its bonded links, so a bump in the curve can be traced to the bars that made it. |
+| **Pattern Comparison (no tie-bar bonding)** | Parameter | Twelve parameters, one at a time, every compared design overlaid. |
 
 Every option is a **complete figure built when the file was written**. Switching
 one is a redraw, never a calculation — which is what lets the file carry no
@@ -987,14 +987,39 @@ engine while still being interactive.
   vertical locked to the horizontal. A block comes out the shape it really is,
   and two designs can be compared by eye. (Against rotation angle in a fixed
   box, a 1194 × 204 mm tread was stretched about 1.6× across the page.)
-- **The comparison is the bonded stiffness** — tie bars doing their job — for
-  Kx, Ky, Kxy, Cxy and the anisotropy, and the chart title says so. This is not
-  the same as the sweep's Kx, which has the engaged bars in it as *rubber* but
-  not as a *network*; a design with no bars is marked "(unbonded)" rather than
-  quietly mixed in. Everything else — Kz, areas, counts — bonding does not move.
+- **Two stiffness figures, one state each.** *Pattern Stiffness (with Tiebar)*
+  is the bonded network, design by design, with both curves on it — the gap
+  between bonded and independent **is** what the bars do. *Pattern Comparison
+  (no tie-bar bonding)* sets the designs against each other with the bonding
+  out of the way, so a difference between them is a difference in the
+  **pattern** and not in how its bars happen to tie up.
+
+  It is not called "no tiebar", because that would not be true: a bar that has
+  worn into contact is rasterised as **land**, so it is in those numbers as
+  rubber. What is absent is the bonding. For a genuinely bar-free comparison,
+  switch the bars off in *6 · Wear & tie bars* and re-run each design.
 - **The lean map is not in it.** It reads well printed and badly in a review,
   so it stays in the PDF; the chip in *Include* is marked **PDF** so the list
   never silently differs from the file.
+
+#### The two Kx numbers are not on one scale
+
+Worth knowing before anyone reads one across to the other. The two figures
+reach Kx by different routes:
+
+- the **sweep** (and so the comparison) spreads each block's stiffness across
+  its pixels, so it adds up the *fraction of each block actually inside the
+  patch*;
+- the **network** (and so the stiffness figure) shares the load out across the
+  loaded elements, which divides that fraction back out.
+
+On the bundled TBR fixture the network's Kx runs **2.56× the sweep's with a
+320 mm patch and 5.08× with a 40 mm one** — the gap widens as blocks sit more
+partly inside the patch. Neither is wrong on its own terms, and nothing the
+stiffness figure is *for* is affected: the bonded/independent **ratio** is what
+that chart answers, and a ratio cancels the scale. But an absolute read off one
+chart does not belong beside an absolute off the other, so the stiffness figure
+says so under its title.
 
 #### Zones and TBR
 

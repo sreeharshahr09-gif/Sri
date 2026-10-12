@@ -1299,10 +1299,16 @@ lateral        u = tan α · s      α = slip angle</code></pre>
 <p>Open it by double-clicking. It needs nothing installed and touches no network — the plotting library travels inside it, which is why it is several MB whatever it contains.</p>
 <h4>The dropdowns</h4>
 <p>Four of its figures carry a dropdown, because a review is usually about several designs and a chart that shows only one of them, or all ten outputs at once, answers nothing:</p>
-<div class="tablewrap"><table><thead><tr><th>Figure</th><th>Dropdown</th><th>Why</th></tr></thead><tbody><tr><td><strong>θ sweep</strong></td><td>Output</td><td>Ten rows stacked in one card came out as ten ribbons forty pixels tall. One output at a readable height, pick which.</td></tr><tr><td><strong>Order content</strong></td><td>Design</td><td>A bar chart of orders with nothing on it to say whose orders they were.</td></tr><tr><td><strong>Tie-bar coupling</strong></td><td>Design</td><td>Same, and now each design's own rolled-out footprint is drawn beneath its curves, with its bonded links, so a bump in the curve can be traced to the bars that made it.</td></tr><tr><td><strong>Comparison</strong></td><td>Parameter</td><td>Twelve parameters, one at a time, every compared design overlaid.</td></tr></tbody></table></div>
+<div class="tablewrap"><table><thead><tr><th>Figure</th><th>Dropdown</th><th>Why</th></tr></thead><tbody><tr><td><strong>θ sweep</strong></td><td>Output</td><td>Ten rows stacked in one card came out as ten ribbons forty pixels tall. One output at a readable height, pick which.</td></tr><tr><td><strong>Order content</strong></td><td>Design</td><td>A bar chart of orders with nothing on it to say whose orders they were.</td></tr><tr><td><strong>Pattern Stiffness (with Tiebar)</strong></td><td>Design</td><td>Same, and now each design's own rolled-out footprint is drawn beneath its curves, with its bonded links, so a bump in the curve can be traced to the bars that made it.</td></tr><tr><td><strong>Pattern Comparison (no tie-bar bonding)</strong></td><td>Parameter</td><td>Twelve parameters, one at a time, every compared design overlaid.</td></tr></tbody></table></div>
 <p>Every option is a <strong>complete figure built when the file was written</strong>. Switching one is a redraw, never a calculation — which is what lets the file carry no engine while still being interactive.</p>
 <h4>Three other things it now does</h4>
-<ul><li><strong>Every compared design's tread is drawn</strong>, not just the live one, and all of them at <strong>true shape and one scale</strong>: millimetres on both axes with the vertical locked to the horizontal. A block comes out the shape it really is, and two designs can be compared by eye. (Against rotation angle in a fixed box, a 1194 × 204 mm tread was stretched about 1.6× across the page.)</li><li><strong>The comparison is the bonded stiffness</strong> — tie bars doing their job — for Kx, Ky, Kxy, Cxy and the anisotropy, and the chart title says so. This is not the same as the sweep's Kx, which has the engaged bars in it as <em>rubber</em> but not as a <em>network</em>; a design with no bars is marked "(unbonded)" rather than quietly mixed in. Everything else — Kz, areas, counts — bonding does not move.</li><li><strong>The lean map is not in it.</strong> It reads well printed and badly in a review, so it stays in the PDF; the chip in <em>Include</em> is marked <strong>PDF</strong> so the list never silently differs from the file.</li></ul>
+<ul><li><strong>Every compared design's tread is drawn</strong>, not just the live one, and all of them at <strong>true shape and one scale</strong>: millimetres on both axes with the vertical locked to the horizontal. A block comes out the shape it really is, and two designs can be compared by eye. (Against rotation angle in a fixed box, a 1194 × 204 mm tread was stretched about 1.6× across the page.)</li><li><strong>Two stiffness figures, one state each.</strong> <em>Pattern Stiffness (with Tiebar)</em> is the bonded network, design by design, with both curves on it — the gap between bonded and independent <strong>is</strong> what the bars do. <em>Pattern Comparison (no tie-bar bonding)</em> sets the designs against each other with the bonding out of the way, so a difference between them is a difference in the <strong>pattern</strong> and not in how its bars happen to tie up.</li></ul>
+<p>It is not called "no tiebar", because that would not be true: a bar that has worn into contact is rasterised as <strong>land</strong>, so it is in those numbers as rubber. What is absent is the bonding. For a genuinely bar-free comparison, switch the bars off in <em>6 · Wear &amp; tie bars</em> and re-run each design.</p>
+<ul><li><strong>The lean map is not in it.</strong> It reads well printed and badly in a review, so it stays in the PDF; the chip in <em>Include</em> is marked <strong>PDF</strong> so the list never silently differs from the file.</li></ul>
+<h4>The two Kx numbers are not on one scale</h4>
+<p>Worth knowing before anyone reads one across to the other. The two figures reach Kx by different routes:</p>
+<ul><li>the <strong>sweep</strong> (and so the comparison) spreads each block's stiffness across its pixels, so it adds up the <em>fraction of each block actually inside the patch</em>;</li><li>the <strong>network</strong> (and so the stiffness figure) shares the load out across the loaded elements, which divides that fraction back out.</li></ul>
+<p>On the bundled TBR fixture the network's Kx runs <strong>2.56× the sweep's with a 320 mm patch and 5.08× with a 40 mm one</strong> — the gap widens as blocks sit more partly inside the patch. Neither is wrong on its own terms, and nothing the stiffness figure is <em>for</em> is affected: the bonded/independent <strong>ratio</strong> is what that chart answers, and a ratio cancels the scale. But an absolute read off one chart does not belong beside an absolute off the other, so the stiffness figure says so under its title.</p>
 <h4>Zones and TBR</h4>
 <p>The zone split — centre, intermediate, shoulder — is only interesting when the crown is curved enough for those zones to carry different pressure. A TBR crown is nearly flat, so the three move together and the chart says nothing. With <strong>TBR</strong> selected the section is withdrawn from the report entirely, and the chip says why.</p>
 <hr>
@@ -79754,9 +79760,13 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       pick: "Design", variants: function () { return orderVariants(); } },
     { key: "zones",    label: "Zone area",           plot: "zones" },
     { key: "bands",    label: "Ribs",                plot: "bandsPlot" },
-    { key: "coupling", label: "Tie-bar coupling",    plot: "cplPlot",
+    // The pair. "with Tiebar" is exact -- that figure is the bonded network.
+    // "no tiebar" would not have been: a bar that has worn into contact is
+    // still rasterised as land, so it is in these numbers as RUBBER. What is
+    // absent is the bonding, and that is what the name says.
+    { key: "coupling", label: "Pattern Stiffness (with Tiebar) — Kx, Ky & Kxy", plot: "cplPlot",
       pick: "Design", variants: function () { return couplingVariants(); } },
-    { key: "compare",  label: "Comparison",          plot: "comparePlot",
+    { key: "compare",  label: "Pattern Comparison (no tie-bar bonding)", plot: "comparePlot",
       pick: "Parameter", variants: function () { return compareVariants(); } },
     { key: "patch",    label: "Contact patch",       plot: "patchPrev" },
   ];
@@ -80266,30 +80276,20 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
   // The in-plane stiffnesses have two versions: the one the sweep produces,
   // where every element stands alone, and the one the coupling solver produces,
-  // where the tie bars are bonded and the tread acts as a network. The
-  // comparison used to show the first without saying so -- which reads as "with
-  // tie bars", because the engaged bars ARE in it as rubber, when what is
-  // missing is the bonding they exist to provide.
-  var BONDED_OF = { kx: "kx_coupled", ky: "ky_coupled", kxy: "kxy_coupled" };
-
-  function comparableSeries(d, key) {
-    var c = d.coupling;
-    if (c && c.theta_deg) {
-      if (BONDED_OF[key] && c[BONDED_OF[key]])
-        return { x: c.theta_deg, y: c[BONDED_OF[key]], bonded: true };
-      // Cxy and the anisotropy are functions of the 2x2, so the bonded matrix
-      // gives bonded versions of them too.
-      if ((key === "c_xy" || key === "anisotropy") && c.kx_coupled) {
-        var out = new Array(c.theta_deg.length);
-        for (var i = 0; i < out.length; i++) {
-          var p = E.principalStiffness(c.kx_coupled[i], c.ky_coupled[i], c.kxy_coupled[i]);
-          out[i] = key === "c_xy" ? p.cxy * 100 : (isFinite(p.anisotropy) ? p.anisotropy : 0);
-        }
-        return { x: c.theta_deg, y: out, bonded: true };
-      }
-    }
+  // where the tie bars are bonded and the tread acts as a network.
+  //
+  // The two review-pack figures deliberately take one each. "Pattern Stiffness
+  // (with Tiebar)" is the bonded state, design by design. "Pattern Comparison
+  // (no tiebar)" is this one -- the patterns set against each other with the
+  // bonding out of the way, so a difference between designs is a difference in
+  // the pattern and not in how its bars happen to tie up.
+  //
+  // One caveat the chart states rather than hides: a tie bar that has worn into
+  // contact is still RUBBER in these numbers, because the sweep rasterises it
+  // as land. What is absent is the bonding, not the bar.
+  function unbondedSeries(d, key) {
     var y = metricSeries(d.result, key);
-    return y && y.length ? { x: d.result.theta_deg, y: y, bonded: false } : null;
+    return y && y.length ? { x: d.result.theta_deg, y: y } : null;
   }
 
   // One comparison chart per parameter.
@@ -80303,22 +80303,27 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     var gammas = designs.map(function (d) { return d.result.gamma_deg; });
     var oneGamma = gammas.every(function (g) { return g === gammas[0]; });
     var out = [];
+    // Which parameters bonding would have moved, so the chart can be explicit
+    // that this is the version where it has not.
+    var INPLANE = { kx: 1, ky: 1, kxy: 1, c_xy: 1, anisotropy: 1 };
     keys.forEach(function (key) {
-      var data = [], nBonded = 0, nPlain = 0;
+      var data = [], anyBars = false;
       designs.forEach(function (d, i) {
-        var s = comparableSeries(d, key);
+        var s = unbondedSeries(d, key);
         if (!s) return;
-        if (s.bonded) nBonded++; else nPlain++;
+        if (d.coupling) anyBars = true;
         data.push({ x: s.x, y: s.y, type: "scatter", mode: "lines",
-                    name: d.label.slice(0, 42) + (s.bonded ? "" : " (unbonded)"),
+                    name: d.label.slice(0, 42),
                     line: { color: palette[i % palette.length], width: 1.5 } });
       });
       if (!data.length) return;
-      // Say which of the two it is, every time, on the chart itself.
-      var state_ = nBonded && !nPlain ? " — tie bars bonded"
-                 : nBonded && nPlain ? " — tie bars bonded where the design has them"
-                 : BONDED_OF[key] || key === "c_xy" || key === "anisotropy"
-                   ? " — no tie bars in these designs" : "";
+      // Say what it is, every time, on the chart itself. Only the in-plane
+      // terms have a bonded counterpart to be distinguished from; Kz, areas and
+      // counts are the same either way, so claiming anything there would be
+      // noise dressed up as rigour.
+      var state_ = !INPLANE[key] ? ""
+                 : anyBars ? " — patterns alone, tie bars not bonded"
+                           : " — no tie bars in these designs";
       out.push({
         key: key, label: METRIC_LABEL[key] || key,
         data: data,
@@ -80382,13 +80387,29 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         data: data,
         layout: {
           paper_bgcolor: th.paper_bgcolor, plot_bgcolor: th.plot_bgcolor, font: th.font,
-          height: 600, autosize: true, shapes: shapes,
-          margin: { l: 76, r: 76, t: 46, b: 100 },
+          height: 625, autosize: true, shapes: shapes,
+          // Two lines of title: the margin has to hold both, or the second one
+          // is clipped and the note is there in the data and invisible on the
+          // page -- which passes a test that reads the layout and fails the
+          // person reading the chart.
+          margin: { l: 76, r: 76, t: 72, b: 100 },
           // Under everything: against the top it sat on the title, and six
           // series of four words do not fit beside one.
           legend: { orientation: "h", y: -0.1, yanchor: "top", x: 0.5, xanchor: "center", font: { size: 10 } },
-          title: { text: d.label + " — tie-bar coupling (γ = " + d.result.gamma_deg + "°), " +
-                   bars.length + " bar(s), " + c.n_links + " bonded link(s)", font: { size: 13 } },
+          title: { text: d.label + " — pattern stiffness with tie bars bonded (γ = " +
+                   d.result.gamma_deg + "°), " +
+                   bars.length + " bar(s), " + c.n_links + " bonded link(s)" +
+                   // These absolutes come from the network solution, which
+                   // shares out the load across the loaded elements and so
+                   // divides out how much of each is actually in the patch.
+                   // The sweep keeps that fraction, so its Kx is the smaller
+                   // number -- 2.5x to 5x smaller, widening as the patch
+                   // shrinks. Read the GAP between these two curves, which is
+                   // what the bars do; do not read the absolute across to the
+                   // comparison chart, which is on the sweep's scale.
+                   "<br><sub>read the gap between bonded and independent — these absolutes are the " +
+                   "network's own scale, not the sweep's</sub>",
+                   font: { size: 13 } },
           xaxis: { domain: [0, 1], anchor: "y", range: [0, 360], gridcolor: th.grid,
                    showticklabels: false, tickvals: [0, 45, 90, 135, 180, 225, 270, 315, 360] },
           yaxis: { domain: [0.42, 1], anchor: "x", gridcolor: th.grid,
