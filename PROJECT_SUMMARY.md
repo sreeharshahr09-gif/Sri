@@ -568,7 +568,7 @@ source of truth.
 | `7cef093` | **Land and sea from a STEP model** |
 | `4891e42` | Show the model and click the faces |
 | `2348916` | Dropdowns in the review pack |
-| `pending` | Name the two stiffness figures for the state each carries |
+| `76ee368` | Name the two stiffness figures for the state each carries |
 
 ---
 
