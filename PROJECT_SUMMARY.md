@@ -636,7 +636,7 @@ source of truth.
 | `2348916` | Dropdowns in the review pack |
 | `76ee368` | Name the two stiffness figures for the state each carries |
 | `85ed1cb` | A new-tyre tool: the worn case removed |
-| `pending` | Compare coupled stiffness, and describe every variant |
+| `6681775` | Compare coupled stiffness, and describe every variant |
 
 ---
 
