@@ -8,7 +8,7 @@ it. Partial sends require an explicit operator flag and are visibly labelled.
 """
 from __future__ import annotations
 
-from ..quality import select_report_items
+from ..quality import weekly_items
 
 import uuid
 from dataclasses import dataclass
@@ -46,7 +46,7 @@ def build_weekly_graph(deps: WeeklyDeps, checkpointer=None):
                 "errors": [], "limitations": [], "recovered": []}
 
     def coverage_gate(state: WeeklyState) -> dict:
-        cov = db.edition_coverage(date.fromisoformat(state["week_start"]))
+        cov = db.edition_coverage(date.fromisoformat(state["week_start"]), cfg.discovery.lookback_days)
         cov_out = {"complete": cov["complete"],
                    "present": [str(d) for d in cov["present"]],
                    "missing": [str(d) for d in cov["missing"]]}
@@ -64,12 +64,9 @@ def build_weekly_graph(deps: WeeklyDeps, checkpointer=None):
 
     def collect(state: WeeklyState) -> dict:
         ws = date.fromisoformat(state["week_start"])
-        we = date.fromisoformat(state["week_end"])
-        # Apply the same date, evidence, and total-cap rules as each daily report.
-        devs = []
-        for offset in range((we - ws).days + 1):
-            day = date.fromordinal(ws.toordinal() + offset)
-            devs.extend(select_report_items(db.developments_for_edition(day), day, cfg)["recent"])
+        # Same date, evidence, and total-cap rules as each daily report; the
+        # week holds items PUBLISHED Monday-Sunday, wherever they were found.
+        devs = weekly_items(db, cfg, ws)
         # week-level cluster merge: repeated coverage of one event counts once
         best_by_cluster: dict[str, dict] = {}
         for d in devs:

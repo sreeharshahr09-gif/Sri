@@ -1,5 +1,6 @@
-"""tire-scout command line: setup-check, daily, weekly, catch-up, preview,
-self-test, schedule, coverage, delivery-status, feedback, migrate, disable.
+"""tire-scout command line: setup-check, check-feeds, discover, daily, weekly,
+catch-up, preview, self-test, schedule, coverage, delivery-status, feedback,
+migrate, disable.
 """
 from __future__ import annotations
 
@@ -151,11 +152,23 @@ def cmd_schedule(args) -> int:
 def cmd_self_test(args) -> int:
     """Offline end-to-end smoke test with the fixture provider and fixture LLM."""
     cfg = _cfg(args)
-    fixture_dir = Path(__file__).resolve().parent.parent.parent / "tests" / "fixtures"
+    root = Path(__file__).resolve().parent.parent.parent
+    fixture_dir = root / "tests" / "fixtures"
     cfg.search.provider = "fixture"
     cfg.search.fixture_path = str(fixture_dir / "search_results.json")
+    # Never write fixture editions into the production database: an earlier
+    # self-test left a test-data edition there that counted as a real day.
+    stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+    cfg.general.data_dir = Path(cfg.general.data_dir) / "self-test" / stamp
+    cfg.source_registry_path = str(root / "config" / "sources.registry.yaml")
+    cfg.email.live_sending = False
+    # The fixture describes the week of 5-11 October 2026.
+    cfg.discovery.lookback_days = 7
+    cfg.discovery.news_search.queries = ["silane silica", "tire reinforcement",
+                                         "devulcanization", "tire mixing extrusion"]
+    print(f"[..] self-test data (isolated, safe to delete): {cfg.general.data_dir}")
     from .runners import run_daily
-    res = run_daily(cfg, mode="preview",
+    res = run_daily(cfg, mode="preview", edition_date=date(2026, 10, 11),
                     llm_fixture=str(fixture_dir / "llm" / "analyses.json"))
     print(json.dumps({"ok": res.ok, "status": res.status, **res.detail},
                      indent=2, default=str))
@@ -212,6 +225,50 @@ def cmd_migrate(args) -> int:
     return 0
 
 
+def cmd_check_feeds(args) -> int:
+    cfg = _cfg(args)
+    from .discovery.preview import check_feeds
+    report = check_feeds(cfg, include_search=not args.feeds_only)
+    print("== Discovery sources (feeds, news search, papers) ==")
+    ok = 0
+    for r in report:
+        status = r.get("status")
+        if status == "ok":
+            ok += 1
+            newest = (r.get("newest") or "")[:10] or "-"
+            print(f"[ok]   {r['name'][:60]:60} items={r.get('items', 0):3}  in window={r.get('in_window', 0):3}"
+                  f"  newest={newest}" + (f"  undated={r['undated']}" if r.get("undated") else ""))
+            if r.get("feed_url") and r.get("feed_url") != r.get("configured"):
+                print(f"       feed found at {r['feed_url']} (you can set it as `url:` in the registry)")
+        else:
+            print(f"[{'WARN' if status == 'warning' else 'FAIL'}] {r['name'][:60]:60} {r.get('error', '')}")
+    print(f"{ok} of {sum(1 for r in report if r.get('status') != 'warning')} sources loaded.")
+    return 0 if ok else 1
+
+
+def cmd_discover(args) -> int:
+    cfg = _cfg(args)
+    from .discovery.preview import discover_preview
+    edition = date.fromisoformat(args.date) if args.date else None
+    out = discover_preview(cfg, edition=edition, use_web_search=args.with_web_search)
+    st = out["stats"]
+    w = st["window"]
+    print(f"== Discovery dry run: window {w['window_start']} to {w['window_end']} (no model, no email) ==")
+    print(f"listings checked: {st['raw_candidates']}  by channel: {st['by_channel']}")
+    print(f"would analyse: {st['chosen_for_analysis']}  deferred by cap: {st['deferred_by_cap']}")
+    print("dropped:", ", ".join(f"{k}={v}" for k, v in st["dropped"].items()) or "none")
+    failed = [src for src in out["sources"] if src.get("status") == "failed"]
+    if failed:
+        print(f"WARNING: {len(failed)} of {len(out['sources'])} discovery sources failed; "
+              "run `tire-scout check-feeds` for details.")
+    print()
+    for r in out["rows"]:
+        if r["status"] != "dropped":
+            print(f"  [{r['status']:8}] {r['published'][:10]}  {r['relevance']:5}  {r['source'][:22]:22}  {r['title'][:90]}")
+    print(f"\nFull list (including every drop reason): {out['csv']}")
+    return 0
+
+
 def cmd_disable_sending(args) -> int:
     print("Edit config.yaml: email.live_sending=false (master), "
           "email.daily_enabled=false, email.weekly_enabled=false. "
@@ -248,6 +305,14 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("delivery-status").set_defaults(fn=cmd_delivery_status)
     sub.add_parser("self-test").set_defaults(fn=cmd_self_test)
     sub.add_parser("disable-sending").set_defaults(fn=cmd_disable_sending)
+    cf = sub.add_parser("check-feeds", help="test every configured feed and news search (no model, no email)")
+    cf.add_argument("--feeds-only", action="store_true", help="skip the news-search and paper checks")
+    cf.set_defaults(fn=cmd_check_feeds)
+    dv = sub.add_parser("discover", help="dry run of discovery: what today's run would analyse")
+    dv.add_argument("--date", help="edition date YYYY-MM-DD (default: today)")
+    dv.add_argument("--with-web-search", action="store_true",
+                    help="also allow the paid web-search backup (uses search credits)")
+    dv.set_defaults(fn=cmd_discover)
 
     s = sub.add_parser("schedule")
     s.add_argument("action", choices=["install", "inspect", "remove"])

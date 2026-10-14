@@ -25,7 +25,8 @@ def test_daily_end_to_end(cfg, db, deps, tmp_path):
     row = db.daily_edition(EDITION)
     assert row and row["status"] == "research_complete"
     coverage = json.loads(row["coverage_summary"])
-    assert coverage["queries"] == 4 and coverage["fetched"] >= 6
+    assert coverage["queries"] == 4 and coverage["fetched"] >= 4
+    assert coverage["window"] == {"window_start": "2026-10-04", "window_end": "2026-10-11"}
 
     devs = db.developments_for_edition(EDITION)
     urls = {d["canonical_url"] for d in devs}
@@ -35,12 +36,12 @@ def test_daily_end_to_end(cfg, db, deps, tmp_path):
     rubbernews = [d for d in devs if "rubbernews.com" in d["canonical_url"]]
     assert len(evonik) == 1 and not rubbernews
 
-    # old review labeled background, not presented as a new event
-    mdpi = [d for d in devs if "mdpi.com" in d["canonical_url"]]
-    assert mdpi and mdpi[0]["is_background"]
-    assert mdpi[0]["id"] not in final["included_ids"]
+    # old material is dropped before any fetch or model call
+    assert not any("mdpi.com" in u or "hf-mixinggroup" in u for u in urls)
+    reasons = {e["ref"]: e["reason"] for e in final["excluded"]}
+    assert "before the edition window" in reasons["https://mdpi.com/2073-4360/15/8/1712"]
+    assert "before the edition window" in reasons["https://hf-mixinggroup.com/downloads/tandem-mixing-2026.pdf"]
     report = json.loads(open(final["render_paths"]["json"], encoding="utf-8").read())
-    assert all(d["id"] != mdpi[0]["id"] for d in report["developments"])
     assert len(report["developments"]) == coverage["included"]
 
     # unsupported media never analyzed

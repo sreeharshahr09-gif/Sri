@@ -9,7 +9,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from ..timeutil import get_tz
 from ..version import __version__
-from ..quality import QUALITY_VERSION, select_report_items
+from ..quality import QUALITY_VERSION, select_report_items, weekly_items
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 _env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)),
@@ -64,25 +64,32 @@ def render_daily(cfg, db, edition_date: date, *, retrospective: bool = False) ->
     return paths
 
 
+def _published_day(dev: dict, tz):
+    raw = dev.get("published_at")
+    try:
+        dt = raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return dt.astimezone(tz).date() if dt.tzinfo else dt.date()
+
+
 def render_weekly(cfg, db, week_start: date, *, priority_ids, additional_ids,
                   themes, actions, partial, missing_dates) -> dict:
     we = week_start.fromisoformat(str(week_start))  # normalize
-    devs = []
-    for offset in range(7):
-        day = date.fromordinal(week_start.toordinal() + offset)
-        devs.extend(select_report_items(db.developments_for_edition(day), day, cfg)["recent"])
+    devs = weekly_items(db, cfg, week_start)
     by_id = {d["id"]: d for d in devs}
     priority = [by_id[i] for i in priority_ids if i in by_id]
     additional = [by_id[i] for i in additional_ids if i in by_id]
     priority_ids = [d["id"] for d in priority]
     additional_ids = [d["id"] for d in additional]
-    # appendix: per-day index
+    # appendix: per-day index by publication date
+    tz = get_tz(cfg.general.timezone)
+    coverage = db.edition_coverage(week_start, cfg.discovery.lookback_days)
     appendix = []
     for i in range(7):
         d = week_start.fromordinal(week_start.toordinal() + i)
-        row = db.daily_edition(d) or {}
-        day_devs = select_report_items(db.developments_for_edition(d), d, cfg)["recent"]
-        appendix.append({"date": str(d), "status": row.get("status", "missing"),
+        day_devs = [x for x in devs if _published_day(x, tz) == d]
+        appendix.append({"date": str(d), "status": "covered" if d in coverage["present"] else "missing",
                          "titles": [x["title"] for x in day_devs]})
     now = datetime.now(get_tz(cfg.general.timezone))
     html = _env.get_template("weekly.html.j2").render(

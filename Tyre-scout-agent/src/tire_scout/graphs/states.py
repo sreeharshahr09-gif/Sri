@@ -11,9 +11,12 @@ class DailyState(TypedDict, total=False):
     job_id: str
     retrospective: bool           # catch-up run for a past date
     already_done: bool            # completed edition re-run: skip research
+    window: dict                  # window_start / window_end (inclusive local dates)
     queries: list[dict]
     search_results: list[dict]
     discovery_strategy: dict
+    discovery_sources: list[dict] # per feed / query outcome
+    seen_pending: list            # (canonical_url, outcome) to remember after persisting
     fetched: list[dict]
     kept: list[dict]              # fetched docs surviving dedup (new / follow-up)
     developments: list[dict]      # full Development records

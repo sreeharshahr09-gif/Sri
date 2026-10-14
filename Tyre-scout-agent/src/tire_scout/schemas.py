@@ -36,6 +36,8 @@ class Maturity(str, Enum):
     patent_disclosure = "patent_disclosure"  # disclosure; not adoption, not FTO
     supplier_claim = "supplier_claim"    # vendor marketing claim without data
     speculation = "speculation"          # editorial speculation
+    business_event = "business_event"    # investment, plant, M&A, partnership, launch event
+    regulation = "regulation"            # law, standard or regulatory step (proposed/adopted)
 
 
 class ConfidenceLabel(str, Enum):
@@ -152,7 +154,8 @@ class FetchedDocument(BaseModel):
     text_truncated: bool = False
     extraction_quality: Literal["full", "partial", "abstract_only", "ocr_low", "none"] = "none"
     published_at: datetime | None = None
-    published_provenance: Literal["page_meta", "page_text", "provider", "unknown", "conflicting"] = "unknown"
+    published_provenance: Literal["page_meta", "page_text", "feed", "api", "url", "provider",
+                                  "unknown", "conflicting"] = "unknown"
     modified_at: datetime | None = None
     date_candidates: list[dict] = Field(default_factory=list)
     date_notes: list[str] = Field(default_factory=list)

@@ -31,11 +31,14 @@ could send mail, change recipients, or run host commands even if it tried.
 
 ## Graphs (LangGraph, SQLite checkpoints)
 
-Daily: `determine edition date → plan → discover → fetch/extract →
-deduplicate → analyze → score/validate → persist edition → render →
+Daily: `determine edition date + window → plan (deterministic) → discover
+(feeds, news RSS, papers; date gate, exclusions, seen links, triage, cap;
+Tavily backup) → fetch/extract (page date reconciliation) → deduplicate →
+analyze → score/validate → persist edition (+ seen links) → render →
 delivery gate → send → reconcile`
 
-Weekly: `determine prior Mon–Sun → coverage gate (7 edition dates) →
+Weekly: `determine prior Mon–Sun → coverage gate (every day inside a
+successful run's window) → collect items published that week →
 collect (cluster-merged, threshold-filtered) → synthesize themes/actions →
 validate → render HTML/PDF → delivery gate → send → reconcile`
 
@@ -84,6 +87,7 @@ Date semantics are explicit columns: `published_at` (+ provenance),
 
 ## Replaceable adapters
 
-Search: fixture / Tavily / Brave (env-var API keys). Email: preview / SMTP /
+Discovery: publisher feeds / Bing + Google News RSS / OpenAlex (no keys),
+web search fixture / Tavily / Brave as backup (env-var API keys). Email: preview / SMTP /
 Outlook COM / Graph. LLM: Ollama (capability-checked). Adding an adapter means
 implementing the small Protocol in `search/base.py` or `emailer/base.py`.

@@ -39,9 +39,26 @@ def _checkpointer(cfg: AppConfig):
     return SqliteSaver(conn)
 
 
+class _NoWebSearch:
+    """Stand-in when the backup web-search provider is not configured (e.g. a
+    missing API key): discovery continues on feeds, news RSS and papers."""
+    name = "unavailable"
+
+    def __init__(self, reason: str):
+        self.reason = reason
+
+    def search(self, query, **kwargs):
+        raise RuntimeError(f"web search backup unavailable: {self.reason}")
+
+
 def assemble(cfg: AppConfig, *, llm_fixture: str | None = None):
     db = Database(Path(cfg.general.data_dir) / "tire_scout.sqlite3")
-    search = build_search_adapter(cfg)
+    try:
+        search = build_search_adapter(cfg)
+    except ValueError as exc:
+        if cfg.search.provider == "fixture":
+            raise
+        search = _NoWebSearch(str(exc))
     fetcher = Fetcher(allow_ocr=False)
     sandbox = SandboxExecutor(cfg.sandbox)
     tools = AgentTools(cfg=cfg, db=db, search=search, fetcher=fetcher, sandbox=sandbox)
@@ -93,15 +110,22 @@ def run_weekly(cfg: AppConfig, *, mode: str = "preview", week_start: date | None
         ws = week_start or prior_week_window(datetime.now(tz).date())[0]
         # bounded recovery of missing daily editions BEFORE the graph's gate
         recovered, recovery_notes = [], []
-        cov = db.edition_coverage(ws)
-        if not cov["complete"] and cfg.weekly.recovery_enabled and not allow_partial:
-            for d in cov["missing"][: cfg.weekly.max_recovery_dates]:
-                res = run_daily(cfg, mode="preview", edition_date=d,
-                                llm_fixture=llm_fixture, retrospective=True)
+        cov = db.edition_coverage(ws, cfg.discovery.lookback_days)
+        today = datetime.now(tz).date()
+        if (not cov["complete"] and cfg.weekly.recovery_enabled and not allow_partial
+                and today <= ws + timedelta(days=6 + cfg.discovery.max_catchup_days)):
+            # Feeds and news indexes only hold recent items, so a gap is closed
+            # by running today's edition: its window reaches back to the last
+            # successful run (up to max_catchup_days), covering the missing days.
+            if not db.daily_edition(today) or db.daily_edition(today)["status"] not in RESEARCH_OK:
+                db.close()
+                res = run_daily(cfg, mode="preview", edition_date=today, llm_fixture=llm_fixture)
+                db, tools, llm = assemble(cfg, llm_fixture=llm_fixture)
                 if res.ok:
-                    recovered.append(str(d))
+                    recovered = [str(d) for d in cov["missing"]
+                                 if d in db.edition_coverage(ws, cfg.discovery.lookback_days)["present"]]
                 else:
-                    recovery_notes.append(f"{d}: {res.status}")
+                    recovery_notes.append(f"catch-up run {today}: {res.status}")
         db.close()
 
         db, tools, llm = assemble(cfg, llm_fixture=llm_fixture)
@@ -146,7 +170,7 @@ def coverage_report(cfg: AppConfig, week_start: date | None = None) -> dict:
     ws = week_start or prior_week_window(datetime.now(tz).date())[0]
     db = Database(Path(cfg.general.data_dir) / "tire_scout.sqlite3")
     try:
-        cov = db.edition_coverage(ws)
+        cov = db.edition_coverage(ws, cfg.discovery.lookback_days)
         return {"week_start": str(ws),
                 "present": [str(d) for d in cov["present"]],
                 "missing": [str(d) for d in cov["missing"]],

@@ -23,17 +23,22 @@
 </style>
 </head>
 <body>
-<h1>Tire Scout &mdash; Daily Technology Update, {{ edition_date }}{% if retrospective %} <span class="flag">retrospective catch-up</span>{% endif %}</h1>
+<h1>Tire Scout &mdash; Daily Tire Industry Update, {{ edition_date }}{% if retrospective %} <span class="flag">retrospective catch-up</span>{% endif %}</h1>
+{% set win = coverage.window|default({}) %}
+{% if win.window_start %}<p class="meta-line"><b>News published {{ win.window_start }} to {{ win.window_end }}</b> (older and undated items are excluded).</p>{% endif %}
+{% set ds = coverage.discovery_strategy|default({}) %}
+{% if ds.raw_candidates is defined %}<p class="meta-line">Discovery: {{ ds.raw_candidates }} listings checked from {{ coverage.discovery_sources|default([])|length }} feeds and searches; {{ ds.chosen_for_analysis }} fresh, relevant items analysed{% if ds.deferred_by_cap %}; {{ ds.deferred_by_cap }} deferred to tomorrow by the analysis cap{% endif %}.</p>{% endif %}
 <p class="meta-line">Coverage: {{ coverage.queries }} queries / {{ coverage.fetch_attempts|default(coverage.fetched) }} fetch attempts /
 {{ coverage.fetched_successfully|default("unknown") }} sources retrieved /
 {{ coverage.quarantined }} quarantined. Research status: <b>{{ status }}</b>.
 Scores: weighted 0&ndash;10 (rubric {{ rubric_version }}); maturity and evidence confidence are reported separately from relevance.</p>
 
-<p><b>{{ groups.recent|length }} recent updates</b> &middot; {{ groups.background|length }} background references &middot; {{ groups.unverified|length }} items requiring review.</p>
+<p><b>{{ groups.recent|length }} recent update{{ "s" if groups.recent|length != 1 }}</b>{% if groups.background %} &middot; {{ groups.background|length }} background references{% endif %}{% if groups.unverified %} &middot; {{ groups.unverified|length }} items requiring review{% endif %}.</p>
 {% if coverage.quarantined %}<p class="limit"><b>Evidence gaps:</b> {{ coverage.quarantined }} candidates could not be validated. This edition has incomplete evidence coverage.</p>{% endif %}
 {% if status == "failed" %}<p class="limit"><b>Research failed:</b> this report cannot establish whether qualifying updates exist.</p>{% endif %}
 {% for section, label in [("recent", "Recent updates"), ("background", "Background references"), ("unverified", "Unverified date or evidence")] %}
 {% set items = groups[section] %}
+{% if section == "recent" or items %}
 <h2>{{ label }}</h2>
 {% if section == "background" %}<p>Historical or background material retained for reference. These items are not counted as recent updates.</p>{% endif %}
 {% if section == "unverified" %}<p>Publication date, maturity, or evidence confidence needs review. These items are not counted as recent updates.</p>{% endif %}
@@ -52,7 +57,7 @@ Scores: weighted 0&ndash;10 (rubric {{ rubric_version }}); maturity and evidence
     <td class="k">Category</td><td>{{ it.category }}</td></tr>
 <tr><td class="k">Maturity / evidence</td><td>{{ it.maturity }}{% if it.is_background %} &middot; <i>newly discovered background material</i>{% endif %}</td>
     <td class="k">Confidence</td><td>{{ it.confidence_label }}{% if it.confidence_reasons %} &mdash; {{ it.confidence_reasons }}{% endif %}</td></tr>
-<tr><td class="k">Published</td><td>{{ it.published_at or "unknown" }} ({{ it.published_provenance }})</td>
+<tr><td class="k">Published</td><td>{{ (it.published_at or "unknown")|string|truncate(10, True, "") }} (date from {{ {"page_meta": "page metadata", "page_text": "page", "feed": "publisher feed", "api": "bibliographic record", "url": "article URL", "provider": "news index"}.get(it.published_provenance, it.published_provenance) }}){% if (it.source_details|default({})).get("publisher") %} &middot; {{ it.source_details.publisher }}{% endif %}</td>
     <td class="k">Score</td><td><span class="score">{{ "%.1f"|format(it.final_score) }} / 10</span>
       (rel {{ it.score_breakdown.relevance }}, nov {{ it.score_breakdown.novelty }},
        ev {{ it.score_breakdown.evidence_quality }}, imp {{ it.score_breakdown.impact }},
@@ -75,6 +80,7 @@ Scores: weighted 0&ndash;10 (rubric {{ rubric_version }}); maturity and evidence
 {% endfor %}
 {% else %}
 <p>No items qualified for this section.</p>
+{% endif %}
 {% endif %}
 
 {% endfor %}

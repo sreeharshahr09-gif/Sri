@@ -204,6 +204,11 @@ def cfg(tmp_path):
                    "fixture_path": str(FIXTURES / "search_results.json"),
                    "recency_windows": {"news": 14, "supplier": 45, "paper": 30},
                    "retrieval_overlap_days": 3},
+        # A 7-day window keeps the fixture week (5-9 Oct) fresh for an
+        # 11 Oct edition while the 2023 review and a 28 Sep PDF fall outside.
+        "discovery": {"lookback_days": 7, "show_background_section": True,
+                      "news_search": {"queries": ["silane silica", "tire reinforcement",
+                                                  "devulcanization", "tire mixing extrusion"]}},
         "scoring": {"rubric_version": "rubric-1.0",
                     "weights": {"relevance": 0.35, "novelty": 0.25,
                                 "evidence_quality": 0.20, "impact": 0.10,
@@ -247,7 +252,14 @@ def deps(cfg, db, pages):
                        fetcher=fetch, sandbox=SandboxExecutor(cfg.sandbox))
     llm = FixtureLLMClient(FIXTURES / "llm" / "analyses.json")
     from tire_scout.graphs.daily import Deps
-    return Deps(cfg=cfg, db=db, llm=llm, tools=tools, tz=get_tz("Asia/Kolkata"))
+    from tire_scout.discovery.http import DiscoveryHttp
+    return Deps(cfg=cfg, db=db, llm=llm, tools=tools, tz=get_tz("Asia/Kolkata"),
+                discovery_http=DiscoveryHttp(policy=fetch, get_transport=no_network,
+                                             post_transport=no_network))
+
+
+def no_network(url, *args):
+    raise ConnectionError(f"offline test: no route to {url}")
 
 
 # --------------------------------------------------------------------------- #
@@ -273,6 +285,8 @@ def make_development(dev_id: str, edition: date, score: float, title: str,
 
 
 def seed_edition(db: Database, day: date, status: str = "research_complete") -> None:
-    db.upsert_daily_edition(day, status, {"queries": 4, "fetched": 6},
+    # Each seeded run covers exactly its own day, so a deleted day is a real gap.
+    db.upsert_daily_edition(day, status, {"queries": 4, "fetched": 6,
+                                          "window": {"window_start": str(day), "window_end": str(day)}},
                             {"developments": 1}, {},
                             {"model": "fixture", "prompt": "analyze-1.0", "rubric": "rubric-1.0"})

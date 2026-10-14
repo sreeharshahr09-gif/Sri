@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from langgraph.graph import END, START, StateGraph
@@ -29,7 +29,10 @@ from ..quality import (QUALITY_VERSION, analyze_with_quality, assess_date, prepa
 from ..security import scan_for_injection, scrub_report
 from ..timeutil import edition_date_for, now_local
 from ..tools import AgentTools, SearchIn, FetchIn
-from ..sources import SourceRegistry, classify_source, discovery_background_reason
+from ..sources import SourceRegistry, classify_source
+from ..discovery.http import DiscoveryHttp
+from ..discovery.run import discover_candidates
+from ..discovery.window import EditionWindow, edition_window, local_date
 from .states import DailyState
 
 HISTORY_DAYS = 60
@@ -42,6 +45,7 @@ class Deps:
     llm: LLMClient
     tools: AgentTools
     tz: object
+    discovery_http: object = None   # injectable for offline tests
 
 
 def _now_iso() -> str:
@@ -51,13 +55,23 @@ def _now_iso() -> str:
 def build_daily_graph(deps: Deps, checkpointer=None):
     cfg, db, llm, tools = deps.cfg, deps.db, deps.llm, deps.tools
     registry = SourceRegistry(cfg.source_registry_path)
+    http = deps.discovery_http or DiscoveryHttp(policy=tools.fetcher)
+
+    def _window(state) -> EditionWindow:
+        w = state.get("window") or {}
+        return EditionWindow(date.fromisoformat(w["window_start"]), date.fromisoformat(w["window_end"]))
 
     # ------------------------------------------------------------------ #
     def determine_edition_date(state: DailyState) -> dict:
         if not state.get("edition_date"):
             d = edition_date_for(now_local(deps.tz))
             state = {**state, "edition_date": d.isoformat()}
-        base = {"edition_date": state["edition_date"], "errors": [], "limitations": list(registry.warnings),
+        edition = date.fromisoformat(state["edition_date"])
+        window = edition_window(edition, lookback_days=cfg.discovery.lookback_days,
+                                max_catchup_days=cfg.discovery.max_catchup_days,
+                                last_success=db.last_successful_edition(edition))
+        base = {"edition_date": state["edition_date"], "window": window.as_dict(),
+                "errors": [], "limitations": list(registry.warnings),
                 "excluded": [], "quarantined": [], "developments": [],
                 "already_done": False, "included_ids": [], "background_ids": [], "unverified_ids": []}
         # idempotent rerun: a completed edition is not re-researched; the gate
@@ -80,110 +94,127 @@ def build_daily_graph(deps: Deps, checkpointer=None):
         return base
 
     def plan_queries(state: DailyState) -> dict:
-        prior_titles = [r["title"] for r in db.prior_index(HISTORY_DAYS)]
-        topics = [{"name": t.name, "priority": t.priority, "keywords": t.keywords}
-                  for t in cfg.topics]
-        max_q = min(8, cfg.budgets.max_search_calls)
-        try:
-            plan = llm.plan_queries(topics=topics, recency_windows=cfg.search.recency_windows,
-                                    prior_titles=prior_titles, max_queries=max_q)
-            queries = [q.model_dump() for q in plan.queries][:max_q]
-        except Exception as exc:
-            # trusted deterministic fallback: research must not silently die
-            queries = []
-            for t in cfg.topics:
-                if t.priority == "high" and t.keywords:
-                    queries.append({"query": f"{t.keywords[0]} tire",
-                                    "source_type": "news", "max_results": 6})
-            return {"queries": queries[:max_q],
-                    "limitations": state.get("limitations", []) +
-                    [f"LLM planning failed ({exc}); used deterministic fallback queries"]}
-        return {"queries": queries}
+        """Deterministic discovery plan. The model no longer writes search
+        queries: its topic phrases found evergreen pages, not news."""
+        plan = []
+        if cfg.search.provider == "fixture":
+            return {"queries": [{"channel": "fixture", "query": q} for q in cfg.discovery.news_search.queries]}
+        if cfg.discovery.feeds_enabled:
+            plan += [{"channel": "feed", "query": f.name} for f in registry.feeds]
+        if cfg.discovery.news_search.enabled:
+            plan += [{"channel": p, "query": q} for p in cfg.discovery.news_search.providers
+                     for q in cfg.discovery.news_search.queries]
+        if cfg.discovery.papers.enabled:
+            plan.append({"channel": "papers", "query": cfg.discovery.papers.query})
+        return {"queries": plan}
 
     def discover(state: DailyState) -> dict:
-        from itertools import zip_longest
-        results, seen, batches = [], set(), []
+        window = _window(state)
+        result = discover_candidates(cfg=cfg, registry=registry, http=http, tools=tools, db=db,
+                                     window=window, tz=deps.tz)
         excluded = list(state.get("excluded", []))
-        strategy = {"preferred_queries": 0, "open_fallback_queries": 0}
-        cursor_overlap = cfg.search.retrieval_overlap_days
-        for q in state.get("queries", []):
-            if not tools.budget.check("search"):
-                break
-            stype = q.get("source_type", "news")
-            window = cfg.search.recency_windows.get(stype, 30) + cursor_overlap
-            domains = registry.preferred(stype) if cfg.search.provider != "fixture" else []
-            hits = tools.public_search(SearchIn(query=q["query"],
-                                                max_results=q.get("max_results", 8),
-                                                recency_days=window, include_domains=domains))
-            strategy["preferred_queries"] += bool(domains)
-            if domains and not hits and tools.budget.check("search"):
-                hits = tools.public_search(SearchIn(query=q["query"],
-                                                    max_results=q.get("max_results", 8), recency_days=window))
-                strategy["open_fallback_queries"] += 1
-            batches.append((q, hits))
-        # Interleave query results so one topic cannot consume the fetch budget.
-        for rank in zip_longest(*(hits for _, hits in batches)):
-            for (q, _), h in zip(batches, rank):
-                if h is None:
-                    continue
-                if "error" in h:
-                    continue
-                canon = canonicalize_url(h["url"])
-                if canon in seen:
-                    continue
-                seen.add(canon)
-                h["canonical_url"] = canon
-                h["planned_source_type"] = q.get("source_type", "news")
-                if cfg.search.provider != "fixture":
-                    reason = discovery_background_reason(h)
-                    if reason:
-                        h["discovery_skip_reason"] = reason
-                        excluded.append({"ref": canon, "reason": reason})
-                        db.record_exclusion(canon, reason)
-                results.append(h)
-        return {"search_results": results, "excluded": excluded, "discovery_strategy": strategy}
+        for c in result["dropped"]:
+            excluded.append({"ref": c.canonical_url or c.url, "reason": c.skip_reason,
+                             "stage": "discovery", "title": c.title, "channel": c.channel})
+        limitations = list(state.get("limitations", []))
+        failed = [s for s in result["sources"] if s.get("status") == "failed"]
+        if failed:
+            limitations.append(f"{len(failed)} of {len(result['sources'])} discovery sources failed "
+                               "(see coverage.discovery_sources)")
+        if result["deferred"]:
+            limitations.append(f"{len(result['deferred'])} fresh candidates deferred by the analysis cap; "
+                               "they remain eligible tomorrow while inside the window")
+        chosen = []
+        for c in result["chosen"]:
+            rec = c.to_dict()
+            rec["canonical_url"] = c.canonical_url
+            chosen.append(rec)
+        return {"search_results": chosen, "excluded": excluded, "limitations": limitations,
+                "discovery_strategy": result["stats"],
+                "discovery_sources": result["sources"],
+                "seen_pending": [(c.canonical_url, "dropped: " + (c.skip_reason or "")[:80])
+                                 for c in result["dropped"] if c.canonical_url and _permanent(c.skip_reason)]}
 
     def fetch_extract(state: DailyState) -> dict:
         fetched = []
         limitations = list(state.get("limitations", []))
+        excluded = list(state.get("excluded", []))
+        seen = list(state.get("seen_pending", []))
+        window = _window(state)
         for r in state.get("search_results", []):
-            if r.get("discovery_skip_reason"):
-                continue
-            if not tools.budget.check("fetch"):
+            if r.get("text"):
+                # The channel supplied the full analysable text (paper abstract).
+                out = {"url": r["url"], "final_url": r["url"], "status": "fetched",
+                       "title": r["title"], "text": r["text"], "text_len": len(r["text"]),
+                       "extraction_quality": "abstract_only", "content_type": "application/json"}
+                from ..dedup import content_hash, extract_stable_ids
+                out["content_hash"] = content_hash(r["text"])
+                out["stable_ids"] = extract_stable_ids(r["text"])
+            elif not tools.budget.check("fetch"):
                 limitations.append("fetch budget exhausted")
                 break
-            out = tools.fetch_source(FetchIn(url=r["url"]))
+            else:
+                out = tools.fetch_source(FetchIn(url=r["url"]))
+                snippet = (r.get("snippet") or "").strip()
+                weak = out.get("status") != "fetched" or out.get("extraction_quality") in ("none", "partial")
+                if weak and len(snippet) >= 250 and len(snippet) > len(out.get("text") or ""):
+                    # Page blocked or thin; the publisher's own feed text is the source.
+                    out.update(status="fetched", text=snippet, text_len=len(snippet),
+                               extraction_quality="partial", title=out.get("title") or r["title"],
+                               error=None, content_hash=None)
+                    out.setdefault("date_notes", []).append(
+                        "Analysed from the publisher's feed summary; full page not accessible")
             doc = FetchedDocument.model_validate({**out, "url": r["canonical_url"]})
-            classification = classify_source({**doc.model_dump(), "search_title": r.get("title")}, registry)
-            provenance = doc.published_provenance
-            if provenance == "unknown" and r.get("published_at"):
-                provenance = "provider"
+            classification = classify_source({**doc.model_dump(), "search_title": r.get("title")}, registry,
+                                              channel_type=r.get("source_type"))
+            # Date reconciliation: a date stated on the page wins; otherwise the
+            # feed / API / URL / news-index date found at discovery stands.
+            published, provenance = r.get("published_at"), r.get("date_provenance", "unknown")
+            date_note = None
+            if doc.published_at and doc.published_provenance in ("page_meta", "page_text"):
+                page_day = local_date(doc.published_at, deps.tz)
+                if page_day < window.start - timedelta(days=1):
+                    reason = (f"page states publication date {page_day}, before this edition's window "
+                              f"({window.start} to {window.end}); the listing date was {str(published)[:10]}")
+                    excluded.append({"ref": doc.url, "reason": reason, "stage": "fetch"})
+                    db.record_exclusion(doc.url, reason)
+                    seen.append((doc.url, "old page"))
+                    continue
+                published, provenance = doc.published_at.isoformat(), doc.published_provenance
+            elif doc.published_provenance == "conflicting":
+                date_note = "Page shows conflicting dates; the listing date was used"
             sid = db.upsert_source(
                 canonical_url=doc.url,
                 domain=(doc.url.split("/")[2] if "://" in doc.url else None),
                 source_type=classification["source_type"],
                 title=doc.title or r.get("title"),
-                published_at=doc.published_at.isoformat() if doc.published_at
-                else (r.get("published_at") or None),
-                published_provenance=provenance,
+                published_at=published, published_provenance=provenance,
                 content_hash=doc.content_hash, stable_ids=doc.stable_ids,
                 extraction_quality=doc.extraction_quality, status=doc.status)
             rec = doc.model_dump(mode="json")
             rec["source_id"] = sid
             rec.update(classification)
             rec["fetch_url"] = r["url"]
-            rec["provider_published_at"] = r.get("published_at")
-            if not doc.published_at and provenance == "provider":
-                rec["published_at"], rec["published_provenance"] = r["published_at"], "provider"
-            rec["planned_source_type"] = r.get("planned_source_type")
-            rec["search_title"] = r.get("title")  # provider title is more stable for dedup
+            rec["published_at"], rec["published_provenance"] = published, provenance
+            rec["listing_published_at"] = r.get("published_at")
+            rec["discovery_channel"] = r.get("channel")
+            rec["publisher"] = r.get("source_name")
+            rec["relevance_triage"] = r.get("relevance")
+            rec.update(window.as_dict())
+            if date_note:
+                rec["date_notes"] = list(rec.get("date_notes") or []) + [date_note]
+            rec["planned_source_type"] = r.get("source_type")
+            rec["search_title"] = r.get("title")  # listing title is more stable for dedup
             if doc.status != "fetched":
                 db.record_exclusion(doc.url, f"fetch {doc.status}: {doc.error}")
+                seen.append((doc.url, "fetch_failed"))
             elif doc.extraction_quality == "none":
                 db.record_exclusion(doc.url, "no extractable text; not analyzed")
                 rec["skip_reason"] = "unreadable"
+                seen.append((doc.url, "unreadable"))
             fetched.append(rec)
-        return {"fetched": fetched, "limitations": limitations}
+        return {"fetched": fetched, "limitations": limitations, "excluded": excluded,
+                "seen_pending": seen}
 
     def deduplicate(state: DailyState) -> dict:
         prior = db.prior_index(HISTORY_DAYS)
@@ -261,7 +292,9 @@ def build_daily_graph(deps: Deps, checkpointer=None):
                 source_type=SourceType(rec.get("source_type", "news")),
                 canonical_url=rec["url"], source_ids=[rec["source_id"]],
                 source_details={**{k: rec.get(k) for k in ('fetch_url', 'final_url', 'classification_reason',
-                    'source_origin', 'date_candidates', 'date_notes', 'modified_at', 'interpretation_policy')},
+                    'source_origin', 'date_candidates', 'date_notes', 'modified_at', 'interpretation_policy',
+                    'window_start', 'window_end', 'discovery_channel', 'publisher', 'listing_published_at',
+                    'relevance_triage')},
                     'claim_support': {k: getattr(analysis, k) for k in ('novelty_quote', 'maturity_quote', 'benefit_quote')}},
                 published_at=pub,
                 published_provenance=rec.get("published_provenance", "unknown"),
@@ -317,13 +350,25 @@ def build_daily_graph(deps: Deps, checkpointer=None):
             except Exception as exc:
                 errors.append(f"insert {d['id']}: {exc}")
         included = [d for d in developments if d["id"] in set(state.get("included_ids", []))]
+        sources = state.get("discovery_sources", [])
+        if sources and all(src.get("status") == "failed" for src in sources):
+            errors.append("every discovery source failed (network or proxy problem?)")
         if errors or (state.get("quarantined") and not developments):
             status = "failed"
         elif included:
             status = "research_complete"
         else:
             status = "no_updates"
+        if status != "failed":
+            # Remember every handled link so it is never re-analysed. Links
+            # deferred by the analysis cap are not marked and stay eligible.
+            pending = {url: outcome for url, outcome in state.get("seen_pending", [])}
+            for rec in state.get("fetched", []):
+                pending.setdefault(rec["url"], "analysed")
+            db.mark_seen(list(pending.items()), edition_date=state["edition_date"])
         coverage = {
+            "window": state.get("window", {}),
+            "discovery_sources": state.get("discovery_sources", []),
             "queries": len(state.get("queries", [])),
             "search_results": len(state.get("search_results", [])),
             "fetched": len(state.get("fetched", [])),
@@ -446,6 +491,15 @@ def build_daily_graph(deps: Deps, checkpointer=None):
     g.add_edge("delivery_gate", "reconcile")
     g.add_edge("reconcile", END)
     return g.compile(checkpointer=checkpointer)
+
+
+# --------------------------------------------------------------------------- #
+def _permanent(reason: str | None) -> bool:
+    """Drop reasons that will not change on a later day. Temporary ones (an
+    unresolved news link, a date after the edition) must not be remembered."""
+    reason = reason or ""
+    return not (reason.startswith(("already handled", "Google News link"))
+                or "after the edition date" in reason)
 
 
 # --------------------------------------------------------------------------- #

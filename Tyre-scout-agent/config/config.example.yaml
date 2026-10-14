@@ -37,17 +37,59 @@ topics:
     priority: medium
     keywords: ["tire recycling", "pyrolysis tire", "devulcanization", "retreading",
                "circular tire", "airless tire", "non-pneumatic tire", "ELT"]
+  # Business and regulatory news are in scope. If these two topics are missing
+  # from config.yaml they are added automatically (discovery.include_business_regulatory).
+  - name: "Industry and business"
+    priority: medium
+    keywords: ["plant", "factory", "capacity", "investment", "acquisition", "merger",
+               "partnership", "joint venture", "launch", "new tyre", "new tire", "price increase",
+               "results", "expansion"]
+  - name: "Regulation and standards"
+    priority: high
+    keywords: ["regulation", "tyre label", "tire label", "Euro 7", "tyre abrasion", "tire abrasion",
+               "6PPD", "REACH", "UNECE", "R117", "BIS", "NHTSA", "EPR", "anti-dumping", "tariff",
+               "standard"]
 
 # --- Source registry ---------------------------------------------------------
 source_registry_path: "config/sources.registry.yaml"
 
-# --- Search provider ----------------------------------------------------------
+# --- Discovery (what counts as "latest") -----------------------------------------
+# Every section below is optional; the values shown are the defaults.
+# Daily runs find news through publisher feeds (config/sources.registry.yaml),
+# dated news searches (Bing / Google News RSS) and new papers (OpenAlex). Only
+# items PUBLISHED inside the window are fetched and analysed; undated and older
+# items are dropped before any page fetch or model call.
+discovery:
+  lookback_days: 2              # window = edition date and the 2 days before it
+  max_catchup_days: 7           # after missed runs, reach back to the last good run (max 7 days)
+  feeds_enabled: true
+  news_search:
+    enabled: true
+    providers: ["bing_rss", "google_rss"]
+    market: "en-IN"             # Bing market
+    hl: "en-IN"                 # Google News language / edition
+    gl: "IN"
+    max_google_resolutions: 40
+    # queries: [...]            # optional: replace the built-in tech/business/regulatory queries
+  papers:
+    enabled: true
+    query: "(tire OR tyre OR tires OR tyres)"
+    max_results: 50
+    mailto: ""                  # optional contact for OpenAlex's polite pool
+  web_search_min_candidates: 10 # Tavily is a backup: used only when fewer fresh candidates than this
+  web_search_max_queries: 3     # at most 3 credits/day (free plan: 1000/month)
+  max_analyses: 15              # model analyses per run (~1-2 min each on the local model)
+  include_business_regulatory: true
+  show_background_section: false
+  show_unverified_section: false
+
+# --- Search provider (backup only) ---------------------------------------------
 # provider: fixture | tavily | brave   (fixture = offline testing only)
 search:
   provider: "fixture"
   api_key_env: "TIRE_SCOUT_SEARCH_KEY"     # read from environment, never from this file
   max_results_per_query: 8
-  # recent-publication discovery windows (days) by source type
+  # Legacy setting kept for compatibility; freshness now uses discovery.lookback_days.
   recency_windows:
     news: 14
     company: 30

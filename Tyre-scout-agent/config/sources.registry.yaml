@@ -1,32 +1,96 @@
-# Source registry - editable list of source types and preferred origins.
-# The search planner biases queries toward these; fetch treats every retrieved
-# page as UNTRUSTED content regardless of origin.
-version: 1
+# Source registry - publisher feeds, origin classification, and exclusions.
+# Fetch treats every retrieved page as UNTRUSTED content regardless of origin.
+#
+# Run `tire-scout check-feeds` on the office PC after editing this file. It
+# reports, per feed, whether it loaded, how many items it has, the newest item
+# date and how many items fall inside today's window.
+version: 2
 
+# --- Publisher feeds (primary discovery channel) ------------------------------
+# url:  the RSS/Atom address, when known.
+# site: homepage or news page; used to auto-discover the feed (<link rel=
+#       "alternate">) when `url` is missing or fails. One of the two is needed.
+# tire_specific: true when everything the source publishes is tire-related.
+#   General rubber/automotive sources keep only items mentioning tires/rubber.
+feeds:
+  # Trade press
+  - {name: "Tire Technology International", source_type: news, tire_specific: true,
+     url: "https://www.tiretechnologyinternational.com/feed", site: "https://www.tiretechnologyinternational.com/"}
+  - {name: "Tire Business", source_type: news, tire_specific: true,
+     site: "https://www.tirebusiness.com/"}
+  - {name: "Rubber News", source_type: news, tire_specific: false,
+     site: "https://www.rubbernews.com/"}
+  - {name: "European Rubber Journal", source_type: news, tire_specific: false,
+     url: "https://www.european-rubber-journal.com/feed", site: "https://www.european-rubber-journal.com/"}
+  - {name: "Tyrepress", source_type: news, tire_specific: true,
+     url: "https://www.tyrepress.com/feed/", site: "https://www.tyrepress.com/"}
+  - {name: "Tyre Trade News", source_type: news, tire_specific: true,
+     url: "https://www.tyretradenews.co.uk/feed/", site: "https://www.tyretradenews.co.uk/"}
+  - {name: "Tyres & Accessories", source_type: news, tire_specific: true,
+     url: "https://www.tyresandaccessories.co.uk/feed/", site: "https://www.tyresandaccessories.co.uk/"}
+  - {name: "Tire Review", source_type: news, tire_specific: true,
+     url: "https://www.tirereview.com/feed/", site: "https://www.tirereview.com/"}
+  - {name: "Modern Tire Dealer", source_type: news, tire_specific: true,
+     site: "https://www.moderntiredealer.com/"}
+  - {name: "Tyreview", source_type: news, tire_specific: true,
+     site: "https://www.tyreview.co.uk/"}
+  - {name: "Rubber Asia", source_type: news, tire_specific: false,
+     url: "https://www.rubberasia.com/feed/", site: "https://www.rubberasia.com/"}
+  - {name: "Rubber World", source_type: news, tire_specific: false,
+     site: "https://www.rubberworld.com/"}
+  # Company newsrooms (feed availability varies; check-feeds shows which work).
+  # Company news is also covered by the news-search queries in config.yaml.
+  - {name: "Michelin press releases", source_type: company, tire_specific: true,
+     site: "https://www.michelin.com/en/press-releases"}
+  - {name: "Continental press releases", source_type: company, tire_specific: false,
+     site: "https://www.continental.com/en/press/press-releases/"}
+  - {name: "Goodyear newsroom", source_type: company, tire_specific: true,
+     site: "https://news.goodyear.com/"}
+  - {name: "Pirelli press", source_type: company, tire_specific: true,
+     site: "https://press.pirelli.com/"}
+  - {name: "Bridgestone Americas newsroom", source_type: company, tire_specific: true,
+     site: "https://www.bridgestoneamericas.com/en/newsroom"}
+
+# --- Never analysed: market-research press releases and similar --------------
+# Candidates from these domains are dropped before fetching.
+exclude_domains: [openpr.com, einpresswire.com, marketresearchfuture.com, alliedmarketresearch.com,
+                  precedenceresearch.com, fortunebusinessinsights.com, grandviewresearch.com,
+                  mordorintelligence.com, imarcgroup.com, straitsresearch.com,
+                  databridgemarketresearch.com, futuremarketinsights.com, marketsandmarkets.com,
+                  metastatinsight.com, researchandmarkets.com, gminsights.com,
+                  expertmarketresearch.com, coherentmarketinsights.com, marketresearch.com,
+                  verifiedmarketreports.com, transparencymarketresearch.com, technavio.com,
+                  youtube.com, youtu.be]
+
+# --- Origin classification ------------------------------------------------------
+# Used to label a fetched page (company / supplier / paper / news ...).
 source_types:
   company:        # official tire-maker / OEM announcements
     trust_hint: primary
-    domains: [michelin.com, bridgestone.com, goodyear.com, continental.com,
-              pirelli.com, apollotyres.com, yokohamatire.com, hankooktire.com,
-              ceat.com, jktire.com, birlatires.com, mrf tyres.com, sumitomorubber.co.jp]
+    domains: [michelin.com, bridgestone.com, bridgestoneamericas.com, goodyear.com, continental.com,
+              continental-tires.com, pirelli.com, apollotyres.com, yokohamatire.com, y-yokohama.com,
+              hankooktire.com, ceat.com, jktyre.com, birlatyres.com, mrftyres.com,
+              sumitomorubber.co.jp, tvseurogrip.com, bkt-tires.com]
   supplier:       # material & machinery supplier technical publications
     trust_hint: primary
-    domains: [evonik.com, solvay.com, cabot-corp.com, birlaCarbon.com, orioncarbons.com,
-              nynas.com, lanxess.com, arlanxeo.com, kumhopetchemical.com, zenergie.de,
-              vmi-group.com, hf-mixinggroup.com, mesnac.com]
+    domains: [evonik.com, solvay.com, cabotcorp.com, birlacarbon.com, orioncarbons.com,
+              nynas.com, lanxess.com, arlanxeo.com, kumhopetchemical.com, zeon.co.jp, synthos.com,
+              trinseo.com, bekaert.com, kordsa.com, vmi-group.com, hf-mixinggroup.com, mesnac.com]
   paper:          # peer-reviewed and preprint research
     trust_hint: primary
     domains: [sciencedirect.com, springer.com, mdpi.com, tandfonline.com, pubs.acs.org,
               onlinelibrary.wiley.com, arxiv.org, researchgate.net, sagepub.com,
-              ieeexplore.ieee.org, nature.com]
+              ieeexplore.ieee.org, nature.com, doi.org]
   patent:         # patent publications (disclosure != adoption != FTO)
     trust_hint: disclosure
     domains: [patents.google.com, worldwide.espacenet.com, freepatentsonline.com,
               patentscope.wipo.int, uspto.gov]
-  news:           # reputable industry publications
+  news:           # industry publications
     trust_hint: secondary
     domains: [tirebusiness.com, rubbernews.com, european-rubber-journal.com,
-              tiretechnologyinternational.com, tyreview.co.uk, moderntiredealer.com]
+              tiretechnologyinternational.com, tyreview.co.uk, moderntiredealer.com,
+              tyrepress.com, tyretradenews.co.uk, tyresandaccessories.co.uk, tirereview.com,
+              rubberasia.com, rubberworld.com]
   conference:
     trust_hint: secondary
     domains: [tiretechnology-expo.com, rubbercon.com, acsrubber.org, dik-ev.de,

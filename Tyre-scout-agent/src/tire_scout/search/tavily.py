@@ -24,18 +24,18 @@ class TavilyAdapter:
 
     def search(self, query: str, *, max_results: int, recency_days: int | None = None,
                include_domains: list[str] | None = None) -> list[SearchResult]:
+        # Tavily is the backup channel for recent news, so it searches its news
+        # index (whose results carry publication dates) rather than the
+        # general web index, which surfaced years-old evergreen pages.
         payload: dict = {"query": query, "max_results": min(max_results, 20),
                          "search_depth": "basic", "include_answer": False,
-                         "topic": "general", "include_published_date": True}
+                         "topic": "news"}
         if include_domains:
             payload["include_domains"] = include_domains
         if recency_days:
-            # `days` only applied to news searches. General searches need date
-            # bounds; otherwise years-old sources dominate a recent-news run.
-            today = datetime.now(self.tz).date()
-            payload.update(start_date=(today - timedelta(days=recency_days)).isoformat(),
-                           end_date=(today + timedelta(days=1)).isoformat(),
-                           filter_by_published_date=True)
+            # `days` is the news index's documented look-back; trusted code
+            # re-checks every returned date against the edition window anyway.
+            payload["days"] = int(recency_days)
         resp = httpx.post("https://api.tavily.com/search", json=payload,
                           headers={"Authorization": f"Bearer {self.key}"}, timeout=30)
         resp.raise_for_status()

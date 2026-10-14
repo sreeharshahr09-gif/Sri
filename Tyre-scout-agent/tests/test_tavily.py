@@ -21,30 +21,21 @@ def search_call(cfg, monkeypatch):
     return tavily.TavilyAdapter(cfg), calls, response
 
 
-def test_general_recency_uses_explicit_local_date_bounds(search_call, monkeypatch):
-    class FixedDateTime(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            # UTC is still October 12; the configured IST date is October 13.
-            return datetime(2026, 10, 12, 20, 0, tzinfo=timezone.utc).astimezone(tz)
-
-    monkeypatch.setattr(tavily, "datetime", FixedDateTime)
+def test_recent_search_uses_news_index_with_day_lookback(search_call):
     adapter, calls, _ = search_call
-    adapter.search("tire materials", max_results=30, recency_days=17)
+    adapter.search("tire materials", max_results=30, recency_days=3)
     payload = calls[0]["json"]
-    assert payload["topic"] == "general"
-    assert payload["start_date"] == "2026-09-26"
-    assert payload["end_date"] == "2026-10-14"
-    assert payload["filter_by_published_date"] is True
-    assert payload["include_published_date"] is True
+    assert payload["topic"] == "news"
+    assert payload["days"] == 3
     assert payload["max_results"] == 20
-    assert "days" not in payload
+    # Parameters the provider does not document are not sent.
+    assert not {"filter_by_published_date", "include_published_date"} & payload.keys()
 
 
 def test_unbounded_search_does_not_silently_filter_dates(search_call):
     adapter, calls, _ = search_call
     adapter.search("tire materials", max_results=5)
-    assert not {"start_date", "end_date", "filter_by_published_date", "days"} & calls[0]["json"].keys()
+    assert not {"start_date", "end_date", "days"} & calls[0]["json"].keys()
 
 
 def test_preferred_domains_reach_provider_request(search_call):

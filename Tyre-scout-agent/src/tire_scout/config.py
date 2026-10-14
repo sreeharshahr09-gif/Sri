@@ -165,11 +165,74 @@ class TelemetryConfig(BaseModel):
     enabled: bool = False
 
 
+DEFAULT_NEWS_QUERIES = [
+    '(tyre OR tire) (compound OR silica OR "natural rubber" OR "carbon black" OR elastomer OR resin)',
+    '(tyre OR tire) (launch OR launches OR unveils OR introduces OR "new tyre" OR "new tire")',
+    '(tyre OR tire) (plant OR factory OR capacity OR investment OR acquisition OR merger OR partnership)',
+    '(tyre OR tire) (regulation OR "tyre label" OR "tire label" OR "Euro 7" OR abrasion OR 6PPD OR tariff OR "anti-dumping")',
+    '(tyre OR tire) (recycling OR pyrolysis OR "end-of-life" OR retreading OR devulcanization OR circular)',
+    '(tyre OR tire) (sensor OR "smart tyre" OR "smart tire" OR TPMS OR "digital twin" OR simulation)',
+    '(tyre OR tire) (EV OR "electric vehicle") ("rolling resistance" OR wear OR noise OR grip)',
+    '(Michelin OR Bridgestone OR Continental OR Goodyear OR Pirelli OR Hankook OR Yokohama OR Sumitomo) (tyre OR tire)',
+    '("Apollo Tyres" OR "MRF" OR "CEAT" OR "JK Tyre" OR "Birla Tyres" OR "TVS Srichakra" OR "Balkrishna Industries")',
+    '(Evonik OR Cabot OR "Birla Carbon" OR "Orion Engineered Carbons" OR Arlanxeo OR Lanxess OR Bekaert OR Kordsa OR Synthos OR Trinseo) (tyre OR tire)',
+]
+
+# Added to the configured topics when missing, so business and regulatory news
+# has a valid category even with an older config file.
+DEFAULT_EXTRA_TOPICS = [
+    {"name": "Industry and business", "priority": "medium",
+     "keywords": ["plant", "factory", "capacity", "investment", "acquisition", "merger",
+                  "partnership", "joint venture", "launch", "new tyre", "new tire", "price increase",
+                  "results", "expansion"]},
+    {"name": "Regulation and standards", "priority": "high",
+     "keywords": ["regulation", "tyre label", "tire label", "Euro 7", "tyre abrasion", "tire abrasion",
+                  "6PPD", "REACH", "UNECE", "R117", "BIS", "NHTSA", "EPR", "anti-dumping", "tariff",
+                  "standard"]},
+]
+
+
+class NewsSearchConfig(BaseModel):
+    enabled: bool = True
+    providers: list[Literal["bing_rss", "google_rss"]] = Field(
+        default_factory=lambda: ["bing_rss", "google_rss"])
+    queries: list[str] = Field(default_factory=lambda: list(DEFAULT_NEWS_QUERIES))
+    market: str = "en-IN"                    # Bing market
+    hl: str = "en-IN"                        # Google News language
+    gl: str = "IN"                           # Google News edition
+    max_google_resolutions: int = 40         # each costs two small requests
+
+
+class PapersConfig(BaseModel):
+    enabled: bool = True
+    query: str = "(tire OR tyre OR tires OR tyres)"
+    max_results: int = 50
+    mailto: str = ""                         # optional: OpenAlex "polite pool" contact
+    api_key_env: str = "TIRE_SCOUT_OPENALEX_KEY"
+
+
+class DiscoveryConfig(BaseModel):
+    lookback_days: int = 2                   # daily window: edition date and the N days before
+    max_catchup_days: int = 7                # after missed runs, cover the gap up to this many days
+    feeds_enabled: bool = True
+    news_search: NewsSearchConfig = Field(default_factory=NewsSearchConfig)
+    papers: PapersConfig = Field(default_factory=PapersConfig)
+    # The configured search.provider (Tavily) is a backup only: used when the
+    # free channels return fewer than this many fresh candidates.
+    web_search_min_candidates: int = 10
+    web_search_max_queries: int = 3
+    max_analyses: int = 15                   # model analyses per run (each ~1-2 min locally)
+    include_business_regulatory: bool = True
+    show_background_section: bool = False    # old/context items in the daily report
+    show_unverified_section: bool = False    # undated items are dropped by default
+
+
 class AppConfig(BaseModel):
     general: GeneralConfig = Field(default_factory=GeneralConfig)
     topics: list[Topic] = Field(default_factory=list)
     source_registry_path: str = "config/sources.registry.yaml"
     search: SearchConfig = Field(default_factory=SearchConfig)
+    discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     scoring: ScoringConfig = Field(default_factory=ScoringConfig)
     budgets: BudgetsConfig = Field(default_factory=BudgetsConfig)
@@ -180,6 +243,15 @@ class AppConfig(BaseModel):
     weekly: WeeklyConfig = Field(default_factory=WeeklyConfig)
     retention: RetentionConfig = Field(default_factory=RetentionConfig)
     telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)
+
+    @model_validator(mode="after")
+    def _business_regulatory_topics(self) -> "AppConfig":
+        if self.discovery.include_business_regulatory:
+            names = {t.name.lower() for t in self.topics}
+            for extra in DEFAULT_EXTRA_TOPICS:
+                if extra["name"].lower() not in names:
+                    self.topics.append(Topic(**extra))
+        return self
 
     @property
     def topic_names(self) -> list[str]:

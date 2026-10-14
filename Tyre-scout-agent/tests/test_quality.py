@@ -85,7 +85,7 @@ def test_one_grounding_correction_saves_both_full_responses(cfg):
     assert audit["attempts"][0]["analysis"]["evidence_refs"] == [invalid]
     assert invalid in audit["attempts"][0]["problems"][0]
     assert audit["attempts"][1]["quote_matches"] == ["verbatim"]
-    assert audit["metadata"]["edition_date"] == str(DAY) and audit["prompt_version"] == "analyze-1.3"
+    assert audit["metadata"]["edition_date"] == str(DAY) and audit["prompt_version"] == "analyze-2.0"
 
 
 @pytest.mark.parametrize("bad", [analysis("Tire cords improve durability."),
@@ -143,9 +143,15 @@ def test_valid_quotes_with_missing_explanation_still_require_correction(cfg):
     ({"published_at": None}, "unverified"),
     ({"published_at": "bad date"}, "unverified"),
     ({"published_at": "2026-10-14"}, "unverified"),
-    ({"published_provenance": "provider"}, "unverified"),
-    ({"confidence_label": "low"}, "unverified"),
-    ({"maturity": "speculation"}, "unverified"),
+    ({"published_provenance": "provider"}, "recent"),     # news-index date
+    ({"published_provenance": "feed"}, "recent"),
+    ({"published_provenance": "unknown"}, "unverified"),
+    ({"published_provenance": "conflicting"}, "unverified"),
+    # Confidence and maturity are labels, not freshness; only an
+    # unsupported interpretation (low + speculation) is held back.
+    ({"confidence_label": "low"}, "recent"),
+    ({"maturity": "speculation"}, "recent"),
+    ({"confidence_label": "low", "maturity": "speculation"}, "unverified"),
     ({"evidence_refs": []}, "unverified"),
     ({"is_background": True}, "background"),
 ])
@@ -154,11 +160,14 @@ def test_date_and_evidence_are_independent_of_high_relevance(cfg, changes, secti
     assert report_section(rec, DAY, cfg)[0] == section
 
 
-def test_date_window_is_relative_to_edition_and_source_type(cfg):
-    window = cfg.search.recency_windows.get("paper", 30)
-    rec = source(published_at=str(DAY - timedelta(days=window)))
+def test_date_window_is_relative_to_edition_and_its_stored_window(cfg):
+    cfg.discovery.lookback_days = 2
+    rec = source(published_at=str(DAY - timedelta(days=3)))   # one day tolerance
     assert assess_date(rec, DAY, cfg)[0] == "recent"
     assert assess_date(rec, DAY + timedelta(days=1), cfg)[0] == "background"
+    # A catch-up run after missed days keeps its wider window when re-rendered.
+    rec["source_details"] = {"window_start": str(DAY - timedelta(days=6))}
+    assert assess_date(rec, DAY + timedelta(days=3), cfg)[0] == "recent"
 
 
 def test_daily_cap_is_shared_by_all_sections_with_recent_first(cfg):
@@ -240,6 +249,10 @@ def test_report_sections_and_internal_links_agree_with_json(cfg, db):
     undated.evidence_refs = ['<script>alert("source text")</script>']
     for dev in (recent, old, undated):
         db.insert_development(dev)
+    cfg.discovery.show_unverified_section = False
+    hidden = json.loads(Path(render_daily(cfg, db, DAY)["json"]).read_text())
+    assert hidden["unverified"] == []          # undated items are dropped by default
+    cfg.discovery.show_unverified_section = True
     paths = render_daily(cfg, db, DAY)
     data = json.loads(Path(paths["json"]).read_text())
     assert [d["id"] for d in data["developments"]] == ["recent"]

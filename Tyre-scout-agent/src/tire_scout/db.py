@@ -10,13 +10,13 @@ import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from .schemas import Development
 from .timeutil import expected_edition_dates
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 MIGRATIONS: list[str] = [
     # v1
@@ -161,7 +161,22 @@ MIGRATIONS: list[str] = [
     """,
     # v2: additive provenance, original URL and claim support; old records retained.
     "ALTER TABLE developments ADD COLUMN source_details TEXT DEFAULT '{}';",
+    # v3: permanent memory of every link the agent has handled, whatever the
+    # outcome, so rejected, old or off-topic pages do not return the next day.
+    """
+    CREATE TABLE seen_urls (
+        canonical_url TEXT PRIMARY KEY,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        edition_date TEXT,
+        outcome TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 1
+    );
+    """,
 ]
+
+RETRYABLE_OUTCOMES = ("fetch_failed",)
+MAX_FETCH_ATTEMPTS = 2
 
 RESEARCH_OK = ("research_complete", "no_updates")
 
@@ -349,7 +364,44 @@ class Database:
             c.execute("INSERT INTO exclusions(id, ref, reason, created_at) VALUES (?,?,?,?)",
                       (uuid.uuid4().hex, ref, reason, _utcnow()))
 
+    # -- seen links -------------------------------------------------------------- #
+    def seen_urls(self, urls: list[str]) -> dict[str, str]:
+        """Links to skip, mapped to when they were first handled. A transient
+        fetch failure is retried once on a later day."""
+        out: dict[str, str] = {}
+        urls = [u for u in dict.fromkeys(urls) if u]
+        for i in range(0, len(urls), 500):
+            chunk = urls[i:i + 500]
+            rows = self._conn.execute(
+                f"SELECT canonical_url, first_seen_at, outcome, attempts FROM seen_urls "
+                f"WHERE canonical_url IN ({','.join('?' * len(chunk))})", chunk).fetchall()
+            for r in rows:
+                if r["outcome"] in RETRYABLE_OUTCOMES and r["attempts"] < MAX_FETCH_ATTEMPTS:
+                    continue
+                out[r["canonical_url"]] = r["first_seen_at"]
+        return out
+
+    def mark_seen(self, entries: list[tuple[str, str]], edition_date: date | str | None = None) -> None:
+        now = _utcnow()
+        with self.tx() as c:
+            for url, outcome in entries:
+                if not url:
+                    continue
+                c.execute(
+                    """INSERT INTO seen_urls(canonical_url, first_seen_at, last_seen_at, edition_date,
+                       outcome, attempts) VALUES (?,?,?,?,?,1)
+                       ON CONFLICT(canonical_url) DO UPDATE SET last_seen_at=excluded.last_seen_at,
+                       outcome=excluded.outcome, attempts=seen_urls.attempts + 1""",
+                    (url, now, now, str(edition_date) if edition_date else None, outcome))
+
     # -- editions -------------------------------------------------------------- #
+    def last_successful_edition(self, before: date) -> date | None:
+        row = self._conn.execute(
+            f"SELECT MAX(edition_date) AS d FROM daily_editions WHERE edition_date < ? "
+            f"AND status IN ({','.join('?' * len(RESEARCH_OK))})",
+            (str(before), *RESEARCH_OK)).fetchone()
+        return date.fromisoformat(row["d"]) if row and row["d"] else None
+
     def upsert_daily_edition(self, edition_date: date, status: str, coverage_summary: dict,
                              counts: dict, paths: dict, versions: dict) -> None:
         with self.tx() as c:
@@ -372,18 +424,43 @@ class Database:
             "SELECT * FROM daily_editions WHERE edition_date=?", (str(edition_date),)).fetchone()
         return dict(row) if row else None
 
-    def edition_coverage(self, week_start: date) -> dict:
-        """Which of the 7 expected edition dates are present and complete.
+    def edition_coverage(self, week_start: date, lookback_days: int = 2, grace_days: int = 2) -> dict:
+        """Which days of the week are covered by successful daily runs.
+
+        A daily run covers its whole window (stored in its coverage summary),
+        so a Monday run after a weekend with the PC off still covers Saturday
+        and Sunday. Runs up to `grace_days` after the week also count.
         Duplicates cannot fill gaps: dates are unique by primary key."""
         expected = expected_edition_dates(week_start)
+        last = expected[-1] + timedelta(days=grace_days)
         rows = self._conn.execute(
-            "SELECT edition_date, status FROM daily_editions WHERE edition_date BETWEEN ? AND ?",
-            (str(expected[0]), str(expected[-1]))).fetchall()
-        by_date = {r["edition_date"]: r["status"] for r in rows}
-        present = [d for d in expected if by_date.get(str(d)) in RESEARCH_OK]
-        missing = [d for d in expected if d not in present]
+            "SELECT edition_date, status, coverage_summary FROM daily_editions "
+            "WHERE edition_date BETWEEN ? AND ?",
+            (str(expected[0]), str(last))).fetchall()
+        covered: set[date] = set()
+        runs = []
+        for r in rows:
+            if r["status"] not in RESEARCH_OK:
+                continue
+            end = date.fromisoformat(r["edition_date"])
+            try:
+                summary = json.loads(r["coverage_summary"] or "{}")
+            except ValueError:
+                summary = {}
+            raw = (summary.get("window") or {}).get("window_start")
+            try:
+                start = date.fromisoformat(raw) if raw else end - timedelta(days=lookback_days)
+            except ValueError:
+                start = end - timedelta(days=lookback_days)
+            runs.append(str(end))
+            day = start
+            while day <= end:
+                covered.add(day)
+                day += timedelta(days=1)
+        present = [d for d in expected if d in covered]
+        missing = [d for d in expected if d not in covered]
         return {"expected": expected, "present": present, "missing": missing,
-                "complete": not missing}
+                "complete": not missing, "runs": runs}
 
     def upsert_weekly_edition(self, week_start: date, status: str, missing: list[date], paths: dict) -> None:
         with self.tx() as c:

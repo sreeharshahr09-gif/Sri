@@ -7,7 +7,7 @@ import os
 import re
 import unicodedata
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -26,6 +26,17 @@ STAGE_SIGNALS = {
 }
 
 
+# Words that mark an event: a technical development, a business action or a
+# regulatory step. Generic description ("is used", "offers") does not.
+NOVELTY_SIGNAL = (r'\b(?:new|first|introduc\w*|launch\w*|unveil\w*|develop\w*|propos\w*|present\w*|'
+                  r'breakthrough|announc\w*|acquir\w*|acquisition|merg\w*|invest\w*|open(?:s|ed|ing)?|'
+                  r'expan\w*|partner\w*|agree\w*|sign\w*|adopt\w*|approv\w*|publish\w*|'
+                  r'enters? into force|mandat\w*|ban\w*|restrict\w*|impos\w*|amend\w*|'
+                  r'appoint\w*|award\w*|wins?|won|complet\w*|start\w*|begin\w*|began|'
+                  r'commission\w*|inaugurat\w*|unveil\w*|reveal\w*|report\w* (?:results|test)|'
+                  r'test\w* (?:show|found|reveal)\w*|achiev\w*|demonstrat\w*|patent\w*)\b')
+
+
 def claim_problems(analysis, rec):
     """Necessary support checks, not a proof of every narrative inference."""
     problems = []
@@ -38,8 +49,8 @@ def claim_problems(analysis, rec):
             problems.append('Reference/market report is background, not a new technical development')
         if not analysis.novelty_quote:
             problems.append('Novelty requires novelty_quote naming the actual technical development; otherwise set is_new_development=false')
-        elif not re.search(r'\b(?:new|first|introduc\w*|launch\w*|unveil\w*|develop\w*|propos\w*|present\w*|breakthrough)\b', analysis.novelty_quote, re.I):
-            problems.append('novelty_quote does not identify an introduced/developed technology; classify as background if not established')
+        elif not re.search(NOVELTY_SIGNAL, analysis.novelty_quote, re.I):
+            problems.append('novelty_quote does not identify a new technology, business event or regulatory step; classify as background if not established')
     stage = analysis.maturity.value
     if stage in STAGE_SIGNALS:
         quote = analysis.maturity_quote or ''
@@ -183,7 +194,11 @@ def evidence_options(text: str, analysis: DevelopmentAnalysis | None) -> list[st
 
 
 def assess_date(rec: dict, edition_date: date, cfg) -> tuple[str, str]:
-    """Uses the edition date (including catch-up), not today's wall clock."""
+    """Freshness relative to the edition's window (including catch-up runs),
+    not today's wall clock. Only a publication date stated by the source,
+    its feed, a bibliographic API, its URL or a news index counts."""
+    from .discovery.candidates import DATED_PROVENANCE
+    from .discovery.window import stored_window
     raw = rec.get("published_at")
     try:
         published = raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
@@ -191,49 +206,83 @@ def assess_date(rec: dict, edition_date: date, cfg) -> tuple[str, str]:
         return "unverified", "publication date unavailable or invalid"
     if published.tzinfo:
         published = published.astimezone(get_tz(cfg.general.timezone))
-    age = (edition_date - published.date()).days
-    if age < 0:
+    day = published.date()
+    if day > edition_date:
         return "unverified", "publication date is after this edition"
     provenance = rec.get("published_provenance", "unknown")
-    if provenance not in ("page_meta", "page_text"):
-        return "unverified", "publication date not verified on the source"
-    stype = rec.get("source_type", "news")
-    stype = getattr(stype, "value", stype)
-    window = cfg.search.recency_windows.get(stype, 30)
-    if age > window:
-        return "background", f"source is {age} days old; {stype} window is {window} days"
-    return "recent", f"source date is within the {window}-day {stype} window"
+    if provenance not in DATED_PROVENANCE:
+        return "unverified", "publication date not stated by the source"
+    window = stored_window(rec, edition_date, cfg.discovery.lookback_days)
+    # One day of tolerance absorbs time-zone differences in page metadata.
+    if day < window.start - timedelta(days=1):
+        return "background", f"published {day}, before this edition's window ({window.start} to {window.end})"
+    return "recent", f"published {day}, inside this edition's window ({window.start} to {window.end})"
 
 
 def report_section(rec: dict, edition_date: date, cfg) -> tuple[str, str]:
     if rec.get('source_type') in ('reference', 'market_report'):
-        return 'background', 'Reference or market context; not a new technical development'
-    if rec.get('source_type') == 'unknown':
-        return 'unverified', 'Source type is unresolved; requires review'
+        return 'background', 'Reference or market context; not a new development'
     section, reason = assess_date(rec, edition_date, cfg)
     if section == "recent":
         if rec.get("is_background"):
-            return "background", "source was identified as background material"
-        if rec.get("confidence_label") in (None, "low") or rec.get("maturity") in (None, "speculation"):
-            return "unverified", "evidence confidence or maturity requires review"
+            return "background", "classified as background, not a new development"
         if not rec.get("evidence_refs"):
             return "unverified", "no retained source quotations"
+        if _value(rec.get("confidence_label")) == "low" and _value(rec.get("maturity")) == "speculation":
+            return "unverified", "unsupported interpretation (low confidence, speculation)"
     return section, reason
 
 
+def _value(v):
+    return getattr(v, "value", v)
+
+
 def select_report_items(devs: list[dict], edition_date: date, cfg) -> dict[str, list[dict]]:
-    groups = {"recent": [], "background": [], "unverified": []}
+    """Recent items always; background and unverified only when configured.
+    Hidden items are returned under "hidden" so callers can log why."""
+    show = {"recent": True,
+            "background": cfg.discovery.show_background_section,
+            "unverified": cfg.discovery.show_unverified_section}
+    groups = {"recent": [], "background": [], "unverified": [], "hidden": []}
     eligible = []
     for dev in devs:
         if dev.get("status", "active") != "active" or (dev.get("final_score") or 0) < cfg.scoring.inclusion_threshold:
             continue
         section, reason = report_section(dev, edition_date, cfg)
-        eligible.append({**dev, "report_section": section, "review_reason": reason})
-    # Keep the existing TOTAL daily item cap; recent material has priority.
+        item = {**dev, "report_section": section, "review_reason": reason}
+        if show[section]:
+            eligible.append(item)
+        else:
+            groups["hidden"].append(item)
+    # Keep the TOTAL daily item cap; recent material has priority.
     eligible.sort(key=lambda d: (d["report_section"] != "recent", -(d.get("final_score") or 0), d["id"]))
     for dev in eligible[:cfg.scoring.max_items_daily]:
         groups[dev["report_section"]].append(dev)
+    for dev in eligible[cfg.scoring.max_items_daily:]:
+        groups["hidden"].append({**dev, "review_reason": "daily item cap"})
     return groups
+
+
+def weekly_items(db, cfg, week_start: date) -> list[dict]:
+    """Recent items published Monday-Sunday of the week, from any daily run
+    up to two days after it (the Monday run covers the weekend)."""
+    tz = get_tz(cfg.general.timezone)
+    week_end = week_start + timedelta(days=6)
+    out = []
+    day = week_start
+    while day <= week_end + timedelta(days=2):
+        for dev in select_report_items(db.developments_for_edition(day), day, cfg)["recent"]:
+            published = dev.get("published_at")
+            try:
+                pub = published if isinstance(published, datetime) else datetime.fromisoformat(
+                    str(published).replace("Z", "+00:00"))
+            except (TypeError, ValueError):
+                continue
+            pub_day = pub.astimezone(tz).date() if pub.tzinfo else pub.date()
+            if week_start <= pub_day <= week_end:
+                out.append(dev)
+        day += timedelta(days=1)
+    return out
 
 
 def _save_audit(path: Path, payload: dict, cfg) -> None:
@@ -264,7 +313,8 @@ def analyze_with_quality(llm, cfg, rec: dict, edition_date: date, prior_titles: 
     metadata = {k: rec.get(k) for k in ("published_at", "published_provenance",
                 "extraction_quality", "source_type", "text_len", "original_text_len", "text_truncated",
                 "fetch_url", "final_url", "source_origin", "classification_reason", "interpretation_policy",
-                "date_candidates", "date_notes", "modified_at", "provider_published_at")}
+                "date_candidates", "date_notes", "modified_at", "provider_published_at",
+                "window_start", "window_end", "discovery_channel", "publisher", "listing_published_at")}
     metadata.update(canonical_url=rec["url"], edition_date=str(edition_date),
                     date_assessment=assess_date(rec, edition_date, cfg))
     from .llm import load_prompt

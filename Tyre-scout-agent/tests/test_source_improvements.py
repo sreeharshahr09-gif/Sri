@@ -159,53 +159,6 @@ def test_original_www_hostname_reaches_network_and_redirect_is_preserved():
     assert calls == [original, final] and result.final_url == final
 
 
-def test_live_discovery_uses_preferred_domains_then_budgeted_open_fallback(deps):
-    deps.cfg.search.provider = 'tavily'
-    calls = []
-    class Search:
-        def search(self, query, **kwargs):
-            calls.append(kwargs)
-            if kwargs.get('include_domains'):
-                return []
-            return [SearchResult(title='Tire material', url='https://example.com/article')]
-    deps.tools.search = Search()
-    deps.llm.plan_queries = lambda **kwargs: QueryPlan.model_validate({'queries': [
-        {'query': 'new tire material', 'source_type': 'supplier', 'max_results': 2}]})
-    graph = build_daily_graph(deps)
-    for update in graph.stream({'edition_date': str(DAY), 'mode': 'preview'}):
-        if 'discover' in update:
-            result = update['discover']
-            break
-    assert len(calls) == 2 and 'evonik.com' in calls[0]['include_domains']
-    assert 'include_domains' not in calls[1]
-    assert result['discovery_strategy'] == {'preferred_queries': 1, 'open_fallback_queries': 1}
-    assert deps.tools.budget.searches == 2
-
-
-def test_interleaved_results_and_original_url_pass_through_daily_graph(deps):
-    urls = [f'https://www.example.com/{i}' for i in range(4)]
-    class Search:
-        def search(self, query, **kwargs):
-            group = urls[:2] if query == 'first query' else urls[2:]
-            return [SearchResult(title=u, url=u) for u in group]
-    deps.tools.search = Search()
-    deps.llm.plan_queries = lambda **kwargs: QueryPlan.model_validate({'queries': [
-        {'query': q, 'source_type': 'patent', 'max_results': 2} for q in ('first query', 'second query')]})
-    calls = []
-    def fetch(args):
-        calls.append(args.url)
-        return {'url': args.url, 'final_url': args.url, 'status': 'fetched',
-                'text': 'Some real source text', 'extraction_quality': 'full'}
-    deps.tools.fetch_source = fetch
-    graph = build_daily_graph(deps)
-    for update in graph.stream({'edition_date': str(DAY), 'mode': 'preview'}):
-        if 'fetch_extract' in update:
-            result = update['fetch_extract']
-            break
-    assert calls == [urls[0], urls[2], urls[1], urls[3]]
-    assert all(r['source_type'] == 'unknown' for r in result['fetched'])
-
-
 def test_schema_v1_migration_preserves_legacy_rows_and_new_details(tmp_path):
     path = tmp_path / 'legacy.sqlite'
     with sqlite3.connect(path) as conn:
@@ -223,7 +176,8 @@ def test_schema_v1_migration_preserves_legacy_rows_and_new_details(tmp_path):
         db.insert_development(dev)
         row = next(r for r in db.developments_for_edition(DAY) if r['id'] == 'new')
         assert row['source_details'] == dev.source_details
-        assert db._conn.execute('SELECT max(version) FROM schema_migrations').fetchone()[0] == 2
+        assert db._conn.execute('SELECT max(version) FROM schema_migrations').fetchone()[0] == 3
+        assert db.seen_urls(['https://example.com/legacy']) == {}
     finally:
         db.close()
 
