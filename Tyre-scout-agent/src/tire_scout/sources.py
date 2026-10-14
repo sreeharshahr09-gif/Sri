@@ -25,6 +25,7 @@ class FeedSpec:
     site: str | None = None
     source_type: str = 'news'
     tire_specific: bool = False
+    enabled: bool = True
 
 
 class SourceRegistry:
@@ -37,7 +38,8 @@ class SourceRegistry:
                 continue
             self.feeds.append(FeedSpec(name=str(raw['name']), url=raw.get('url'), site=raw.get('site'),
                                        source_type=str(raw.get('source_type') or 'news'),
-                                       tire_specific=bool(raw.get('tire_specific', False))))
+                                       tire_specific=bool(raw.get('tire_specific', False)),
+                                       enabled=bool(raw.get('enabled', True))))
         for raw in data.get('exclude_domains') or []:
             domain = str(raw).lower().strip().removeprefix('www.')
             if DOMAIN.fullmatch(domain):

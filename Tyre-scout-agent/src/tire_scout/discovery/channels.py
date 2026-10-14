@@ -10,7 +10,7 @@ import base64
 import json
 import re
 from datetime import datetime, time
-from urllib.parse import parse_qs, quote, quote_plus, urlsplit
+from urllib.parse import parse_qs, quote, quote_plus, urlencode, urlsplit, urlunsplit
 
 from .candidates import Candidate, clean_title, url_date
 from .feeds import discover_feed_links, looks_like_feed, parse_feed
@@ -18,6 +18,7 @@ from .http import DiscoveryHttp, DiscoveryHttpError
 from .window import EditionWindow, local_date
 
 FEED_ACCEPT = "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5"
+MAX_FEED_PAGES = 6          # WordPress feeds return 10 items per page
 
 
 # --------------------------------------------------------------------------- #
@@ -61,22 +62,57 @@ def _load_feed(http: DiscoveryHttp, url: str) -> tuple[list[dict], str]:
     raise DiscoveryHttpError("no RSS/Atom feed found at this address")
 
 
+def _page_url(feed_url: str, page: int) -> str:
+    parts = urlsplit(feed_url)
+    query = [(k, v) for k, v in parse_qs(parts.query, keep_blank_values=True).items() if k != "paged"]
+    flat = [(k, x) for k, vs in query for x in vs] + [("paged", str(page))]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(flat), ""))
+
+
+def _older_pages(http: DiscoveryHttp, feed_url: str, items: list[dict], window: EditionWindow, tz) -> tuple[list[dict], int]:
+    """A WordPress feed shows only its latest page (10 items). While every
+    item on the page is still inside the window, read the next page."""
+    if "/feed" not in urlsplit(feed_url).path.lower():
+        return items, 1
+    pages, links = 1, {i["link"] for i in items}
+    while pages < MAX_FEED_PAGES:
+        dated = [local_date(i["published"], tz) for i in items if i["published"]]
+        if not dated or min(dated) < window.start:
+            break
+        try:
+            resp = http.get(_page_url(feed_url, pages + 1), accept=FEED_ACCEPT)
+        except DiscoveryHttpError:
+            break
+        if not looks_like_feed(resp.body, resp.headers.get("content-type", "")):
+            break
+        fresh = [i for i in parse_feed(resp.body, feed_url) if i["link"] not in links]
+        if not fresh:
+            break
+        pages += 1
+        links.update(i["link"] for i in fresh)
+        items = items + fresh
+    return items, pages
+
+
 def collect_feeds(feeds: list, http: DiscoveryHttp, window: EditionWindow, tz) -> tuple[list[Candidate], list[dict]]:
     candidates, report = [], []
     for spec in feeds:
+        if not getattr(spec, "enabled", True):
+            continue
         entry = {"name": spec.name, "configured": spec.url or spec.site, "status": "ok",
                  "items": 0, "in_window": 0, "undated": 0, "newest": None, "feed_url": None}
-        items, last_error = None, None
+        items, errors = None, []
         for address in [a for a in (spec.url, spec.site) if a]:
             try:
                 items, entry["feed_url"] = _load_feed(http, address)
                 break
             except DiscoveryHttpError as exc:
-                last_error = f"{address}: {exc}"
+                errors.append(f"{address}: {exc}")
         if items is None:
-            entry.update(status="failed", error=last_error or "no feed address configured")
+            entry.update(status="failed", error="; ".join(errors) or "no feed address configured")
             report.append(entry)
             continue
+        items, entry["pages"] = _older_pages(http, entry["feed_url"], items, window, tz)
         entry["items"] = len(items)
         dates = [i["published"] for i in items if i["published"]]
         entry["newest"] = max(dates).isoformat() if dates else None
@@ -185,7 +221,7 @@ def collect_news_rss(queries: list[str], providers: list[str], http: DiscoveryHt
             url = (bing_news_url(query, window, market) if provider == "bing_rss"
                    else google_news_url(query, window, hl, gl))
             entry = {"name": f"{provider}: {query}", "status": "ok", "items": 0, "in_window": 0,
-                     "unresolved": 0}
+                     "unresolved": 0, "newest": None}
             try:
                 resp = http.get(url, accept=FEED_ACCEPT)
                 items = parse_feed(resp.body, url)
@@ -194,6 +230,8 @@ def collect_news_rss(queries: list[str], providers: list[str], http: DiscoveryHt
                 report.append(entry)
                 continue
             entry["items"] = len(items)
+            dates = [i["published"] for i in items if i["published"]]
+            entry["newest"] = max(dates).isoformat() if dates else None
             for item in items:
                 publisher = item.get("source") or ""
                 cand = Candidate(url=item["link"], title=clean_title(item["title"], publisher),
@@ -202,6 +240,8 @@ def collect_news_rss(queries: list[str], providers: list[str], http: DiscoveryHt
                                  published_at=item["published"],
                                  date_provenance="feed" if item["published"] else "unknown")
                 cand.skip_reason = date_gate(cand, window, tz)
+                if not cand.skip_reason:
+                    entry["in_window"] += 1     # dated inside the window (before link resolution)
                 if provider == "bing_rss":
                     cand.url = unwrap_bing_link(cand.url)
                 elif not cand.skip_reason:
@@ -216,8 +256,6 @@ def collect_news_rss(queries: list[str], providers: list[str], http: DiscoveryHt
                         else:
                             cand.skip_reason = "Google News link could not be resolved to the publisher"
                             entry["unresolved"] += 1
-                if not cand.skip_reason:
-                    entry["in_window"] += 1
                 candidates.append(cand)
             report.append(entry)
     return candidates, report
@@ -260,6 +298,8 @@ def collect_papers(papers_cfg, http: DiscoveryHttp, window: EditionWindow, tz,
         return [], [entry]
     results = data.get("results") or []
     entry["items"] = len(results)
+    days = [w.get("publication_date") for w in results if w.get("publication_date")]
+    entry["newest"] = max(days) if days else None
     candidates = []
     for work in results:
         title = " ".join((work.get("title") or "").split())

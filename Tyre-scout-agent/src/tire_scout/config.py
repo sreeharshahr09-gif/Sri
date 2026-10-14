@@ -175,6 +175,8 @@ DEFAULT_NEWS_QUERIES = [
     '(tyre OR tire) (EV OR "electric vehicle") ("rolling resistance" OR wear OR noise OR grip)',
     '(Michelin OR Bridgestone OR Continental OR Goodyear OR Pirelli OR Hankook OR Yokohama OR Sumitomo) (tyre OR tire)',
     '("Apollo Tyres" OR "MRF" OR "CEAT" OR "JK Tyre" OR "Birla Tyres" OR "TVS Srichakra" OR "Balkrishna Industries")',
+    # Publishers that refuse automated feed readers: their headlines via news search.
+    '(tyre OR tire) (site:tirebusiness.com OR site:rubbernews.com OR site:tiretechnologyinternational.com OR site:tirereview.com OR site:european-rubber-journal.com)',
     '(Evonik OR Cabot OR "Birla Carbon" OR "Orion Engineered Carbons" OR Arlanxeo OR Lanxess OR Bekaert OR Kordsa OR Synthos OR Trinseo) (tyre OR tire)',
 ]
 

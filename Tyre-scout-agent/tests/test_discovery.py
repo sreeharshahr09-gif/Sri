@@ -412,3 +412,46 @@ def test_missing_backup_search_key_does_not_stop_discovery(cfg, monkeypatch):
         assert tools.search.name == "unavailable"
     finally:
         db.close()
+
+
+def test_wordpress_feed_pages_are_followed_until_the_window_start():
+    def page(day_offsets, start):
+        return rss([(f"Tyre story {start + i}", f"https://www.trade.example.com/n/{start + i}",
+                     rfc822(EDITION - timedelta(days=d)), "x") for i, d in enumerate(day_offsets)])
+    web = FakeWeb({
+        "https://www.trade.example.com/feed/": (page([0] * 10, 0), "application/rss+xml"),
+        "https://www.trade.example.com/feed/?paged=2": (page([1] * 10, 10), "application/rss+xml"),
+        "https://www.trade.example.com/feed/?paged=3": (page([1] * 5 + [5] * 5, 20), "application/rss+xml"),
+        "https://www.trade.example.com/feed/?paged=4": (page([9] * 10, 30), "application/rss+xml"),
+    })
+    cands, report = collect_feeds([FeedSpec(name="Trade", url="https://www.trade.example.com/feed/",
+                                            tire_specific=True)], http_for(web), WINDOW, TZ)
+    assert report[0]["pages"] == 3                      # page 3 already reaches before the window
+    assert "https://www.trade.example.com/feed/?paged=4" not in web.calls
+    assert report[0]["items"] == 30 and report[0]["in_window"] == 25
+
+
+def test_switched_off_feeds_are_not_requested():
+    web = FakeWeb({})
+    cands, report = collect_feeds([FeedSpec(name="Blocked", url="https://blocked.example.com/feed",
+                                            enabled=False)], http_for(web), WINDOW, TZ)
+    assert cands == [] and report == [] and web.calls == []
+
+
+def test_blocked_article_is_analysed_from_headline_and_summary(live_cfg, db, deps):
+    from tire_scout.graphs.daily import build_daily_graph
+    pages = {"https://www.trade.example.com/n/plant": FetchResponse(403, {}, b"", "https://www.trade.example.com/n/plant"),
+             "https://www.trade.example.com/n/silane": FetchResponse(403, {}, b"", "https://www.trade.example.com/n/silane")}
+    _graph_deps(live_cfg, db, deps, pages)
+    texts = {}
+
+    def analyze(*, doc_meta, doc_text, **kwargs):
+        texts[doc_meta["canonical_url"]] = (doc_text, doc_meta["extraction_quality"])
+        raise ValueError("stop after capturing the input")
+    deps.llm.analyze = analyze
+    build_daily_graph(deps).invoke({"edition_date": str(EDITION), "mode": "preview"},
+                                   config={"configurable": {"thread_id": "blocked"}})
+    text, quality = texts["https://trade.example.com/n/plant"]
+    assert text.startswith("Tyre plant opens in Chennai\n\nApollo Tyres opened") and quality == "partial"
+    # The other blocked item's 300-character feed text also clears the minimum.
+    assert "https://trade.example.com/n/silane" in texts

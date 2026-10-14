@@ -16,7 +16,7 @@ Monday 11:00 IST. Live sending stays disabled until you explicitly enable it.
 - Scheduler: Windows Task Scheduler (daily + weekly + dated one-time overrides)
 - Discovery: publisher RSS/Atom feeds, Bing/Google News RSS, OpenAlex papers;
   Tavily only as a capped backup. Undated and older items never reach the model.
-- Everything offline-testable: 211 pytest tests with fixtures, no network needed
+- Everything offline-testable: 214 pytest tests with fixtures, no network needed
 
 ## Quick start (offline preview, no credentials needed)
 
@@ -50,7 +50,7 @@ adapter, Task Scheduler install, migration from the legacy watcher),
 config/            authoritative non-secret config + source registry
 prompts/           versioned system/task prompts
 src/tire_scout/    the agent package (graphs, tools, db, email, sandbox, ...)
-tests/             211 offline tests + fixtures (fake web, fake DNS, fake feeds, fixture LLM)
+tests/             214 offline tests + fixtures (fake web, fake DNS, fake feeds, fixture LLM)
 examples/          generated example daily/weekly outputs + generator script
 scripts/           sandbox image build, freshness scorecard, fixture-edition cleanup
 docs/              setup / architecture / operations guides

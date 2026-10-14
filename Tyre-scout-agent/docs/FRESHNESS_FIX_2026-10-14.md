@@ -114,7 +114,7 @@ Use the same Python as above (shown as `python`), from `C:\Tyre-scout-agent`,
 with `SSL_CERT_FILE` set as before.
 
 1. **Tests** (offline): `python -m pytest tests -q --basetemp data\audits\pytest-freshness`
-   Expected: 211 passed (one Windows-privilege skip is possible).
+   Expected: 214 passed (one Windows-privilege skip is possible).
 2. **Feeds** (about a minute; no model, no email): `tire-scout check-feeds`
    Each line shows whether a feed loaded, its item count, how many items are in
    today's window and the newest date. A `[FAIL]` line names the address and

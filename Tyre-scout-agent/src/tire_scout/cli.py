@@ -237,12 +237,18 @@ def cmd_check_feeds(args) -> int:
             ok += 1
             newest = (r.get("newest") or "")[:10] or "-"
             print(f"[ok]   {r['name'][:60]:60} items={r.get('items', 0):3}  in window={r.get('in_window', 0):3}"
-                  f"  newest={newest}" + (f"  undated={r['undated']}" if r.get("undated") else ""))
+                  f"  newest={newest}" + (f"  undated={r['undated']}" if r.get("undated") else "")
+                  + (f"  pages={r['pages']}" if r.get("pages", 1) > 1 else "")
+                  + (f"  links not resolved={r['unresolved']}" if r.get("unresolved") else ""))
             if r.get("feed_url") and r.get("feed_url") != r.get("configured"):
                 print(f"       feed found at {r['feed_url']} (you can set it as `url:` in the registry)")
         else:
             print(f"[{'WARN' if status == 'warning' else 'FAIL'}] {r['name'][:60]:60} {r.get('error', '')}")
     print(f"{ok} of {sum(1 for r in report if r.get('status') != 'warning')} sources loaded.")
+    from .sources import SourceRegistry
+    off = [f.name for f in SourceRegistry(cfg.source_registry_path).feeds if not f.enabled]
+    if off:
+        print(f"Switched off in the registry (enabled: false): {', '.join(off)}")
     return 0 if ok else 1
 
 

@@ -13,43 +13,44 @@ version: 2
 # tire_specific: true when everything the source publishes is tire-related.
 #   General rubber/automotive sources keep only items mentioning tires/rubber.
 feeds:
-  # Trade press
-  - {name: "Tire Technology International", source_type: news, tire_specific: true,
-     url: "https://www.tiretechnologyinternational.com/feed", site: "https://www.tiretechnologyinternational.com/"}
-  - {name: "Tire Business", source_type: news, tire_specific: true,
-     site: "https://www.tirebusiness.com/"}
-  - {name: "Rubber News", source_type: news, tire_specific: false,
-     site: "https://www.rubbernews.com/"}
-  - {name: "European Rubber Journal", source_type: news, tire_specific: false,
-     url: "https://www.european-rubber-journal.com/feed", site: "https://www.european-rubber-journal.com/"}
+  # Trade press: feeds verified with check-feeds on the office PC (14 Oct 2026)
   - {name: "Tyrepress", source_type: news, tire_specific: true,
      url: "https://www.tyrepress.com/feed/", site: "https://www.tyrepress.com/"}
   - {name: "Tyre Trade News", source_type: news, tire_specific: true,
-     url: "https://www.tyretradenews.co.uk/feed/", site: "https://www.tyretradenews.co.uk/"}
-  - {name: "Tyres & Accessories", source_type: news, tire_specific: true,
-     url: "https://www.tyresandaccessories.co.uk/feed/", site: "https://www.tyresandaccessories.co.uk/"}
-  - {name: "Tire Review", source_type: news, tire_specific: true,
-     url: "https://www.tirereview.com/feed/", site: "https://www.tirereview.com/"}
+     url: "https://tyretradenews.co.uk/feed/", site: "https://tyretradenews.co.uk/"}
   - {name: "Modern Tire Dealer", source_type: news, tire_specific: true,
+     url: "https://www.moderntiredealer.com/__rss/website-scheduled-content.xml?input=%7B%22sectionAlias%22%3A%22home%22%7D",
      site: "https://www.moderntiredealer.com/"}
-  - {name: "Tyreview", source_type: news, tire_specific: true,
-     site: "https://www.tyreview.co.uk/"}
-  - {name: "Rubber Asia", source_type: news, tire_specific: false,
-     url: "https://www.rubberasia.com/feed/", site: "https://www.rubberasia.com/"}
   - {name: "Rubber World", source_type: news, tire_specific: false,
-     site: "https://www.rubberworld.com/"}
-  # Company newsrooms (feed availability varies; check-feeds shows which work).
-  # Company news is also covered by the news-search queries in config.yaml.
-  - {name: "Michelin press releases", source_type: company, tire_specific: true,
-     site: "https://www.michelin.com/en/press-releases"}
-  - {name: "Continental press releases", source_type: company, tire_specific: false,
-     site: "https://www.continental.com/en/press/press-releases/"}
+     url: "https://rubberworld.com/feed/", site: "https://rubberworld.com/"}
   - {name: "Goodyear newsroom", source_type: company, tire_specific: true,
-     site: "https://news.goodyear.com/"}
-  - {name: "Pirelli press", source_type: company, tire_specific: true,
-     site: "https://press.pirelli.com/"}
-  - {name: "Bridgestone Americas newsroom", source_type: company, tire_specific: true,
-     site: "https://www.bridgestoneamericas.com/en/newsroom"}
+     url: "https://news.goodyear.com/news?pagetemplate=rss", site: "https://news.goodyear.com/"}
+
+  # These publishers answered HTTP 403 (they refuse automated readers) or 500.
+  # Their headlines still arrive through the news-search query that targets
+  # their sites (see discovery.news_search in config). Set enabled: true to
+  # test again with check-feeds.
+  - {name: "Tire Technology International", source_type: news, tire_specific: true, enabled: false,
+     url: "https://www.tiretechnologyinternational.com/feed", site: "https://www.tiretechnologyinternational.com/"}
+  - {name: "Tire Business", source_type: news, tire_specific: true, enabled: false,
+     site: "https://www.tirebusiness.com/"}
+  - {name: "Rubber News", source_type: news, tire_specific: false, enabled: false,
+     site: "https://www.rubbernews.com/"}
+  - {name: "Tire Review", source_type: news, tire_specific: true, enabled: false,
+     url: "https://www.tirereview.com/feed/", site: "https://www.tirereview.com/"}
+  - {name: "European Rubber Journal", source_type: news, tire_specific: false, enabled: false,
+     url: "https://www.european-rubber-journal.com/feed", site: "https://www.european-rubber-journal.com/"}
+
+  # Unreachable from the office network (DNS failure / connection refused).
+  - {name: "Tyres & Accessories", source_type: news, tire_specific: true, enabled: false,
+     url: "https://www.tyresandaccessories.co.uk/feed/", site: "https://www.tyresandaccessories.co.uk/"}
+  - {name: "Tyreview", source_type: news, tire_specific: true, enabled: false,
+     site: "https://www.tyreview.co.uk/"}
+  - {name: "Rubber Asia", source_type: news, tire_specific: false, enabled: false,
+     url: "https://www.rubberasia.com/feed/", site: "https://www.rubberasia.com/"}
+
+  # Michelin, Continental, Pirelli and Bridgestone press pages publish no feed;
+  # their news arrives through the trade press and the tire-maker news query.
 
 # --- Never analysed: market-research press releases and similar --------------
 # Candidates from these domains are dropped before fetching.

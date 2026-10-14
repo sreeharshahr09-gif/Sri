@@ -36,6 +36,7 @@ from ..discovery.window import EditionWindow, edition_window, local_date
 from .states import DailyState
 
 HISTORY_DAYS = 60
+SUMMARY_MIN_CHARS = 120     # shortest feed/news summary worth analysing when a page is blocked
 
 
 @dataclass
@@ -100,7 +101,7 @@ def build_daily_graph(deps: Deps, checkpointer=None):
         if cfg.search.provider == "fixture":
             return {"queries": [{"channel": "fixture", "query": q} for q in cfg.discovery.news_search.queries]}
         if cfg.discovery.feeds_enabled:
-            plan += [{"channel": "feed", "query": f.name} for f in registry.feeds]
+            plan += [{"channel": "feed", "query": f.name} for f in registry.feeds if f.enabled]
         if cfg.discovery.news_search.enabled:
             plan += [{"channel": p, "query": q} for p in cfg.discovery.news_search.providers
                      for q in cfg.discovery.news_search.queries]
@@ -157,13 +158,17 @@ def build_daily_graph(deps: Deps, checkpointer=None):
                 out = tools.fetch_source(FetchIn(url=r["url"]))
                 snippet = (r.get("snippet") or "").strip()
                 weak = out.get("status") != "fetched" or out.get("extraction_quality") in ("none", "partial")
-                if weak and len(snippet) >= 250 and len(snippet) > len(out.get("text") or ""):
-                    # Page blocked or thin; the publisher's own feed text is the source.
-                    out.update(status="fetched", text=snippet, text_len=len(snippet),
+                if weak and len(snippet) >= SUMMARY_MIN_CHARS and len(snippet) > len(out.get("text") or ""):
+                    # Page blocked (many trade publishers refuse automated
+                    # readers) or thin: analyse the headline and the summary
+                    # the feed or news index published, and say so.
+                    text = f"{r['title']}\n\n{snippet}"
+                    out.update(status="fetched", text=text, text_len=len(text),
                                extraction_quality="partial", title=out.get("title") or r["title"],
                                error=None, content_hash=None)
                     out.setdefault("date_notes", []).append(
-                        "Analysed from the publisher's feed summary; full page not accessible")
+                        "Analysed from the headline and published summary only; the full article "
+                        "page was not accessible to the agent")
             doc = FetchedDocument.model_validate({**out, "url": r["canonical_url"]})
             classification = classify_source({**doc.model_dump(), "search_title": r.get("title")}, registry,
                                               channel_type=r.get("source_type"))
