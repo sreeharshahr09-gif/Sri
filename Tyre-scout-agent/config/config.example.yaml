@@ -1,0 +1,166 @@
+# ============================================================================
+# Tire Scout - authoritative configuration (EXAMPLE, non-secret)
+# Copy to config.yaml and edit. Secrets (API keys, passwords, tokens) are NEVER
+# stored here; they come from environment variables or the OS secret store.
+# ============================================================================
+
+general:
+  timezone: "Asia/Kolkata"        # canonical IANA name; "Asia/Calcutta" is accepted as an alias
+  data_dir: "./data"              # SQLite DB, checkpoints, artifacts, previews
+  log_level: "INFO"
+
+# --- Research scope ---------------------------------------------------------
+# Categories and priorities are editable. priority: high|medium|low
+topics:
+  - name: "Rubber compounds and materials"
+    priority: high
+    keywords: ["rubber compound", "silica", "silane", "functionalized SBR", "natural rubber",
+               "bio-based rubber", "guayule", "dandelion rubber", "recovered carbon black",
+               "sustainable filler", "resin", "anti-degradant", "TPV", "nanocellulose tire"]
+  - name: "Reinforcement and construction"
+    priority: high
+    keywords: ["steel cord", "hybrid cord", "aramid tire", "cap ply", "zero degree belt",
+               "bead construction", "textile reinforcement", "single ply carcass"]
+  - name: "Tire performance"
+    priority: high
+    keywords: ["rolling resistance", "wet grip", "tire wear", "tire noise", "abrasion",
+               "EV tire", "electric vehicle tire", "torque durability", "wear particles"]
+  - name: "Manufacturing and process"
+    priority: high
+    keywords: ["tire mixing", "extrusion tire", "curing", "vulcanization", "tire building machine",
+               "tire inspection", "process automation", "digital twin tire plant"]
+  - name: "Sensors, simulation and AI"
+    priority: medium
+    keywords: ["smart tire", "tire sensor", "TPMS", "tire simulation", "FEA tire",
+               "machine learning tire", "compound informatics", "autonomous tire testing"]
+  - name: "Recycling and circularity"
+    priority: medium
+    keywords: ["tire recycling", "pyrolysis tire", "devulcanization", "retreading",
+               "circular tire", "airless tire", "non-pneumatic tire", "ELT"]
+
+# --- Source registry ---------------------------------------------------------
+source_registry_path: "config/sources.registry.yaml"
+
+# --- Search provider ----------------------------------------------------------
+# provider: fixture | tavily | brave   (fixture = offline testing only)
+search:
+  provider: "fixture"
+  api_key_env: "TIRE_SCOUT_SEARCH_KEY"     # read from environment, never from this file
+  max_results_per_query: 8
+  # recent-publication discovery windows (days) by source type
+  recency_windows:
+    news: 14
+    company: 30
+    supplier: 45
+    paper: 30
+    patent: 60
+    conference: 90
+    video: 30
+  retrieval_overlap_days: 3               # stored cursor overlap to catch late-indexed items
+
+# --- Local LLM (Ollama) -------------------------------------------------------
+llm:
+  provider: "ollama"                            # "ollama" (default) or "openai_compat" for llama.cpp llama-server / LM Studio
+  base_url: "http://localhost:11434"            # explicitly local endpoint; openai_compat: use your llama-server port, e.g. "http://localhost:8080"
+  model: "qwen2.5:14b-instruct"                # MUST support structured output; run setup-check. openai_compat: any label; the server serves its loaded model
+  temperature: 0.1
+  num_ctx: 16384
+  request_timeout_s: 240
+  max_output_tokens: 4096
+  allow_json_mode_fallback: false           # if model lacks structured output, FAIL - do not guess
+  repair_attempts: 2                        # bounded schema-repair retries, then quarantine
+
+# --- Scoring rubric ------------------------------------------------------------
+# Weights must sum to 1.0. Each dimension is scored 0-10 by the LLM with a
+# rationale; the weighted result is computed in trusted Python only.
+scoring:
+  rubric_version: "rubric-1.0"
+  weights:
+    relevance: 0.35
+    novelty: 0.25
+    evidence_quality: 0.20
+    impact: 0.10
+    actionability: 0.10
+  inclusion_threshold: 5.0                  # final weighted score required for the daily email
+  max_items_daily: 8
+
+# --- Job budgets (trusted-code limits; the LLM cannot exceed these) -------------
+budgets:
+  max_search_calls: 24
+  max_fetched_pages: 40
+  max_tool_iterations: 12
+  max_prompt_tokens: 12000
+  wall_clock_minutes: 45
+  concurrent_jobs: 1
+
+# --- Schedules ------------------------------------------------------------------
+# Daily time MUST be confirmed with the user before enabling. Weekly default is
+# Monday 11:00 IST. One-time overrides are dated and never create a second
+# recurring schedule.
+schedule:
+  daily_time: "10:00"                       # confirmed with operator: 10:00 IST (after office arrival ~09:00)
+  weekly_day: "monday"
+  weekly_time: "11:00"
+  catch_up_window_hours: 6                  # bounded late-start catch-up
+  one_time_overrides: []                    # e.g. [{job: weekly, run_at: "2026-10-15T18:00:00", note: "Diwali week"}]
+
+# --- Recipients & delivery -------------------------------------------------------
+recipients:
+  self: "shreeharsha.r@apollotyres.com"     # configured official work address
+  daily_to: ["shreeharsha.r@apollotyres.com"]
+  weekly_to: ["shreeharsha.r@apollotyres.com"]   # default self-only for testing
+  weekly_cc: []
+  allowed_domains: ["apollotyres.com"]      # recipient allowlist enforced in trusted code
+
+email:
+  adapter: "preview"                        # preview | smtp | outlook_com | graph
+  from_address: "shreeharsha.r@apollotyres.com"
+  live_sending: false                       # master gate; LLM can never change this
+  daily_enabled: false                      # enable autonomously only after explicit approval
+  weekly_enabled: false
+  attach_weekly_pdf: true
+  daily_pdf: false                          # daily PDF is configurable
+  max_attachment_mb: 15
+  smtp:
+    host: ""
+    port: 465
+    username_env: "TIRE_SCOUT_SMTP_USER"
+    password_env: "TIRE_SCOUT_SMTP_PASSWORD"
+    use_ssl: true
+  graph:
+    tenant_id: ""
+    client_id: ""
+    client_secret_env: "TIRE_SCOUT_GRAPH_SECRET"
+
+# --- Sandbox (Python analysis execution) ----------------------------------------
+sandbox:
+  enabled: true
+  backend: "docker"
+  image: "tire-scout-sandbox:py312"
+  limits:
+    timeout_s: 60
+    memory_mb: 512
+    cpus: 1.0
+    pids: 64
+    tmpfs_mb: 64
+    output_total_kb: 2048
+    output_file_kb: 512
+    allowed_artifact_exts: [".csv", ".json", ".txt", ".md", ".png"]
+  retention_days: 7
+
+# --- Weekly digest ----------------------------------------------------------------
+weekly:
+  max_priority_items: 10
+  max_additional_items: 10
+  recovery_enabled: true                    # bounded catch-up for missing daily editions
+  max_recovery_dates: 2                     # per weekly run
+
+# --- Retention --------------------------------------------------------------------
+retention:
+  raw_artifacts_days: 90
+  sandbox_outputs_days: 7
+  preview_outbox_days: 30
+
+# --- Telemetry ---------------------------------------------------------------------
+telemetry:
+  enabled: false                            # no LangSmith / external tracing by default

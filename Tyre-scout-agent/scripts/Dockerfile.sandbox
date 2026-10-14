@@ -1,0 +1,16 @@
+# Prepared sandbox image for tire-scout analysis jobs.
+# Dependencies are baked in; runtime installation is impossible (no network,
+# read-only root FS, pip blocked by the job wrapper).
+FROM python:3.12-slim
+
+RUN pip install --no-cache-dir \
+        numpy==2.2.4 \
+        pandas==2.2.3 \
+        matplotlib==3.10.1 \
+    && pip cache purge
+
+# Drop write access to site-packages even if the container FS were writable.
+RUN chmod -R a-w /usr/local/lib/python3.12/site-packages
+
+WORKDIR /work
+ENTRYPOINT ["python"]

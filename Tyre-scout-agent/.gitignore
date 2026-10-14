@@ -1,0 +1,8 @@
+# Local runtime state and machine-specific files: never commit
+data/
+certs/
+config/config.yaml
+.venv/
+*.egg-info/
+__pycache__/
+.pytest_cache/

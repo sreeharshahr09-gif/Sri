@@ -1,0 +1,68 @@
+{
+  "results": [
+    {
+      "match_queries": ["silane silica"],
+      "title": "Evonik introduces next-generation silane system for silica tire compounds",
+      "url": "https://www.evonik.com/en/news/press-releases/2026/10/silane-silica-ev.html?utm_source=newsletter",
+      "snippet": "New silane system cuts rolling resistance in lab compound tests.",
+      "published_at": "2026-10-06T09:00:00+02:00",
+      "source_hint": "supplier"
+    },
+    {
+      "match_queries": ["silane silica"],
+      "title": "Evonik unveils next-generation silane system for silica tire compounds",
+      "url": "https://rubbernews.com/technology/evonik-silane-system",
+      "snippet": "Syndicated coverage of the Evonik silane announcement.",
+      "published_at": "2026-10-07T14:00:00+00:00",
+      "source_hint": "news"
+    },
+    {
+      "match_queries": ["silane silica"],
+      "title": "Review of silica-silane coupling chemistry in tire tread compounds",
+      "url": "https://www.mdpi.com/2073-4360/15/8/1712",
+      "snippet": "2023 review article on coupling chemistry.",
+      "published_at": "2023-08-15T00:00:00+00:00",
+      "source_hint": "paper"
+    },
+    {
+      "match_queries": ["silane silica"],
+      "title": "Vendor hype page with unverifiable claims",
+      "url": "https://bad-vendor.example.com/hype",
+      "snippet": "Revolutionary compound doubles tire life!",
+      "published_at": "2026-10-09T00:00:00+00:00",
+      "source_hint": "news"
+    },
+    {
+      "match_queries": ["tire reinforcement"],
+      "title": "Bekaert details higher-tensile steel cord for EV tire belts",
+      "url": "http://tirebusiness.com/article/steel-cord",
+      "snippet": "Redirecting article on mega-tensile cord.",
+      "published_at": "2026-10-05T00:00:00+00:00",
+      "source_hint": "news"
+    },
+    {
+      "match_queries": ["tire reinforcement"],
+      "title": "Tire Technology Expo 2026 keynote video",
+      "url": "https://www.youtube.com/watch?v=abc123",
+      "snippet": "Video recording.",
+      "published_at": "2026-10-04T00:00:00+00:00",
+      "source_hint": "video"
+    },
+    {
+      "match_queries": ["devulcanization"],
+      "title": "Breakthrough devulcanization process claims 90 percent property retention",
+      "url": "https://tiretech-blog.example.com/devulc-breakthrough",
+      "snippet": "Blog report on a new devulcanization process.",
+      "published_at": "2026-10-08T00:00:00+00:00",
+      "source_hint": "news"
+    },
+    {
+      "match_queries": ["tire mixing extrusion"],
+      "title": "HF Mixing Group technical paper on tandem mixing energy savings",
+      "url": "https://www.hf-mixinggroup.com/downloads/tandem-mixing-2026.pdf",
+      "snippet": "Technical paper PDF.",
+      "published_at": "2026-09-28T00:00:00+00:00",
+      "source_hint": "supplier"
+    }
+  ]
+}

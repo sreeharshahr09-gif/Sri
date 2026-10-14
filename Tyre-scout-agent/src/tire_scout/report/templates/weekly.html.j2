@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tire Scout - Weekly digest, week of {{ week_start }}</title>
+<style>
+  body { font-family: Segoe UI, Arial, sans-serif; color:#1a1a1a; margin:24px; line-height:1.45; }
+  h1 { font-size:20px; border-bottom:3px solid #0b5fa5; padding-bottom:6px; }
+  h2.sec { font-size:16px; color:#0b5fa5; margin-top:26px; }
+  .meta-line { color:#555; font-size:12px; }
+  .partial { border:2px solid #c00; padding:8px; font-weight:700; color:#c00; }
+  .toc { background:#f2f6fa; border:1px solid #d5e2ee; padding:10px 16px; }
+  .item { border:1px solid #cfd8e3; border-left:6px solid #0b5fa5; margin:16px 0; padding:10px 16px; }
+  .item.additional { border-left-color:#8aa5bd; }
+  .item h3 { font-size:14px; margin:0 0 4px 0; }
+  table.meta { border-collapse:collapse; width:100%; font-size:12px; margin:6px 0; }
+  table.meta td { border:1px solid #dde4ec; padding:3px 8px; vertical-align:top; }
+  table.meta td.k { background:#f2f6fa; font-weight:600; width:140px; }
+  .score { font-weight:700; color:#0b5fa5; }
+  .limit { color:#7a4d00; font-size:12px; }
+  .src a { word-break:break-all; }
+  .theme { background:#eef4ee; border-left:6px solid #2e7d32; padding:8px 12px; margin:10px 0; }
+  .action { background:#fdf6ec; border-left:6px solid #c77800; padding:8px 12px; margin:10px 0; }
+</style>
+</head>
+<body>
+<h1>Tire Scout &mdash; Weekly Technology Digest<br><small>Week {{ week_start }} to {{ week_end }}</small></h1>
+{% if partial %}<p class="partial">PARTIAL ISSUE &mdash; missing daily editions: {{ missing_dates|join(", ") }}</p>{% endif %}
+<p class="meta-line">All seven daily editions verified present and complete before issue.
+{{ priority|length }} priority developments, {{ additional|length }} further updates.
+Repeated coverage of the same event is merged and counted once.</p>
+
+<div class="toc"><b>Contents</b>
+<ol>
+{% for it in priority %}<li><a href="#p-{{ loop.index }}">{{ it.title }}</a> &mdash; <span class="score">{{ "%.1f"|format(it.final_score) }}</span></li>{% endfor %}
+{% if additional %}<li><a href="#additional">Further updates ({{ additional|length }})</a></li>{% endif %}
+<li><a href="#themes">Developing themes</a></li>
+<li><a href="#actions">Practical team actions</a></li>
+<li><a href="#appendix">Appendix: index by daily edition</a></li>
+</ol></div>
+
+<h2 class="sec">Priority developments</h2>
+{% for it in priority %}
+<div class="item" id="p-{{ loop.index }}">
+<h3>{{ loop.index }}. {{ it.title }}</h3>
+<table class="meta">
+<tr><td class="k">Organization</td><td>{{ it.organization or "unknown" }}</td>
+    <td class="k">Category</td><td>{{ it.category }}</td>
+    <td class="k">Score</td><td><span class="score">{{ "%.1f"|format(it.final_score) }}/10</span></td></tr>
+<tr><td class="k">Maturity</td><td>{{ it.maturity }}{% if it.is_background %} &middot; <i>background, newly discovered</i>{% endif %}</td>
+    <td class="k">Confidence</td><td>{{ it.confidence_label }}</td>
+    <td class="k">Published</td><td>{{ it.published_at or "unknown" }}</td></tr>
+</table>
+<p><b>What changed:</b> {{ it.what_changed or "n/a" }}</p>
+{% if it.claimed_benefit %}<p><b>Claimed benefit:</b> {{ it.claimed_benefit }}
+{% if it.baseline_conditions %}<br><i>Conditions:</i> {{ it.baseline_conditions }}{% endif %}</p>{% endif %}
+{% if it.limitations %}<p class="limit"><b>Limitations:</b> {{ it.limitations }}</p>{% endif %}
+{% if it.suggested_followup %}<p><b>Follow-up:</b> {{ it.suggested_followup }}</p>{% endif %}
+{% set source_url = (it.source_details|default({})).get('fetch_url') or it.canonical_url %}
+<p class="src"><b>Source:</b> <a href="{{ source_url }}">{{ source_url }}</a></p>
+</div>
+{% else %}<p>No priority developments this week.</p>{% endfor %}
+
+{% if additional %}
+<h2 class="sec" id="additional">Further updates</h2>
+{% for it in additional %}
+<div class="item additional">
+<h3>{{ loop.index + priority|length }}. {{ it.title }} &mdash; <span class="score">{{ "%.1f"|format(it.final_score) }}/10</span></h3>
+<p>{{ it.what_changed or it.title }} <span class="meta-line">({{ it.category }}; {{ it.maturity }})</span><br>
+{% set source_url = (it.source_details|default({})).get('fetch_url') or it.canonical_url %}
+<span class="src"><a href="{{ source_url }}">{{ source_url }}</a></span></p>
+</div>
+{% endfor %}
+{% endif %}
+
+<h2 class="sec" id="themes">Developing themes</h2>
+{% for t in themes %}<div class="theme"><b>{{ t.theme }}</b>
+<span class="meta-line"> &mdash; supported by {{ t.development_ids|length }} development(s)</span></div>
+{% else %}<p class="meta-line">No cross-cutting themes identified this week.</p>{% endfor %}
+
+<h2 class="sec" id="actions">Practical team actions</h2>
+<ol>{% for a in actions %}<li><div class="action">{{ a.action }}</div></li>
+{% else %}<li class="meta-line">No actions proposed this week.</li>{% endfor %}</ol>
+
+<h2 class="sec" id="appendix">Appendix: index by daily edition</h2>
+<table class="meta">
+<tr><td class="k">Date</td><td class="k">Status</td><td class="k">Developments</td></tr>
+{% for row in appendix %}
+<tr><td>{{ row.date }}</td><td>{{ row.status }}</td><td>{{ row.titles|join("; ") or "—" }}</td></tr>
+{% endfor %}
+</table>
+
+<p class="meta-line">Generated {{ generated_at }} IST. Rubric {{ rubric_version }}; model {{ model_version }}.
+Full detail in the attached PDF.</p>
+</body></html>

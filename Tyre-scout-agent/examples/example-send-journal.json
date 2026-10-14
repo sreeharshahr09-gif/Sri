@@ -1,0 +1,50 @@
+[
+  {
+    "digest_type": "daily",
+    "period": "2026-10-05",
+    "state": "preview",
+    "provider_id": "preview://e47f761c7e3724d5"
+  },
+  {
+    "digest_type": "daily",
+    "period": "2026-10-06",
+    "state": "preview",
+    "provider_id": "preview://8c9c297b37652c18"
+  },
+  {
+    "digest_type": "daily",
+    "period": "2026-10-07",
+    "state": "preview",
+    "provider_id": "preview://c538f421c1b69202"
+  },
+  {
+    "digest_type": "daily",
+    "period": "2026-10-08",
+    "state": "preview",
+    "provider_id": "preview://15129d0db2b0fc1f"
+  },
+  {
+    "digest_type": "daily",
+    "period": "2026-10-09",
+    "state": "preview",
+    "provider_id": "preview://b6a62a9f8a39525d"
+  },
+  {
+    "digest_type": "daily",
+    "period": "2026-10-10",
+    "state": "preview",
+    "provider_id": "preview://ea9f38fad9b385ab"
+  },
+  {
+    "digest_type": "daily",
+    "period": "2026-10-11",
+    "state": "preview",
+    "provider_id": "preview://1b2f42181abefc20"
+  },
+  {
+    "digest_type": "weekly",
+    "period": "2026-10-05",
+    "state": "preview",
+    "provider_id": "preview://ea0082b417bfcb39"
+  }
+]

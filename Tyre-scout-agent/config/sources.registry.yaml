@@ -1,0 +1,42 @@
+# Source registry - editable list of source types and preferred origins.
+# The search planner biases queries toward these; fetch treats every retrieved
+# page as UNTRUSTED content regardless of origin.
+version: 1
+
+source_types:
+  company:        # official tire-maker / OEM announcements
+    trust_hint: primary
+    domains: [michelin.com, bridgestone.com, goodyear.com, continental.com,
+              pirelli.com, apollotyres.com, yokohamatire.com, hankooktire.com,
+              ceat.com, jktire.com, birlatires.com, mrf tyres.com, sumitomorubber.co.jp]
+  supplier:       # material & machinery supplier technical publications
+    trust_hint: primary
+    domains: [evonik.com, solvay.com, cabot-corp.com, birlaCarbon.com, orioncarbons.com,
+              nynas.com, lanxess.com, arlanxeo.com, kumhopetchemical.com, zenergie.de,
+              vmi-group.com, hf-mixinggroup.com, mesnac.com]
+  paper:          # peer-reviewed and preprint research
+    trust_hint: primary
+    domains: [sciencedirect.com, springer.com, mdpi.com, tandfonline.com, pubs.acs.org,
+              onlinelibrary.wiley.com, arxiv.org, researchgate.net, sagepub.com,
+              ieeexplore.ieee.org, nature.com]
+  patent:         # patent publications (disclosure != adoption != FTO)
+    trust_hint: disclosure
+    domains: [patents.google.com, worldwide.espacenet.com, freepatentsonline.com,
+              patentscope.wipo.int, uspto.gov]
+  news:           # reputable industry publications
+    trust_hint: secondary
+    domains: [tirebusiness.com, rubbernews.com, european-rubber-journal.com,
+              tiretechnologyinternational.com, tyreview.co.uk, moderntiredealer.com]
+  conference:
+    trust_hint: secondary
+    domains: [tiretechnology-expo.com, rubbercon.com, acsrubber.org, dik-ev.de,
+              conference.incite.cz]
+  video:          # technical videos - only usable with accessible transcript
+    trust_hint: secondary
+    domains: [youtube.com, youtu.be, vimeo.com]
+
+# Consequential claims should be corroborated by an independent origin.
+# Syndicated copies of one announcement NEVER count as corroboration.
+corroboration:
+  require_independent_for: [performance_claim, commercial_claim]
+  syndication_is_not_corroboration: true

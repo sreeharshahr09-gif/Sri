@@ -1,0 +1,8 @@
+[
+  {"name": "strong commercial development", "expected_band": [8.0, 9.0],
+   "scores": {"relevance": 9, "novelty": 8, "evidence_quality": 8, "impact": 8, "actionability": 9}},
+  {"name": "supplier claim without data", "expected_band": [4.5, 5.5],
+   "scores": {"relevance": 8, "novelty": 5, "evidence_quality": 2, "impact": 6, "actionability": 4}},
+  {"name": "off-scope editorial", "expected_band": [1.5, 3.0],
+   "scores": {"relevance": 2, "novelty": 4, "evidence_quality": 3, "impact": 2, "actionability": 1}}
+]

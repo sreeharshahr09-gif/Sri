@@ -1,0 +1,356 @@
+{
+  "query_plan": {
+    "queries": [
+      {
+        "query": "silane silica tire compound",
+        "source_type": "supplier",
+        "max_results": 6
+      },
+      {
+        "query": "tire reinforcement steel cord",
+        "source_type": "news",
+        "max_results": 6
+      },
+      {
+        "query": "tire devulcanization recycling",
+        "source_type": "paper",
+        "max_results": 6
+      },
+      {
+        "query": "tire mixing extrusion process",
+        "source_type": "supplier",
+        "max_results": 6
+      }
+    ]
+  },
+  "analyses": [
+    {
+      "match_url_substr": "evonik.com",
+      "analysis": {
+        "is_new_development": true,
+        "title": "Evonik next-generation silane system for silica tire compounds",
+        "organization": "Evonik",
+        "category": "Rubber compounds and materials",
+        "application": "Passenger car tire tread compounds",
+        "what_changed": "Launch of a new silane system claimed to lower rolling resistance versus Evonik's previous generation.",
+        "technical_explanation": "Improved silane coupling promotes silica dispersion and polymer-filler interaction in the tread compound.",
+        "claimed_benefit": "12 percent lower rolling resistance in laboratory compound testing.",
+        "baseline_conditions": "Laboratory compound testing versus the company's previous silane generation; abrasion index unchanged.",
+        "maturity": "commercial",
+        "limitations": "Supplier press release; no independent verification; tire-level results not shown.",
+        "relevance_rationale": "Directly relevant to tread compound development for rolling resistance.",
+        "suggested_followup": "Request technical data sheet and sample for internal mixing trial.",
+        "confidence_label": "medium",
+        "confidence_reasons": "Primary supplier source with quantitative lab claim but no independent corroboration.",
+        "evidence_refs": [
+          "12 percent lower rolling resistance in laboratory compound testing"
+        ],
+        "scores": {
+          "relevance": {
+            "score": 9,
+            "rationale": "Core tread compound topic."
+          },
+          "novelty": {
+            "score": 7,
+            "rationale": "New commercial silane generation."
+          },
+          "evidence_quality": {
+            "score": 6,
+            "rationale": "Quantified lab claim, supplier-only source."
+          },
+          "impact": {
+            "score": 7,
+            "rationale": "Potential RR improvement at constant abrasion."
+          },
+          "actionability": {
+            "score": 8,
+            "rationale": "Sample and trial can be requested."
+          }
+        },
+        "novelty_quote": "Evonik today introduced its next-generation silane system for silica tire compounds.",
+        "maturity_quote": "The system is commercially available from this quarter and targets passenger car tire tread applications.",
+        "benefit_quote": "12 percent lower rolling resistance in laboratory compound testing"
+      }
+    },
+    {
+      "match_url_substr": "rubbernews.com",
+      "analysis": {
+        "is_new_development": true,
+        "title": "Evonik unveils next-generation silane system for silica tire compounds",
+        "organization": "Evonik",
+        "category": "Rubber compounds and materials",
+        "application": "Tire tread",
+        "what_changed": "Syndicated coverage of the Evonik silane launch.",
+        "technical_explanation": "Same event as the supplier press release.",
+        "claimed_benefit": "12 percent lower rolling resistance in laboratory compound testing.",
+        "baseline_conditions": "As per supplier.",
+        "maturity": "supplier_claim",
+        "limitations": "Syndicated copy; not independent corroboration.",
+        "relevance_rationale": "Same as primary.",
+        "suggested_followup": null,
+        "confidence_label": "low",
+        "confidence_reasons": "Secondary coverage.",
+        "evidence_refs": [
+          "12 percent lower rolling resistance in laboratory compound testing"
+        ],
+        "scores": {
+          "relevance": {
+            "score": 8,
+            "rationale": "Same event."
+          },
+          "novelty": {
+            "score": 2,
+            "rationale": "Duplicate of supplier release."
+          },
+          "evidence_quality": {
+            "score": 3,
+            "rationale": "No new data."
+          },
+          "impact": {
+            "score": 6,
+            "rationale": "Same."
+          },
+          "actionability": {
+            "score": 4,
+            "rationale": "Nothing additional."
+          }
+        },
+        "novelty_quote": "Evonik unveiled a next-generation silane system for silica tire compounds,",
+        "maturity_quote": null,
+        "benefit_quote": "12 percent lower rolling resistance in laboratory compound testing"
+      }
+    },
+    {
+      "match_url_substr": "mdpi.com",
+      "analysis": {
+        "is_new_development": false,
+        "title": "Review of silica-silane coupling chemistry in tire tread compounds",
+        "organization": "MDPI Polymers",
+        "category": "Rubber compounds and materials",
+        "application": "Reference background for compound development",
+        "what_changed": "No new event; 2023 review newly discovered by the agent.",
+        "technical_explanation": "Survey of silane coupling chemistry.",
+        "claimed_benefit": null,
+        "baseline_conditions": null,
+        "maturity": "speculation",
+        "limitations": "Review article from 2023; not a new development.",
+        "relevance_rationale": "Useful background for the silane topic.",
+        "suggested_followup": "File as background reference.",
+        "confidence_label": "high",
+        "confidence_reasons": "Review article, not independently verified here.",
+        "evidence_refs": [
+          "review of silica-silane coupling chemistry"
+        ],
+        "scores": {
+          "relevance": {
+            "score": 7,
+            "rationale": "Relevant background."
+          },
+          "novelty": {
+            "score": 1,
+            "rationale": "Published 2023."
+          },
+          "evidence_quality": {
+            "score": 7,
+            "rationale": "Peer reviewed."
+          },
+          "impact": {
+            "score": 3,
+            "rationale": "Background only."
+          },
+          "actionability": {
+            "score": 3,
+            "rationale": "Reference value."
+          }
+        },
+        "novelty_quote": null,
+        "maturity_quote": null,
+        "benefit_quote": null
+      }
+    },
+    {
+      "match_url_substr": "tiretech-blog",
+      "analysis": {
+        "is_new_development": true,
+        "injection_flag": true,
+        "title": "Blog claims devulcanization process with 90 percent property retention",
+        "organization": "Unknown (blog)",
+        "category": "Recycling and circularity",
+        "application": "End-of-life tire recycling",
+        "what_changed": "Blog reports a devulcanization process claiming 90 percent property retention.",
+        "technical_explanation": "Selective scission claim; details sparse.",
+        "claimed_benefit": "90 percent retention of mechanical properties in revulcanized compound.",
+        "baseline_conditions": "Not stated on the page.",
+        "maturity": "speculation",
+        "limitations": "Blog source; no test conditions; page contained injected instructions (ignored and flagged).",
+        "relevance_rationale": "Devulcanization quality is a core recycling bottleneck.",
+        "suggested_followup": "Seek the original research paper or patent before any action.",
+        "confidence_label": "low",
+        "confidence_reasons": "Unverifiable blog claim; injection attempt present.",
+        "evidence_refs": [
+          "90 percent property retention"
+        ],
+        "scores": {
+          "relevance": {
+            "score": 7,
+            "rationale": "Recycling is in scope."
+          },
+          "novelty": {
+            "score": 5,
+            "rationale": "Unverified claim."
+          },
+          "evidence_quality": {
+            "score": 1,
+            "rationale": "No data, no conditions."
+          },
+          "impact": {
+            "score": 6,
+            "rationale": "Would matter if true."
+          },
+          "actionability": {
+            "score": 3,
+            "rationale": "Only monitoring warranted."
+          }
+        },
+        "novelty_quote": "A startup claims a breakthrough devulcanization process with 90 percent property retention in revulcanized compounds.",
+        "maturity_quote": null,
+        "benefit_quote": "90 percent property retention in revulcanized compounds"
+      }
+    },
+    {
+      "match_url_substr": "tirebusiness.com",
+      "analysis": {
+        "is_new_development": true,
+        "title": "Bekaert details higher-tensile steel cord for EV tire belts",
+        "organization": "Bekaert",
+        "category": "Reinforcement and construction",
+        "application": "Belt package for EV tires",
+        "what_changed": "Higher-tensile cord grade presented for EV belt constructions.",
+        "technical_explanation": "Higher tensile strength allows thinner cords and lower belt mass.",
+        "claimed_benefit": "Belt mass reduction while maintaining stiffness.",
+        "baseline_conditions": "Comparison versus supertensile grade at equal safety factor.",
+        "maturity": "prototype",
+        "limitations": "Trade coverage of a supplier presentation; no independent test data.",
+        "relevance_rationale": "EV belt mass and stiffness trade-offs are active topics.",
+        "suggested_followup": "Ask Bekaert for cord datasheet and gauge/fatigue data.",
+        "confidence_label": "medium",
+        "confidence_reasons": "Named supplier and plausible mechanics, limited data.",
+        "evidence_refs": [
+          "higher-tensile steel cord"
+        ],
+        "scores": {
+          "relevance": {
+            "score": 8,
+            "rationale": "Reinforcement category priority."
+          },
+          "novelty": {
+            "score": 6,
+            "rationale": "Incremental grade advance."
+          },
+          "evidence_quality": {
+            "score": 4,
+            "rationale": "Trade press summary."
+          },
+          "impact": {
+            "score": 6,
+            "rationale": "Belt mass saving potential."
+          },
+          "actionability": {
+            "score": 6,
+            "rationale": "Datasheet request possible."
+          }
+        },
+        "novelty_quote": "Bekaert presented a higher-tensile steel cord aimed at EV tire belts.",
+        "maturity_quote": "Prototype tires are under evaluation.",
+        "benefit_quote": "reducing belt package mass while maintaining stiffness."
+      }
+    },
+    {
+      "match_url_substr": "hf-mixinggroup.com",
+      "analysis": {
+        "is_new_development": false,
+        "title": "HF Mixing Group tandem mixing energy savings technical paper",
+        "organization": "HF Mixing Group",
+        "category": "Manufacturing and process",
+        "application": "Compound mixing lines",
+        "what_changed": "No new development is established by the short available excerpt.",
+        "technical_explanation": "The short excerpt names a tandem mixing energy savings paper but does not supply technical detail.",
+        "claimed_benefit": null,
+        "baseline_conditions": "Case data from one reference line; compound dependent.",
+        "maturity": "supplier_claim",
+        "limitations": "Supplier case study; single-line data.",
+        "relevance_rationale": "Mixing energy and temperature control affect compound quality and cost.",
+        "suggested_followup": "Benchmark against internal mixing energy baselines.",
+        "confidence_label": "medium",
+        "confidence_reasons": "Quantified but supplier-published.",
+        "evidence_refs": [
+          "tandem mixing energy savings"
+        ],
+        "scores": {
+          "relevance": {
+            "score": 7,
+            "rationale": "Manufacturing scope."
+          },
+          "novelty": {
+            "score": 5,
+            "rationale": "Known concept, new quantification."
+          },
+          "evidence_quality": {
+            "score": 5,
+            "rationale": "Single reference line."
+          },
+          "impact": {
+            "score": 5,
+            "rationale": "Energy cost and quality."
+          },
+          "actionability": {
+            "score": 6,
+            "rationale": "Benchmark feasible."
+          }
+        },
+        "novelty_quote": null,
+        "maturity_quote": null,
+        "benefit_quote": null
+      }
+    },
+    {
+      "match_url_substr": "bad-vendor",
+      "malformed": true
+    }
+  ],
+  "weekly_synthesis": {
+    "themes": [
+      {
+        "theme": "Filler-interface chemistry keeps advancing toward lower rolling resistance",
+        "development_ids": [
+          "dev-week-1"
+        ]
+      },
+      {
+        "theme": "EV-driven lightweighting of reinforcement",
+        "development_ids": [
+          "dev-week-2"
+        ]
+      }
+    ],
+    "team_actions": [
+      {
+        "action": "Request Evonik silane technical data sheet and plan a lab mixing trial",
+        "development_ids": [
+          "dev-week-1"
+        ]
+      },
+      {
+        "action": "Ask Bekaert for mega-tensile cord datasheet and fatigue data",
+        "development_ids": [
+          "dev-week-2"
+        ]
+      }
+    ],
+    "weekly_rank": [
+      "dev-week-2",
+      "dev-week-1",
+      "dev-week-3"
+    ]
+  }
+}

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tire Scout - Daily {{ edition_date }}</title>
+<style>
+  body { font-family: Segoe UI, Arial, sans-serif; color:#1a1a1a; margin:24px; line-height:1.45; }
+  h1 { font-size:20px; border-bottom:3px solid #0b5fa5; padding-bottom:6px; }
+  .meta-line { color:#555; font-size:12px; }
+  .toc { background:#f2f6fa; border:1px solid #d5e2ee; padding:10px 16px; margin:14px 0; }
+  .toc ol { margin:6px 0; }
+  .item { border:1px solid #cfd8e3; border-left:6px solid #0b5fa5; margin:18px 0; padding:12px 16px; page-break-inside:auto; }
+  .item h2 { font-size:15px; margin:0 0 6px 0; }
+  table.meta { border-collapse:collapse; width:100%; font-size:12px; margin:8px 0; }
+  table.meta td { border:1px solid #dde4ec; padding:3px 8px; vertical-align:top; }
+  table.meta td.k { background:#f2f6fa; font-weight:600; width:150px; white-space:nowrap; }
+  .score { font-weight:700; color:#0b5fa5; }
+  .flag { background:#fff3cd; border:1px solid #e0c878; padding:2px 6px; font-size:11px; }
+  .limit { color:#7a4d00; font-size:12px; }
+  .src a { word-break:break-all; }
+  hr.sep { border:none; border-top:1px dashed #b9c6d3; margin:22px 0; }
+  .none { color:#2e7d32; font-weight:600; }
+</style>
+</head>
+<body>
+<h1>Tire Scout &mdash; Daily Technology Update, {{ edition_date }}{% if retrospective %} <span class="flag">retrospective catch-up</span>{% endif %}</h1>
+<p class="meta-line">Coverage: {{ coverage.queries }} queries / {{ coverage.fetch_attempts|default(coverage.fetched) }} fetch attempts /
+{{ coverage.fetched_successfully|default("unknown") }} sources retrieved /
+{{ coverage.quarantined }} quarantined. Research status: <b>{{ status }}</b>.
+Scores: weighted 0&ndash;10 (rubric {{ rubric_version }}); maturity and evidence confidence are reported separately from relevance.</p>
+
+<p><b>{{ groups.recent|length }} recent updates</b> &middot; {{ groups.background|length }} background references &middot; {{ groups.unverified|length }} items requiring review.</p>
+{% if coverage.quarantined %}<p class="limit"><b>Evidence gaps:</b> {{ coverage.quarantined }} candidates could not be validated. This edition has incomplete evidence coverage.</p>{% endif %}
+{% if status == "failed" %}<p class="limit"><b>Research failed:</b> this report cannot establish whether qualifying updates exist.</p>{% endif %}
+{% for section, label in [("recent", "Recent updates"), ("background", "Background references"), ("unverified", "Unverified date or evidence")] %}
+{% set items = groups[section] %}
+<h2>{{ label }}</h2>
+{% if section == "background" %}<p>Historical or background material retained for reference. These items are not counted as recent updates.</p>{% endif %}
+{% if section == "unverified" %}<p>Publication date, maturity, or evidence confidence needs review. These items are not counted as recent updates.</p>{% endif %}
+{% if items %}
+<div class="toc"><b>In this section ({{ items|length }}):</b>
+<ol>
+{% for it in items %}
+<li><a href="#item-{{ section }}-{{ loop.index }}">{{ it.title }}</a> &mdash; <span class="score">{{ "%.1f"|format(it.final_score) }}</span></li>
+{% endfor %}
+</ol></div>
+{% for it in items %}
+<div class="item" id="item-{{ section }}-{{ loop.index }}">
+<h2>{{ loop.index }}. {{ it.title }}</h2>
+<table class="meta">
+<tr><td class="k">Organization</td><td>{{ it.organization or "unknown" }}</td>
+    <td class="k">Category</td><td>{{ it.category }}</td></tr>
+<tr><td class="k">Maturity / evidence</td><td>{{ it.maturity }}{% if it.is_background %} &middot; <i>newly discovered background material</i>{% endif %}</td>
+    <td class="k">Confidence</td><td>{{ it.confidence_label }}{% if it.confidence_reasons %} &mdash; {{ it.confidence_reasons }}{% endif %}</td></tr>
+<tr><td class="k">Published</td><td>{{ it.published_at or "unknown" }} ({{ it.published_provenance }})</td>
+    <td class="k">Score</td><td><span class="score">{{ "%.1f"|format(it.final_score) }} / 10</span>
+      (rel {{ it.score_breakdown.relevance }}, nov {{ it.score_breakdown.novelty }},
+       ev {{ it.score_breakdown.evidence_quality }}, imp {{ it.score_breakdown.impact }},
+       act {{ it.score_breakdown.actionability }})</td></tr>
+</table>
+<p class="limit"><b>Selection:</b> {{ it.review_reason }}</p>
+<p class="meta-line"><b>Source type:</b> {{ it.source_type }}</p>
+<p><b>{{ "Reported development" if section == "recent" else "Source summary" }}:</b> {{ it.what_changed or "n/a" }}</p>
+<p><b>Technical detail:</b> {{ it.technical_explanation or "n/a" }}</p>
+{% if it.claimed_benefit %}<p><b>Claimed benefit:</b> {{ it.claimed_benefit }}
+  {% if it.baseline_conditions %}<br><i>Baseline / conditions:</i> {{ it.baseline_conditions }}{% endif %}</p>{% endif %}
+{% if it.limitations %}<p class="limit"><b>Limitations:</b> {{ it.limitations }}</p>{% endif %}
+{% if it.suggested_followup %}<p><b>Suggested follow-up:</b> {{ it.suggested_followup }}</p>{% endif %}
+{% if it.injection_flag %}<p class="flag">Source contained suspicious embedded instructions (ignored; logged).</p>{% endif %}
+{% if it.evidence_refs %}<p><b>Source excerpts:</b></p><ul>{% for quote in it.evidence_refs %}<li>{{ quote }}</li>{% endfor %}</ul>{% endif %}
+{% set source_url = (it.source_details|default({})).get('fetch_url') or it.canonical_url %}
+<p class="src"><b>Source:</b> <a href="{{ source_url }}">{{ source_url }}</a></p>
+</div>
+{% if not loop.last %}<hr class="sep">{% endif %}
+{% endfor %}
+{% else %}
+<p>No items qualified for this section.</p>
+{% endif %}
+
+{% endfor %}
+
+{% if limitations %}
+<h2>Coverage limitations</h2>
+<ul>{% for l in limitations %}<li>{{ l }}</li>{% endfor %}</ul>
+{% endif %}
+<p class="meta-line">Generated {{ generated_at }} IST by tire-scout {{ version }}.
+Model {{ model_version }}, prompt {{ prompt_version }}.</p>
+</body></html>
