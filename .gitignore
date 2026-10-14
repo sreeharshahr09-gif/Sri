@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# tyretraction: analysis outputs and test data never go into git
+out/
+out_*/
+runs/
+data/
+demo_data/
+*.joblib
