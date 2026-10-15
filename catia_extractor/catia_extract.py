@@ -29,7 +29,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-__version__ = "1.2"
+__version__ = "1.3"
 
 log = logging.getLogger("catia_extract")
 
@@ -1153,7 +1153,7 @@ def write_xlsx(tables, path):
         from openpyxl import Workbook
     except ImportError:
         log.error("--xlsx needs openpyxl: pip install openpyxl")
-        return
+        return None
     wb = Workbook()
     wb.remove(wb.active)
     for table, rows in tables.items():
@@ -1163,8 +1163,13 @@ def write_xlsx(tables, path):
         for row in rows:
             ws.append([cell(row.get(c)) for c in columns])
         ws.freeze_panes = "A2"
-    wb.save(path)
+    try:
+        wb.save(path)
+    except PermissionError:  # the previous result is open in Excel
+        path = path.with_name(f"{path.stem}_{dt.datetime.now():%H%M%S}{path.suffix}")
+        wb.save(path)
     log.info("Wrote %s", path)
+    return path
 
 
 # --------------------------------------------------------------------------
@@ -1203,13 +1208,17 @@ def normalize_dashes(argv):
     return fixed
 
 
-def main(argv=None):
+APP_TITLE = "CATIA Data Extractor"
+
+
+def build_parser():
     parser = argparse.ArgumentParser(
-        description="Extract features, dimensions, parameters and metadata from CATIA V5 files.")
+        description="Extract features, dimensions, parameters and metadata from CATIA V5 files. "
+                    "Run without arguments (or double-click) to pick files in a dialog.")
     parser.add_argument("inputs", nargs="*",
                         help="CATPart/CATProduct/CATDrawing files or folders "
                              "(omit to use the document currently active in CATIA)")
-    parser.add_argument("-o", "--out", default="catia_extract_output", help="output folder")
+    parser.add_argument("-o", "--out", help="output folder (default: catia_extract_output)")
     parser.add_argument("-r", "--recursive", action="store_true", help="search folders recursively")
     parser.add_argument("--csv", action="store_true", help="also write flat CSV tables")
     parser.add_argument("--xlsx", action="store_true", help="also write an Excel workbook (needs openpyxl)")
@@ -1219,37 +1228,54 @@ def main(argv=None):
     parser.add_argument("--fast", action="store_true",
                         help="skip bounding box, sketch/wireframe geometry and per-component mass")
     parser.add_argument("--visible", action="store_true", help="show CATIA if the script starts it")
+    parser.add_argument("--gui", action="store_true",
+                        help="pick files in a dialog and show a message when done (default with no arguments)")
     parser.add_argument("-v", "--verbose", action="count", default=0)
     parser.add_argument("--version", action="version", version=f"catia_extract {__version__}")
-    args = parser.parse_args(normalize_dashes(sys.argv[1:] if argv is None else argv))
+    return parser
+
+
+def main(argv=None):
+    argv = normalize_dashes(sys.argv[1:] if argv is None else list(argv))
+    args = build_parser().parse_args(argv)
+    args.gui = args.gui or not argv  # double-click / no arguments -> dialog mode
 
     logging.basicConfig(level=logging.DEBUG if args.verbose > 1 else logging.INFO,
                         format="%(message)s")
     log.info("catia_extract %s", __version__)
+    if args.gui:
+        return run_gui(args)
     if sys.platform != "win32":
         sys.exit("This script automates CATIA V5 through COM and must run on Windows.")
-
-    opts = Options(bbox=not (args.fast or args.no_bbox), geometry=not args.fast,
-                   component_mass=not args.fast, deep=args.deep)
     files = collect_inputs(args.inputs, args.recursive)
     if args.inputs and not files:
         sys.exit("No CATIA files found.")
+    return 1 if run(args, files)["failed"] else 0
 
-    out_dir = Path(args.out)
+
+def run(args, files):
+    """Extract every file (or the active CATIA document when `files` is empty)."""
+    opts = Options(bbox=not (args.fast or args.no_bbox), geometry=not args.fast,
+                   component_mass=not args.fast, deep=args.deep)
+    out_dir = Path(args.out or "catia_extract_output")
     out_dir.mkdir(parents=True, exist_ok=True)
     tables = defaultdict(list)
-    failures = 0
+    tables["files"]  # status of every input comes first in the workbook
+    outcome = {"total": len(files) or 1, "ok": 0, "failed": 0, "out_dir": out_dir, "xlsx": None}
+
     session = CatiaSession(visible=args.visible)
     try:
         jobs = files or [None]
-        for path in jobs:
+        for number, path in enumerate(jobs, 1):
             keep = session.open_documents()
+            status = {"file": path.name if path else "active document", "kind": None,
+                      "status": None, "error": None, "folder": str(path.parent) if path else None}
             try:
                 if path is None:
                     doc = session.app.ActiveDocument
                     already_open = True
                 else:
-                    log.info("Opening %s", path)
+                    log.info("[%d/%d] Opening %s", number, len(jobs), path)
                     doc, already_open = session.open(path)
                 log.info("Extracting %s", name(doc))
                 result = extract_document(session, doc, opts, allow_edits=not already_open)
@@ -1259,21 +1285,100 @@ def main(argv=None):
                 log.info("  wrote %s", json_path)
                 print_summary(result)
                 flatten(result, tables)
+                status.update(file=name(doc), kind=result["kind"], status="ok",
+                              **{k: v for k, v in result.get("summary", {}).items() if not isinstance(v, dict)})
+                outcome["ok"] += 1
             except Exception as exc:
-                failures += 1
-                log.error("  FAILED %s: %s", path or "active document", exc,
-                          exc_info=args.verbose > 0)
+                outcome["failed"] += 1
+                status.update(status="FAILED", error=str(exc))
+                log.error("  FAILED %s: %s", path or "active document", exc, exc_info=args.verbose > 0)
             finally:
+                tables["files"].append(status)
                 if path is not None:
                     session.close_new_documents(keep)
     finally:
         session.close()
 
-    if tables and args.csv:
+    if args.csv:
         write_csv(tables, out_dir)
-    if tables and args.xlsx:
-        write_xlsx(tables, out_dir / "catia_extract.xlsx")
-    return 1 if failures else 0
+    if args.xlsx:
+        if len(files) == 1:
+            xlsx_name = f"{files[0].name}.xlsx"
+        else:
+            xlsx_name = f"catia_extract_{dt.datetime.now():%Y-%m-%d_%H%M}.xlsx"
+        outcome["xlsx"] = write_xlsx(tables, out_dir / xlsx_name)
+    log.info("Done: %d of %d file(s) extracted%s. Results in %s", outcome["ok"], outcome["total"],
+             f", {outcome['failed']} failed" if outcome["failed"] else "", out_dir.resolve())
+    return outcome
+
+
+def run_gui(args):
+    """Double-click mode: choose files in a dialog, extract, then offer to open the result."""
+    import tkinter as tk
+    from tkinter import filedialog, messagebox
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    failed = False
+    try:
+        if sys.platform != "win32":
+            raise RuntimeError("This tool automates CATIA V5 and must run on Windows.")
+        if not args.inputs:
+            chosen = filedialog.askopenfilenames(
+                parent=root, title="Select CATIA files (hold Ctrl or Shift to select several)",
+                filetypes=[("CATIA files", "*.CATPart *.CATProduct *.CATDrawing"), ("All files", "*.*")])
+            if chosen:
+                args.inputs = list(chosen)
+            elif messagebox.askyesno(APP_TITLE, "No files selected.\n\n"
+                                     "Extract all CATIA files in a folder instead?", parent=root):
+                folder = filedialog.askdirectory(parent=root, title="Select a folder with CATIA files")
+                if not folder:
+                    return 0
+                args.inputs = [folder]
+                args.recursive = messagebox.askyesno(APP_TITLE, "Include subfolders?", parent=root)
+            elif not messagebox.askyesno(APP_TITLE, "Extract the document currently open in CATIA?",
+                                         parent=root):
+                return 0
+
+        files = collect_inputs(args.inputs, args.recursive)
+        if args.inputs and not files:
+            messagebox.showwarning(APP_TITLE, "No CATPart, CATProduct or CATDrawing files found.",
+                                   parent=root)
+            return 1
+        if not args.deep and any(p.suffix.lower() == ".catproduct" for p in files):
+            args.deep = messagebox.askyesno(
+                APP_TITLE, "Assemblies selected.\n\nAlso extract every part inside them? (slower)",
+                parent=root)
+        args.xlsx = True
+        if not args.out:
+            base = files[0].parent if files else Path.cwd()
+            args.out = str(base / "catia_extract_output")
+
+        log.info("Extracting %d file(s). Progress is shown below; keep CATIA open.\n", len(files) or 1)
+        outcome = run(args, files)
+        failed = outcome["failed"] > 0
+
+        message = f"Extracted {outcome['ok']} of {outcome['total']} file(s).\n\nResults: {outcome['out_dir'].resolve()}"
+        if failed:
+            message += (f"\n\n{outcome['failed']} file(s) FAILED. "
+                        "See the 'files' tab in Excel or this window for the reason.")
+        target = outcome["xlsx"] or outcome["out_dir"]
+        if messagebox.askyesno(APP_TITLE, message + "\n\nOpen the results now?", parent=root):
+            os.startfile(str(target))
+        return 1 if failed else 0
+    except BaseException as exc:  # includes sys.exit() from missing pywin32
+        if isinstance(exc, KeyboardInterrupt):
+            raise
+        failed = True
+        log.error("ERROR: %s", exc, exc_info=not isinstance(exc, SystemExit))
+        messagebox.showerror(APP_TITLE, f"The extraction stopped:\n\n{exc}\n\n"
+                             "Is CATIA V5 installed and can it be started?", parent=root)
+        return 1
+    finally:
+        root.destroy()
+        if failed and sys.stdin and sys.stdin.isatty():
+            input("\nPress Enter to close this window...")
 
 
 if __name__ == "__main__":

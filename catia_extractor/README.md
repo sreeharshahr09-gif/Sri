@@ -10,13 +10,26 @@ automation API. To run it you need:
 - Windows with **CATIA V5** installed and licensed (it attaches to a running session or starts one)
 - Python 3.9+ and `pip install -r requirements.txt`
 
-## Usage
+## Quick use (no command line)
+
+1. Start CATIA V5.
+2. Double-click **`Extract CATIA files.bat`** (or `catia_extract.py`).
+3. Select one or more files. Hold **Ctrl** to pick several, or **Shift** to pick a range. Cancel
+   the picker to choose a whole folder instead.
+4. When it finishes, click **Yes** to open the Excel file.
+
+Results go to a `catia_extract_output` folder next to the selected files. A single file gives
+`<file name>.xlsx`. A batch gives one combined `catia_extract_<date>_<time>.xlsx` whose first
+tab, **files**, shows which files worked and the reason for any failure. Files can also be
+dragged and dropped onto the `.bat` icon.
+
+## Command line usage
 
 ```bat
 python catia_extract.py Bracket.CATPart
 python catia_extract.py Gearbox.CATProduct --deep --xlsx
 python catia_extract.py C:\models --recursive --csv -o results
-python catia_extract.py            &:: no file given = the document active in CATIA
+python catia_extract.py --xlsx     &:: no file given = the document active in CATIA
 ```
 
 | Option | Effect |
@@ -24,7 +37,7 @@ python catia_extract.py            &:: no file given = the document active in CA
 | `-o DIR` | Output folder (default `catia_extract_output`) |
 | `-r` | Search input folders recursively |
 | `--csv` | Also write flat CSV tables (all input files combined, one `file` column) |
-| `--xlsx` | Also write `catia_extract.xlsx` with one sheet per table (needs `openpyxl`) |
+| `--xlsx` | Also write an Excel workbook with one sheet per table (needs `openpyxl`) |
 | `--deep` | For assemblies, also do a full part extraction of every part they contain |
 | `--no-bbox` | Skip the bounding box |
 | `--fast` | Skip the bounding box, sketch and wireframe coordinates, and per-component mass |
@@ -71,7 +84,7 @@ closed afterwards **without saving**. Documents that were already open are left 
 
 ### CSV/Excel tables
 
-`parts`, `parameters`, `dimensions`, `features`, `sketches`, `sketch_constraints`,
+`files` (status of each input), `parts`, `parameters`, `dimensions`, `features`, `sketches`, `sketch_constraints`,
 `wireframe_surfaces`, `relations`, `components`, `bom`, `assembly_constraints`,
 `drawing_views`, `drawing_dimensions`, `drawing_texts`. Only the tables that have rows are
 written.
