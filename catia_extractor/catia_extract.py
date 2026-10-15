@@ -29,7 +29,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-__version__ = "1.4"
+__version__ = "1.5"
 
 log = logging.getLogger("catia_extract")
 
@@ -959,6 +959,7 @@ class DrawingExtractor:
             "dim_type_code": code,
             "value": value,
             "unit": "deg" if is_angle else "mm",
+            "shown_decimals": shown_decimals(safe(lambda: dim.GetValue().GetFormatPrecision(1))),
         }
         bault = safe(lambda: self.s.evaluate(BAULT_TEXT_VBS, "GetBaultText", [dim]))
         if bault:
@@ -982,8 +983,21 @@ def degrees(radians):
     return None if radians is None else round(math.degrees(radians), 6)
 
 
-def fmt_number(v):
-    return f"{v:.4f}".rstrip("0").rstrip(".") if isinstance(v, (int, float)) else str(v)
+def shown_decimals(precision):
+    """Decimals shown on the drawing, from a format precision step such as 0.01."""
+    try:
+        precision = float(precision)
+    except (TypeError, ValueError):
+        return None
+    if 0 < precision < 1:
+        return max(0, round(-math.log10(precision)))
+    return None
+
+
+def fmt_number(v, decimals=None):
+    if not isinstance(v, (int, float)):
+        return str(v)
+    return f"{v:.{4 if decimals is None else decimals}f}".rstrip("0").rstrip(".")
 
 
 def dimension_display(d):
@@ -992,7 +1006,7 @@ def dimension_display(d):
         return None
     dim_type = d.get("type") or ""
     prefix = "Ø" if "diameter" in dim_type else "R" if "radius" in dim_type else ""
-    text = prefix + fmt_number(d["value"]) + ("°" if d.get("unit") == "deg" else "")
+    text = prefix + fmt_number(d["value"], d.get("shown_decimals")) + ("°" if d.get("unit") == "deg" else "")
     tol = d.get("tolerance") or {}
     upper, lower = tol.get("upper"), tol.get("lower")
     if isinstance(upper, (int, float)) and isinstance(lower, (int, float)):
