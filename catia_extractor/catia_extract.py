@@ -29,7 +29,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-__version__ = "1.5"
+__version__ = "1.6"
 
 log = logging.getLogger("catia_extract")
 
@@ -1000,6 +1000,10 @@ def fmt_number(v, decimals=None):
     return f"{v:.{4 if decimals is None else decimals}f}".rstrip("0").rstrip(".")
 
 
+def fmt_signed(v):
+    return ("+" if v > 0 else "") + fmt_number(v)
+
+
 def dimension_display(d):
     """Human-readable dimension, e.g. 'Ø252.45 ±0.04', 'R9', '10°', '19.5 +0.05/0'."""
     if d.get("value") is None:
@@ -1009,13 +1013,18 @@ def dimension_display(d):
     text = prefix + fmt_number(d["value"], d.get("shown_decimals")) + ("°" if d.get("unit") == "deg" else "")
     tol = d.get("tolerance") or {}
     upper, lower = tol.get("upper"), tol.get("lower")
-    if isinstance(upper, (int, float)) and isinstance(lower, (int, float)):
+    upper_text, lower_text = tol.get("upper_text"), tol.get("lower_text")
+    numeric = isinstance(upper, (int, float)) and isinstance(lower, (int, float))
+    if numeric and (upper or lower):
         if upper == -lower:
             text += f" ±{fmt_number(upper)}"
         else:
-            text += f" {'+' if upper > 0 else ''}{fmt_number(upper)}/{fmt_number(lower)}"
-    elif tol.get("upper_text") or tol.get("lower_text"):
-        text += f" {tol.get('upper_text') or ''}/{tol.get('lower_text') or ''}"
+            text += f" {fmt_signed(upper)}/{fmt_signed(lower)}"
+    elif upper_text or lower_text:  # e.g. angular tolerances kept as text such as +0°15'
+        if upper_text and lower_text and upper_text.lstrip("+") == lower_text.lstrip("-"):
+            text += f" ±{upper_text.lstrip('+')}"
+        else:
+            text += f" {upper_text or ''}/{lower_text or ''}"
     before, after = d.get("text_before"), d.get("text_after")
     return " ".join(x for x in (before, text, after) if x)
 
@@ -1131,7 +1140,9 @@ def flatten_drawing(r, src, t):
                     "name": d.get("name"), "display": d.get("display"), "type": d.get("type"),
                     "value": d.get("value"), "unit": d.get("unit"),
                     "tol_upper": tol.get("upper"), "tol_lower": tol.get("lower"),
-                    "tol_name": tol.get("name"), "text_before": d.get("text_before"),
+                    "tol_upper_text": tol.get("upper_text"), "tol_lower_text": tol.get("lower_text"),
+                    "tol_name": tol.get("name"), "shown_decimals": d.get("shown_decimals"),
+                    "text_before": d.get("text_before"),
                     "text_after": d.get("text_after"), "dim_type_code": d.get("dim_type_code"),
                 })
             for txt in view.get("texts", []):
