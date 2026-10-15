@@ -141,6 +141,12 @@ Set `WORKSPACE_DIR` to pre-fill the folder path.
    Double-clicking it again just reopens the browser tab.
 3. To stop, close the two windows, or double-click `stop_agent.bat`.
 
+**Using whichever model is loaded:** set `set "MODEL=open"` in the settings. The launcher then
+starts no model server of its own. It waits until one answers on the port (start llama-server
+yourself with any model) and then opens the app. The app always detects the loaded model's name
+and context window from the server, at startup and on **Check connection**, so the sidebar and
+exported transcripts record the model that actually answered.
+
 Tip: right-click `start_agent.bat` → *Send to* → *Desktop (create shortcut)* for a desktop icon.
 The launcher uses `venv\` or `.venv\` next to it if present, otherwise `python` from PATH (or set
 `PYTHON` in the settings).

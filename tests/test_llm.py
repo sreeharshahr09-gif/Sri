@@ -148,3 +148,12 @@ def test_context_budget_follows_the_window(monkeypatch):
     assert context_budget_chars(LLMConfig(context_tokens=4096, max_tokens=2048)) == 20_000  # floor
     monkeypatch.setenv("AGENT_MAX_CONTEXT_CHARS", "123456")
     assert context_budget_chars(LLMConfig(context_tokens=65536)) == 123456
+
+
+def test_models_lists_loaded_model_ids():
+    llm, _ = client([FakeResponse(200, payload={"data": [{"id": "Mistral-Small-24B-Q4_K_M.gguf"}]})])
+    assert llm.models() == ["Mistral-Small-24B-Q4_K_M.gguf"]
+    llm, _ = client([requests.ConnectionError()])
+    assert llm.models() is None
+    llm, _ = client([FakeResponse(503, text="loading")])
+    assert llm.models() is None

@@ -7,7 +7,8 @@ title Research Agent
 rem ============================ SETTINGS: edit to match your PC ============================
 rem Full path of llama-server.exe
 set "LLAMA_SERVER=D:\llama.cpp\llama-server.exe"
-rem Full path of the model file
+rem Full path of the model file to start, OR the word open to use whichever model server is
+rem already running: start llama-server yourself with any model, and the launcher waits for it.
 set "MODEL=D:\llama.cpp\models\Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL.gguf"
 rem Context window in tokens (-c) and CPU threads (-t: use your number of PHYSICAL cores)
 set "CTX=65536"
@@ -34,6 +35,7 @@ if "%CODE%"=="200" goto app_running
 rem ---- 2. Model server: reuse it if running, otherwise start it in its own window.
 call :status "http://127.0.0.1:%LLAMA_PORT%/health"
 if "%CODE%"=="200" goto model_ready
+if /i "%MODEL%"=="open" goto wait_open
 if not exist "%LLAMA_SERVER%" goto no_llama
 if not exist "%MODEL%" goto no_model
 
@@ -56,9 +58,23 @@ if %WAITED% geq 900 goto model_slow
 <nul set /p "=."
 goto wait_model
 
+:wait_open
+rem MODEL=open: do not start anything; wait for a model server the user starts.
+echo MODEL=open: no model server is answering on port %LLAMA_PORT% yet.
+echo Start llama-server now with any model. The app opens as soon as the model is ready.
+set /a WAITED=0
+:wait_open_loop
+timeout /t 2 /nobreak >nul
+set /a WAITED+=2
+call :status "http://127.0.0.1:%LLAMA_PORT%/health"
+if "%CODE%"=="200" goto model_ready
+if %WAITED% geq 1800 goto model_slow
+<nul set /p "=."
+goto wait_open_loop
+
 :model_ready
 echo.
-echo Model server is ready on port %LLAMA_PORT%.
+echo Model server is ready on port %LLAMA_PORT%. The app uses whichever model it has loaded.
 
 rem ---- 3. The app.
 set "LLM_BASE_URL=http://127.0.0.1:%LLAMA_PORT%"
@@ -124,7 +140,7 @@ goto fail
 
 :model_slow
 echo.
-echo [!] The model has not finished loading after 15 minutes. Check the llama-server window.
+echo [!] The model server did not become ready in time. Check the llama-server window.
 goto fail
 
 :no_streamlit

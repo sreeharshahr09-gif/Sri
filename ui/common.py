@@ -35,11 +35,38 @@ def keep_widget_state() -> None:
             st.session_state[key] = st.session_state[key]
 
 
+def detect_server(llm_cfg: LLMConfig) -> tuple[bool, str]:
+    """Adopt the loaded model's name and context window from the server. Must run before the
+    model-settings widgets are created in this script run (it writes their session-state values)."""
+    client = LLMClient(llm_cfg)
+    models = client.models()
+    if models is None:
+        return False, f"Not connected: nothing answers at {llm_cfg.base_url}"
+    detail = "connected"
+    if models:
+        current = st.session_state.get("llm_model")
+        st.session_state.llm_model = current if current in models else models[0]
+        detail = ", ".join(models)
+    n_ctx = client.context_size()
+    if n_ctx:
+        st.session_state.llm_context = n_ctx
+        detail += f" · context window {n_ctx:,} tokens (applied)"
+    return True, f"Connected: {detail}"
+
+
 def model_settings() -> LLMConfig:
     """Model-server settings, shown on every page so they persist across navigation."""
+    st.session_state.setdefault("llm_model", DEFAULT_LLM.model)
+    if "llm_autodetected" not in st.session_state:
+        # Once per browser session: pick up whatever model the server has loaded right now.
+        st.session_state.llm_autodetected = True
+        url = st.session_state.get("llm_base_url", DEFAULT_LLM.base_url)
+        detect_server(replace(DEFAULT_LLM, base_url=url))
     with st.sidebar.expander("🧠 Model server", expanded=False):
         base_url = st.text_input("Server URL", DEFAULT_LLM.base_url, key="llm_base_url")
-        model = st.text_input("Model", DEFAULT_LLM.model, key="llm_model")
+        # Filled from the server: the model that is actually loaded is the one that answers.
+        model = st.text_input("Model", key="llm_model",
+                              help="Detected from the model server when the app starts or on 'Check connection'.")
         temperature = st.slider("Temperature", 0.0, 1.0, DEFAULT_LLM.temperature, 0.05, key="llm_temperature",
                                 help="Low values give more consistent, reproducible analyses.")
         max_tokens = st.number_input("Max tokens per reply", 256, 16384, DEFAULT_LLM.max_tokens, 256, key="llm_max_tokens")
@@ -72,17 +99,8 @@ def model_settings() -> LLMConfig:
 
 
 def _check_connection(llm_cfg: LLMConfig) -> None:
-    """Button callback: test the server and adopt its context window (runs before widgets render)."""
-    client = LLMClient(llm_cfg)
-    ok, detail = client.health()
-    if not ok:
-        st.session_state.llm_check = (False, f"Not connected: {detail}")
-        return
-    n_ctx = client.context_size()
-    if n_ctx:
-        st.session_state.llm_context = n_ctx
-        detail += f" · context window {n_ctx:,} tokens (applied)"
-    st.session_state.llm_check = (True, f"Connected: {detail}")
+    """Button callback: test the server and adopt its model and context window."""
+    st.session_state.llm_check = detect_server(llm_cfg)
 
 
 def render_artifact(art: Artifact, key: str) -> None:

@@ -128,6 +128,19 @@ class LLMClient:
                 return value
         return None
 
+    def models(self) -> list[str] | None:
+        """Model ids the server reports as loaded, or None if it cannot be reached."""
+        try:
+            resp = self.session.get(f"{self._base}/v1/models", headers=self._headers(), timeout=(3, 5))
+        except requests.RequestException:
+            return None
+        if resp.status_code != 200:
+            return None
+        try:
+            return [str(m.get("id", "?")) for m in resp.json().get("data", [])]
+        except (ValueError, AttributeError):
+            return []
+
     def health(self) -> tuple[bool, str]:
         """Return (ok, detail) describing whether the server is reachable."""
         try:
