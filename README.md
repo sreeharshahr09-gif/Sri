@@ -148,8 +148,9 @@ and context window from the server, at startup and on **Check connection**, so t
 exported transcripts record the model that actually answered.
 
 Tip: right-click `start_agent.bat` → *Send to* → *Desktop (create shortcut)* for a desktop icon.
-The launcher uses `venv\` or `.venv\` next to it if present, otherwise `python` from PATH (or set
-`PYTHON` in the settings).
+To find Python, the launcher uses the first one that has the app's packages: the `PYTHON`
+setting, then `venv\` or `.venv\` next to it, then the Python that owns the `streamlit` command,
+then `py`, then `python`. If none qualifies, it explains how to find the right path.
 
 ## Quick start
 

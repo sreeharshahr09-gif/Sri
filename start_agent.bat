@@ -20,7 +20,8 @@ set "LLAMA_PORT=8080"
 set "APP_PORT=8501"
 rem Optional: a folder to pre-fill on the Workspace page, e.g. D:\Projects\tyre-study
 set "WORKSPACE_DIR="
-rem Optional: a specific python.exe. Leave empty to use venv\ or .venv\ next to this file, else "python".
+rem Optional: full path of the python.exe that has the app's packages. Leave empty to search:
+rem venv\ or .venv\ next to this file, the Python that owns the "streamlit" command, py, python.
 set "PYTHON="
 rem ==========================================================================================
 
@@ -79,11 +80,22 @@ echo Model server is ready on port %LLAMA_PORT%. The app uses whichever model it
 rem ---- 3. The app.
 set "LLM_BASE_URL=http://127.0.0.1:%LLAMA_PORT%"
 set "LLM_CONTEXT_TOKENS=%CTX%"
-if not defined PYTHON if exist "%~dp0venv\Scripts\python.exe" set "PYTHON=%~dp0venv\Scripts\python.exe"
-if not defined PYTHON if exist "%~dp0.venv\Scripts\python.exe" set "PYTHON=%~dp0.venv\Scripts\python.exe"
-if not defined PYTHON set "PYTHON=python"
-"%PYTHON%" -c "import streamlit" >nul 2>nul
-if errorlevel 1 goto no_streamlit
+rem Find a Python that has the app's packages. First match wins: the PYTHON setting, venv\ or
+rem .venv\ next to this file, the Python that owns the "streamlit" command, then py and python.
+set "CHECK=import streamlit, pandas, plotly, requests"
+set "PY_OK="
+set "TRIED="
+if defined PYTHON call :try_python "%PYTHON%"
+call :try_python "%~dp0venv\Scripts\python.exe"
+call :try_python "%~dp0.venv\Scripts\python.exe"
+for /f "delims=" %%G in ('where streamlit 2^>nul') do (
+    call :try_python "%%~dpGpython.exe"
+    call :try_python "%%~dpG..\python.exe"
+)
+call :try_python "py"
+call :try_python "python"
+if not defined PY_OK goto no_streamlit
+echo Using Python: %PYTHON%
 
 rem Skip Streamlit's one-time "enter your email" question, which would otherwise wait here.
 if exist "%USERPROFILE%\.streamlit\credentials.toml" goto run_app
@@ -101,6 +113,18 @@ if errorlevel 1 goto app_failed
 exit /b 0
 
 rem ======================================== helpers ========================================
+
+:try_python
+rem Uses %1 as PYTHON if it can import the app's packages. Missing files are skipped quietly.
+if defined PY_OK exit /b 0
+set "CAND=%~1"
+if not "%CAND:\=%"=="%CAND%" if not exist "%CAND%" exit /b 0
+set "TRIED=%TRIED% [%CAND%]"
+"%CAND%" -c "%CHECK%" >nul 2>nul
+if errorlevel 1 exit /b 0
+set "PY_OK=1"
+set "PYTHON=%CAND%"
+exit /b 0
 
 :status
 rem Sets CODE to the HTTP status of %1, or 000 if nothing answers.
@@ -144,9 +168,14 @@ echo [!] The model server did not become ready in time. Check the llama-server w
 goto fail
 
 :no_streamlit
-echo [!] Python with the app's packages was not found. Tried: %PYTHON%
-echo     Install them once, in this folder:   python -m pip install -r requirements.txt
-echo     or set PYTHON in the SETTINGS block at the top of this file.
+echo [!] Could not find a Python that has the app's packages: streamlit, pandas, plotly, requests.
+echo     Tried:%TRIED%
+echo.
+echo     Fix A: open the terminal where "streamlit run app.py" worked before, activate your
+echo            environment as usual, and run:   python -c "import sys; print(sys.executable)"
+echo            Put the path it prints into PYTHON in the SETTINGS block at the top of this file:
+echo            set "PYTHON=C:\path\to\python.exe"
+echo     Fix B: install the packages once, from this folder:   python -m pip install -r requirements.txt
 goto fail
 
 :app_failed
