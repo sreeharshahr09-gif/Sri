@@ -130,6 +130,21 @@ Set `WORKSPACE_DIR` to pre-fill the folder path.
    - Every apply and undo is recorded in `journal.jsonl`, shown in the sidebar as **Change history**.
 5. **Undo** restores the backup. It refuses if you've edited the file since the change was applied.
 
+## Windows: one-click start
+
+1. Open `start_agent.bat` in Notepad once and check the **SETTINGS** block at the top: the paths of
+   `llama-server.exe` and your model file, the context size, threads and llama-server options.
+2. Double-click `start_agent.bat`. It:
+   - starts llama-server in its own window, or reuses it if it's already running;
+   - waits until the model has loaded;
+   - opens the app in your browser.
+   Double-clicking it again just reopens the browser tab.
+3. To stop, close the two windows, or double-click `stop_agent.bat`.
+
+Tip: right-click `start_agent.bat` → *Send to* → *Desktop (create shortcut)* for a desktop icon.
+The launcher uses `venv\` or `.venv\` next to it if present, otherwise `python` from PATH (or set
+`PYTHON` in the settings).
+
 ## Quick start
 
 1. Start an OpenAI-compatible server, for example llama.cpp. Give it enough context for
