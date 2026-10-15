@@ -72,6 +72,24 @@ Public Function GetMaterial(doc, target, onBody)
 End Function
 """
 
+# CatDimType. 4 = angle (value in radians), 5 = radius, 11 and 20 = diameters
+# (20 is the one-sided diameter used on half sections of revolved parts).
+DIM_TYPES = [
+    "distance", "distance offset", "length", "curvilinear length", "angle",
+    "radius", "radius tangent", "radius cylinder", "radius edge", "diameter",
+    "diameter tangent", "diameter cylinder", "diameter edge", "diameter cone",
+    "chamfer", "slope", None, None, None, None, "diameter one-sided",
+]
+
+BAULT_TEXT_VBS = """
+Public Function GetBaultText(dimension)
+  Dim dimValue, before, after, upper, lower
+  Set dimValue = dimension.GetValue
+  dimValue.GetBaultText 1, before, after, upper, lower
+  GetBaultText = Array(before, after, upper, lower)
+End Function
+"""
+
 TOLERANCE_VBS = """
 Public Function GetTolerance(dimension)
   Dim tolType, tolName, upTol, lowTol, dUpTol, dLowTol, displayMode
@@ -915,32 +933,75 @@ class DrawingExtractor:
             "x_mm": val(view, "x"),
             "y_mm": val(view, "y"),
             "scale": val(view, "Scale"),
-            "angle_rad": val(view, "Angle"),
-            "linked_document": safe(lambda: view.GenerativeBehavior.Document.Name),
+            "angle_deg": degrees(val(view, "Angle")),
+            "linked_document": (safe(lambda: view.GenerativeBehavior.Document.Name)
+                                or safe(lambda: view.GenerativeLinks.FirstLink().Name)),
             "dimensions": [self.dimension(d) for d in items(safe(lambda: view.Dimensions))],
-            "texts": [drop_none({"text": val(t, "Text"), "x_mm": val(t, "x"), "y_mm": val(t, "y")})
-                      for t in items(safe(lambda: view.Texts))],
+            "texts": [drop_none({"text": text, "x_mm": val(t, "x"), "y_mm": val(t, "y")})
+                      for t in items(safe(lambda: view.Texts))
+                      if (text := val(t, "Text")) and str(text).strip()],
             "tables": safe(lambda: int(view.Tables.Count)),
             "gdts": safe(lambda: int(view.GDTs.Count)),
         })
 
     def dimension(self, dim):
+        code = safe(lambda: int(dim.DimType))
+        dim_type = label(DIM_TYPES, code) if code is not None and code < len(DIM_TYPES) else None
+        value = safe(lambda: float(dim.GetValue().Value))
+        is_angle = code == 4
+        if value is not None:
+            value = round(math.degrees(value) if is_angle else value, 6)
         info = {
             "name": name(dim),
-            "dim_type_code": safe(lambda: int(dim.DimType)),
-            "value": plain(safe(lambda: dim.GetValue().Value)),
+            "type": dim_type or (f"code {code}" if code is not None else None),
+            "dim_type_code": code,
+            "value": value,
+            "unit": "deg" if is_angle else "mm",
         }
+        bault = safe(lambda: self.s.evaluate(BAULT_TEXT_VBS, "GetBaultText", [dim]))
+        if bault:
+            info["text_before"] = str(bault[0] or "").strip() or None
+            info["text_after"] = str(bault[1] or "").strip() or None
         tol = safe(lambda: self.s.evaluate(TOLERANCE_VBS, "GetTolerance", [dim]))
         if tol and tol[0]:
             info["tolerance"] = drop_none({
                 "type_code": plain(tol[0]),
-                "name": plain(tol[1]) or None,
+                "name": str(tol[1] or "").strip() or None,
                 "upper": plain(tol[4]),
                 "lower": plain(tol[5]),
-                "upper_text": plain(tol[2]) or None,
-                "lower_text": plain(tol[3]) or None,
+                "upper_text": str(tol[2] or "").strip() or None,
+                "lower_text": str(tol[3] or "").strip() or None,
             })
+        info["display"] = dimension_display(info)
         return drop_none(info)
+
+
+def degrees(radians):
+    return None if radians is None else round(math.degrees(radians), 6)
+
+
+def fmt_number(v):
+    return f"{v:.4f}".rstrip("0").rstrip(".") if isinstance(v, (int, float)) else str(v)
+
+
+def dimension_display(d):
+    """Human-readable dimension, e.g. 'Ø252.45 ±0.04', 'R9', '10°', '19.5 +0.05/0'."""
+    if d.get("value") is None:
+        return None
+    dim_type = d.get("type") or ""
+    prefix = "Ø" if "diameter" in dim_type else "R" if "radius" in dim_type else ""
+    text = prefix + fmt_number(d["value"]) + ("°" if d.get("unit") == "deg" else "")
+    tol = d.get("tolerance") or {}
+    upper, lower = tol.get("upper"), tol.get("lower")
+    if isinstance(upper, (int, float)) and isinstance(lower, (int, float)):
+        if upper == -lower:
+            text += f" ±{fmt_number(upper)}"
+        else:
+            text += f" {'+' if upper > 0 else ''}{fmt_number(upper)}/{fmt_number(lower)}"
+    elif tol.get("upper_text") or tol.get("lower_text"):
+        text += f" {tol.get('upper_text') or ''}/{tol.get('lower_text') or ''}"
+    before, after = d.get("text_before"), d.get("text_after")
+    return " ".join(x for x in (before, text, after) if x)
 
 
 EXTRACTORS = {"part": PartExtractor, "product": ProductExtractor, "drawing": DrawingExtractor}
@@ -1042,13 +1103,21 @@ def flatten_drawing(r, src, t):
         for view in sheet.get("views", []):
             t["drawing_views"].append({
                 "file": src, "sheet": sheet.get("name"), "view": view.get("name"),
-                "scale": view.get("scale"), "x_mm": view.get("x_mm"), "y_mm": view.get("y_mm"),
+                "scale": view.get("scale"), "angle_deg": view.get("angle_deg"),
+                "x_mm": view.get("x_mm"), "y_mm": view.get("y_mm"),
                 "linked_document": view.get("linked_document"),
                 "dimensions": len(view.get("dimensions", [])), "texts": len(view.get("texts", [])),
             })
             for d in view.get("dimensions", []):
-                t["drawing_dimensions"].append(
-                    {"file": src, "sheet": sheet.get("name"), "view": view.get("name"), **d})
+                tol = d.get("tolerance") or {}
+                t["drawing_dimensions"].append({
+                    "file": src, "sheet": sheet.get("name"), "view": view.get("name"),
+                    "name": d.get("name"), "display": d.get("display"), "type": d.get("type"),
+                    "value": d.get("value"), "unit": d.get("unit"),
+                    "tol_upper": tol.get("upper"), "tol_lower": tol.get("lower"),
+                    "tol_name": tol.get("name"), "text_before": d.get("text_before"),
+                    "text_after": d.get("text_after"), "dim_type_code": d.get("dim_type_code"),
+                })
             for txt in view.get("texts", []):
                 t["drawing_texts"].append(
                     {"file": src, "sheet": sheet.get("name"), "view": view.get("name"), **txt})

@@ -65,7 +65,9 @@ closed afterwards **without saving**. Documents that were already open are left 
 **CATDrawing**
 - Sheets (paper size, width/height, scale, projection method)
 - Views (position, scale, angle, linked 3D document)
-- Dimensions (value, CATIA dimension type code, tolerances) and texts
+- Dimensions: readable form (`Ø252.45 ±0.04`, `R9`, `10°`), type, value in mm or degrees,
+  tolerances and any text before/after the value
+- Texts and notes with their positions
 
 ### CSV/Excel tables
 
