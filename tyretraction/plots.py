@@ -639,7 +639,7 @@ def curve_examples(measured, pred, band, ids, raw_curves, title, n=6):
             ax.plot(sr, mu, "o", ms=2.3, color=MUTED, label="measured")
         c = pred["curves"][i]
         if band is not None:
-            ax.fill_between(GRID, c - band, c + band, color=CAT[0], alpha=0.12, lw=0, label="90% band")
+            ax.fill_between(GRID, np.maximum(c - band, 0), c + band, color=CAT[0], alpha=0.12, lw=0, label="90% band")
         ax.plot(GRID, c, color=CAT[0], label="predicted")
         pct = (np.searchsorted(r[order], r[i]) + 0.5) / len(order)
         ax.set_title(f"ID {sid}: RMSE {r[i]:.3f} ({'best' if pct < 0.1 else 'worst' if pct > 0.9 else 'typical'})",

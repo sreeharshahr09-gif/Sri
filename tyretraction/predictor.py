@@ -49,7 +49,7 @@ class TractionPredictor:
         mode = "corrected" if "corrected" in ds.Y else "raw"
         self.meta = dict(mode=mode, C_table=R["fits"].get("C_table", {}) if R["fits"] else {},
                          tyres=set(ds.df["tyre_id"]), compounds=set(ds.df["compound_id"]),
-                         sizes=set(ds.df["size_id"]),
+                         sizes=set(ds.df["size_id"]), surfaces=set(ds.df["SurfaceType"]),
                          ranges={c: (float(ds.X[c].min()), float(ds.X[c].max())) for c in ds.X
                                  if ds.X[c].notna().any()},
                          reference=R["sessions"].get("reference", {}), n_train=len(ds.df))
@@ -177,7 +177,7 @@ class TractionPredictor:
                        landmarks=lm, ranges=rng,
                        params=dict(zip(pj.PARAMS, params)) if params is not None else {},
                        curve=pd.DataFrame({"slip": GRID, "mu": curve if curve is not None else np.nan,
-                                           "lo": (curve - band) if curve is not None else np.nan,
+                                           "lo": np.maximum(curve - band, 0) if curve is not None else np.nan,
                                            "hi": (curve + band) if curve is not None else np.nan}),
                        models={t: ms[t]["spec"] for t in ms if t in LM}, warnings=warn,
                        basis="average test day" if self.meta["mode"] == "corrected" else "as tested")
@@ -194,7 +194,7 @@ class TractionPredictor:
         if missing and case != "A":
             w.append(f"{len(missing)} compound/footprint inputs missing (filled with typical values): "
                      + ", ".join(missing[:6]) + ("..." if len(missing) > 6 else ""))
-        if str(row.get("SurfaceType", "")) not in self.meta["C_table"]:
+        if str(row.get("SurfaceType", "")) not in self.meta.get("surfaces", self.meta["C_table"]):
             w.append(f"surface '{row.get('SurfaceType')}' was not in the training data")
         return w
 

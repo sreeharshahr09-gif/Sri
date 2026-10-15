@@ -225,8 +225,13 @@ def build_report(R, out_dir, title="Tyre µ-slip traction analysis"):
          "per test, set by repeat scatter"),
         ("Leaky random split, peak µ", _f(best_r2("random")), "what a naive test reports"),
     ]
+    def best_rmse(case, t="mu_peak", mode="raw"):
+        return best.loc[(case, t, mode)].rmse if (case, t, mode) in best.index else np.nan
+
     for c in ("A", "B", "C"):
-        tiles.append((f"Case {c}, peak µ R²", _f(best_r2(c, mode=mode_best)),
+        r2_, e_ = best_r2(c, mode=mode_best), best_rmse(c, mode=mode_best)
+        tiles.append((f"Case {c}, peak µ", f"R² {_f(r2_)}" if np.isfinite(r2_) else "–",
+                      (f"typical error ±{e_:.3f} µ · " if np.isfinite(e_) else "") +
                       CASE_LABELS[c].split(": ")[1] + ("" if mode_best == "raw" else ", day-corrected")))
     doc.html('<div class="tiles">' + "".join(
         f'<div class="tile"><div class="l">{E(a)}</div><div class="v">{E(b)}</div><div class="d">{E(c)}</div></div>'
@@ -250,7 +255,13 @@ def build_report(R, out_dir, title="Tyre µ-slip traction analysis"):
     for c in ("A", "B", "C"):
         r_ = best_r2(c, mode=mode_best)
         if np.isfinite(r_):
-            key.append(f"{CASE_LABELS[c]}: peak µ R² <b>{_f(r_)}</b> on held-out tyres.")
+            extra = ""
+            if mode_best == "corrected" and np.isfinite(best_r2(c)):
+                extra = (f" Without day correction: R² {_f(best_r2(c))}, error {_f(best_rmse(c), 3)} µ; with it the "
+                         f"error is {_f(best_rmse(c, mode='corrected'), 3)} µ. (R² can fall while the error shrinks: "
+                         f"the correction removes day-to-day variation, so less variation is left to explain.)")
+            key.append(f"{CASE_LABELS[c]}: peak µ R² <b>{_f(r_)}</b>, typical error "
+                       f"<b>{_f(best_rmse(c, mode=mode_best), 3)}</b> µ on held-out tyres.{extra}")
         else:
             note = make_splits(df, c)[1]
             key.append(f"{CASE_LABELS[c]}: <i>not assessable on this data.</i> {E(note)}")
@@ -342,7 +353,8 @@ def build_report(R, out_dir, title="Tyre µ-slip traction analysis"):
                       for t in c.index) + " (single test / average).",
             "A target of R² ≥ 0.9 is only meaningful where the ceiling is above 0.9. Below it, the honest goal is to "
             "get close to the ceiling, and to reduce test scatter (more repeats, reference-tyre correction, denser "
-            "slip sampling near the peak).")
+            "slip sampling near the peak). The ceiling assumes repeats were run under identical conditions; where "
+            "temperature or test day differed between repeats, a model that sees those can edge slightly above it.")
     lad = st["ladder"]
     if len(lad):
         r0 = lad.loc["mu_peak"] if "mu_peak" in lad.index else lad.iloc[0]
@@ -549,7 +561,11 @@ def build_report(R, out_dir, title="Tyre µ-slip traction analysis"):
                     "Input importance",
                     "How much the error on hidden tyres grows when one input is scrambled. Longer bar = the model "
                     "leans on it more. Whiskers show variation across folds.",
-                    "Top inputs: " + ", ".join(f"{k} (+{v:.3f})" for k, v in topi["mean"].items()) + "." + dom,
+                    ("Top inputs: " + ", ".join(f"{k} (+{v:.3f})" for k, v in topi["mean"].items()) + "." + dom
+                     if topi["mean"].iloc[0] >= 0.002 else
+                     "No single input stands out: scrambling any one of them changes the error by less than 0.002 µ. "
+                     "The model's skill is spread thinly across many inputs, which usually means it has little to "
+                     "work with for this case."),
                     "Inputs at the top must be measured for a new tyre; when they are missing the predictor fills "
                     "typical values and its accuracy falls back toward the baseline.")
     cs = M["curve_summary"]
@@ -567,7 +583,7 @@ def build_report(R, out_dir, title="Tyre µ-slip traction analysis"):
         if ccase:
             preds = M["curve_preds"][(ccase, mode_best)]
             sub = cs[(cs.case == ccase) & (cs["mode"] == mode_best)].sort_values("rmse_median")
-            route = sub.iloc[0].route
+            route = "L" if "L" in preds else sub.iloc[0].route      # the route the predictor uses
             pdict = preds[route]
             meas = ds.curves["binned"][mode_best]
             band = np.nanquantile(np.abs(meas - pdict["curves"]), 0.9, axis=0)
