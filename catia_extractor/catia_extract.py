@@ -29,7 +29,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-__version__ = "1.3"
+__version__ = "1.4"
 
 log = logging.getLogger("catia_extract")
 
@@ -1149,6 +1149,9 @@ def write_csv(tables, out_dir):
 
 
 def write_xlsx(tables, path):
+    tables = {k: v for k, v in tables.items() if v}
+    if not tables:
+        return None
     try:
         from openpyxl import Workbook
     except ImportError:
@@ -1261,7 +1264,7 @@ def run(args, files):
     out_dir.mkdir(parents=True, exist_ok=True)
     tables = defaultdict(list)
     tables["files"]  # status of every input comes first in the workbook
-    outcome = {"total": len(files) or 1, "ok": 0, "failed": 0, "out_dir": out_dir, "xlsx": None}
+    outcome = {"total": len(files) or 1, "ok": 0, "failed": 0, "out_dir": out_dir, "xlsx": []}
 
     session = CatiaSession(visible=args.visible)
     try:
@@ -1285,6 +1288,12 @@ def run(args, files):
                 log.info("  wrote %s", json_path)
                 print_summary(result)
                 flatten(result, tables)
+                if args.xlsx:  # one workbook per CATIA file, written right away
+                    file_tables = defaultdict(list)
+                    flatten(result, file_tables)
+                    written = write_xlsx(file_tables, out_dir / f"{name(doc)}.xlsx")
+                    if written:
+                        outcome["xlsx"].append(written)
                 status.update(file=name(doc), kind=result["kind"], status="ok",
                               **{k: v for k, v in result.get("summary", {}).items() if not isinstance(v, dict)})
                 outcome["ok"] += 1
@@ -1301,12 +1310,10 @@ def run(args, files):
 
     if args.csv:
         write_csv(tables, out_dir)
-    if args.xlsx:
-        if len(files) == 1:
-            xlsx_name = f"{files[0].name}.xlsx"
-        else:
-            xlsx_name = f"catia_extract_{dt.datetime.now():%Y-%m-%d_%H%M}.xlsx"
-        outcome["xlsx"] = write_xlsx(tables, out_dir / xlsx_name)
+    outcome["combined_xlsx"] = None
+    if args.xlsx and len(jobs) > 1:  # batch: also one workbook with every file + status tab
+        outcome["combined_xlsx"] = write_xlsx(
+            tables, out_dir / f"_ALL_FILES_{dt.datetime.now():%Y-%m-%d_%H%M}.xlsx")
     log.info("Done: %d of %d file(s) extracted%s. Results in %s", outcome["ok"], outcome["total"],
              f", {outcome['failed']} failed" if outcome["failed"] else "", out_dir.resolve())
     return outcome
@@ -1363,8 +1370,13 @@ def run_gui(args):
         if failed:
             message += (f"\n\n{outcome['failed']} file(s) FAILED. "
                         "See the 'files' tab in Excel or this window for the reason.")
-        target = outcome["xlsx"] or outcome["out_dir"]
-        if messagebox.askyesno(APP_TITLE, message + "\n\nOpen the results now?", parent=root):
+        if len(outcome["xlsx"]) == 1 and outcome["total"] == 1:
+            target, question = outcome["xlsx"][0], "Open the Excel file now?"
+        else:
+            target, question = outcome["out_dir"], "Open the results folder now?"
+            message += ("\n\nOne Excel file per CATIA file, plus _ALL_FILES_... with everything "
+                        "combined and a 'files' tab showing the status of each file.")
+        if messagebox.askyesno(APP_TITLE, f"{message}\n\n{question}", parent=root):
             os.startfile(str(target))
         return 1 if failed else 0
     except BaseException as exc:  # includes sys.exit() from missing pywin32

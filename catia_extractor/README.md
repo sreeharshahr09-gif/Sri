@@ -18,9 +18,10 @@ automation API. To run it you need:
    the picker to choose a whole folder instead.
 4. When it finishes, click **Yes** to open the Excel file.
 
-Results go to a `catia_extract_output` folder next to the selected files. A single file gives
-`<file name>.xlsx`. A batch gives one combined `catia_extract_<date>_<time>.xlsx` whose first
-tab, **files**, shows which files worked and the reason for any failure. Files can also be
+Results go to a `catia_extract_output` folder next to the selected files: one
+`<file name>.xlsx` per CATIA file. A batch also gets `_ALL_FILES_<date>_<time>.xlsx` with
+everything combined (handy for filtering across files); its first tab, **files**, shows which
+files worked and the reason for any failure. Files can also be
 dragged and dropped onto the `.bat` icon.
 
 ## Command line usage
@@ -37,7 +38,7 @@ python catia_extract.py --xlsx     &:: no file given = the document active in CA
 | `-o DIR` | Output folder (default `catia_extract_output`) |
 | `-r` | Search input folders recursively |
 | `--csv` | Also write flat CSV tables (all input files combined, one `file` column) |
-| `--xlsx` | Also write an Excel workbook with one sheet per table (needs `openpyxl`) |
+| `--xlsx` | Also write one Excel workbook per file, plus a combined `_ALL_FILES_` workbook for batches (needs `openpyxl`) |
 | `--deep` | For assemblies, also do a full part extraction of every part they contain |
 | `--no-bbox` | Skip the bounding box |
 | `--fast` | Skip the bounding box, sketch and wireframe coordinates, and per-component mass |
