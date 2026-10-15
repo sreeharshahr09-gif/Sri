@@ -29,6 +29,8 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
+__version__ = "1.2"
+
 log = logging.getLogger("catia_extract")
 
 DOC_EXTENSIONS = {".catpart": "part", ".catproduct": "product", ".catdrawing": "drawing"}
@@ -1218,10 +1220,12 @@ def main(argv=None):
                         help="skip bounding box, sketch/wireframe geometry and per-component mass")
     parser.add_argument("--visible", action="store_true", help="show CATIA if the script starts it")
     parser.add_argument("-v", "--verbose", action="count", default=0)
+    parser.add_argument("--version", action="version", version=f"catia_extract {__version__}")
     args = parser.parse_args(normalize_dashes(sys.argv[1:] if argv is None else argv))
 
     logging.basicConfig(level=logging.DEBUG if args.verbose > 1 else logging.INFO,
                         format="%(message)s")
+    log.info("catia_extract %s", __version__)
     if sys.platform != "win32":
         sys.exit("This script automates CATIA V5 through COM and must run on Windows.")
 
