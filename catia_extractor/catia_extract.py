@@ -1120,6 +1120,18 @@ def print_summary(result):
     log.info("  %s: %s", result.get("kind"), flat)
 
 
+def normalize_dashes(argv):
+    """Accept options pasted from Word/Outlook, where '--xlsx' often becomes '–xlsx'."""
+    long_options = {"out", "recursive", "csv", "xlsx", "deep", "no-bbox", "fast", "visible", "verbose"}
+    fixed = []
+    for arg in argv:
+        bare = arg.lstrip("-–—−")  # hyphen, en dash, em dash, minus sign
+        if bare != arg and bare.split("=")[0].lower() in long_options:
+            arg = "--" + bare  # '-xlsx', '–xlsx' -> '--xlsx'
+        fixed.append(arg)
+    return fixed
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Extract features, dimensions, parameters and metadata from CATIA V5 files.")
@@ -1137,7 +1149,7 @@ def main(argv=None):
                         help="skip bounding box, sketch/wireframe geometry and per-component mass")
     parser.add_argument("--visible", action="store_true", help="show CATIA if the script starts it")
     parser.add_argument("-v", "--verbose", action="count", default=0)
-    args = parser.parse_args(argv)
+    args = parser.parse_args(normalize_dashes(sys.argv[1:] if argv is None else argv))
 
     logging.basicConfig(level=logging.DEBUG if args.verbose > 1 else logging.INFO,
                         format="%(message)s")
