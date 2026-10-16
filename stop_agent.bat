@@ -3,6 +3,7 @@ rem Double-click to stop the Research Agent: the app and the model server.
 setlocal EnableExtensions
 title Stop Research Agent
 set "APP_PORT=8501"
+if exist "%~dp0my_settings.bat" call "%~dp0my_settings.bat"
 
 echo Stopping the app on port %APP_PORT% ...
 set "FOUND="

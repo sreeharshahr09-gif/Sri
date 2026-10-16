@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Launcher: the running app's code stamp, and the user's own settings
+.app_stamp
+my_settings.bat

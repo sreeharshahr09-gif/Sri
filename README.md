@@ -235,8 +235,14 @@ Type a request in the box under the report; the outcome is added below it.
 
 ## Windows: one-click start
 
-1. Open `start_agent.bat` in Notepad once and check the **SETTINGS** block at the top: the paths of
-   `llama-server.exe` and your model file, the context size, threads and llama-server options.
+1. Double-click `start_agent.bat` once. It creates `my_settings.bat` next to it: your own
+   settings, which updates of the app never overwrite. Open it in Notepad and add the lines you
+   need from the **SETTINGS** block at the top of `start_agent.bat`, for example:
+   ```bat
+   set "MODEL=open"
+   set "LLAMA_SERVER=D:\llama.cpp\llama-server.exe"
+   set "CTX=16384"
+   ```
 2. Double-click `start_agent.bat`. It:
    - starts llama-server in its own window, or reuses it if it's already running;
    - waits until the model has loaded;
@@ -244,7 +250,13 @@ Type a request in the box under the report; the outcome is added below it.
    Double-clicking it again just reopens the browser tab.
 3. To stop, close the two windows, or double-click `stop_agent.bat`.
 
-**Using whichever model is loaded:** set `set "MODEL=open"` in the settings. The launcher then
+**Updating the app:** copy the new files over the old ones (keep your `my_settings.bat`), then
+double-click `start_agent.bat`. If the old version is still running, the launcher notices that it
+was started with older files (or from another folder) and restarts it with the new ones; it waits
+10 seconds first, so you can close the window to keep a running analysis. You can tell the new
+version by the **🔬 Patent landscape** page in the navigation.
+
+**Using whichever model is loaded:** set `set "MODEL=open"` in `my_settings.bat`. The launcher then
 starts no model server of its own. It waits until one answers on the port (start llama-server
 yourself with any model) and then opens the app. The app always detects the loaded model's name
 and context window from the server, at startup and on **Check connection**, so the sidebar and

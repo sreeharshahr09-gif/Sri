@@ -1,10 +1,13 @@
 @echo off
 rem Double-click to start the Research Agent: the model server, then the app in your browser.
-rem Safe to double-click again: whatever is already running is reused.
+rem Safe to double-click again: whatever is already running is reused. An app that is running
+rem older files (for example after an update) is restarted with the files in this folder.
 setlocal EnableExtensions
 title Research Agent
 
 rem ============================ SETTINGS: edit to match your PC ============================
+rem Best: put your changes in my_settings.bat next to this file (same lines, e.g. set "MODEL=open").
+rem It is read after the defaults below, and updates of the app never overwrite it.
 rem Full path of llama-server.exe
 set "LLAMA_SERVER=D:\llama.cpp\llama-server.exe"
 rem Full path of the model file to start, OR the word open to use whichever model server is
@@ -26,14 +29,39 @@ set "PYTHON="
 rem ==========================================================================================
 
 cd /d "%~dp0"
+if not exist "%~dp0my_settings.bat" call :new_settings
+call "%~dp0my_settings.bat"
 where curl >nul 2>nul
 if errorlevel 1 goto no_curl
 
-rem ---- 1. App already open? Just show it.
-call :status "http://127.0.0.1:%APP_PORT%/_stcore/health"
-if "%CODE%"=="200" goto app_running
+rem ---- 1. A Python that has the app's packages. First match wins: the PYTHON setting, venv\ or
+rem .venv\ next to this file, the Python that owns the "streamlit" command, then py and python.
+set "CHECK=import streamlit, pandas, plotly, requests"
+set "PY_OK="
+set "TRIED="
+if defined PYTHON call :try_python "%PYTHON%"
+call :try_python "%~dp0venv\Scripts\python.exe"
+call :try_python "%~dp0.venv\Scripts\python.exe"
+for /f "delims=" %%G in ('where streamlit 2^>nul') do (
+    call :try_python "%%~dpGpython.exe"
+    call :try_python "%%~dpG..\python.exe"
+)
+call :try_python "py"
+call :try_python "python"
+if not defined PY_OK goto no_streamlit
+echo Using Python: %PYTHON%
+"%PYTHON%" -c "import sklearn, umap" >nul 2>&1
+if errorlevel 1 (
+    echo [i] The Patent landscape map needs two more packages. Install them once with:
+    echo     "%PYTHON%" -m pip install -r requirements.txt
+)
 
-rem ---- 2. Model server: reuse it if running, otherwise start it in its own window.
+rem ---- 2. App already open? Show it if it runs the files in this folder, otherwise restart it.
+call :status "http://127.0.0.1:%APP_PORT%/_stcore/health"
+if "%CODE%"=="200" goto app_check
+:app_checked
+
+rem ---- 3. Model server: reuse it if running, otherwise start it in its own window.
 call :status "http://127.0.0.1:%LLAMA_PORT%/health"
 if "%CODE%"=="200" goto model_ready
 if /i "%MODEL%"=="open" goto wait_open
@@ -77,30 +105,9 @@ goto wait_open_loop
 echo.
 echo Model server is ready on port %LLAMA_PORT%. The app uses whichever model it has loaded.
 
-rem ---- 3. The app.
+rem ---- 4. The app.
 set "LLM_BASE_URL=http://127.0.0.1:%LLAMA_PORT%"
 set "LLM_CONTEXT_TOKENS=%CTX%"
-rem Find a Python that has the app's packages. First match wins: the PYTHON setting, venv\ or
-rem .venv\ next to this file, the Python that owns the "streamlit" command, then py and python.
-set "CHECK=import streamlit, pandas, plotly, requests"
-set "PY_OK="
-set "TRIED="
-if defined PYTHON call :try_python "%PYTHON%"
-call :try_python "%~dp0venv\Scripts\python.exe"
-call :try_python "%~dp0.venv\Scripts\python.exe"
-for /f "delims=" %%G in ('where streamlit 2^>nul') do (
-    call :try_python "%%~dpGpython.exe"
-    call :try_python "%%~dpG..\python.exe"
-)
-call :try_python "py"
-call :try_python "python"
-if not defined PY_OK goto no_streamlit
-echo Using Python: %PYTHON%
-"%PYTHON%" -c "import sklearn, umap" >nul 2>&1
-if errorlevel 1 (
-    echo [i] The Patent landscape map needs two more packages. Install them once with:
-    echo     "%PYTHON%" -m pip install -r requirements.txt
-)
 
 rem Skip Streamlit's one-time "enter your email" question, which would otherwise wait here.
 if exist "%USERPROFILE%\.streamlit\credentials.toml" goto run_app
@@ -137,11 +144,46 @@ set "CODE=000"
 for /f "delims=" %%c in ('curl -s -o nul -m 3 -w "%%{http_code}" %1 2^>nul') do set "CODE=%%c"
 exit /b 0
 
+:app_check
+rem The app records which files it started with (app_stamp.py); compare with this folder's files.
+set "APP_PID="
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr /r /c:":%APP_PORT% .*LISTENING"') do set "APP_PID=%%p"
+"%PYTHON%" "%~dp0app_stamp.py" %APP_PID%
+if not errorlevel 1 goto app_running
+echo.
+echo The app running on port %APP_PORT% was started with older files or from another folder,
+echo so it would show the old version. It is restarted now with the files in this folder.
+echo An analysis still running in it stops. To keep it instead, close this window now.
+timeout /t 10
+if not defined APP_PID goto app_stuck
+taskkill /pid %APP_PID% /f >nul 2>nul
+set /a WAITED=0
+:wait_app_stop
+call :status "http://127.0.0.1:%APP_PORT%/_stcore/health"
+if not "%CODE%"=="200" goto app_checked
+timeout /t 1 /nobreak >nul
+set /a WAITED+=1
+if %WAITED% geq 15 goto app_stuck
+goto wait_app_stop
+
 :app_running
-echo The app is already running. Opening it in your browser ...
+echo The app is already running with the files in this folder. Opening it in your browser ...
 start "" "http://localhost:%APP_PORT%"
 timeout /t 3 >nul
 exit /b 0
+
+:new_settings
+rem First run: an empty settings file of your own, which updates of the app never overwrite.
+> "%~dp0my_settings.bat" echo @rem Your own settings for start_agent.bat and stop_agent.bat.
+>> "%~dp0my_settings.bat" echo @rem Copy any "set" line from the SETTINGS block of start_agent.bat here and edit it,
+>> "%~dp0my_settings.bat" echo @rem for example remove the @rem in front of the next line to use whichever model is running.
+>> "%~dp0my_settings.bat" echo @rem set "MODEL=open"
+exit /b 0
+
+:app_stuck
+echo.
+echo [!] The old app could not be stopped. Double-click stop_agent.bat, then start_agent.bat again.
+goto fail
 
 :no_curl
 echo [!] This launcher needs curl, which is built into Windows 10 and 11.
@@ -151,20 +193,21 @@ goto fail
 :no_llama
 echo [!] llama-server was not found at:
 echo     %LLAMA_SERVER%
-echo     Open this file in Notepad and fix LLAMA_SERVER in the SETTINGS block at the top.
+echo     Set the right path in my_settings.bat, next to this file:   set "LLAMA_SERVER=C:\path\to\llama-server.exe"
 goto fail
 
 :no_model
 echo [!] The model file was not found at:
 echo     %MODEL%
-echo     Open this file in Notepad and fix MODEL in the SETTINGS block at the top.
+echo     Set the right path in my_settings.bat, next to this file:   set "MODEL=C:\path\to\model.gguf"
+echo     or set "MODEL=open" there to use whichever model server you start yourself.
 goto fail
 
 :model_died
 echo.
 echo [!] The model server stopped while loading.
 echo     Its window shows the reason - often an option it does not recognise, or not enough memory.
-echo     Fix LLAMA_ARGS, CTX or THREADS in the SETTINGS block at the top of this file.
+echo     Fix LLAMA_ARGS, CTX or THREADS in my_settings.bat, next to this file.
 goto fail
 
 :model_slow
@@ -178,7 +221,7 @@ echo     Tried:%TRIED%
 echo.
 echo     Fix A: open the terminal where "streamlit run app.py" worked before, activate your
 echo            environment as usual, and run:   python -c "import sys; print(sys.executable)"
-echo            Put the path it prints into PYTHON in the SETTINGS block at the top of this file:
+echo            Put the path it prints into PYTHON in my_settings.bat, next to this file:
 echo            set "PYTHON=C:\path\to\python.exe"
 echo     Fix B: install the packages once, from this folder:   python -m pip install -r requirements.txt
 goto fail

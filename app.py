@@ -9,12 +9,24 @@ Pages:
 - Patent landscape: upload a patent export and an analysis brief; get a research-grade landscape.
 """
 
+import os
+
 import streamlit as st
 
+import app_stamp
 from ui import data_page, jobs, patent_page, workspace_page
 from ui.common import keep_widget_state, model_settings
 
 st.set_page_config(page_title="Research Agent", page_icon="📊", layout="wide")
+
+
+@st.cache_resource(show_spinner=False)
+def record_code_version() -> str:
+    """Once per app process: lets the Windows launcher tell whether this app runs the current files."""
+    return app_stamp.write_stamp(os.getpid())
+
+
+record_code_version()
 
 navigation = st.navigation(
     [
