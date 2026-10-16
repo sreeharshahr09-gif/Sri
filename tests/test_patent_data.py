@@ -35,6 +35,9 @@ def test_detects_the_users_export_format():
           "CPC Classifications", "Simple Family Size", "Cited by Patent Count", "Jurisdiction"],
          {"id": "Lens ID", "assignee": "Applicants", "priority_date": "Earliest Priority Date",
           "pub_date": "Publication Date", "cpc": "CPC Classifications", "country": "Jurisdiction"}),
+        # Lens.org with the publication number: that one identifies the patent
+        (["Lens ID", "Jurisdiction", "Kind", "Display Key", "Publication Date", "Title", "Applicants"],
+         {"id": "Display Key", "country": "Jurisdiction", "assignee": "Applicants"}),
         # Espacenet / generic
         (["Publication number", "Title", "Applicants", "Priority numbers", "Publication date", "IPC", "CPC",
           "Family number"],

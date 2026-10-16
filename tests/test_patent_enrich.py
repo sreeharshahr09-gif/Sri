@@ -214,8 +214,8 @@ def test_retry_when_reply_is_not_json(plan, std):
 def test_batch_size_follows_context():
     assert enrich.batch_size_for(16384) == 6
     assert enrich.batch_size_for(65536) == 6
-    assert enrich.batch_size_for(4096) == 2
-    assert enrich.batch_size_for(2000) == 1
+    assert enrich.batch_size_for(8192) == 3
+    assert enrich.batch_size_for(4096) == 1
 
 
 def test_real_client_settings_for_extraction(plan, std):
@@ -227,10 +227,10 @@ def test_real_client_settings_for_extraction(plan, std):
             return Completion(content=extract_reply(messages[0]["content"], messages[-1]["content"]), latency_s=0.0)
 
     client = Recording(LLMConfig(model="qwen-test", temperature=0.7, max_tokens=2048, read_timeout=180,
-                                 context_tokens=8192))
+                                 context_tokens=16384))
     res = enrich.extract_details(std.head(10), plan, client, seed=7, use_cache=False)
     assert res.stats["batch size"] == 6 and res.stats["extracted"] == 10
     cfg = seen[0]
     assert cfg.temperature == 0.2 and cfg.seed == 7 and cfg.read_timeout == 600
-    assert cfg.max_tokens == 400 * 6 + 800 and seen[1].max_tokens == 400 * 4 + 800
+    assert cfg.max_tokens == 600 * 6 + 1500 and seen[1].max_tokens == 600 * 4 + 1500
     assert res.info.startswith("qwen-test, 6 patents per request")

@@ -241,8 +241,9 @@ class ExtractionResult:
 
 
 def batch_size_for(context_tokens: int) -> int:
-    """Patents per request: about 1,100 tokens each (prompt + reply) after the instructions."""
-    return max(1, min(MAX_BATCH, (int(context_tokens or 16384) - 1500) // 1100))
+    """Patents per request: about 1,350 tokens each (prompt + reply, with room for a model that thinks first)
+    after the instructions and the reply's reserve."""
+    return max(1, min(MAX_BATCH, (int(context_tokens or 16384) - 3000) // 1350))
 
 
 def _signature(system: str, model: str) -> str:
@@ -318,7 +319,7 @@ def extract_details(
         client = llm
         if isinstance(llm, LLMClient):
             cfg = llm.config
-            client = type(llm)(replace(cfg, max_tokens=400 * len(batch) + 800, read_timeout=max(cfg.read_timeout, 600),
+            client = type(llm)(replace(cfg, max_tokens=600 * len(batch) + 1500, read_timeout=max(cfg.read_timeout, 600),
                                        temperature=min(cfg.temperature, 0.2), seed=seed), session=llm.session)
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         for attempt in range(2):

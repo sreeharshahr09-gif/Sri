@@ -16,7 +16,7 @@ import pandas as pd
 # Canonical fields and the column names databases use for them (compared after normalising:
 # lower case, punctuation removed). Order matters: earlier synonyms are preferred.
 ROLE_SYNONYMS: dict[str, list[str]] = {
-    "id": ["record number", "publication number", "patent number", "publication no", "pub number",
+    "id": ["record number", "publication number", "display key", "patent number", "publication no", "pub number",
            "document number", "doc number", "lens id", "patent id", "publication id", "pn", "number"],
     "title": ["title", "title english", "invention title", "dwpi title", "title en", "original title"],
     "abstract": ["abstract", "abstract english", "dwpi abstract", "abstract en", "original abstract"],

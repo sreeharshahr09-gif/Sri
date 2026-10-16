@@ -21,7 +21,7 @@ SECTION_RULES = [  # first match wins; "Research gaps & future trends" is about 
     ("summary", r"summary|overview|key finding|highlight|executive|abstract"),
     ("gaps", r"gap|white.?space|future|opportunit|outlook|roadmap|recommend|next step"),
     ("process", r"process|manufactur|production"),
-    ("players", r"player|competit|assignee|applicant|compan|crown|portfolio"),
+    ("players", r"player|competit|assignee|applicant|compan|crown|portfolio|\bwho\b|leader|actor|owner"),
     ("clusters", r"cluster|solution|technolog|innovation|approach|categor"),
     ("visuals", r"visuali|chart|graph|data|statistic|trend|figure|landscape"),
 ]
@@ -149,7 +149,7 @@ def write_sections(sections: list[Section], facts_by_kind: dict[str, str], all_f
     client = llm
     if isinstance(llm, LLMClient):
         cfg = llm.config
-        client = type(llm)(replace(cfg, max_tokens=max(cfg.max_tokens, 1500), read_timeout=max(cfg.read_timeout, 600),
+        client = type(llm)(replace(cfg, max_tokens=max(cfg.max_tokens, 3000), read_timeout=max(cfg.read_timeout, 600),
                                    temperature=min(cfg.temperature, 0.3)), session=llm.session)
     context = f"Study brief:\n{brief.strip()[:5000]}"
     if answers:
