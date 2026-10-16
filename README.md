@@ -10,13 +10,16 @@ question ─▶ LLM writes code ─▶ sandbox executes ─▶ output/error fed 
                                      numeric grounding audit ◀─────────────────────┘
 ```
 
-The app has two pages:
+The app has three pages:
 
 - **📊 Data analysis:** upload a dataset and ask questions. The agent writes and runs code to
   answer them.
 - **📁 Workspace:** point the assistant at a local folder. It searches, reads and explains the
   files, citing file and line for everything it says. In **Edit** mode it proposes changes, which
   you review and apply.
+- **🔬 Patent landscape:** upload a patent export and paste your analysis brief. You get a full
+  landscape report (trends, players, technology clusters, a semantic patent map, white space,
+  crown jewels) and an enriched CSV in which the model has read every patent.
 
 ## Features
 
@@ -130,6 +133,106 @@ Set `WORKSPACE_DIR` to pre-fill the folder path.
    - Every apply and undo is recorded in `journal.jsonl`, shown in the sidebar as **Change history**.
 5. **Undo** restores the backup. It refuses if you've edited the file since the change was applied.
 
+## Patent landscape
+
+A professional patent landscape from your own database export, on any topic (uneven wear,
+lightweighting, rolling resistance, durability, NVH, smart tyres, ...), run entirely on your
+machine.
+
+### How it works
+
+1. **Upload the export** (Excel or CSV) from Derwent, PatSnap, Orbit, Lens, Espacenet or any
+   other database. Columns are recognised automatically (number, title, abstract, claims,
+   assignee, priority/filing/publication dates, CPC/IPC, family ID, citations, and AI summaries
+   such as "Problem being solved"); you can correct the mapping.
+2. **Paste your complete brief** and press **Prepare analysis plan**. The model turns it into an
+   editable plan: title, objective, segments, period, the problem dimension (e.g. *Wear type*)
+   with its categories, technology groups, complexity levels, scope, competitors, regions,
+   extra CSV columns, the report's section headings and the brief's own questions. Things the
+   brief asks for that cannot be done offline (web search, image analysis) are listed.
+3. **Review the plan**, answer the brief's questions, and press **▶ Save & run analysis**. A
+   trial run on 50–100 patents is a good first check. The job runs in the background with a
+   progress bar and time estimate; you can switch pages or stop it.
+4. **Read the report** on one long page, and download the results.
+5. **Ask for more** in the box under the report (see *Follow-ups*).
+
+### What the analysis does
+
+| Step | Method |
+|---|---|
+| Cleaning | Family de-duplication (or by publication number), the plan's period, year basis priority > filing > publication, assignee names normalised (spellings, legal forms, subsidiaries) |
+| Patent map | Embeddings from **PatentSBERTa** (or TF-IDF + LSA without it), 2-D **UMAP** map, topic clusters by **HDBSCAN** on a 5-D UMAP projection, cluster keywords by c-TF-IDF, cluster names and technology group by the model (seed 42) |
+| Reading every patent | The model reads title, abstract, the export's summaries and the first claim of every patent, in batches sized to its context window, and fills the study's columns (below). Answers are validated against the plan's categories and cached on disk |
+| Off-topic screening | Patents rated *Relevance: Low* against the plan's scope leave the analytics (they stay in the CSV) |
+| Analytics | Computed, not written by the model: filing trend with the publication-lag zone and CAGR on complete years; technology roadmap and emerging/declining clusters; top assignees, HHI, assignee × technology; offices; segments; problem × solution heatmaps; complexity ranking; white space; competitor watch and crown jewels; process and manufacturing insights |
+| Report text | The model writes each of your brief's sections from the computed facts only; every number in its text is checked against them and unmatched ones are flagged |
+
+The report follows your brief's section headings in order (e.g. 📊 Executive Summary · 📈 Data
+Visualizations · 🧠 Technology Clusters & Solutions · 🏭 Process & Manufacturing Insights ·
+🔮 Research Gaps & Future Trends); results your brief has no heading for get one of their own.
+It ends with **Methodology and limitations**: data provenance (file, SHA-256, date), the record
+flow from export to analysed set, every method and parameter used, definitions, merged assignee
+names and limitations.
+
+### The enriched CSV
+
+One row per analysed patent: identifiers (ID, title, year, normalised assignee, co-assignees,
+office), then the study's columns, then the topic cluster and map position, then **every
+column of your original export**. UTF-8 with BOM, so Excel opens it directly.
+
+| Column | Content |
+|---|---|
+| Topic | The specific technical topic, in a few words |
+| Segment | One or more of the plan's segments (e.g. TBR; PCR) |
+| *(problem dimension)* | E.g. *Wear type*: one or more of the plan's categories, or Other |
+| Technology group | One of the plan's groups (e.g. Structural/Design ... Active/Electronic) |
+| Complexity | One of the plan's levels, simple to complex |
+| Component | The part, material or system changed |
+| Performance target | What it improves |
+| Design lever | What is changed to get there |
+| Mechanism | How it works |
+| Core claim | The main independent claim in one plain sentence |
+| Key parameters | Claimed numbers and ranges |
+| Trade-offs | What it balances or sacrifices |
+| Relevance · Confidence | High/Partial/Low against the scope; how sure the model is |
+| *(extra columns)* | Whatever the plan adds for the topic (e.g. *Wear cause*, *Axle position*) |
+| Extraction | Whether the row was read now, came from the cache, or failed (with the reason) |
+
+Downloads, at the top and the end of the report: the **enriched CSV**, a **validation sample**
+(30 random patents with the model's answers and empty *Correct?*/*Comment* columns, so an
+expert can measure the extraction accuracy) and the **full report as one HTML file** (charts
+stay interactive, works offline, prints to PDF).
+
+### Follow-ups
+
+Type a request in the box under the report; the outcome is added below it.
+
+- **Questions and extra analyses** ("yearly trend of sensor patents in TBR only", "compare
+  Michelin and Bridgestone by wear type") run the sandboxed data agent on the enriched table.
+  It knows the study, the allowed values of every column and the report's key results, and
+  answers with charts, tables and the code behind them.
+- **Plan changes** ("only 2018–2024 and add Continental as a competitor") are shown as a list of
+  changes; **Apply and run again** re-runs the analysis. Patents the model has already read
+  come from the cache wherever the questions stay the same.
+- **Text changes** ("make the executive summary shorter") rewrite those sections from the same
+  facts, with the same number checks.
+
+### Setup and tips
+
+- `python -m pip install -r requirements.txt` installs scikit-learn and umap-learn. Without them
+  the report skips the map and clusters and says so.
+- For PatentSBERTa embeddings (as in a typical Colab workflow), also run
+  `python -m pip install sentence-transformers`; the model (about 0.5 GB) downloads once and its
+  embeddings are cached. Without it the map uses TF-IDF + LSA. Choose the model, or `tfidf`,
+  under **Advanced settings** in the plan.
+- Cache: `~/.research_agent/patent_cache` (set `PATENT_CACHE_DIR` to move it). A stopped or
+  crashed run continues where it left off; delete the folder to start fresh.
+- With a 16k context the model reads 6 patents per request; a larger context does not make
+  requests bigger. If your model "thinks" before answering, that is handled, but turning
+  thinking off (for llama-server, `--reasoning-budget 0`) makes the run several times faster.
+- The analysis covers exactly what your export contains: the search strategy behind it defines
+  the landscape. It is a technology landscape, not a legal (validity or FTO) opinion.
+
 ## Windows: one-click start
 
 1. Open `start_agent.bat` in Notepad once and check the **SETTINGS** block at the top: the paths of
@@ -203,6 +306,8 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `AGENT_BACKUP_DIR` | `~/.research_agent/backups` | Where backups and the change journal are kept |
 | `SANDBOX_TIMEOUT` | `60` | Seconds per code execution |
 | `SANDBOX_MEMORY_MB` | `4096` | Memory cap per execution (Linux/macOS) |
+| `PATENT_EMBEDDING_MODEL` | `AI-Growth-Lab/PatentSBERTa` | Embedding model for the patent map (`tfidf` to skip it) |
+| `PATENT_CACHE_DIR` | `~/.research_agent/patent_cache` | Cached embeddings and per-patent answers |
 
 ## Architecture
 
@@ -212,6 +317,16 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `ui/jobs.py` | Background jobs: questions that survive page switches, the status bar, Stop |
 | `ui/data_page.py` | Data analysis page: upload, chat, live progress, trace, data tab, exports |
 | `ui/workspace_page.py` | Workspace page: open a folder, chat, sources, file browser |
+| `ui/patent_page.py` | Patent landscape page: upload, brief, plan, report, downloads, follow-ups |
+| `analyst_agent/patents/data.py` | Export columns, cleaning, de-duplication, assignee names, record flow |
+| `analyst_agent/patents/plan.py` | Brief to analysis plan (model, with a rule-based fallback) |
+| `analyst_agent/patents/semantic.py` | Embeddings, UMAP map, HDBSCAN clusters, c-TF-IDF keywords, cluster names |
+| `analyst_agent/patents/enrich.py` | The model reads every patent: batching, validation, retries, cache |
+| `analyst_agent/patents/analytics.py` | Trends, players, heatmaps, complexity, white space, crown jewels |
+| `analyst_agent/patents/narrative.py` | Report sections, number-checked text, methodology, validation sample |
+| `analyst_agent/patents/html_report.py` | The report as one offline HTML file |
+| `analyst_agent/patents/followup.py` | Follow-ups: routing, plan changes, rewrites, data-agent context |
+| `analyst_agent/patents/pipeline.py` | Runs the stages and assembles the report and the enriched table |
 | `analyst_agent/workspace.py` | Read-only, root-bounded file access and text extraction |
 | `analyst_agent/workspace_agent.py` | Tool-using loop for the workspace assistant, plus citation checks |
 | `analyst_agent/editing.py` | Staged changes, diffs, apply with backup, undo, journal |
