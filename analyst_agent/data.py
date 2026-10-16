@@ -17,6 +17,8 @@ import numpy as np
 import pandas as pd
 
 SUPPORTED_EXTENSIONS = (".csv", ".tsv", ".txt", ".xlsx", ".xlsm", ".xls", ".parquet", ".json", ".jsonl")
+# Exports from many databases (patent databases among them) lack Excel's default style; harmless.
+warnings.filterwarnings("ignore", message="Workbook contains no default style", category=UserWarning)
 _ENCODINGS = ("utf-8-sig", "utf-8", "cp1252", "latin-1")
 
 

@@ -60,6 +60,10 @@ def embed(texts: list[str], model_name: str = DEFAULT_MODEL, seed: int = 42,
         cache = _cache_path(texts, model_name)
         if cache.exists():
             return np.load(cache), {"embedding": f"{model_name} (sentence-transformers, cached)"}
+        # The embedding model runs on PyTorch. Without this, transformers also loads TensorFlow when it is
+        # installed (Anaconda ships it): slower start, more memory, many log messages, no benefit.
+        os.environ.setdefault("USE_TF", "0")
+        os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")  # Windows without Developer Mode
         try:
             from sentence_transformers import SentenceTransformer
 
