@@ -53,7 +53,8 @@ def test_full_run_builds_map_and_topic_table():
     assert result.status == "complete" and result.error is None
     phases = [p for k, p in events if k == "phase"]
     assert phases == ["Cleaning the export", "Embedding patent texts", "Building the 2-D map",
-                      "Finding topic clusters", "Naming the clusters", "Reading every patent"]
+                      "Finding topic clusters", "Naming the clusters", "Reading every patent",
+                      "Computing the landscape analytics"]
     std = result.corpus.std
     for col in ("map_x", "map_y", "cluster_id", "cluster_label", "cluster_tech_group", "cluster_outlier"):
         assert col in std and std[col].notna().all(), col
@@ -61,7 +62,7 @@ def test_full_run_builds_map_and_topic_table():
     assert set(std["cluster_tech_group"]) <= {b.name for b in plan.tech_buckets}
     titles = [b.title for b in result.blocks]
     assert titles[:3] == ["Patent landscape: Uneven wear", "", "How the patent set was built"]
-    assert {"Technology clusters (semantic map)", "Patent map", "Topic clusters", "Topic hierarchy"} <= set(titles)
+    assert {"Patent map and topic clusters", "Patent map", "Topic clusters", "Topic hierarchy"} <= set(titles)
     topic_table = next(b.table for b in result.blocks if b.title == "Topic clusters")
     assert topic_table["Patents"].sum() == len(std)
     assert list(topic_table.columns) == ["#", "Topic cluster", "Patents", "Share", "Technology group", "Relevance",
@@ -120,7 +121,7 @@ def test_tiny_sets_skip_the_map_with_a_note():
 
 def test_map_can_be_switched_off():
     result, events = _run(options=PipelineOptions(semantic_map=False, extract_details=False))
-    assert [p for k, p in events if k == "phase"] == ["Cleaning the export"]
+    assert [p for k, p in events if k == "phase"] == ["Cleaning the export", "Computing the landscape analytics"]
     assert result.semantic is None
 
 

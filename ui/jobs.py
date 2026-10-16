@@ -204,7 +204,8 @@ def status_bar(current_page: str) -> None:
         else:
             steps = f"step {job.step} of up to {job.max_steps}" if job.max_steps else f"step {job.step}"
             fraction = min(job.step / job.max_steps, 0.95) if job.max_steps else 0.0
-            text = f"{activity} · {steps} · {_clock(job.elapsed)} elapsed"
+            text = " · ".join(([activity] if activity else []) + ([steps] if job.step else [])
+                              + [f"{_clock(job.elapsed)} elapsed"])
         with st.container(border=True):
             cols = st.columns([6, 1])
             cols[0].markdown(f"{icon} **Working on:** “{job.question[:90]}”{where}")

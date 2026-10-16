@@ -11,6 +11,7 @@ from typing import Any, Callable
 import numpy as np
 import pandas as pd
 
+from . import analytics as an
 from . import enrich
 from . import report as rb
 from . import semantic as sem
@@ -48,6 +49,8 @@ class LandscapeResult:
     dataset_sha256: str = ""
     semantic: sem.SemanticResult | None = None
     extraction: enrich.ExtractionResult | None = None
+    analysis_frame: pd.DataFrame | None = None  # the patents the analytics are computed on
+    exhibits: list[an.Exhibit] = field(default_factory=list)
     methods: dict[str, str] = field(default_factory=dict)  # method -> description, for the methodology
 
 
@@ -92,18 +95,56 @@ def run_landscape(
     result.methods["Year basis"] = corpus.year_basis
 
     try:
-        result.blocks.extend(corpus_blocks(corpus, plan))
         if options.semantic_map:
             semantic_stage(result, llm, options, checkpoint, progress)
         if options.extract_details:
             checkpoint("Reading every patent")
             extraction_stage(result, llm, options, emit, should_stop)
+        checkpoint("Computing the landscape analytics")
+        analytics_stage(result)
     except Cancelled:
         result.status = "cancelled"
     result.enriched = enriched_table(result)
-    result.blocks.extend(table_blocks(result))
+    result.blocks = assemble_blocks(result)
     result.duration_s = time.perf_counter() - started
     return result
+
+
+def analytics_stage(result: LandscapeResult) -> None:
+    corpus, ext = result.corpus, result.extraction
+    frame = an.build_frame(corpus.std, ext.table if ext else None, ext.fields if ext else [])
+    keep = an.in_scope(frame)
+    if (~keep).any():
+        corpus.flow.append(FlowStep("Removed: judged off-topic by the model (Relevance: Low)", int(keep.sum()),
+                                    int((~keep).sum())))
+    result.analysis_frame = frame[keep]
+    result.exhibits, notes = an.run_analytics(result.analysis_frame, result.plan, corpus.year_basis)
+    result.warnings.extend(notes)
+
+
+SECTIONS = [  # (exhibit section, heading until the brief's own headings are applied)
+    ("visuals", "Data visualisations"),
+    ("players", "Players and competitors"),
+    ("clusters", "Technology clusters and solutions"),
+    ("process", "Process and manufacturing"),
+    ("gaps", "Research gaps and future trends"),
+]
+
+
+def assemble_blocks(result: LandscapeResult) -> list[rb.Block]:
+    blocks = corpus_blocks(result)
+    for kind, heading in SECTIONS:
+        parts: list[rb.Block] = []
+        if kind == "clusters" and result.semantic is not None:
+            parts.extend(semantic_blocks(result.corpus, result.semantic))
+        for ex in (e for e in result.exhibits if e.section == kind):
+            parts.append(rb.heading(ex.title, level=3))
+            parts.extend(ex.blocks)
+        if parts:
+            blocks.append(rb.heading(heading))
+            blocks.extend(parts)
+    blocks.extend(table_blocks(result))
+    return blocks
 
 
 def extraction_stage(result: LandscapeResult, llm, options: PipelineOptions, emit, should_stop) -> None:
@@ -150,7 +191,6 @@ def semantic_stage(result: LandscapeResult, llm, options: PipelineOptions, check
         "Cluster keywords": res.info["keywords"],
         "Cluster names": res.info["naming"],
     })
-    result.blocks.extend(semantic_blocks(corpus, res))
 
 
 def attach_semantic(corpus: PatentCorpus, res: sem.SemanticResult) -> None:
@@ -166,14 +206,15 @@ def attach_semantic(corpus: PatentCorpus, res: sem.SemanticResult) -> None:
     std["cluster_outlier"] = res.outlier
 
 
-def corpus_blocks(corpus: PatentCorpus, plan: AnalysisPlan) -> list[rb.Block]:
-    std = corpus.std
+def corpus_blocks(result: LandscapeResult) -> list[rb.Block]:
+    corpus, plan = result.corpus, result.plan
+    std = result.analysis_frame if result.analysis_frame is not None else corpus.std
     years = std["year"].dropna()
     span = f"{int(years.min())}–{int(years.max())}" if len(years) else "n/a"
     blocks = [
         rb.heading(f"Patent landscape: {plan.title}", level=1),
         rb.metrics([
-            ("Patents analysed", f"{len(corpus):,}"),
+            ("Patents analysed", f"{len(std):,}"),
             ("Years", span),
             ("Assignees", f"{std['assignee'].nunique():,}"),
             ("Patent offices", f"{std['country'].nunique():,}"),
@@ -227,7 +268,7 @@ def semantic_blocks(corpus: PatentCorpus, res: sem.SemanticResult) -> list[rb.Bl
         margin={"l": 10, "r": 10, "t": 40, "b": 10}, title=f"Patent map: {n:,} patents, {len(topics)} topic clusters",
     )
     blocks = [
-        rb.heading("Technology clusters (semantic map)"),
+        rb.heading("Patent map and topic clusters", level=3),
         rb.chart(fig, title="Patent map", caption=(
             "Each dot is one patent; patents with similar text sit close together. Colours are topic clusters, "
             "numbered as in the table below. "
