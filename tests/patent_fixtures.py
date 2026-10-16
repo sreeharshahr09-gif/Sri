@@ -205,3 +205,18 @@ def extract_reply(system: str, user: str, drop: set[int] = frozenset()) -> str:
             item[key] = "not stated"
         out.append(item)
     return json.dumps(out)
+
+
+def narrative_reply(system: str, user: str, invent: bool = False) -> str:
+    """A section text that quotes numbers from the facts it was given (and one made-up number if asked)."""
+    heading = re.search(r"Section to write: (.*)", user).group(1).strip()
+    facts = user.split("Facts:\n", 1)[1]
+    found = re.findall(r"(?<![\w.,])\d+(?:\.\d+)?(?![\w])", facts)
+    numbers = [n for n in found if float(n) > 10][:2] or found[:1] or ["several"]
+    lines = [f"## {heading}", f"- **Main finding:** the facts show {numbers[0]} for the leading item.",
+             f"- **Second finding:** another figure is {numbers[-1]}."]
+    if invent:
+        lines.append("- **Unsupported:** 987.5 patents mention it.")
+    closing = "**Recommended R&D directions:**\n- Look at the gaps." if "executive summary" in system else \
+        "**Implication for R&D:** focus where the gaps are."
+    return "\n".join(lines + [closing])

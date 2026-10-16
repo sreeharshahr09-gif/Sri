@@ -292,6 +292,8 @@ def render_blocks(blocks: list[rb.Block], key: str) -> None:
             st.markdown(block.text)
         elif block.kind == "note":
             st.info(block.text, icon="ℹ️")
+        elif block.kind == "caption":
+            st.caption(block.text)
         elif block.kind == "metrics":
             cols = st.columns(max(1, len(block.metrics)))
             for col, (label, value) in zip(cols, block.metrics):
@@ -310,11 +312,22 @@ def render_blocks(blocks: list[rb.Block], key: str) -> None:
             st.caption(block.caption)
 
 
+def download_row(blocks: list[rb.Block], key: str) -> None:
+    downloads = [b for b in blocks if b.kind == "download" and b.data is not None]
+    if not downloads:
+        return
+    for col, (i, block) in zip(st.columns(len(downloads)), enumerate(downloads)):
+        label = block.title.replace("Download the ", "").replace("Download a ", "")
+        col.download_button(label[:1].upper() + label[1:], block.data, file_name=block.file_name, mime=block.mime,
+                            icon=":material/download:", key=f"{key}-top-dl-{i}", on_click="ignore", width="stretch")
+
+
 def render_result(result: LandscapeResult, idx: int) -> None:
     if result.status == "cancelled":
         st.info("The analysis was stopped at your request; what was finished is shown.", icon="⏹")
     for w in result.warnings:
         st.caption(f"ℹ️ {w}")
+    download_row(result.blocks, key=f"pl-{idx}")
     render_blocks(result.blocks, key=f"pl-{idx}")
 
 

@@ -10,7 +10,7 @@ import pandas as pd
 
 @dataclass
 class Block:
-    kind: str  # "heading" | "markdown" | "table" | "plotly" | "metrics" | "note" | "download"
+    kind: str  # "heading" | "markdown" | "table" | "plotly" | "metrics" | "note" | "caption" | "download"
     title: str = ""
     text: str = ""
     table: pd.DataFrame | None = None
@@ -33,6 +33,10 @@ def markdown(text: str, title: str = "") -> Block:
 
 def note(text: str) -> Block:
     return Block("note", text=text)
+
+
+def caption(text: str) -> Block:
+    return Block("caption", text=text)
 
 
 def table(df: pd.DataFrame, title: str = "", caption: str = "") -> Block:
