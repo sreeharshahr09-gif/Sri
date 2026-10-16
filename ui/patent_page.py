@@ -14,8 +14,8 @@ import streamlit as st
 
 from analyst_agent import LLMClient, LLMConfig
 from analyst_agent.data import SUPPORTED_EXTENSIONS, DataLoadError, list_sheets, load_dataset
+from analyst_agent.patents import enrich, semantic
 from analyst_agent.patents import report as rb
-from analyst_agent.patents import semantic
 from analyst_agent.patents.data import ROLE_LABELS, build_corpus, detect_columns
 from analyst_agent.patents.pipeline import LandscapeResult, PipelineOptions, run_landscape
 from analyst_agent.patents.plan import (
@@ -210,7 +210,9 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
                     mapping[role] = None if choice == "(none)" else choice
         sample = st.number_input("Trial run: analyse a random sample of N patents (0 = all)", 0, 100000, 0, 50,
                                  help="With a local model, try 50–100 patents first to check the plan.")
-        with st.expander("Advanced: semantic map"):
+        with st.expander("Advanced settings"):
+            st.checkbox("Read every patent with the model (fills the study's columns for the CSV)",
+                        key=remember("pl_extract", True))
             st.checkbox("Build the patent map and topic clusters", key=remember("pl_semantic", True))
             st.text_input(
                 "Text embedding model", key=remember("pl_embed_model", semantic.DEFAULT_MODEL),
@@ -249,6 +251,11 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
             return
         st.caption(f"With this plan, **{n:,} patents** will be analysed (of {flow[0].remaining:,} in the export; "
                    f"year basis: {basis}).")
+        if st.session_state.get("pl_extract", True) and n:
+            size = enrich.batch_size_for(llm_cfg.context_tokens)
+            st.caption(f"The model reads them in about {-(-n // size):,} requests of {size} patents (context window "
+                       f"{llm_cfg.context_tokens:,} tokens). Answers are cached, so a stopped run continues where it "
+                       "left off. For a first look, try a trial run of 50–100 patents.")
         for note in notes:
             st.caption(f"ℹ️ {note}")
 
@@ -259,6 +266,7 @@ def start_run(plan: AnalysisPlan, mapping: dict, sample: int, llm_cfg: LLMConfig
 
     options = PipelineOptions(
         sample_limit=sample, semantic_map=bool(st.session_state.get("pl_semantic", True)),
+        extract_details=bool(st.session_state.get("pl_extract", True)),
         embedding_model=(st.session_state.get("pl_embed_model") or semantic.DEFAULT_MODEL).strip(),
     )
 
@@ -278,7 +286,7 @@ def render_blocks(blocks: list[rb.Block], key: str) -> None:
         if block.kind == "heading":
             st.markdown(f"{'#' * max(1, min(block.level, 4))} {block.title}")
             continue
-        if block.title and block.kind != "plotly":
+        if block.title and block.kind not in ("plotly", "download"):
             st.markdown(f"**{block.title}**")
         if block.kind == "markdown":
             st.markdown(block.text)
@@ -295,6 +303,9 @@ def render_blocks(blocks: list[rb.Block], key: str) -> None:
                 st.dataframe(block.table, width="stretch", hide_index=True)
         elif block.kind == "plotly" and block.figure is not None:
             st.plotly_chart(block.figure, width="stretch", key=f"{key}-fig-{i}")
+        elif block.kind == "download" and block.data is not None:
+            st.download_button(block.title, block.data, file_name=block.file_name, mime=block.mime, type="primary",
+                               icon=":material/download:", key=f"{key}-dl-{i}", on_click="ignore")
         if block.caption:
             st.caption(block.caption)
 

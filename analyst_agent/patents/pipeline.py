@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -10,6 +11,7 @@ from typing import Any, Callable
 import numpy as np
 import pandas as pd
 
+from . import enrich
 from . import report as rb
 from . import semantic as sem
 from .data import FlowStep, PatentCorpus, build_corpus
@@ -24,6 +26,8 @@ class PipelineOptions:
     seed: int = 42
     embedding_model: str = sem.DEFAULT_MODEL  # "tfidf" skips the neural model
     semantic_map: bool = True
+    extract_details: bool = True  # the model reads every patent and fills the study's columns
+    batch_size: int = 0  # patents per extraction request (0 = from the context window)
 
 
 MIN_PATENTS_FOR_MAP = 8
@@ -43,6 +47,7 @@ class LandscapeResult:
     dataset_name: str = ""
     dataset_sha256: str = ""
     semantic: sem.SemanticResult | None = None
+    extraction: enrich.ExtractionResult | None = None
     methods: dict[str, str] = field(default_factory=dict)  # method -> description, for the methodology
 
 
@@ -90,11 +95,34 @@ def run_landscape(
         result.blocks.extend(corpus_blocks(corpus, plan))
         if options.semantic_map:
             semantic_stage(result, llm, options, checkpoint, progress)
+        if options.extract_details:
+            checkpoint("Reading every patent")
+            extraction_stage(result, llm, options, emit, should_stop)
     except Cancelled:
         result.status = "cancelled"
-    result.enriched = corpus.std
+    result.enriched = enriched_table(result)
+    result.blocks.extend(table_blocks(result))
     result.duration_s = time.perf_counter() - started
     return result
+
+
+def extraction_stage(result: LandscapeResult, llm, options: PipelineOptions, emit, should_stop) -> None:
+    if llm is None:
+        result.warnings.append("No model connected: the patent details (topic, design lever, ...) were not extracted.")
+        return
+    res = enrich.extract_details(
+        result.corpus.std, result.plan, llm, batch_size=options.batch_size, seed=options.seed,
+        on_progress=lambda done, total: emit("progress", (done, total)), should_stop=should_stop,
+    )
+    result.extraction = res
+    result.methods["Patent details"] = res.info
+    if res.stats["failed"]:
+        reasons = res.table.loc[res.table["Extraction"].str.startswith("failed"), "Extraction"].value_counts()
+        result.warnings.append(f"The model could not read {res.stats['failed']:,} patents (most often: "
+                               f"{reasons.index[0].removeprefix('failed: ')}). Run the analysis again to retry "
+                               "them; finished patents are kept.")
+    if res.stopped:
+        raise Cancelled()
 
 
 def semantic_stage(result: LandscapeResult, llm, options: PipelineOptions, checkpoint, progress) -> None:
@@ -228,4 +256,68 @@ def semantic_blocks(corpus: PatentCorpus, res: sem.SemanticResult) -> list[rb.Bl
         blocks.append(rb.chart(fig2, title="Topic hierarchy",
                                caption="Box size is the number of patents. Groups come from your plan; the model "
                                        "assigned each cluster to one."))
+    return blocks
+
+
+def enriched_table(result: LandscapeResult) -> pd.DataFrame:
+    """The patent table for the CSV: identifiers, the study's columns, clusters, then the original export."""
+    std = result.corpus.std
+    out = pd.DataFrame(index=std.index)
+    out["Patent ID"] = std["id"]
+    out["Title"] = std["title"]
+    out["Year"] = std["year"].astype("Int64")
+    out["Assignee (normalised)"] = std["assignee"]
+    out["Co-assignees"] = std["co_assignees"]
+    out["Office"] = std["country"]
+    if result.extraction is not None:
+        for col in result.extraction.table.columns:
+            name = col if col not in out.columns else f"{col} (model)"
+            out[name] = result.extraction.table[col]
+    if "cluster_id" in std:
+        out["Topic cluster"] = std["cluster_label"]
+        out["Cluster no."] = std["cluster_id"]
+        out["Cluster technology group"] = std["cluster_tech_group"]
+        out["Map X"] = std["map_x"]
+        out["Map Y"] = std["map_y"]
+    raw = result.corpus.raw.loc[std.index]
+    for col in raw.columns:
+        name = str(col)
+        if name.startswith("_"):
+            continue
+        out[name if name not in out.columns else f"{name} (export)"] = raw[col]
+    return out.reset_index(drop=True)
+
+
+KEY_COLUMNS = ["Patent ID", "Title", "Year", "Assignee (normalised)", "Topic", "Segment", "Technology group",
+               "Complexity", "Performance target", "Design lever", "Relevance"]
+
+
+def _slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")[:50] or "patent_landscape"
+
+
+def table_blocks(result: LandscapeResult) -> list[rb.Block]:
+    table = result.enriched
+    blocks = [rb.heading("Patent table")]
+    res = result.extraction
+    if res is not None:
+        rel = res.table["Relevance"].value_counts()
+        read = res.stats["extracted"] + res.stats["from cache"]
+        blocks.append(rb.metrics([
+            ("Read by the model", f"{read:,} of {res.stats['patents']:,}"),
+            ("High relevance", f"{int(rel.get('High', 0)):,}"),
+            ("Partial", f"{int(rel.get('Partial', 0)):,}"),
+            ("Low (off-topic)", f"{int(rel.get('Low', 0)):,}"),
+        ]))
+    problem_col = next((f.column for f in res.fields if f.key == "problem"), None) if res is not None else None
+    key = [c for c in KEY_COLUMNS[:6] + ([problem_col] if problem_col else []) + KEY_COLUMNS[6:] if c in table]
+    caption = (f"Key columns shown; the CSV below has all {len(table.columns)} columns, including Component, "
+               "Mechanism, Core claim, Key parameters, Trade-offs, Confidence, the topic clusters and every column "
+               "of your export." if res is not None else "Patent details were not extracted in this run.")
+    blocks.append(rb.table(table[key], title="Every patent with the study's columns", caption=caption))
+    blocks.append(rb.download(
+        "Download the enriched patent table (CSV)", table.to_csv(index=False).encode("utf-8-sig"),
+        f"{_slug(result.plan.title)}_patents.csv",
+        caption=f"{len(table):,} patents × {len(table.columns)} columns. Opens directly in Excel.",
+    ))
     return blocks

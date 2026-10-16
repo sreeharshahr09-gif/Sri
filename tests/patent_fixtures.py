@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 
 import pandas as pd
 
@@ -145,4 +146,62 @@ def name_clusters_reply(prompt: str, groups: list[str]) -> str:
                  groups[2] if "curing" in words or "manufacturing" in words else groups[0])
         out.append({"id": i, "label": f"Topic {i}: {words.split(',')[0]}", "description": f"Patents about {words}.",
                     "tech_group": group, "relevance": "high" if group != groups[0] or "wear" in words else "partial"})
+    return json.dumps(out)
+
+
+_EXTRACT_RULES = [  # (words in the patent text, theme)
+    (("sensor", "acceleration", "machine learning", "tpms"), "sensor"),
+    (("conductive", "static", "rim mounting", "air permeability"), "noise"),
+    (("silica", "rubber composition", "compound"), "compound"),
+    (("curing", "manufacturing", "mixing process", "vulcanis"), "process"),
+    (("belt", "cord angle", "crown"), "belt"),
+    (("groove", "sipe", "rib", "shoulder"), "geometry"),
+]
+_THEME_ANSWERS = {  # (technology group position, complexity position, problem words, component, lever)
+    "geometry": (0, 0, "Shoulder wear", "tread pattern", "groove depth ratio"),
+    "belt": (0, 1, "Shoulder wear; Cupping", "belt package", "belt cord angle"),
+    "compound": (1, 1, "Chip-and-flake", "tread compound", "silica content"),
+    "process": (2, 1, "Flat-spotting", "curing process", "curing temperature"),
+    "sensor": (3, 2, "Cupping", "in-tire sensor", "wear prediction model"),
+    "noise": (0, 0, "Not specified", "conductive strip", "conductive path"),
+}
+
+
+def choices_in(system: str) -> dict[str, list[str]]:
+    """The allowed values per field, read back from an extraction system prompt."""
+    out = {}
+    for line in system.splitlines():
+        m = re.match(r'- "(\w+)": .*?(?:Exactly one of|One or more of): (.*)$', line)
+        if m:
+            body = m.group(2).split(' (separate several')[0]
+            out[m.group(1)] = [re.sub(r"\s*\(.*$", "", o).strip() for o in body.split("; ")]
+    return out
+
+
+def extract_reply(system: str, user: str, drop: set[int] = frozenset()) -> str:
+    """What a well-behaved model answers to an extraction prompt (patents in `drop` are left out)."""
+    opts = choices_in(system)
+    blocks = re.split(r"\n\n(?=P\d+ \| )", user.strip())
+    out = []
+    for block in blocks:
+        ref = int(re.match(r"P(\d+)", block).group(1))
+        if ref in drop:
+            continue
+        low = block.lower()
+        theme = next((t for words, t in _EXTRACT_RULES if any(w in low for w in words)), "geometry")
+        group, level, problem, component, lever = _THEME_ANSWERS[theme]
+        segment = "TBR" if "truck" in low else "PCR" if "passenger" in low else "Not specified"
+        item = {"ref": f"P{ref}", "topic": f"{component} for even wear",
+                "segment": segment if segment in opts.get("segment", [segment]) else "Not specified",
+                "problem": problem, "tech_group": opts.get("tech_group", ["?"] * 4)[group],
+                "complexity": opts.get("complexity", ["?"] * 3)[min(level, len(opts.get("complexity", [0])) - 1)],
+                "component": component, "performance_target": "uniform wear" if theme != "noise" else "static discharge",
+                "design_lever": lever, "mechanism": f"Changing the {lever} evens out contact pressure.",
+                "core_claim": f"A tire whose {component} has a defined {lever}.",
+                "key_parameters": (re.findall(r"\d+(?:\.\d+)? (?:phr|degrees|mm)", block) or ["none"])[0],
+                "trade_offs": "not stated", "relevance": "Low" if theme == "noise" else "High",
+                "confidence": "High"}
+        for key in re.findall(r'- "(x_\w+)":', system):
+            item[key] = "not stated"
+        out.append(item)
     return json.dumps(out)
