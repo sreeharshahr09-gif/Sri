@@ -90,6 +90,8 @@ def start_job(question: str, page: str, work: Callable, describe: Describe, mode
                 job.done_items = 0
             job.total_items, job.done_items = int(total), int(done)
             return
+        if kind == "phase":  # a count belongs to the phase that reported it
+            job.total_items = job.done_items = 0
         label, line = describe(kind, payload)
         if label:
             job.label = label

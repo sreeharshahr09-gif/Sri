@@ -5,6 +5,10 @@ plotly>=5.18
 requests>=2.31
 openpyxl>=3.1      # .xlsx
 scipy>=1.10        # statistical tests inside the sandbox
+scikit-learn>=1.3  # patent landscape: TF-IDF, HDBSCAN clustering
+umap-learn>=0.5    # patent landscape: UMAP patent map
+# Optional, for PatentSBERTa embeddings on the Patent landscape page (downloads the model once):
+# sentence-transformers
 # Optional, enabled in the sandbox automatically when installed:
-# statsmodels, scikit-learn, matplotlib, seaborn, pyarrow (.parquet), xlrd (.xls)
+# statsmodels, matplotlib, seaborn, pyarrow (.parquet), xlrd (.xls)
 # pypdf  (PDF text on the Workspace page)

@@ -15,6 +15,7 @@ import streamlit as st
 from analyst_agent import LLMClient, LLMConfig
 from analyst_agent.data import SUPPORTED_EXTENSIONS, DataLoadError, list_sheets, load_dataset
 from analyst_agent.patents import report as rb
+from analyst_agent.patents import semantic
 from analyst_agent.patents.data import ROLE_LABELS, build_corpus, detect_columns
 from analyst_agent.patents.pipeline import LandscapeResult, PipelineOptions, run_landscape
 from analyst_agent.patents.plan import (
@@ -209,6 +210,13 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
                     mapping[role] = None if choice == "(none)" else choice
         sample = st.number_input("Trial run: analyse a random sample of N patents (0 = all)", 0, 100000, 0, 50,
                                  help="With a local model, try 50–100 patents first to check the plan.")
+        with st.expander("Advanced: semantic map"):
+            st.checkbox("Build the patent map and topic clusters", key=remember("pl_semantic", True))
+            st.text_input(
+                "Text embedding model", key=remember("pl_embed_model", semantic.DEFAULT_MODEL),
+                help="PatentSBERTa needs `pip install sentence-transformers` and downloads once (about 0.5 GB); "
+                     "its embeddings are cached on disk. Without it, or if you type tfidf, TF-IDF + LSA is used.",
+            )
         s1, s2 = st.columns(2)
         save = s1.form_submit_button("💾 Save plan", width="stretch", disabled=busy)
         run = s2.form_submit_button("▶ Save & run analysis", type="primary", width="stretch",
@@ -249,9 +257,13 @@ def start_run(plan: AnalysisPlan, mapping: dict, sample: int, llm_cfg: LLMConfig
     raw_df = st.session_state.pl_raw
     name, sha = st.session_state.pl_name, st.session_state.pl_sha
 
+    options = PipelineOptions(
+        sample_limit=sample, semantic_map=bool(st.session_state.get("pl_semantic", True)),
+        embedding_model=(st.session_state.get("pl_embed_model") or semantic.DEFAULT_MODEL).strip(),
+    )
+
     def work(on_event, should_stop):
-        return run_landscape(raw_df, mapping, plan, llm=LLMClient(llm_cfg),
-                             options=PipelineOptions(sample_limit=sample), on_event=on_event,
+        return run_landscape(raw_df, mapping, plan, llm=LLMClient(llm_cfg), options=options, on_event=on_event,
                              should_stop=should_stop, dataset_name=name, dataset_sha256=sha.split(":")[0])
 
     st.session_state[JOB] = jobs.start_job(f"Landscape: {plan.title}", "Patent landscape", work, describe_event)

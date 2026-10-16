@@ -55,3 +55,29 @@ def test_worker_failures_are_captured_not_lost():
     job = start_job("q", "Data analysis", work, describe)
     wait(job)
     assert job.run is None and job.error == "RuntimeError: model server crashed" and job.finished is not None
+
+
+def test_counted_progress_gives_an_eta_and_ends_with_its_phase():
+    gates = [threading.Event() for _ in range(4)]
+
+    def work(on_event, should_stop):
+        on_event("phase", "Embedding")
+        on_event("progress", (0, 10))
+        time.sleep(0.05)
+        on_event("progress", (5, 10))
+        gates[0].set()
+        gates[1].wait(5)
+        on_event("phase", "Clustering")
+        gates[2].set()
+        gates[3].wait(5)
+        return AgentRun(question="q", status="answered")
+
+    job = start_job("q", "Patent landscape", work, describe)
+    assert gates[0].wait(5)
+    assert (job.done_items, job.total_items) == (5, 10)
+    assert job.eta is not None and 0 < job.eta < 5
+    gates[1].set()
+    assert gates[2].wait(5)
+    assert (job.done_items, job.total_items) == (0, 0) and job.eta is None
+    gates[3].set()
+    wait(job)

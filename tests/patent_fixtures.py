@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import random
 
 import pandas as pd
@@ -129,3 +130,19 @@ def make_export(n: int = 300, seed: int = 0, with_family: bool = False, duplicat
         dups["Record Number"] = dups["Record Number"].str.replace(r"^[A-Z]{2}", "US", regex=True)
     df = pd.concat([df, dups], ignore_index=True)
     return df
+
+
+def name_clusters_reply(prompt: str, groups: list[str]) -> str:
+    """What a well-behaved model answers to a cluster-naming prompt: one named object per cluster."""
+    ids = [int(line.split()[1]) for line in prompt.splitlines() if line.startswith("Cluster ")]
+    keywords = {int(line.split()[1]): line.split("keywords:", 1)[1].strip()
+                for line in prompt.splitlines() if line.startswith("Cluster ")}
+    out = []
+    for i in ids:
+        words = keywords[i]
+        group = (groups[3] if "sensor" in words or "acceleration" in words else
+                 groups[1] if "silica" in words or "rubber" in words else
+                 groups[2] if "curing" in words or "manufacturing" in words else groups[0])
+        out.append({"id": i, "label": f"Topic {i}: {words.split(',')[0]}", "description": f"Patents about {words}.",
+                    "tech_group": group, "relevance": "high" if group != groups[0] or "wear" in words else "partial"})
+    return json.dumps(out)

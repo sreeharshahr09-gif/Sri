@@ -96,6 +96,11 @@ call :try_python "py"
 call :try_python "python"
 if not defined PY_OK goto no_streamlit
 echo Using Python: %PYTHON%
+"%PYTHON%" -c "import sklearn, umap" >nul 2>&1
+if errorlevel 1 (
+    echo [i] The Patent landscape map needs two more packages. Install them once with:
+    echo     "%PYTHON%" -m pip install -r requirements.txt
+)
 
 rem Skip Streamlit's one-time "enter your email" question, which would otherwise wait here.
 if exist "%USERPROFILE%\.streamlit\credentials.toml" goto run_app
