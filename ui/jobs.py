@@ -21,7 +21,14 @@ import streamlit as st
 from analyst_agent import AgentRun
 
 # Session-state key for each page's job, the key of the conversation it belongs to, and its page title.
-JOB_PAGES = {"data_job": ("runs", "Data analysis"), "ws_job": ("ws_runs", "Workspace")}
+JOB_PAGES = {
+    "data_job": ("runs", "Data analysis"),
+    "ws_job": ("ws_runs", "Workspace"),
+    "pl_job": ("pl_outputs", "Patent landscape"),
+}
+PAGE_ICONS = {"Data analysis": "📊", "Workspace": "📁", "Patent landscape": "🔬"}
+# Pages can register how a finished job's result is stored (default: appended to the page's list).
+JOB_SINKS: dict[str, Callable[["Job"], None]] = {}
 MAX_LINES = 300
 
 Describe = Callable[[str, Any], tuple[str | None, tuple[str, str] | None]]
@@ -38,6 +45,10 @@ class Job:
     error: str | None = None
     step: int = 0
     max_steps: int = 0
+    # Item progress for long pipelines ("enriching 120 of 400 patents"), with an ETA.
+    done_items: int = 0
+    total_items: int = 0
+    phase_started: float = 0.0
     started: float = field(default_factory=time.time)
     finished: float | None = None
     cancel: threading.Event = field(default_factory=threading.Event)
@@ -50,6 +61,14 @@ class Job:
     @property
     def elapsed(self) -> float:
         return (self.finished or time.time()) - self.started
+
+    @property
+    def eta(self) -> float | None:
+        """Seconds left in the current counted phase, from its average rate so far."""
+        if not self.total_items or self.done_items <= 0 or not self.phase_started:
+            return None
+        rate = (time.time() - self.phase_started) / self.done_items
+        return rate * (self.total_items - self.done_items)
 
 
 def start_job(question: str, page: str, work: Callable, describe: Describe, mode: str | None = None,
@@ -64,6 +83,13 @@ def start_job(question: str, page: str, work: Callable, describe: Describe, mode
     def on_event(kind: str, payload: Any) -> None:
         if kind == "llm_call":
             job.step = int(payload) + 1
+        elif kind == "progress":  # payload: (done, total)
+            done, total = payload
+            if total != job.total_items or done < job.done_items:
+                job.phase_started = time.time()
+                job.done_items = 0
+            job.total_items, job.done_items = int(total), int(done)
+            return
         label, line = describe(kind, payload)
         if label:
             job.label = label
@@ -99,6 +125,10 @@ def collect(job_key: str) -> AgentRun | None:
     if job is None or job.running:
         return None
     runs_key, _ = JOB_PAGES[job_key]
+    if job_key in JOB_SINKS:
+        JOB_SINKS[job_key](job)
+        st.session_state[job_key] = None
+        return job.run
     run = job.run
     if run is None:  # the worker itself failed; keep the question visible with the error
         run = AgentRun(question=job.question, status="error", error=job.error or "Unknown error",
@@ -161,15 +191,22 @@ def status_bar(current_page: str) -> None:
                 st.session_state.job_notice = f"{page} {outcome}: “{job.question[:60]}”. Open {page} to see it."
             st.rerun()
         stopping = job.cancel.is_set()
-        icon = "📊" if job_key == "data_job" else "📁"
-        steps = f"step {job.step} of up to {job.max_steps}" if job.max_steps else f"step {job.step}"
+        icon = PAGE_ICONS.get(page, "🔄")
         activity = "Stopping after the current step…" if stopping else job.label
         where = "" if page == current_page else f" · on the {page} page"
+        if job.total_items:
+            fraction = min(job.done_items / job.total_items, 1.0)
+            eta = job.eta
+            counted = f"{job.done_items:,} of {job.total_items:,}" + (f" · about {_clock(eta)} left" if eta else "")
+            text = f"{activity} · {counted} · {_clock(job.elapsed)} elapsed"
+        else:
+            steps = f"step {job.step} of up to {job.max_steps}" if job.max_steps else f"step {job.step}"
+            fraction = min(job.step / job.max_steps, 0.95) if job.max_steps else 0.0
+            text = f"{activity} · {steps} · {_clock(job.elapsed)} elapsed"
         with st.container(border=True):
             cols = st.columns([6, 1])
             cols[0].markdown(f"{icon} **Working on:** “{job.question[:90]}”{where}")
-            fraction = min(job.step / job.max_steps, 0.95) if job.max_steps else 0.0
-            cols[0].progress(fraction, text=f"{activity} · {steps} · {_clock(job.elapsed)} elapsed")
+            cols[0].progress(fraction, text=text)
             cols[1].button("⏹ Stop", key=f"stop-{job_key}", width="stretch", disabled=stopping,
                            on_click=_request_stop, args=(job_key,),
                            help="Stops after the current step (a model reply already being generated finishes first).")
