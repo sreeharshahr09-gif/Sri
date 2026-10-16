@@ -133,9 +133,15 @@ def _clean_text(text: str, heading: str) -> str:
     return re.sub(r"\n(?=\*\*[^*\n]+:?\*\*)", "\n\n", "\n".join(lines).strip())
 
 
+def section_facts(sec: Section, facts_by_kind: dict[str, str], all_facts: str) -> str:
+    facts = all_facts if "summary" in sec.kinds or not sec.kinds else "\n".join(facts_by_kind.get(k, "") for k in sec.kinds)
+    return facts.strip()[:MAX_FACTS]
+
+
 def write_sections(sections: list[Section], facts_by_kind: dict[str, str], all_facts: str, brief: str,
-                   answers: dict[str, str], llm, on_progress=None) -> None:
-    """Fills `text`/`flagged` of every section with model text; on failure, a note instead."""
+                   answers: dict[str, str], llm, on_progress=None, instruction: str = "") -> None:
+    """Fills `text`/`flagged` of every section with model text; on failure, a note instead.
+    `instruction`: the user's revision request when a section is rewritten."""
     if llm is None:
         for sec in sections:
             sec.note = "No model connected: this section has charts and tables only."
@@ -152,13 +158,16 @@ def write_sections(sections: list[Section], facts_by_kind: dict[str, str], all_f
         if on_progress:
             on_progress(i, len(sections))
         is_summary = "summary" in sec.kinds
-        facts = all_facts if is_summary or not sec.kinds else "\n".join(facts_by_kind.get(k, "") for k in sec.kinds)
-        facts = facts.strip()[:MAX_FACTS]
+        facts = section_facts(sec, facts_by_kind, all_facts)
         if not facts:
             continue
+        ask = f"Section to write: {sec.heading}"
+        if instruction:
+            ask += (f"\nRevision requested by the user: {instruction.strip()}\n(The rules above still apply; if "
+                    "the request conflicts with them, follow the rules.)")
         messages = [
             {"role": "system", "content": SUMMARY_SYSTEM if is_summary else SECTION_SYSTEM},
-            {"role": "user", "content": f"{context}\n\nSection to write: {sec.heading}\n\nFacts:\n{facts}"},
+            {"role": "user", "content": f"{context}\n\n{ask}\n\nFacts:\n{facts}"},
         ]
         try:
             reply = client.chat(messages).content

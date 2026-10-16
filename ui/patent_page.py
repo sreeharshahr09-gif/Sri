@@ -13,10 +13,14 @@ import pandas as pd
 import streamlit as st
 
 from analyst_agent import LLMClient, LLMConfig
+from analyst_agent.agent import DataAnalystAgent
+from analyst_agent.config import AgentConfig, SandboxConfig
 from analyst_agent.data import SUPPORTED_EXTENSIONS, DataLoadError, list_sheets, load_dataset
 from analyst_agent.patents import enrich, semantic
+from analyst_agent.patents import narrative as nar
 from analyst_agent.patents import report as rb
 from analyst_agent.patents.data import ROLE_LABELS, build_corpus, detect_columns
+from analyst_agent.patents.followup import FollowUp, analysis_dataset, apply_changes, landscape_profile, rewrite, route
 from analyst_agent.patents.pipeline import LandscapeResult, PipelineOptions, run_landscape
 from analyst_agent.patents.plan import (
     AnalysisPlan,
@@ -25,8 +29,11 @@ from analyst_agent.patents.plan import (
     list_from_text,
     parse_brief,
 )
+from analyst_agent.sandbox import Sandbox
 from ui import jobs
 from ui.common import remember
+from ui.data_page import describe_event as describe_agent_event
+from ui.data_page import render_run
 
 JOB = "pl_job"
 MAPPED_ROLES = ["id", "title", "abstract", "claims", "assignee", "priority_date", "filing_date", "pub_date",
@@ -44,9 +51,11 @@ class PlanReady:
 
 def init_state() -> None:
     defaults = {"pl_raw": None, "pl_name": "", "pl_sha": "", "pl_mapping": {}, "pl_plan": None,
-                "pl_plan_version": 0, "pl_outputs": [], "pl_error": None}
+                "pl_plan_version": 0, "pl_outputs": [], "pl_error": None, "pl_sample": 0, "pl_clear_followup": False}
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
+    if "pl_sandbox" not in st.session_state:
+        st.session_state.pl_sandbox = Sandbox(SandboxConfig())
 
 
 def _sink(job: jobs.Job) -> None:
@@ -68,7 +77,7 @@ def describe_event(kind: str, payload) -> tuple[str | None, tuple[str, str] | No
         return f"{payload}…", ("caption", f"▸ {payload}")
     if kind == "note":
         return None, ("caption", str(payload))
-    return None, None
+    return describe_agent_event(kind, payload)  # follow-up questions run the data agent
 
 
 # --------------------------------------------------------------------------- step 1: the export
@@ -263,6 +272,7 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
 def start_run(plan: AnalysisPlan, mapping: dict, sample: int, llm_cfg: LLMConfig) -> None:
     raw_df = st.session_state.pl_raw
     name, sha = st.session_state.pl_name, st.session_state.pl_sha
+    st.session_state.pl_sample = sample
 
     options = PipelineOptions(
         sample_limit=sample, semantic_map=bool(st.session_state.get("pl_semantic", True)),
@@ -331,6 +341,94 @@ def render_result(result: LandscapeResult, idx: int) -> None:
     render_blocks(result.blocks, key=f"pl-{idx}")
 
 
+# --------------------------------------------------------------------------- follow-ups
+
+
+EXAMPLES = ("e.g. “Yearly trend of sensor-based patents in TBR only” · “Compare Michelin and Bridgestone by wear type” "
+            "· “Only 2018–2024 and add Continental as a competitor” · “Make the executive summary shorter”")
+
+
+def followup_step(busy: bool, llm_cfg: LLMConfig) -> None:
+    results = [o for o in st.session_state.pl_outputs if isinstance(o, LandscapeResult)]
+    if not results:
+        return
+    st.divider()
+    st.subheader("💬 Ask for changes or more analysis")
+    st.caption("Questions are answered from the enriched patent table (with code you can inspect); plan changes are "
+               "shown for your confirmation before the analysis runs again; text changes rewrite the sections. "
+               "Everything is added below.")
+    if st.session_state.pl_clear_followup:  # empty the box after a request was sent
+        st.session_state["pl_followup"] = ""
+        st.session_state.pl_clear_followup = False
+    text = st.text_area("Your request", key=remember("pl_followup", ""), height=100, placeholder=EXAMPLES,
+                        disabled=busy)
+    if st.button("➤ Send", type="primary", disabled=busy, key="pl_followup_send"):
+        if not text.strip():
+            st.warning("Type your request first.")
+            return
+        start_followup(text.strip(), results[-1], llm_cfg)
+
+
+def start_followup(text: str, base: LandscapeResult, llm_cfg: LLMConfig) -> None:
+    dataset = analysis_dataset(base)
+    agent_cfg = AgentConfig()
+    agent = DataAnalystAgent(LLMClient(llm_cfg), st.session_state.pl_sandbox, dataset, config=agent_cfg,
+                             profile=landscape_profile(base, dataset))
+    history = [o.run for o in st.session_state.pl_outputs if isinstance(o, FollowUp) and o.run is not None]
+    headings = [sec.heading for sec in base.sections]
+
+    def work(on_event, should_stop):
+        llm = LLMClient(llm_cfg)
+        on_event("phase", "Understanding your request")
+        decision = route(llm, text, base.plan, headings)
+        fu = FollowUp(question=text, route=decision)
+        if decision.action == "change_plan":
+            fu.new_plan, fu.diff = apply_changes(base.plan, decision.changes)
+            fu.status = "proposed" if fu.diff else "done"
+        elif decision.action == "rewrite":
+            on_event("phase", "Rewriting the text")
+            fu.sections = rewrite(base, llm, decision.sections, decision.instruction or text)
+        else:
+            fu.run = agent.run(text, history=history, on_event=on_event, should_stop=should_stop)
+        return fu
+
+    st.session_state[JOB] = jobs.start_job(f"Follow-up: {text[:70]}", "Patent landscape", work, describe_event,
+                                           max_steps=agent_cfg.max_steps + 1)
+    st.session_state.pl_clear_followup = True
+    st.rerun()
+
+
+def render_followup(fu: FollowUp, idx: int, busy: bool, llm_cfg: LLMConfig) -> None:
+    st.divider()
+    st.markdown(f"#### 💬 {fu.question}")
+    if fu.route.note:
+        st.caption(f"Handled as {fu.route.action.replace('_', ' ')} ({fu.route.note}).")
+    if fu.route.action == "change_plan":
+        if not fu.diff:
+            st.info("Nothing in the plan would change with this request.", icon="ℹ️")
+            return
+        st.markdown("**Proposed plan changes**\n\n" + "\n".join(f"- {line}" for line in fu.diff))
+        if fu.status == "proposed":
+            c1, c2, _ = st.columns([2, 1, 3])
+            if c1.button("▶ Apply and run again", key=f"fu-apply-{idx}", type="primary", disabled=busy):
+                fu.status = "applied"
+                st.session_state.pl_plan = fu.new_plan
+                st.session_state.pl_plan_version += 1
+                start_run(fu.new_plan, st.session_state.pl_mapping, st.session_state.pl_sample, llm_cfg)
+            if c2.button("Discard", key=f"fu-discard-{idx}", disabled=busy):
+                fu.status = "discarded"
+                st.rerun()
+        else:
+            st.caption("Applied: the plan above is updated and the new analysis follows below."
+                       if fu.status == "applied" else "Discarded.")
+    elif fu.route.action == "rewrite":
+        for i, sec in enumerate(fu.sections):
+            st.markdown(f"**Revised: {sec.heading}**")
+            render_blocks(nar.section_blocks(sec), key=f"fu-{idx}-{i}")
+    elif fu.run is not None:
+        render_run(fu.run, 10_000 + idx)
+
+
 def page() -> None:
     init_state()
     llm_cfg: LLMConfig = st.session_state.llm_cfg
@@ -353,5 +451,8 @@ def page() -> None:
     for idx, out in enumerate(outputs):
         if isinstance(out, LandscapeResult):
             render_result(out, idx)
+        elif isinstance(out, FollowUp):
+            render_followup(out, idx, busy, llm_cfg)
     if jobs.active(JOB) is not None:
         jobs.job_panel(JOB)
+    followup_step(busy, llm_cfg)

@@ -56,6 +56,8 @@ class LandscapeResult:
     analysis_frame: pd.DataFrame | None = None  # the patents the analytics are computed on
     exhibits: list[an.Exhibit] = field(default_factory=list)
     sections: list[nar.Section] = field(default_factory=list)
+    facts_by_kind: dict[str, str] = field(default_factory=dict)  # what the text was written from
+    all_facts: str = ""
     model_name: str = ""
     methods: dict[str, str] = field(default_factory=dict)  # method -> description, for the methodology
 
@@ -148,6 +150,7 @@ def narrative_stage(result: LandscapeResult, llm, emit) -> None:
     ordered = sorted(result.exhibits, key=lambda e: FACT_PRIORITY.index(e.key) if e.key in FACT_PRIORITY else 99)
     all_facts = an.summary_facts(frame, ordered[:1]) + (f" [Topic clusters] {clusters}" if clusters else "") + " " + \
         " ".join(f"[{ex.title}] {ex.facts}" for ex in ordered[1:])
+    result.facts_by_kind, result.all_facts = by_kind, all_facts
     nar.write_sections(sections, by_kind, all_facts, result.plan.brief, result.plan.answers, llm,
                        on_progress=lambda done, total: emit("progress", (done, total)))
     result.sections = sections
