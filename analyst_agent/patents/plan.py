@@ -104,18 +104,20 @@ def list_from_text(text: str) -> list[str]:
 # --------------------------------------------------------------------------- from the brief
 
 PLAN_SYSTEM = """\
-You prepare patent landscape studies for an R&D team. Read the user's brief and turn it into an \
-analysis plan. Reply with ONLY one JSON object, no other text, with exactly these keys:
+You prepare patent landscape studies for an R&D team. Read the user's brief and, when given, the titles of \
+a sample of the patents in the uploaded export, and turn them into an analysis plan. The brief says what the \
+user wants; the titles show what the data covers, so use them to fill what the brief leaves open. Reply with \
+ONLY one JSON object, no other text, with exactly these keys:
 
-"title": short title of the study (for example "Uneven wear in TBR and PCR tires")
+"title": short title of the study (for example "Uneven wear in TBR and PCR tires"); when the brief names no topic, name the topic most sample titles share
 "objective": one or two sentences on what the study must find out
 "segments": list of product segments in scope as short codes or names (for example ["TBR", "PCR"]); [] if none given
 "years": [first_year, last_year] if the brief limits the period, otherwise null
 "problem_label": what the problem dimension is called in this study (for example "Wear type", "Noise source", "Failure mode"); "Problem" if unclear
-"problems": list of {"name", "description"}: the specific problems or phenomena the brief lists or clearly implies (keep the brief's terms)
+"problems": list of {"name", "description"}: the specific problems or phenomena the brief lists or clearly implies (keep the brief's terms); if the brief lists none, propose 5-8 categories of the technical problems these patents solve, fitting the topic and the sample titles
 "tech_buckets": list of {"name", "description"}: the technology groups to cluster solutions into, exactly as the brief defines them; if the brief gives none, propose 4-6 suitable groups
-"complexity_levels": list of {"name", "description"} ordered from simplest to most complex, as the brief defines them; if none, use Simple / Intermediate / Complex
-"in_scope": one or two sentences defining which patents are relevant and which are not
+"complexity_levels": list of {"name", "description"} ordered from simplest to most complex, as the brief defines them; if none, use Simple / Intermediate / Complex, each described for this topic (what makes a solution simple or complex here)
+"in_scope": one or two sentences defining which patents are relevant and which are not; name the kinds of patents in the sample that are off-topic, if any
 "keywords": list of search keywords from the brief
 "classification_codes": list of IPC/CPC codes mentioned
 "competitors": list of companies named in the brief
@@ -125,15 +127,21 @@ analysis plan. Reply with ONLY one JSON object, no other text, with exactly thes
 "questions": list of the questions the brief says to ask the user before running the analysis
 "not_possible": list of things the brief asks for that cannot be done here, each with a short reason. This tool works offline on the patent export the user uploaded: it cannot search the web or online databases (the uploaded export replaces that search) and it cannot analyse images.
 
-Use only information from the brief, plus sensible defaults where a key is missing. Do not invent companies.\
+Use only information from the brief and the sample titles, plus sensible defaults where a key is missing. \
+Do not invent companies.\
 """
 
 
-def parse_brief(llm, brief: str) -> AnalysisPlan:
-    """Plan from the brief via the model; falls back to rules if the model fails or is unreachable."""
+def parse_brief(llm, brief: str, sample_titles: list[str] | None = None) -> AnalysisPlan:
+    """Plan from the brief (and titles from the export) via the model; falls back to rules if the model fails."""
     fallback = fallback_plan(brief)
+    user = f"Brief:\n\n{brief.strip()}"
+    titles = [" ".join(str(t).split())[:140] for t in (sample_titles or []) if str(t).strip()]
+    if titles:
+        user += (f"\n\nTitles of {len(titles)} randomly chosen patents in the uploaded export:\n"
+                 + "\n".join(f"- {t}" for t in titles))
     try:
-        data = ask_json(llm, PLAN_SYSTEM, f"Brief:\n\n{brief.strip()}", retries=1, max_tokens=3000)
+        data = ask_json(llm, PLAN_SYSTEM, user, retries=1, max_tokens=3000)
     except (LLMError, JSONReplyError) as exc:
         fallback.not_possible.append(f"The model could not prepare the plan ({exc}); it was set up by rules instead. "
                                      "Please review it.")

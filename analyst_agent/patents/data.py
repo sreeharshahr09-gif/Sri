@@ -99,7 +99,8 @@ ASSIGNEE_ALIASES: list[tuple[str, str]] = [
     (r"goodyear", "Goodyear"),
     (r"continental (reifen|ag|tire|tyre|automotive|teves)|^continental$|conti tech|contitech", "Continental"),
     (r"pirelli", "Pirelli"),
-    (r"sumitomo rubber|^srl dunlop|sumitomo electric industries", "Sumitomo Rubber"),
+    (r"sumitomo rubber|^srl dunlop", "Sumitomo Rubber"),
+    (r"sumitomo electric", "Sumitomo Electric"),  # steel cord maker: not Sumitomo Rubber
     (r"yokohama (rubber|tire|tyre)|^yokohama$", "Yokohama"),
     (r"toyo (tire|tyre|rubber)|^toyo$", "Toyo Tire"),
     (r"hankook", "Hankook"),
@@ -145,7 +146,8 @@ ASSIGNEE_ALIASES: list[tuple[str, str]] = [
     (r"arlanxeo", "Arlanxeo"),
     (r"\bzeon\b", "Zeon"),
     (r"\bjsr\b", "JSR"),
-    (r"asahi kasei", "Asahi Kasei"),
+    (r"asahi kasei|asahi chem", "Asahi Kasei"),  # Asahi Chemical Industry is Asahi Kasei's former name
+    (r"dow corning|dow silicones", "Dow Silicones"),
     (r"kuraray", "Kuraray"),
     (r"trinseo", "Trinseo"),
     (r"synthos", "Synthos"),
@@ -155,6 +157,17 @@ ASSIGNEE_ALIASES: list[tuple[str, str]] = [
     (r"shin etsu", "Shin-Etsu"),
     (r"momentive", "Momentive"),
     (r"bosch", "Bosch"),
+]
+# Names written in Korean, Japanese or Chinese script (the Latin-letter aliases above cannot see them).
+SCRIPT_ALIASES: list[tuple[str, str]] = [
+    ("한국타이어", "Hankook"), ("금호타이어", "Kumho"), ("넥센타이어", "Nexen"), ("韩泰", "Hankook"), ("锦湖", "Kumho"),
+    ("ブリヂストン", "Bridgestone"), ("普利司通", "Bridgestone"), ("住友ゴム", "Sumitomo Rubber"),
+    ("住友橡胶", "Sumitomo Rubber"), ("住友電気", "Sumitomo Electric"), ("横浜ゴム", "Yokohama"),
+    ("横滨橡胶", "Yokohama"), ("東洋ゴム", "Toyo Tire"), ("トーヨータイヤ", "Toyo Tire"), ("通伊欧", "Toyo Tire"),
+    ("ミシュラン", "Michelin"), ("米其林", "Michelin"), ("グッドイヤー", "Goodyear"), ("固特异", "Goodyear"),
+    ("ピレリ", "Pirelli"), ("倍耐力", "Pirelli"), ("コンチネンタル", "Continental"), ("马牌", "Continental"),
+    ("中策橡胶", "Zhongce (ZC Rubber)"), ("玲珑", "Linglong"), ("赛轮", "Sailun"), ("双星", "Doublestar"),
+    ("佳通", "Giti"), ("三角轮胎", "Triangle"), ("风神轮胎", "Aeolus"), ("正新", "Cheng Shin (Maxxis)"),
 ]
 _LEGAL_WORDS = (
     "co", "corp", "corporation", "company", "inc", "incorporated", "ltd", "limited", "llc", "plc",
@@ -175,6 +188,9 @@ def normalize_assignee(name: str) -> str:
     """Canonical company name: known aliases first, otherwise legal suffixes removed."""
     if not name:
         return "Unknown"
+    for fragment, canonical in SCRIPT_ALIASES:
+        if fragment in name:
+            return canonical
     simple = _norm(name.replace("&", " and "))
     for pattern, canonical in ASSIGNEE_ALIASES:
         if re.search(pattern, simple):
@@ -192,25 +208,141 @@ def normalize_assignee(name: str) -> str:
     return core
 
 
+_ABBREVIATIONS = {
+    "tech": "technology", "technol": "technology", "technologies": "technology", "ind": "industry",
+    "indus": "industry", "industries": "industry", "industrial": "industry", "int": "international",
+    "intl": "international", "mat": "material", "materials": "material", "chem": "chemical",
+    "chemicals": "chemical", "eng": "engineering", "univ": "university", "inst": "institute", "sci": "science",
+    "res": "research", "dev": "development", "coop": "cooperation", "mfg": "manufacturing",
+}
+_FILLER = {"ip", "and", "of", "the", "for"}
+
+
+def _variant_key(name: str) -> list[str]:
+    words = [_ABBREVIATIONS.get(w, w) for w in _norm(name).split()]
+    return [w for w in words if w not in _FILLER]
+
+
+# Words a company name may carry or drop without becoming another company.
+_GENERIC_EXTRA = {"research", "high", "new", "global", "international", "technology", "industry", "development",
+                  "engineering", "manufacturing", "cooperation", "products", "systems", "solutions", "trading",
+                  "ticaret", "sanayi", "ve"}
+
+
+def _is_subsequence(short: list[str], long: list[str]) -> bool:
+    it = iter(long)
+    return all(word in it for word in short)
+
+
+def _only_generic_extra(short: list[str], long: list[str]) -> bool:
+    """`long` is `short` plus generic words only ("Eve Rubber Research Institute" / "Eve Rubber Institute"),
+    not plus a distinguishing word ("Beijing Univ of Chemical Technology" / "Beijing Univ of Technology")."""
+    extra = list(long)
+    for word in short:
+        extra.remove(word)
+    return set(extra) <= _GENERIC_EXTRA
+
+
+def merge_variants(names: pd.Series) -> dict[str, str]:
+    """Normalised names that are spellings of one another -> the most frequent of them.
+
+    Catches what aliases cannot list: abbreviations ("Sika Tech" / "Sika Technology"), names cut short by
+    the database ("... Sanay" / "... Sanayi Ve Ticaret") and dropped words ("Eve Rubber Institute" /
+    "Eve Rubber Research Institute"). Only names of three or more words are merged by the shortening
+    rules, so "Continental" never absorbs "Continental Carbon".
+    """
+    counts = names[names.ne("Unknown")].value_counts()
+    keys = {name: _variant_key(name) for name in counts.index}
+    target: dict[str, str] = {}
+    by_key: dict[str, str] = {}
+    for name in counts.index:  # most frequent first: it becomes the display name
+        key = keys[name]
+        joined = " ".join(key)
+        if not key:
+            continue
+        if joined in by_key:
+            target[name] = by_key[joined]
+            continue
+        hit = None
+        if len(key) >= 3:
+            for other_joined, other_name in by_key.items():
+                other = other_joined.split()
+                shorter, longer = (key, other) if len(key) <= len(other) else (other, key)
+                if len(shorter) >= 3 and ((_is_subsequence(shorter, longer) and _only_generic_extra(shorter, longer))
+                                          or " ".join(longer).startswith(" ".join(shorter))):
+                    hit = other_name
+                    break
+        if hit is not None:
+            target[name] = hit
+        else:
+            by_key[joined] = name
+    return target
+
+
 # --------------------------------------------------------------------------- dates, countries, text
 
 _COUNTRY_PREFIX = re.compile(r"^\s*([A-Z]{2})[\s-]?\d")
 
 
+_EXCEL_EPOCH = pd.Timestamp("1899-12-30")
+
+
+def _year_of_number(value: float) -> float:
+    """A number is a year (2018), a yyyymmdd date (20180713) or an Excel serial date (43294); never a
+    timestamp in nanoseconds, which is how a bare 2018 would otherwise end up as 1970."""
+    if not np.isfinite(value) or not float(value).is_integer():
+        return np.nan
+    if 1900 <= value <= 2100:
+        return float(value)
+    if 19000101 <= value <= 21001231:
+        return float(int(value) // 10000)
+    if 10000 <= value <= 80000:
+        return float((_EXCEL_EPOCH + pd.Timedelta(days=int(value))).year)
+    return np.nan
+
+
+def _year_of_text(text: str) -> float:
+    text = text.strip()
+    if not text:
+        return np.nan
+    if re.fullmatch(r"\d+(\.0+)?", text):
+        return _year_of_number(float(text))
+    stamp = pd.to_datetime(text, errors="coerce", format="mixed")
+    if pd.isna(stamp):
+        found = re.search(r"\b(19|20)\d{2}\b", text)  # e.g. "Q3 2018", "2018 (est.)"
+        return float(found.group(0)) if found else np.nan
+    return float(stamp.year)
+
+
+def _year_of(value) -> float:
+    if value is None or (isinstance(value, float) and np.isnan(value)) or value is pd.NaT:
+        return np.nan
+    if hasattr(value, "year") and not isinstance(value, str):  # datetime, date, Timestamp
+        return float(value.year)
+    if isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(value, bool):
+        return _year_of_number(float(value))
+    # Several dates in one cell (e.g. all priority dates): the earliest counts.
+    years = [_year_of_text(part) for part in re.split(r"[\n;|]+", str(value))]
+    years = [y for y in years if not np.isnan(y)]
+    return min(years) if years else np.nan
+
+
 def parse_year(series: pd.Series) -> pd.Series:
-    """Year from dates in any common format, including yyyymmdd integers."""
-    s = series.copy()
-    as_str = s.astype(str).str.strip()
-    compact = as_str.str.fullmatch(r"\d{8}(\.0)?")
-    out = pd.Series(np.nan, index=s.index, dtype=float)
-    if compact.any():
-        out[compact] = pd.to_numeric(as_str[compact].str[:4], errors="coerce")
-    rest = ~compact
-    if rest.any():
-        parsed = pd.to_datetime(s[rest], errors="coerce", format="mixed")
-        out[rest] = parsed.dt.year
-        bare = out[rest].isna() & as_str[rest].str.fullmatch(r"(19|20)\d{2}(\.0)?")
-        out.loc[bare[bare].index] = pd.to_numeric(as_str[bare[bare].index].str[:4], errors="coerce")
+    """Year from dates in any common format: dates, bare years, yyyymmdd numbers, Excel serial dates,
+    and cells listing several dates (the earliest). Years outside 1900-2100 count as missing."""
+    cache: dict = {}
+
+    def year(value) -> float:
+        try:
+            key = value if not isinstance(value, float) or not np.isnan(value) else "nan"
+            hash(key)
+        except TypeError:
+            return _year_of(value)
+        if key not in cache:
+            cache[key] = _year_of(value)
+        return cache[key]
+
+    out = pd.Series([year(v) for v in series], index=series.index, dtype=float)
     out[(out < 1900) | (out > 2100)] = np.nan
     return out
 
@@ -288,7 +420,8 @@ def build_corpus(
     for role in ("title", "abstract", "claims", "problem", "method", "advantage", "cpc", "ipc", "family",
                  "inventors", "legal_status"):
         std[role] = col(role).map(_clean_text)
-    std["first_claim"] = std["claims"].map(first_claim)
+    # Long enough for claim breadth (its length) to separate patents; the model sees an excerpt.
+    std["first_claim"] = std["claims"].map(lambda c: first_claim(c, limit=6000))
     std["cited_by"] = pd.to_numeric(col("cited_by"), errors="coerce")
 
     # Assignees: keep all names, use the first (normalised) as the primary owner.
@@ -296,6 +429,11 @@ def build_corpus(
     std["assignee_raw"] = all_names.map(lambda names: names[0] if names else "")
     std["assignee"] = std["assignee_raw"].map(lambda n: normalize_assignee(n) if n else "Unknown")
     std["co_assignees"] = all_names.map(lambda names: "; ".join(normalize_assignee(n) for n in names[1:]))
+    merged = merge_variants(std["assignee"])
+    if merged:
+        std["assignee"] = std["assignee"].map(lambda n: merged.get(n, n))
+        std["co_assignees"] = std["co_assignees"].map(
+            lambda text: "; ".join(merged.get(n, n) for n in text.split("; ")) if text else text)
 
     # Year: the earliest available kind of date, stated in the methodology.
     std["year"] = np.nan

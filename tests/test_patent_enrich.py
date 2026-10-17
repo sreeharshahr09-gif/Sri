@@ -234,3 +234,38 @@ def test_real_client_settings_for_extraction(plan, std):
     assert cfg.temperature == 0.2 and cfg.seed == 7 and cfg.read_timeout == 600
     assert cfg.max_tokens == 600 * 6 + 1500 and seen[1].max_tokens == 600 * 4 + 1500
     assert res.info.startswith("qwen-test, 6 patents per request")
+
+
+def test_cut_off_replies_are_retried_per_patent_with_the_reason(plan, std):
+    from analyst_agent.llm import ReplyCutOff
+
+    class Thinker(FakeModel):
+        """Runs out of room on batches of several patents; answers single patents."""
+
+        def chat(self, messages):
+            self.calls.append(messages)
+            if messages[-1]["content"].count("\n\nP") >= 1:
+                raise ReplyCutOff("The model used all 5,100 reply tokens without writing an answer")
+            return Completion(content=extract_reply(messages[0]["content"], messages[-1]["content"]), latency_s=0.0)
+
+    model = Thinker()
+    res = enrich.extract_details(std.head(8), plan, model, use_cache=False)
+    assert res.stats["extracted"] == 8 and res.stats["failed"] == 0  # not treated as "the model is gone"
+
+    class Silent(FakeModel):
+        def chat(self, messages):
+            self.calls.append(messages)
+            return Completion(content="", latency_s=0.0)
+
+    res = enrich.extract_details(std.head(2), plan, Silent(), use_cache=False)
+    assert res.table["Extraction"].eq("failed: the model's reply was empty").all()
+
+
+def test_long_first_claim_keeps_its_characterising_end(std):
+    row = std.iloc[0].copy()
+    row["first_claim"] = ("1. A pneumatic tire comprising a carcass, a belt layer and a tread portion " + "filler " * 300
+                          + "wherein the groove depth ratio is 0.6 to 0.8.")
+    line = next(x for x in enrich.patent_prompt(row).splitlines() if x.startswith("First claim: "))
+    assert line.startswith("First claim: 1. A pneumatic tire comprising a carcass")
+    assert line.endswith("wherein the groove depth ratio is 0.6 to 0.8.") and " … " in line
+    assert len(line) <= len("First claim: ") + 1110

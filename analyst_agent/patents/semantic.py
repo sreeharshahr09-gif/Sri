@@ -17,7 +17,7 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 
-from .llmjson import JSONReplyError, LLMError, ask_json
+from .llmjson import JSONReplyError, LLMError, ask_json_list
 from .plan import AnalysisPlan
 
 DEFAULT_MODEL = os.environ.get("PATENT_EMBEDDING_MODEL", "AI-Growth-Lab/PatentSBERTa")
@@ -261,12 +261,10 @@ def name_topics(llm, topics: pd.DataFrame, plan: AnalysisPlan, batch: int = 10) 
             for title in row.sample_titles[:3]:
                 lines.append(f"  - {str(title)[:140]}")
         try:
-            data = ask_json(llm, NAMING_SYSTEM, "\n".join(lines), retries=1, max_tokens=3000)
+            items = ask_json_list(llm, NAMING_SYSTEM, "\n".join(lines), retries=1, max_tokens=3000)
         except (LLMError, JSONReplyError) as exc:
             failures.append(str(exc))
             continue
-        items = data if isinstance(data, list) else data.get("clusters", []) if isinstance(data, dict) else []
-        items = [item for item in items if isinstance(item, dict)]
         by_id = {}
         for item in items:
             try:

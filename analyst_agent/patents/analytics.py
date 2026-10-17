@@ -6,6 +6,7 @@ written from, so every number in the text can be traced to a table or chart.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import date
@@ -76,8 +77,13 @@ def in_scope(frame: pd.DataFrame) -> pd.Series:
     return frame["relevance"].fillna("") != "Low"
 
 
-def make_context(frame: pd.DataFrame, plan: AnalysisPlan, year_basis: str, ref_year: int | None = None) -> Context:
-    """`ref_year`: the year the export was made (default: this year), for the publication-lag zone."""
+def fractional_year(day: date) -> float:
+    return day.year + (day.timetuple().tm_yday - 1) / 365.25
+
+
+def make_context(frame: pd.DataFrame, plan: AnalysisPlan, year_basis: str, ref_year: float | None = None) -> Context:
+    """`ref_year`: when the export was made, as a fractional year (2026.04 = mid-January 2026); default
+    today. It sets the publication-lag zone."""
     groups = [b.name for b in plan.tech_buckets]
     groups += [g for g in frame["tech_group"].dropna().unique() if g not in groups and g != UNCLASSIFIED]
     if (frame["tech_group"] == UNCLASSIFIED).any():
@@ -92,8 +98,12 @@ def make_context(frame: pd.DataFrame, plan: AnalysisPlan, year_basis: str, ref_y
     if span:
         # Applications publish about 18 months after priority/filing, so the last two years before the export
         # are incomplete; on publication dates only the export's own year is.
-        ref = ref_year or date.today().year
-        first_incomplete = ref - 1 if re.search(r"priority|filing", year_basis) else ref
+        ref = ref_year or fractional_year(date.today())
+        if re.search(r"priority|filing", year_basis):
+            # Filings of the last ~18 months before the export are not all published yet.
+            first_incomplete = math.floor(ref - 1.5)
+        else:  # publication dates: only a year that had not ended at the export is partial
+            first_incomplete = math.floor(ref) + (1 if ref % 1 > 0.97 else 0)
         incomplete = [y for y in range(span[0], span[1] + 1) if y >= first_incomplete]
     return Context(
         plan=plan, year_basis=year_basis, groups=groups, levels=[c.name for c in plan.complexity_levels],
@@ -350,9 +360,20 @@ def segments(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     return Exhibit("segments", "visuals", "Segments", [rb.chart(fig, caption=caption)], facts)
 
 
+def _no_categories(ctx: Context, key: str, section: str, title: str, what: str) -> Exhibit:
+    label = ctx.problem_label.lower()
+    text = (f"Not done: the plan defines no {label} categories, so each patent's {label} is free text and {what} "
+            f"cannot be counted. Add {label} categories in the plan (step 3) and run again; the model then reads "
+            "the patents again with those categories.")
+    return Exhibit(key, section, title, [rb.note(text)], text)
+
+
 def problem_solution(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     if "problem" not in a:
         return None
+    if not ctx.plan.problems:
+        return _no_categories(ctx, "problem_solution", "visuals", f"{ctx.problem_label} vs. solutions",
+                              f"a {ctx.problem_label.lower()} × solution map")
     prob = _explode(a, "problem")
     if prob.empty:
         return None
@@ -425,6 +446,8 @@ def complexity(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
 def white_space(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     if "problem" not in a:
         return None
+    if not ctx.plan.problems:
+        return _no_categories(ctx, "white_space", "gaps", "White space", "under-explored combinations")
     prob = _explode(a, "problem")
     prob = prob[prob["problem"] != "Other"]
     groups = [g for g in ctx.groups if g != UNCLASSIFIED]
@@ -580,7 +603,7 @@ EXHIBITS = [trend, geography, segments, problem_solution, players, competitors, 
 
 
 def run_analytics(frame: pd.DataFrame, plan: AnalysisPlan, year_basis: str,
-                  ref_year: int | None = None) -> tuple[list[Exhibit], list[str]]:
+                  ref_year: float | None = None) -> tuple[list[Exhibit], list[str]]:
     """All exhibits that the data supports; returns (exhibits, notes on skipped ones)."""
     ctx = make_context(frame, plan, year_basis, ref_year)
     exhibits, notes = [], []

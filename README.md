@@ -178,7 +178,8 @@ names and limitations.
 
 One row per analysed patent: identifiers (ID, title, year, normalised assignee, co-assignees,
 office), then the study's columns, then the topic cluster and map position, then **every
-column of your original export**. UTF-8 with BOM, so Excel opens it directly.
+column of your original export** except full-text columns of over 10,000 characters per patent
+(such as a description), which would only inflate the file. UTF-8 with BOM, so Excel opens it directly.
 
 | Column | Content |
 |---|---|
@@ -228,8 +229,12 @@ Type a request in the box under the report; the outcome is added below it.
 - Cache: `~/.research_agent/patent_cache` (set `PATENT_CACHE_DIR` to move it). A stopped or
   crashed run continues where it left off; delete the folder to start fresh.
 - With a 16k context the model reads 6 patents per request; a larger context does not make
-  requests bigger. If your model "thinks" before answering, that is handled, but turning
-  thinking off (for llama-server, `--reasoning-budget 0`) makes the run several times faster.
+  requests bigger. Structured requests (plan, cluster names, reading patents, report text) ask the
+  server to skip the model's "thinking" (`chat_template_kwargs: enable_thinking=false`, honoured by
+  llama-server `--jinja` with Qwen3-style templates). If a model thinks anyway and runs out of
+  reply tokens, the request is retried with more room and smaller batches, and the reason is
+  recorded per patent. Starting llama-server with `--reasoning-budget 0` turns thinking off for
+  every page.
 - The analysis covers exactly what your export contains: the search strategy behind it defines
   the landscape. It is a technology landscape, not a legal (validity or FTO) opinion.
 

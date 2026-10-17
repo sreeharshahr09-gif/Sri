@@ -84,6 +84,22 @@ def test_parse_year_mixed_formats():
     assert parse_year(s).iloc[5:].isna().all()
 
 
+def test_parse_year_numbers_are_never_epoch_timestamps():
+    # A "Priority Year" column of whole numbers once came out as 1970 for every patent.
+    assert parse_year(pd.Series([2018, 2014, 2023], dtype="int64")).tolist() == [2018, 2014, 2023]
+    assert parse_year(pd.Series([2018.0, None])).tolist()[0] == 2018
+    assert parse_year(pd.Series([43294, 45000])).tolist() == [2018, 2023]  # Excel serial dates
+    assert parse_year(pd.Series([20180713, 1700000000])).iloc[0] == 2018
+    assert parse_year(pd.Series([1700000000])).isna().all()  # a number that is no date is missing, not 1970
+    dates = pd.Series(pd.to_datetime(["2020-01-16", "2015-06-12"]))
+    assert parse_year(dates).tolist() == [2020, 2015]
+
+
+def test_parse_year_cells_with_several_dates_take_the_earliest():
+    s = pd.Series(["15-Mar-2023\n15-Mar-2023\n13-Mar-2022", "13-Jul-2018", "2016-01-02; 2015-05-06", "Q3 2019"])
+    assert parse_year(s).tolist() == [2022, 2018, 2015, 2019]
+
+
 def test_country_and_first_claim():
     assert country_of("EP3456789A1") == "EP" and country_of("US 10234567 B2") == "US"
     assert country_of("1234") is None
@@ -125,3 +141,29 @@ def test_family_dedup_counts_each_invention_once():
 def test_requires_text():
     with pytest.raises(ValueError, match="Title or an Abstract"):
         build_corpus(pd.DataFrame({"x": [1]}), {"title": None, "abstract": None})
+
+
+def test_assignee_variants_are_merged_carefully():
+    from analyst_agent.patents.data import merge_variants
+
+    names = pd.Series(["Sika Technology"] * 5 + ["Sika Tech"] * 3 + ["Prc Desoto International"] * 7 + ["Prc Desoto Int"]
+                      + ["Kordsa Global Endustriyel Iplik Ve Kord Bezi Sanayi Ve Ticaret",
+                         "Kordsa Global Endustriyel Iplik Ve Kord Bezi Sanay"]
+                      + ["Eve Rubber Research Institute"] * 4 + ["Eve Rubber Institute"] * 2
+                      + ["Continental"] * 9 + ["Continental Carbon"]
+                      + ["Beijing Univ of Chemical Technology"] * 3 + ["Beijing Univ of Technology"] * 2
+                      + ["Sumitomo Chem"] + ["Sumitomo Chem Advanced Technology"] * 2 + ["Kordsa Teknik Tekstil"] * 7)
+    merged = merge_variants(names)
+    assert merged == {
+        "Sika Tech": "Sika Technology",
+        "Prc Desoto Int": "Prc Desoto International",
+        "Kordsa Global Endustriyel Iplik Ve Kord Bezi Sanay": "Kordsa Global Endustriyel Iplik Ve Kord Bezi Sanayi Ve Ticaret",
+        "Eve Rubber Institute": "Eve Rubber Research Institute",
+    }
+
+
+def test_assignees_in_other_scripts_and_separate_companies():
+    assert normalize_assignee("한국타이어앤테크놀로지 주식회사") == "Hankook"
+    assert normalize_assignee("住友ゴム工業株式会社") == "Sumitomo Rubber"
+    assert normalize_assignee("SUMITOMO ELECTRIC INDUSTRIES LTD") == "Sumitomo Electric"  # not Sumitomo Rubber
+    assert normalize_assignee("ASAHI CHEM IND") == "Asahi Kasei"

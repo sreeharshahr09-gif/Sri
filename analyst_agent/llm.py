@@ -16,6 +16,10 @@ class LLMError(RuntimeError):
     """Raised when the model server cannot produce a completion."""
 
 
+class ReplyCutOff(LLMError):
+    """The model used the whole reply budget before writing an answer (usually while thinking)."""
+
+
 @dataclass
 class Completion:
     content: str
@@ -58,6 +62,8 @@ class LLMClient:
         }
         if cfg.seed is not None:
             payload["seed"] = cfg.seed
+        if cfg.no_think:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
 
         last_error: Exception | None = None
         for attempt in range(cfg.max_retries + 1):
@@ -99,6 +105,12 @@ class LLMClient:
                 raise LLMError(f"Unexpected response from model server: {resp.text[:500]}") from exc
 
             usage = data.get("usage") or {}
+            if not content.strip() and choice.get("finish_reason") == "length":
+                raise ReplyCutOff(
+                    f"The model used all {cfg.max_tokens:,} reply tokens without writing an answer; it was "
+                    "probably still thinking. Turn thinking off (llama-server --reasoning-budget 0) or raise "
+                    "the max tokens."
+                )
             return Completion(
                 content=content,
                 finish_reason=choice.get("finish_reason"),

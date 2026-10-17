@@ -121,3 +121,14 @@ def test_fallback_for_a_different_topic():
     plan = fallback_plan("Landscape on **lightweight PCR and EV tires** from 2016 to 2025. Ask: **Companies:** who?")
     assert plan.years == (2016, 2025) and plan.segments == ["PCR", "EV"]
     assert plan.title == "lightweight PCR and EV tires"
+
+
+def test_plan_sees_titles_from_the_export():
+    llm = ScriptedLLM([json.dumps(MODEL_PLAN)])
+    parse_brief(llm, "Conduct a research grade patent landscaping analysis.",
+                ["Tire comprising aramid cord in carcass", "  ", "HYBRID CORD AND TIRE USING THE SAME"])
+    user = llm.calls[0][1]["content"]
+    assert "Titles of 2 randomly chosen patents in the uploaded export:\n- Tire comprising aramid cord" in user
+    system = llm.calls[0][0]["content"]
+    assert "if the brief lists none, propose 5-8 categories" in system
+    assert "name the topic most sample titles share" in system and "off-topic" in system

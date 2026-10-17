@@ -130,6 +130,17 @@ def upload_step(busy: bool) -> None:
 # --------------------------------------------------------------------------- step 2: the brief
 
 
+def sample_titles(n: int = 60) -> list[str]:
+    """Random titles from the uploaded export, so the plan can fit the data where the brief is silent."""
+    raw_df: pd.DataFrame | None = st.session_state.pl_raw
+    col = st.session_state.pl_mapping.get("title")
+    if raw_df is None or not col or col not in raw_df:
+        return []
+    titles = raw_df[col].dropna().astype(str)
+    titles = titles[titles.str.strip().astype(bool)]
+    return titles.sample(min(n, len(titles)), random_state=42).tolist()
+
+
 def brief_step(busy: bool, llm_cfg: LLMConfig) -> None:
     st.subheader("2 · Analysis brief")
     brief = st.text_area(
@@ -146,9 +157,11 @@ def brief_step(busy: bool, llm_cfg: LLMConfig) -> None:
             st.warning("Paste your brief first.")
             return
 
+        titles = sample_titles()
+
         def work(on_event, should_stop):
-            on_event("phase", "Reading your brief")
-            return PlanReady(parse_brief(LLMClient(llm_cfg), text))
+            on_event("phase", "Reading your brief" + (" and the export's titles" if titles else ""))
+            return PlanReady(parse_brief(LLMClient(llm_cfg), text, titles))
 
         st.session_state[JOB] = jobs.start_job("Prepare the analysis plan", "Patent landscape", work, describe_event)
         st.rerun()

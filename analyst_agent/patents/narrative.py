@@ -7,7 +7,7 @@ is matched back to those facts; numbers that cannot be matched are flagged in th
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import datetime
 
 import pandas as pd
@@ -15,6 +15,7 @@ import pandas as pd
 from ..llm import LLMClient, LLMError
 from ..parsing import strip_thinking
 from . import report as rb
+from .llmjson import chat_text, structured_client
 
 CANONICAL = ["summary", "visuals", "players", "clusters", "process", "gaps"]
 SECTION_RULES = [  # first match wins; "Research gaps & future trends" is about gaps, not trend charts
@@ -105,6 +106,9 @@ heading of the section to write and the facts computed from the patent data.
 Rules:
 - Use only the facts given. Every number you write must appear in the facts; do not calculate new numbers.
 - Name companies, patents and technologies only if they appear in the facts.
+- Draw no conclusion the facts do not support. Say nothing about market maturity, saturation, crowding, \
+legal status, freedom to operate or licensing unless a fact states it. When a fact says an analysis was not \
+possible or found nothing, report that plainly as a limit of this data set, not as a finding about the field.
 - Write in Markdown: 3 to 7 bullet points, each starting with a short bold phrase, then one final line \
 "**Implication for R&D:** ...". At most 220 words. No heading, no preamble.
 - Do what the brief asks for this section where the facts allow. If the brief asks for something the facts \
@@ -117,6 +121,9 @@ and the facts computed from the patent data.
 Rules:
 - Use only the facts given. Every number you write must appear in the facts; do not calculate new numbers.
 - Name companies, patents and technologies only if they appear in the facts.
+- Draw no conclusion the facts do not support. Say nothing about market maturity, saturation, crowding, \
+legal status, freedom to operate or licensing unless a fact states it. When a fact says an analysis was not \
+possible or found nothing, report that plainly as a limit of this data set, not as a finding about the field.
 - Write in Markdown: 5 to 8 bullet points with the most important findings (each starting with a short bold \
 phrase), then "**Recommended R&D directions:**" with 2 or 3 bullet points grounded in the gaps and trends. \
 At most 320 words. No heading, no preamble.\
@@ -149,8 +156,8 @@ def write_sections(sections: list[Section], facts_by_kind: dict[str, str], all_f
     client = llm
     if isinstance(llm, LLMClient):
         cfg = llm.config
-        client = type(llm)(replace(cfg, max_tokens=max(cfg.max_tokens, 3000), read_timeout=max(cfg.read_timeout, 600),
-                                   temperature=min(cfg.temperature, 0.3)), session=llm.session)
+        client = structured_client(llm, max(cfg.max_tokens, 3000), read_timeout=max(cfg.read_timeout, 600),
+                                   temperature=min(cfg.temperature, 0.3))
     context = f"Study brief:\n{brief.strip()[:5000]}"
     if answers:
         context += "\n\nThe user's answers to the brief's questions:\n" + "\n".join(f"- {q} {a}" for q, a in answers.items())
@@ -170,11 +177,14 @@ def write_sections(sections: list[Section], facts_by_kind: dict[str, str], all_f
             {"role": "user", "content": f"{context}\n\n{ask}\n\nFacts:\n{facts}"},
         ]
         try:
-            reply = client.chat(messages).content
+            reply = chat_text(client, messages)
         except LLMError as exc:
             sec.note = f"The model could not write this section ({exc}); the charts and tables below are complete."
             continue
         sec.text = _clean_text(reply, sec.heading)
+        if not sec.text:
+            sec.note = "The model returned no text for this section; the charts and tables below are complete."
+            continue
         sec.flagged = unmatched_numbers(sec.text, facts + " " + brief)
     if on_progress:
         on_progress(len(sections), len(sections))
@@ -214,8 +224,9 @@ def cluster_facts(topics: pd.DataFrame | None, total: int) -> str:
 DEFINITIONS = [
     ("Growth (CAGR)", ("Compound annual growth of patents per year between the first and last complete years; "
                        "years affected by the publication lag are left out.")),
-    ("Publication lag", ("Applications publish about 18 months after filing, so the latest years are incomplete "
-                         "and shaded in the trend chart.")),
+    ("Publication lag", ("Applications publish about 18 months after filing, so filings from the last 18 months "
+                         "before the export (dated by its latest publication) are incomplete and shaded in the "
+                         "trend chart.")),
     ("Concentration (HHI)", ("Sum of squared assignee shares × 10,000: below 1,500 fragmented, 1,500–2,500 moderately "
                              "concentrated, above 2,500 concentrated.")),
     ("Momentum", ("A topic cluster's share of patents in the last three years divided by the share of all patents "

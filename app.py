@@ -15,7 +15,7 @@ import streamlit as st
 
 import app_stamp
 from ui import data_page, jobs, patent_page, workspace_page
-from ui.common import keep_widget_state, model_settings
+from ui.common import keep_widget_state, model_settings, quiet_stale_fragment_logs
 
 st.set_page_config(page_title="Research Agent", page_icon="📊", layout="wide")
 
@@ -27,6 +27,7 @@ def record_code_version() -> str:
 
 
 record_code_version()
+quiet_stale_fragment_logs()
 
 navigation = st.navigation(
     [

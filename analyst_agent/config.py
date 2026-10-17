@@ -39,6 +39,10 @@ class LLMConfig:
     seed: int | None = None
     # The server's context window (llama-server -c). The workspace agent sizes its memory from it.
     context_tokens: int = field(default_factory=lambda: _env_int("LLM_CONTEXT_TOKENS", 32768))
+    # Ask the server to skip the model's "thinking" (chat_template_kwargs enable_thinking=false, which
+    # llama-server --jinja, vLLM and others pass to the chat template). Used for structured tasks,
+    # where thinking only uses up the reply budget. Templates without the switch ignore it.
+    no_think: bool = False
 
 
 @dataclass

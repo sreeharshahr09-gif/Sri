@@ -130,12 +130,28 @@ def analytics_stage(result: LandscapeResult) -> None:
         corpus.flow.append(FlowStep("Removed: judged off-topic by the model (Relevance: Low)", int(keep.sum()),
                                     int((~keep).sum())))
     result.analysis_frame = frame[keep]
-    result.exhibits, notes = an.run_analytics(result.analysis_frame, result.plan, corpus.year_basis)
+    result.exhibits, notes = an.run_analytics(result.analysis_frame, result.plan, corpus.year_basis,
+                                              ref_year=export_date(corpus))
     result.warnings.extend(notes)
 
 
 FACT_PRIORITY = ["trend", "players", "problem_solution", "white_space", "roadmap", "complexity", "competitors",
                  "process", "segments", "geography"]
+
+
+def export_date(corpus: PatentCorpus) -> float | None:
+    """When the export was made, judged by its latest publication date (as a fractional year)."""
+    col = corpus.mapping.get("pub_date")
+    if not col or col not in corpus.raw:
+        return None
+    values = corpus.raw[col]
+    if not pd.api.types.is_datetime64_any_dtype(values):
+        values = pd.to_datetime(values.where(values.map(lambda v: isinstance(v, str))), errors="coerce",
+                                format="mixed")  # only text dates: a bare number is no publication date
+    latest = values.max()
+    if pd.isna(latest) or not 1990 <= latest.year <= 2100:
+        return None
+    return an.fractional_year(latest.date())
 
 
 def narrative_stage(result: LandscapeResult, llm, emit) -> None:
@@ -356,6 +372,7 @@ def enriched_table(result: LandscapeResult) -> pd.DataFrame:
         out["Cluster technology group"] = std["cluster_tech_group"]
         out["Map X"] = std["map_x"]
         out["Map Y"] = std["map_y"]
+    out["First claim"] = std["first_claim"]
     raw = result.corpus.raw.loc[std.index]
     for col in raw.columns:
         name = str(col)
@@ -365,6 +382,7 @@ def enriched_table(result: LandscapeResult) -> pd.DataFrame:
     return out.reset_index(drop=True)
 
 
+BULKY_TEXT_CHARS = 10_000
 KEY_COLUMNS = ["Patent ID", "Title", "Year", "Assignee (normalised)", "Topic", "Segment", "Technology group",
                "Complexity", "Performance target", "Design lever", "Relevance"]
 
@@ -394,10 +412,18 @@ def table_blocks(result: LandscapeResult, options: PipelineOptions | None = None
                "of your export." if res is not None else "Patent details were not extracted in this run.")
     blocks.append(rb.table(table[key], title="Every patent with the study's columns", caption=caption))
     slug = _slug(result.plan.title)
+    # Full-text columns such as a description (up to 32,767 characters per cell) would make the file
+    # several times larger without helping the analysis; they stay in the user's own export.
+    bulky = [c for c in table.columns
+             if table[c].dtype == object or pd.api.types.is_string_dtype(table[c])
+             if table[c].astype(str).str.len().mean() > BULKY_TEXT_CHARS]
+    csv_table = table.drop(columns=bulky)
+    note = (f" Left out to keep the file small: {', '.join(bulky)} (over {BULKY_TEXT_CHARS:,} characters per "
+            "patent on average); they stay in your export, matched by Patent ID." if bulky else "")
     blocks.append(rb.download(
-        "Download the enriched patent table (CSV)", table.to_csv(index=False).encode("utf-8-sig"),
+        "Download the enriched patent table (CSV)", csv_table.to_csv(index=False).encode("utf-8-sig"),
         f"{slug}_patents.csv",
-        caption=f"{len(table):,} patents × {len(table.columns)} columns. Opens directly in Excel.",
+        caption=f"{len(csv_table):,} patents × {len(csv_table.columns)} columns. Opens directly in Excel.{note}",
     ))
     if res is not None:
         checked = [f.column for f in res.fields if f.key in ("topic", "segment", "problem", "tech_group", "complexity",

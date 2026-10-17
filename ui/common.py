@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 from dataclasses import replace
 
 import pandas as pd
@@ -18,6 +19,21 @@ DEFAULT_LLM = LLMConfig()
 # Widgets whose values should survive page switches. Streamlit discards the state of widgets that
 # are not on the current page; re-assigning their values on every run keeps them.
 _REMEMBERED: set[str] = set()
+
+
+class _StaleFragmentFilter(logging.Filter):
+    """Drops Streamlit's "The fragment with id ... does not exist anymore" lines. A browser tab left open
+    while the app restarted keeps asking every second for the auto-refreshing status bar of the old app;
+    Streamlit ignores those requests, and the log line repeats until the tab is reloaded."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "does not exist anymore" not in record.getMessage()
+
+
+def quiet_stale_fragment_logs() -> None:
+    log = logging.getLogger("streamlit.runtime.app_session")
+    if not any(isinstance(f, _StaleFragmentFilter) for f in log.filters):
+        log.addFilter(_StaleFragmentFilter())
 
 
 def remember(key: str, default) -> str:

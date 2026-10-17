@@ -67,9 +67,11 @@ def test_cagr():
 
 
 @pytest.mark.parametrize("basis,ref,expected", [
-    ("priority date", 2025, [2024, 2025]),
-    ("filing date", 2024, [2023, 2024, 2025]),
-    ("publication date", 2025, [2025]),
+    ("priority date", 2025.9, [2024, 2025]),  # export in late 2025: filings since mid-2024 not all out
+    ("priority date", 2026.04, [2024, 2025]),  # export in January 2026: 2024 still incomplete
+    ("filing date", 2024.9, [2023, 2024, 2025]),
+    ("publication date", 2025.5, [2025]),
+    ("publication date", 2025.99, []),  # exported at the very end of 2025: that year is complete
     ("priority date", 2030, []),
 ])
 def test_publication_lag_zone(basis, ref, expected):
@@ -82,7 +84,7 @@ def test_incomplete_years_are_shaded_and_left_out_of_growth():
     frame = pd.DataFrame({"year": [2018.0] * 5 + [2019.0] * 10 + [2020.0] * 2, "tech_group": "Structural / design",
                           "assignee": "X", "country": "EP", "title": "t", "id": "1", "first_claim": "",
                           "cited_by": np.nan})
-    ctx = an.make_context(frame, AnalysisPlan(), "priority date", ref_year=2021)
+    ctx = an.make_context(frame, AnalysisPlan(), "priority date", ref_year=2021.9)
     assert ctx.incomplete_years == [2020]
     ex = an.trend(frame, ctx)
     assert "CAGR 2018–2019 (complete years): +100.0 % a year" in ex.facts
@@ -208,3 +210,27 @@ def test_one_broken_exhibit_does_not_sink_the_rest(result, monkeypatch):
     exhibits, notes = an.run_analytics(result.analysis_frame, PLAN, "publication date")
     assert [e.key for e in exhibits] == ["trend", "geography"]
     assert notes == ["Broken could not be computed (bad data)."]
+
+
+def test_without_problem_categories_the_maps_say_why(tmp_path, monkeypatch):
+    monkeypatch.setattr(enrich, "CACHE_DIR", tmp_path)
+    plan = AnalysisPlan.from_dict({**MODEL_PLAN, "problems": []})
+    raw = make_export(80, seed=9)
+    res = run_landscape(raw, detect_columns(list(raw.columns)), plan, llm=FakeLLM(plan),
+                        options=PipelineOptions(embedding_model="tfidf", write_report=False))
+    for key in ("problem_solution", "white_space"):
+        ex = _ex(res, key)
+        assert [b.kind for b in ex.blocks] == ["note"]
+        assert ex.facts.startswith("Not done: the plan defines no wear type categories")
+
+
+def test_export_date_comes_from_the_latest_publication():
+    from analyst_agent.patents.data import build_corpus
+    from analyst_agent.patents.pipeline import export_date
+
+    raw = pd.DataFrame({"Title": ["a", "b"], "Abstract": ["x", "y"], "Publication Date": ["2025-01-15", "2026-01-15"],
+                        "Priority Year": [2023, 2024]})
+    corpus = build_corpus(raw, detect_columns(list(raw.columns)))
+    assert export_date(corpus) == pytest.approx(2026.038, abs=0.01)
+    raw["Publication Date"] = [20250115, 20260115]  # numbers: not trusted as dates
+    assert export_date(build_corpus(raw, detect_columns(list(raw.columns)))) is None

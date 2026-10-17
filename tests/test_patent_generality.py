@@ -67,7 +67,7 @@ def test_other_topic_runs_end_to_end(result):
 
 def test_priority_dates_shade_the_lag_and_citations_drive_crown_jewels(result):
     last = int(result.analysis_frame["year"].max())
-    ctx = an.make_context(result.analysis_frame, result.plan, result.corpus.year_basis, ref_year=last + 1)
+    ctx = an.make_context(result.analysis_frame, result.plan, result.corpus.year_basis, ref_year=last + 1.9)
     assert ctx.incomplete_years == [last]  # priority basis: the year before the export is still incomplete
     jewels = next(e for e in result.exhibits if e.key == "competitors").blocks[1]
     assert "forward citations 50 %" in jewels.caption

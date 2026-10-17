@@ -212,3 +212,14 @@ def test_report_html_escapes_and_embeds_plotly_once():
     assert len(re.findall(r"plotly\.js v\d", page)) == 1  # the library once, both charts use it
     assert page.count("Plotly.newPlot") == 2
     assert '<div class="metric"><div class="label">N</div><div class="value">5</div></div>' in page
+
+
+def test_empty_section_text_leaves_a_note():
+    class Blank:
+        def chat(self, messages):
+            return Completion(content="<think>still thinking…</think>", latency_s=0.0)
+
+    sections = nar.plan_sections(["Summary"])
+    nar.write_sections(sections, {}, "facts 12", "brief", {}, Blank())
+    assert sections[0].text == "" and "returned no text" in sections[0].note
+    assert "Say nothing about market maturity" in nar.SECTION_SYSTEM and "freedom to operate" in nar.SUMMARY_SYSTEM

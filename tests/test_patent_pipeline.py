@@ -157,8 +157,9 @@ def test_enriched_csv_has_study_columns_then_clusters_then_the_export():
     assert cols[6 : 6 + len(study)] == study
     assert cols[6 + len(study) : 11 + len(study)] == ["Topic cluster", "Cluster no.", "Cluster technology group",
                                                       "Map X", "Map Y"]
+    assert cols[11 + len(study)] == "First claim"
     raw_cols = [c for c in result.corpus.raw.columns if not c.startswith("_")]
-    assert cols[11 + len(study) :] == [c if c not in cols[:6] else f"{c} (export)" for c in raw_cols]
+    assert cols[12 + len(study) :] == [c if c not in cols[:6] else f"{c} (export)" for c in raw_cols]
     assert "Title (export)" in cols and "_theme" not in cols
     assert table["Extraction"].eq("extracted").all()
     assert model.calls["extract"] == -(-len(table) // 6)
@@ -189,3 +190,15 @@ def test_stop_during_extraction_keeps_partial_details():
     status = result.enriched["Extraction"]
     assert (status == "extracted").sum() == 12 and (status == "not run (stopped)").sum() == len(status) - 12
     assert any(b.kind == "download" for b in result.blocks)
+
+
+def test_full_text_columns_stay_out_of_the_csv():
+    raw = make_export(30, seed=3)
+    raw["Description"] = "A long description of the invention. " * 400  # ~15,000 characters per patent
+    result = run_landscape(raw, detect_columns(list(raw.columns)), AnalysisPlan(),
+                           options=PipelineOptions(semantic_map=False, extract_details=False, write_report=False))
+    dl = next(b for b in result.blocks if b.kind == "download" and b.file_name.endswith("_patents.csv"))
+    back = pd.read_csv(io.BytesIO(dl.data), encoding="utf-8-sig")
+    assert "Description" not in back and "Claims" in back and "First claim" in back
+    assert "Left out to keep the file small: Description" in dl.caption
+    assert "Description" in result.enriched  # still there for follow-up questions

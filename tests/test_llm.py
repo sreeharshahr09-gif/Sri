@@ -157,3 +157,36 @@ def test_models_lists_loaded_model_ids():
     assert llm.models() is None
     llm, _ = client([FakeResponse(503, text="loading")])
     assert llm.models() is None
+
+
+def _reply(content, finish="stop"):
+    return FakeResponse(payload={"choices": [{"message": {"content": content}, "finish_reason": finish}]})
+
+
+def test_no_think_asks_the_template_to_skip_thinking():
+    session = FakeSession([OK, OK])
+    LLMClient(LLMConfig(no_think=True), session=session).chat([{"role": "user", "content": "x"}])
+    LLMClient(LLMConfig(), session=session).chat([{"role": "user", "content": "x"}])
+    assert session.posts[0][1]["json"]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert "chat_template_kwargs" not in session.posts[1][1]["json"]
+
+
+def test_reply_budget_used_up_before_any_answer():
+    from analyst_agent.llm import ReplyCutOff
+
+    session = FakeSession([_reply("", "length")])
+    with pytest.raises(ReplyCutOff, match="used all 2,048 reply tokens without writing an answer"):
+        LLMClient(LLMConfig(), session=session).chat([{"role": "user", "content": "x"}])
+    # a long but complete answer is not a cut-off
+    assert LLMClient(LLMConfig(), session=FakeSession([_reply("ok", "length")])).chat([]).content == "ok"
+
+
+def test_structured_calls_retry_a_cut_off_reply_with_more_room():
+    from analyst_agent.patents.llmjson import ask_json
+
+    session = FakeSession([_reply("", "length"), _reply('{"a": 1}')])
+    client = LLMClient(LLMConfig(max_tokens=2000, context_tokens=16384), session=session)
+    assert ask_json(client, "sys", "user", max_tokens=3000) == {"a": 1}
+    first, second = session.posts[0][1]["json"], session.posts[1][1]["json"]
+    assert first["max_tokens"] == 3000 and second["max_tokens"] == 6000
+    assert first["chat_template_kwargs"] == {"enable_thinking": False}

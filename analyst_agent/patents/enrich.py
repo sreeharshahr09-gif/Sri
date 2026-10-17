@@ -11,14 +11,14 @@ import hashlib
 import json
 import re
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
 import pandas as pd
 
 from ..llm import LLMClient, LLMError
-from .llmjson import JSONReplyError, extract_json
+from .llmjson import ReplyCutOff, chat_text, json_objects, structured_client
 from .plan import AnalysisPlan
 from .semantic import CACHE_DIR
 
@@ -116,60 +116,27 @@ def system_prompt(plan: AnalysisPlan, fields: list[FieldSpec]) -> str:
 def patent_prompt(row: pd.Series) -> str:
     """The text of one patent as the model sees it (also the cache key's source)."""
 
-    def part(label: str, value, limit: int) -> str | None:
+    def part(label: str, value, limit: int, head: int = 0) -> str | None:
         text = " ".join(str(value or "").split())
         if not text or text.lower() == "nan":
             return None
-        return f"{label}: {text[:limit]}" + ("…" if len(text) > limit else "")
+        if len(text) <= limit:
+            return f"{label}: {text}"
+        if head:  # the opening and the end: a claim's characterising part ("wherein ...") comes last
+            start = text[:head].rsplit(" ", 1)[0]
+            end = text[-(limit - head):].split(" ", 1)[-1]
+            return f"{label}: {start} … {end}"
+        return f"{label}: {text[:limit]}…"
 
     year = "" if pd.isna(row.get("year")) else str(int(row["year"]))
     head = " | ".join(x for x in [str(row.get("id") or ""), year, str(row.get("assignee") or "")] if x)
     parts = [head, part("Title", row.get("title"), 300), part("Abstract", row.get("abstract"), 1000),
              part("Problem", row.get("problem"), 300), part("Method", row.get("method"), 300),
-             part("Advantages", row.get("advantage"), 300), part("First claim", row.get("first_claim"), 700)]
+             part("Advantages", row.get("advantage"), 300), part("First claim", row.get("first_claim"), 1100, head=300)]
     return "\n".join(p for p in parts if p)
 
 
 # --------------------------------------------------------------------------- reading replies
-
-
-def json_objects(text: str) -> list[dict]:
-    """The objects of a JSON list reply; from a reply cut off mid-list, the complete ones."""
-    try:
-        data = extract_json(text)
-    except JSONReplyError:
-        data = None
-    if isinstance(data, list):
-        return [d for d in data if isinstance(d, dict)]
-    if isinstance(data, dict):
-        inner = next((v for v in data.values() if isinstance(v, list)), None)
-        return [d for d in inner if isinstance(d, dict)] if inner is not None else [data]
-    out, depth, start, in_str, escape = [], 0, None, False, False
-    for i, ch in enumerate(text or ""):
-        if in_str:
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_str = False
-            continue
-        if ch == '"':
-            in_str = True
-        elif ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}" and depth:
-            depth -= 1
-            if depth == 0 and start is not None:
-                try:
-                    obj = json.loads(text[start : i + 1])
-                except json.JSONDecodeError:
-                    obj = None
-                if isinstance(obj, dict):
-                    out.append(obj)
-    return out
 
 
 def _norm(text: str) -> str:
@@ -241,9 +208,9 @@ class ExtractionResult:
 
 
 def batch_size_for(context_tokens: int) -> int:
-    """Patents per request: about 1,350 tokens each (prompt + reply, with room for a model that thinks first)
+    """Patents per request: about 1,600 tokens each (prompt + reply, with room for a model that thinks first)
     after the instructions and the reply's reserve."""
-    return max(1, min(MAX_BATCH, (int(context_tokens or 16384) - 3000) // 1350))
+    return max(1, min(MAX_BATCH, (int(context_tokens or 16384) - 3000) // 1600))
 
 
 def _signature(system: str, model: str) -> str:
@@ -313,21 +280,26 @@ def extract_details(
     stats = {"patents": total, "from cache": len(values), "extracted": 0, "failed": 0, "model calls": 0,
              "values corrected": 0, "batch size": size}
 
+    reason = ""  # why the last reply gave no answers, for the patents that fail
+
     def ask(batch: list) -> dict[int, dict]:
         """One request for a batch; returns {position in batch: object}."""
+        nonlocal reason
         user = "\n\n".join(f"P{i + 1} | {prompts[idx]}" for i, idx in enumerate(batch))
         client = llm
         if isinstance(llm, LLMClient):
             cfg = llm.config
-            client = type(llm)(replace(cfg, max_tokens=600 * len(batch) + 1500, read_timeout=max(cfg.read_timeout, 600),
-                                       temperature=min(cfg.temperature, 0.2), seed=seed), session=llm.session)
+            client = structured_client(llm, 600 * len(batch) + 1500, read_timeout=max(cfg.read_timeout, 600),
+                                       temperature=min(cfg.temperature, 0.2), seed=seed)
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        objs: list[dict] = []
         for attempt in range(2):
             stats["model calls"] += 1
-            reply = client.chat(messages).content
+            reply = chat_text(client, messages)
             objs = json_objects(reply)
             if objs:
                 break
+            reason = "the model's reply was empty" if not reply.strip() else "the model's reply held no JSON answers"
             messages += [{"role": "assistant", "content": reply[:3000] or "(empty)"},
                          {"role": "user", "content": "That was not a valid JSON list. Reply with only the JSON list."}]
         by_pos = {}
@@ -367,6 +339,8 @@ def extract_details(
         try:
             got = ask(batch)
             hard_failures, last_error = 0, ""
+        except ReplyCutOff as exc:  # the model answers, but ran out of room: smaller requests may work
+            got, last_error = {}, str(exc)
         except LLMError as exc:
             got = {}
             last_error = str(exc)
@@ -385,7 +359,7 @@ def extract_details(
             elif len(batch) > 1:
                 retry.append([idx])  # missing from a batch reply: once more on its own
             else:
-                status[idx] = f"failed: {last_error or 'no usable answer'}"[:200]
+                status[idx] = f"failed: {last_error or reason or 'no usable answer'}"[:300]
                 stats["failed"] += 1
         queue = retry + queue
         report()
