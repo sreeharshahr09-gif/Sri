@@ -29,7 +29,29 @@ DEFAULT_OUTPUT = os.environ.get("RESUME_AGENT_OUTPUT", str(APP_DIR / "outputs"))
 FACTS_FILE = APP_DIR / "my_fact_library.md"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
-st.set_page_config(page_title="Local Job Application Agent", page_icon="📄", layout="wide")
+# Display: small text and a neutral title by default, so the screen stays unobtrusive.
+# The choice is kept in the URL (?size=…&quiet=…), so a browser refresh keeps it.
+TEXT_SIZES = {"Small": 13, "Medium": 14.5, "Large (Streamlit default)": 16}
+st.session_state.setdefault("ui_size", st.query_params.get("size") if st.query_params.get("size") in TEXT_SIZES
+                            else "Small")
+st.session_state.setdefault("ui_quiet", st.query_params.get("quiet", "1") != "0")
+APP_TITLE = "Document workbench" if st.session_state["ui_quiet"] else "Local Job Application Agent"
+st.set_page_config(page_title=APP_TITLE, page_icon="📄", layout="wide")
+
+
+def apply_look(size: str) -> None:
+    px = TEXT_SIZES.get(size, 13)
+    st.markdown(f"""<style>
+html {{ font-size: {px}px !important; }}
+h1 {{ font-size: 1.55rem !important; padding: 0 0 .3rem 0 !important; }}
+h2 {{ font-size: 1.15rem !important; }}
+[data-testid="stSidebar"] h2 {{ font-size: 1.02rem !important; }}
+h3 {{ font-size: 1.12rem !important; }}
+h4, h5 {{ font-size: 1rem !important; }}
+[data-testid="stMetricValue"] {{ font-size: 1.6rem !important; }}
+[data-testid="stMainBlockContainer"] {{ padding-top: 3.2rem !important; }}
+[data-testid="stSidebarHeader"] {{ height: 2rem !important; }}
+</style>""", unsafe_allow_html=True)
 
 
 def wide() -> dict:
@@ -54,7 +76,8 @@ if "facts_replace" in ss:
 if "facts_append" in ss:
     ss["facts"] = (ss["facts"].rstrip() + "\n" + ss.pop("facts_append")).strip()
 
-st.title("Local Job Application Agent")
+apply_look(ss["ui_size"])
+st.title(APP_TITLE)
 CLOUD = "OpenRouter (cloud, opt-in)"
 
 # --- sidebar --------------------------------------------------------------------------------------
@@ -151,10 +174,16 @@ with st.sidebar:
     autosave = st.checkbox("Also save every package to a local folder", value=True)
     out_dir = st.text_input("Output folder", DEFAULT_OUTPUT)
 
-st.caption("Paste a job description and your CV → evidence audit → iterative, fact-checked tailoring "
-           "→ cover letter → Word / PDF / ZIP. " +
-           ("Runs on your own llama.cpp model; nothing leaves this PC." if provider == "local" else
-            f"Using OpenRouter model {model}" + (" with your contact details hidden." if redact else ".")))
+    st.header("Display")
+    st.selectbox("Text size", list(TEXT_SIZES), key="ui_size")
+    st.checkbox("Quiet look (neutral page title, no subtitle)", key="ui_quiet")
+    st.query_params.update(size=ss["ui_size"], quiet="1" if ss["ui_quiet"] else "0")
+
+if not ss["ui_quiet"]:
+    st.caption("Paste a job description and your CV → evidence audit → iterative, fact-checked tailoring "
+               "→ cover letter → Word / PDF / ZIP. " +
+               ("Runs on your own llama.cpp model; nothing leaves this PC." if provider == "local" else
+                f"Using OpenRouter model {model}" + (" with your contact details hidden." if redact else ".")))
 
 WORKBENCH = "🛠 Keyword workbench — I edit my CV, the score updates"
 AI_MODE = "🤖 AI tailoring — the agent rewrites and fact-checks"

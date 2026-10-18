@@ -5,3 +5,6 @@ gatherUsageStats = false
 [server]
 address = "127.0.0.1"
 headless = false
+[theme]
+# Muted slate instead of Streamlit's bright red for buttons, sliders and checkboxes.
+primaryColor = "#475569"

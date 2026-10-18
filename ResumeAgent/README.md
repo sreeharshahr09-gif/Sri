@@ -29,6 +29,10 @@ So if the JD asks for C++ and your CV has no C++, the résumé will **not** clai
 app lists it as a gap and asks you about it. If you really have it, type a sentence ("Built a C++
 plug-in for the test-rig controller at Alpha Motors, 2023"). It becomes evidence and the fit goes up.
 
+**Display:** the app uses small text, muted colours and a neutral page title ("Document workbench")
+by default, so it stays unobtrusive. Change this in the sidebar under **Display** (text size Small /
+Medium / Large, and **Quiet look**). A browser refresh keeps your choice.
+
 ## Keyword workbench
 
 Upload or paste the JD and your CV (Word, PDF or text). The workbench shows:
