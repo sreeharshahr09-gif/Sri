@@ -87,5 +87,99 @@ class ReadFileTests(unittest.TestCase):
             read_file("cv.txt", b"short")
 
 
+
+def two_column_pdf(sidebar: list[str], main: list[str], footer: str = "Page 1 of 1") -> bytes:
+    """A minimal LinkedIn-style PDF: narrow sidebar at x=22, main column at x=224."""
+    def esc(t):
+        return t.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    ops = []
+    for x, lines in ((22, sidebar), (224, main)):
+        y = 740
+        for line in lines:
+            if line == "":
+                y -= 10  # paragraph gap
+                continue
+            ops.append(f"BT /F1 10 Tf {x} {y} Td ({esc(line)}) Tj ET")
+            y -= 13
+    ops.append(f"BT /F1 9 Tf 260 30 Td ({footer}) Tj ET")
+    stream = "\n".join(ops).encode("latin-1")
+    objects = [b"<< /Type /Catalog /Pages 2 0 R >>",
+               b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+               b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R "
+               b"/Resources << /Font << /F1 5 0 R >> >> >>",
+               b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream",
+               b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    out, offsets = bytearray(b"%PDF-1.4\n"), []
+    for i, obj in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % i + obj + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
+    out += b"".join(b"%010d 00000 n \n" % o for o in offsets)
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objects) + 1, xref)
+    return bytes(out)
+
+
+SIDEBAR = ["Contact", "jane@example.test", "www.linkedin.com/in/jane-", "doe-phd (LinkedIn)", "",
+           "Top Skills", "Finite Element Analysis", "", "Robot Kinematics", "", "Languages", "English"]
+MAIN = ["Jane Doe,", "", "Ph.D.", "Principal Engineer at Example Robotics", "", "Experience", "",
+        "Example Robotics", "Principal Engineer", "March 2019 - Present",
+        "- Designed precision positioning stages and verified them with finite element analysis for",
+        "thermal drift and vibration, working closely with controls engineers on interfaces.",
+        "", "Education", "Doctor of Philosophy - PhD, Mechanical Engineering"]
+
+
+class LayoutTests(unittest.TestCase):
+    def test_two_column_pdf_reads_main_column_first(self):
+        text = read_file("profile.pdf", two_column_pdf(SIDEBAR, MAIN))
+        self.assertTrue(text.startswith("Jane Doe,"), text[:200])
+        self.assertLess(text.index("Experience"), text.index("Contact"))
+        self.assertNotIn("Page 1 of 1", text)
+        # a bullet wrapped by the column width is re-joined into one line
+        self.assertIn("finite element analysis for thermal drift and vibration", text)
+        self.assertIn("Finite Element Analysis\n\nRobot Kinematics", text)  # list items stay separate
+
+    def test_header_skips_contact_label_and_keeps_degree(self):
+        from engine import _plan, _assemble
+        from textutils import Budget
+        text = read_file("profile.pdf", two_column_pdf(SIDEBAR, MAIN))
+        name, contacts, sections, units = _plan(text, Budget())
+        self.assertEqual(name, "Jane Doe, Ph.D.")
+        self.assertIn("www.linkedin.com/in/jane-doe-phd (LinkedIn)", contacts)
+        md = _assemble(name, contacts, sections, units)
+        self.assertTrue(md.startswith("# Jane Doe, Ph.D.\n"))
+        self.assertNotIn("## Contact", md)
+
+    def test_split_header_plain(self):
+        from textutils import split_header
+        self.assertEqual(split_header("CONTACT\nJohn Roe\nPhD\njohn@x.test")[:2],
+                         ("John Roe, PhD", ["john@x.test"]))
+
+
+class QuoteTests(unittest.TestCase):
+    SOURCE = ("Led programs at Lam Research, combining characterization, FEA, and cross-\n"
+              "institutional collaboration.\nDoctor of Philosophy - PhD, Mechanical Engineering/\n"
+              "Mechanical Technology\n- Developed physics-based FEA models (Thermal-\n"
+              "Electrochemical) to study film-substrate interactions, reducing trials.")
+
+    def test_layout_insensitive_quotes(self):
+        from textutils import exact_quote_in
+        for quote in ["combining characterization, FEA, and cross-institutional collaboration",
+                      "Doctor of Philosophy – PhD, Mechanical Engineering/Mechanical Technology",
+                      "“Developed physics-based FEA models (Thermal-Electrochemical)”",
+                      "Led programs at Lam Research … reducing trials"]:
+            self.assertTrue(exact_quote_in(quote, self.SOURCE), quote)
+        self.assertFalse(exact_quote_in("Led robotics programs at Lam Research", self.SOURCE))
+
+    def test_locate_snaps_near_quotes_and_rejects_inventions(self):
+        from textutils import locate_quote
+        found = locate_quote("Developed physics based FEA model (Thermal Electrochemical) to study "
+                             "film substrate interactions", self.SOURCE)
+        self.assertTrue(found.startswith("- Developed physics-based FEA models"), found)
+        self.assertNotIn("Mechanical Technology", found)  # tightest window, not a neighbour line
+        self.assertEqual(locate_quote("Designed robotic arms for wafer handling in cleanrooms",
+                                      self.SOURCE), "")
+
+
 if __name__ == "__main__":
     unittest.main()

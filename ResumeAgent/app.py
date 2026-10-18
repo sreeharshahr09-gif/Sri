@@ -293,6 +293,12 @@ if analysis and not result:
               help="Of what you can prove, how much is visible in JD terms right now. The loop raises this.")
     m3.metric("Must-have gaps", str(len(base["must_missing"])))
     st.dataframe(audit_rows(analysis["requirements"]), hide_index=True, **wide())
+    for note in analysis.get("notes", []):
+        st.caption("ℹ️ " + note)
+    if analysis.get("debug_evidence"):
+        with st.expander("Model's raw evidence answer (for troubleshooting)"):
+            for raw in analysis["debug_evidence"]:
+                st.code(raw, language="json")
     gaps = [r for r in analysis["requirements"] if r["status"] != "supported"]
     if gaps:
         st.markdown("**Close the gaps honestly.** If you really have one of these, describe it "

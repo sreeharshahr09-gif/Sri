@@ -4,6 +4,7 @@ Everything here is deterministic and offline.
 """
 from __future__ import annotations
 
+import difflib
 import io
 import re
 from dataclasses import dataclass, field
@@ -19,8 +20,68 @@ def normalized(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().casefold()
 
 
+_DASHES = str.maketrans({c: "-" for c in "\u2010\u2011\u2012\u2013\u2014\u2015\u2212"})
+
+
+def _compact(text: str) -> str:
+    """Case-, whitespace-, dash- and quote-mark-insensitive form used to compare quotes.
+
+    Removing whitespace makes PDF line wraps irrelevant ('cross-\ninstitutional')."""
+    t = text.translate(_DASHES).replace("\xa0", " ").casefold()
+    t = re.sub(r"page \d+ of \d+", "", t)
+    return re.sub(r"[\s\"'`\u201c\u201d\u2018\u2019\u2022\u25cf\u25aa\u25e6\u2023\u00b7*]+", "", t)
+
+
 def exact_quote_in(quote: str, source: str) -> bool:
-    return len(normalized(quote)) >= 5 and normalized(quote) in normalized(source)
+    """True when ``quote`` occurs in ``source`` apart from layout differences.
+
+    A quote shortened with '...' / '…' passes when each substantial piece occurs."""
+    parts = [_compact(p.strip(" .,;:")) for p in re.split(r"\[?(?:\.\.\.|\u2026)\]?", quote)]
+    parts = [p for p in parts if len(p) >= 4]
+    if not parts or max(len(p) for p in parts) < 5:
+        return False
+    src = _compact(source)
+    return all(p in src for p in parts)
+
+
+def locate_quote(quote: str, source: str, threshold: float = 0.88) -> str:
+    """The source text a model's quote refers to, or '' if it cannot be found.
+
+    Exact (layout-insensitive) matches return the quote; near-verbatim quotes (a typo fixed,
+    a word dropped) are snapped to the real source lines so the evidence shown is genuine."""
+    quote = quote.strip()
+    if exact_quote_in(quote, source):
+        return quote
+    q = _compact(quote)
+    if len(q) < 15:
+        return ""
+    lines = [l for l in source.splitlines() if l.strip()]
+    span = max(4, int(len(quote.split()) * 1.3) + 1)
+
+    def candidates():
+        for i in range(len(lines)):
+            window = ""
+            for j in range(i, min(i + 5, len(lines))):
+                window = (window + "\n" + lines[j]) if window else lines[j]
+                yield window
+            words = lines[i].split()
+            if len(words) > span:  # long paragraph line: slide a window of words over it
+                for k in range(0, len(words) - span + 1, 2):
+                    yield " ".join(words[k:k + span])
+
+    best, best_precision = "", 0.0
+    for window in candidates():
+        w = _compact(window)
+        if len(w) < 0.6 * len(q) or len(w) > 3 * len(q) + 40:
+            continue
+        matcher = difflib.SequenceMatcher(None, q, w, autojunk=False)
+        if matcher.real_quick_ratio() * (len(q) + len(w)) / (2 * len(q)) < threshold:
+            continue
+        matched = sum(b.size for b in matcher.get_matching_blocks())
+        # Must cover most of the quote; among such windows prefer the tightest one.
+        if matched / len(q) >= threshold and matched / len(w) > best_precision:
+            best, best_precision = window, matched / len(w)
+    return best.strip()
 
 
 def _phrase_pattern(phrase: str) -> str:
@@ -138,7 +199,7 @@ def read_file(name: str, contents: bytes) -> str:
                 reader.decrypt("")
             except Exception as exc:
                 raise ValueError("The PDF is encrypted; upload a readable PDF or DOCX.") from exc
-        text = "\n".join((page.extract_text() or "") for page in reader.pages)
+        text = _pdf_text(reader)
     else:
         raise ValueError("Upload a DOCX, text-based PDF, TXT or MD document.")
     text = text.replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n")
@@ -147,6 +208,116 @@ def read_file(name: str, contents: bytes) -> str:
         raise ValueError("Too little extractable text. Scanned/image-only PDFs need OCR first; "
                          "or paste the text instead.")
     return text.strip()
+
+
+def _page_fragments(page) -> list[tuple[float, float, str]]:
+    frags: list[tuple[float, float, str]] = []
+
+    def visit(text, cm, tm, _font, _size):
+        if text and text.strip():
+            frags.append((tm[4] * cm[0] + cm[4], tm[5] * cm[3] + cm[5], text.replace("\xa0", " ")))
+    page.extract_text(visitor_text=visit)
+    return frags
+
+
+def _lines_from(frags: list[tuple[float, float, str]]) -> list[str]:
+    """Rebuild one column's lines; blank lines mark paragraph gaps; width-wrapped lines re-joined."""
+    rows: list[list[tuple[float, float, str]]] = []
+    for frag in sorted(frags, key=lambda f: (-f[1], f[0])):
+        if rows and abs(rows[-1][0][1] - frag[1]) <= 2:
+            rows[-1].append(frag)
+        else:
+            rows.append([frag])
+    lines = [(r[0][1], re.sub(r"\s+", " ", " ".join(f[2].strip() for f in sorted(r))).strip()) for r in rows]
+    lines = [(y, t) for y, t in lines if t and not re.fullmatch(r"Page \d+ of \d+", t)]
+    if len(lines) < 3:
+        return [t for _, t in lines]
+    gaps = sorted(a[0] - b[0] for a, b in zip(lines, lines[1:]) if a[0] > b[0])
+    typical = gaps[len(gaps) // 5] if gaps else 0  # tight in-paragraph line spacing
+    widest = max(len(t) for _, t in lines)
+    out: list[str] = [lines[0][1]]
+    for (y0, prev), (y1, text) in zip(lines, lines[1:]):
+        if typical and y0 - y1 > 1.3 * typical:
+            out += ["", text]  # paragraph / item gap
+        elif (len(prev) >= 0.75 * widest and not _BULLET_RE.match(text)
+              and heading_kind(prev) is None and heading_kind(text) is None
+              and not prev.endswith((".", ":", ";"))):
+            glue = "" if prev.endswith(("-", "/")) and not prev.endswith(" -") else " "
+            out[-1] = out[-1] + glue + text  # wrapped by the column width
+        else:
+            out.append(text)
+    return out
+
+
+def _column_split(frags: list[tuple[float, float, str]], width: float) -> float | None:
+    """x where a second text column starts (LinkedIn-style sidebar layouts), else None."""
+    counts: dict[int, int] = {}
+    for x, _, _ in frags:
+        if 0.25 * width <= x <= 0.6 * width:
+            counts[round(x)] = counts.get(round(x), 0) + 1
+    starts = sorted(x for x, n in counts.items() if n >= 3)
+    if not starts:
+        return None
+    split = starts[0] - 2
+    left = [f for f in frags if f[0] < split]
+    right = [f for f in frags if f[0] >= split]
+    if len(left) < 3 or len(right) < 3:
+        return None
+    left_rows = {round(f[1]) for f in left}
+    shared = sum(1 for f in right if round(f[1]) in left_rows)
+    return split if shared / len(right) < 0.35 else None
+
+
+def _pdf_text(reader: PdfReader) -> str:
+    """Two-column pages are read column by column: wider (main) column first, sidebar last."""
+    try:
+        pages = []
+        for page in reader.pages:
+            frags = _page_fragments(page)
+            if frags and sum(len(f[2].strip()) for f in frags) / len(frags) < 3:
+                raise ValueError("glyph-level PDF; use the default extractor")
+            split = _column_split(frags, float(page.mediabox.width))
+            if split is None:
+                pages.append((_lines_from(frags), []))
+            else:
+                pages.append((_lines_from([f for f in frags if f[0] >= split]),
+                              _lines_from([f for f in frags if f[0] < split])))
+        if any(side for _, side in pages):
+            main = [l for lines, _ in pages for l in lines]
+            side = [l for _, lines in pages for l in lines]
+            if sum(map(len, side)) > sum(map(len, main)):
+                main, side = side, main
+            return _clean_pdf_lines(main + [""] + side)
+    except Exception:
+        pass
+    return _clean_pdf_lines("\n".join((p.extract_text() or "") for p in reader.pages).splitlines())
+
+
+_CONNECTORS = {"and", "or", "of", "the", "to", "with", "in", "for", "using", "a", "an", "at", "on",
+               "by", "from", "as", "via", "including", "such"}
+
+
+def _clean_pdf_lines(lines: list[str]) -> str:
+    """Drop page footers and re-join lines that the PDF wrapped mid-sentence."""
+    lines = [l.replace("\xa0", " ").rstrip() for l in lines
+             if not re.fullmatch(r"\s*Page \d+ of \d+\s*", l)]
+    out: list[str] = []
+    for line in lines:
+        prev = out[-1] if out else ""
+        stripped = line.strip()
+        joinable = (prev.strip() and stripped and not _BULLET_RE.match(line)
+                    and not re.match(r"^\d+[.)]\s", stripped)
+                    and heading_kind(prev) is None and heading_kind(line) is None)
+        if joinable and not re.match(r"^(www\.|https?://)|^\S+@\S+\.\w+", stripped):
+            last_word = re.findall(r"[A-Za-z]+$", prev)
+            if (stripped[0].islower() or prev.endswith(("&", "|", "/", "-", "("))
+                    or stripped.startswith(("&", "|", ")")) or prev.count("(") > prev.count(")")
+                    or (last_word and last_word[0].lower() in _CONNECTORS)):
+                glue = "" if prev.endswith(("-", "/")) and not prev.endswith(" -") else " "
+                out[-1] = prev + glue + stripped
+                continue
+        out.append(line)
+    return "\n".join(out)
 
 
 # --- context budgeting --------------------------------------------------------
@@ -228,18 +399,21 @@ def chunk_text(text: str, max_chars: int, overlap: int = 0) -> list[str]:
 
 # Order matters: the first matching vocabulary entry decides the kind.
 SECTION_VOCAB: list[tuple[str, tuple[str, ...]]] = [
+    ("contact", ("contact", "contact information", "contact details", "contact info",
+                 "personal details", "personal information")),
     ("verbatim", ("publications", "publication", "selected publications", "journal articles",
                   "papers", "conference papers", "book chapters", "patents", "patent",
                   "presentations", "talks", "invited talks", "posters", "conferences",
                   "references", "referees", "grants", "funding", "awards", "honors", "honours",
-                  "awards and honors", "certifications", "certificates", "licenses",
+                  "awards and honors", "honors awards", "honours awards", "awards and honours",
+                  "honors and awards", "honours and awards", "certifications", "certificates", "licenses",
                   "licenses and certifications", "languages", "interests", "hobbies",
                   "memberships", "professional memberships", "affiliations", "thesis",
                   "dissertation", "citations")),
     ("summary", ("summary", "professional summary", "career summary", "executive summary",
                  "profile", "professional profile", "personal profile", "objective",
                  "career objective", "about me", "about", "personal statement", "overview")),
-    ("skills", ("skills", "technical skills", "key skills", "core skills", "skill set",
+    ("skills", ("skills", "top skills", "technical skills", "key skills", "core skills", "skill set",
                 "core competencies", "competencies", "areas of expertise", "expertise",
                 "technical expertise", "tools", "technologies", "tools and technologies",
                 "software", "technical proficiencies", "proficiencies", "computer skills",
@@ -261,7 +435,7 @@ SECTION_VOCAB: list[tuple[str, tuple[str, ...]]] = [
 ]
 _VOCAB_LOOKUP = {phrase: kind for kind, phrases in SECTION_VOCAB for phrase in phrases}
 # Factual sections that are reproduced exactly; dates, titles and authorship are not rewritten.
-PRESERVE_KINDS = {"education", "verbatim"}
+PRESERVE_KINDS = {"education", "verbatim", "contact"}
 _BULLET_RE = re.compile(r"^\s*(?:[-*•●▪◦‣–—·]|•)\s+")
 
 
@@ -346,16 +520,35 @@ def format_verbatim(body: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
 
 
+_NOT_A_NAME = {"contact", "resume", "résumé", "curriculum vitae", "cv", "profile", "personal details"}
+_DEGREE_SUFFIX = re.compile(r"^(ph\.?\s?d\.?|m\.?b\.?a\.?|p\.?e\.?|m\.?sc\.?|m\.?d\.?|cfa|pmp)$", re.I)
+
+
 def split_header(header: str) -> tuple[str, list[str], str]:
-    """(name, contact lines, stray paragraph text) from the block above the first heading."""
+    """(name, contact/headline lines, stray paragraph text) from the block above the first heading."""
     lines = [l.strip().lstrip("#").strip() for l in header.splitlines() if l.strip()]
+    while lines and lines[0].strip("*_: ").casefold() in _NOT_A_NAME:
+        lines.pop(0)
     if not lines:
         return "", [], ""
-    name = lines[0].strip("*_ ")
+    name = lines.pop(0).strip("*_ ")
+    while lines and _DEGREE_SUFFIX.match(lines[0]):
+        name = name.rstrip(",") + ", " + lines.pop(0)
     contacts, prose = [], []
-    for line in lines[1:]:
-        (prose if len(line) > 120 else contacts).append(line)
+    for line in lines:
+        (prose if len(line) > 300 else contacts).append(line)
     return name, contacts, "\n".join(prose)
+
+
+def contact_lines(body: str) -> list[str]:
+    """Lines of a 'Contact' sidebar, with wrapped URLs re-joined."""
+    out: list[str] = []
+    for line in (l.strip() for l in body.splitlines() if l.strip()):
+        if out and out[-1].endswith(("-", "/")) and not out[-1].endswith(" -"):
+            out[-1] += line
+        else:
+            out.append(line)
+    return out
 
 
 def role_lines(text: str) -> list[str]:

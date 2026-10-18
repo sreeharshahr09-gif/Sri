@@ -21,10 +21,10 @@ from typing import Any, Callable
 
 from llm_client import LLMError, LocalLLM, ask_json, stats_dict
 from textutils import (
-    EMAIL_RE, URL_RE, YEAR_RE, Budget, Section, budget_for, chunk_text, contains_phrase,
-    count_phrase, exact_quote_in, format_verbatim, novel_numbers, normalized, numeric_tokens,
-    proper_nouns, read_file, role_lines, significant_words, split_header, split_sections, technical_terms,
-    word_tokens, _norm_token, _TOKEN_RE,
+    EMAIL_RE, URL_RE, YEAR_RE, Budget, Section, budget_for, chunk_text, contact_lines,
+    contains_phrase, count_phrase, exact_quote_in, format_verbatim, locate_quote, novel_numbers,
+    normalized, numeric_tokens, proper_nouns, read_file, role_lines, significant_words,
+    split_header, split_sections, technical_terms, word_tokens, _norm_token, _TOKEN_RE,
 )
 
 __all__ = [
@@ -107,8 +107,8 @@ def _priority(value: Any) -> str:
 
 def _merge_requirement(entry: dict[str, Any], jd: str, out: list[Requirement]) -> None:
     text = str(entry.get("text", "")).strip()
-    quote = str(entry.get("jd_quote", "")).strip()
-    if len(text) < 5 or not exact_quote_in(quote, jd):
+    quote = locate_quote(str(entry.get("jd_quote", "")).strip(), jd)
+    if len(text) < 5 or not quote:
         return
     words = entry.get("keywords", [])
     keywords: list[str] = []
@@ -173,11 +173,45 @@ Return {"requirements":[{"text":"...","priority":"must","keywords":["..."],"jd_q
 
 # --- 2. Evidence audit against the original résumé ------------------------------------
 
+def _normal_status(value: Any) -> str:
+    text = re.sub(r"[_-]+", " ", str(value).strip().lower())
+    if "partial" in text or text.startswith(("partly", "somewhat", "limited", "some")):
+        return "partial"
+    if text.startswith(("unsupported", "not", "no", "none", "missing", "absent", "lack", "insufficient")):
+        return "unsupported"
+    if text.startswith(("supported", "yes", "fully", "full", "strong", "met", "meets", "match",
+                        "demonstrated", "proven", "true")):
+        return "supported"
+    return "unsupported"
+
+
+def _first(entry: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in entry and entry[key] not in (None, ""):
+            return entry[key]
+    return ""
+
+
+def _match_entries(obj: dict[str, Any]) -> list[dict[str, Any]]:
+    for key in ("matches", "results", "evaluations", "assessments", "requirements", "items"):
+        if isinstance(obj.get(key), list):
+            return [e for e in obj[key] if isinstance(e, dict)]
+    lists = [v for v in obj.values() if isinstance(v, list)]
+    return [e for e in lists[0] if isinstance(e, dict)] if lists else []
+
+
+def _has_entries(obj: dict[str, Any]) -> None:
+    if not any(isinstance(v, list) for v in obj.values()):
+        raise ValueError('missing "matches" list')
+
+
 def match_evidence(source: str, requirements: list[Requirement], llm: Any,
-                   budget: Budget | None = None, progress: Notify = _quiet) -> None:
+                   budget: Budget | None = None, progress: Notify = _quiet,
+                   debug: list[str] | None = None) -> None:
     """Assess each requirement against the source, chunk by chunk; keep the best evidence.
 
-    Evidence must be a verbatim quote of the source, otherwise the item is unsupported.
+    Evidence must be findable in the source (layout differences and small slips are tolerated
+    and snapped to the real text); otherwise the item is unsupported.
     """
     budget = budget or budget_for(llm)
     compact = json.dumps([{"id": r.id, "requirement": r.text, "priority": r.priority}
@@ -185,7 +219,10 @@ def match_evidence(source: str, requirements: list[Requirement], llm: Any,
     out_tokens = min(3200, 200 + 110 * len(requirements))
     chunks = chunk_text(source, budget.chars_left(out_tokens, compact, _MATCH_RULES), overlap=200)
     resume_part = source.split(FACTS_HEADER)[0]
+    by_id = {r.id: r for r in requirements}
+    by_text = {normalized(r.text): r for r in requirements}
     best: dict[str, tuple[str, str, str]] = {}
+    answered = unknown_ids = unfound = snapped = 0
     for idx, chunk in enumerate(chunks, 1):
         progress(f"Auditing résumé evidence ({idx}/{len(chunks)})…")
         scope = ("" if len(chunks) == 1 else
@@ -194,28 +231,53 @@ def match_evidence(source: str, requirements: list[Requirement], llm: Any,
         prompt = (f"TASK: MATCH_EVIDENCE\n{scope}{_MATCH_RULES}\nREQUIREMENTS: {compact}\n\n"
                   f"<<<CANDIDATE DOCUMENTS>>>\n{chunk}\n<<<END CANDIDATE DOCUMENTS>>>")
         obj = ask_json(llm, "You are a cautious résumé evidence auditor. Output strict JSON only.",
-                       prompt, out_tokens, validate=_list_of("matches"))
-        for entry in obj["matches"]:
-            if not isinstance(entry, dict):
+                       prompt, out_tokens, validate=_has_entries)
+        if debug is not None:
+            debug.append(json.dumps(obj, ensure_ascii=False)[:6000])
+        entries = _match_entries(obj)
+        positional = len(entries) == len(requirements)
+        for pos, entry in enumerate(entries):
+            raw_id = str(_first(entry, "id", "requirement_id", "req_id", "rid", "number")).strip()
+            digits = re.search(r"\d+", raw_id)
+            req = by_id.get(raw_id) or (by_id.get(digits.group()) if digits else None) or \
+                by_text.get(normalized(str(_first(entry, "requirement", "text")))) or \
+                (requirements[pos] if positional and not raw_id else None)
+            if req is None:
+                unknown_ids += 1
                 continue
-            rid = str(entry.get("id", "")).strip()
-            status = str(entry.get("status", "unsupported")).strip().lower()
-            evidence = str(entry.get("evidence", "")).strip()
-            rationale = str(entry.get("rationale", "")).strip()[:400]
-            if status not in STATUS_FACTOR:
-                status = "unsupported"
-            if status != "unsupported" and not exact_quote_in(evidence, source):
-                status, rationale = "unsupported", "Model's evidence was not a verbatim quote; not counted."
+            answered += 1
+            status = _normal_status(_first(entry, "status", "match", "verdict", "assessment", "support"))
+            evidence = str(_first(entry, "evidence", "quote", "evidence_quote", "source_quote",
+                                  "citation")).strip().strip('"\u201c\u201d')
+            rationale = str(_first(entry, "rationale", "reason", "explanation", "why")).strip()[:400]
+            if status != "unsupported":
+                found = locate_quote(evidence, source) if evidence else ""
+                if not found:
+                    unfound += 1
+                    status = "unsupported"
+                    rationale = ("Evidence quote could not be found in your CV, so it was not counted"
+                                 + (f' (model quoted: "{evidence[:120]}")' if evidence else "") + ".")
+                elif found != evidence:
+                    snapped += 1
+                evidence = found
             if status == "unsupported":
                 evidence = ""
-            prev = best.get(rid)
+            prev = best.get(req.id)
             if prev is None or STATUS_RANK[status] > STATUS_RANK[prev[0]]:
-                best[rid] = (status, evidence, rationale)
+                best[req.id] = (status, evidence, rationale)
     for req in requirements:
-        status, evidence, rationale = best.get(req.id, ("unsupported", "", "No evidence found."))
+        status, evidence, rationale = best.get(req.id, ("unsupported", "", "The model gave no answer for this item."))
         req.status, req.evidence, req.rationale = status, evidence, rationale or "No evidence found."
         req.evidence_origin = "" if not evidence else (
             "resume" if exact_quote_in(evidence, resume_part) else "confirmed_fact")
+    budget.notes.append(
+        f"Evidence check: {answered} answers for {len(requirements)} requirements in {len(chunks)} part(s); "
+        f"{snapped} quote(s) matched approximately and were replaced by your CV's exact wording; "
+        f"{unfound} quote(s) could not be found in your CV and were not counted"
+        + (f"; {unknown_ids} answer(s) referred to unknown requirement ids" if unknown_ids else "") + ".")
+    if answered == 0:
+        raise LLMError("The model's evidence answer could not be matched to any requirement. "
+                       "See 'Model's raw evidence answer' and report it.")
 
 
 _MATCH_RULES = """Decide, for EVERY requirement id, whether the candidate documents prove it.
@@ -235,10 +297,12 @@ def analyze(jd: str, resume: str, llm: Any, facts: str = "",
     budget = budget_for(llm)
     progress("Extracting job requirements (with literal JD quotes)…")
     requirements = extract_requirements(jd, llm, budget, progress)
-    match_evidence(build_source(resume, facts), requirements, llm, budget, progress)
+    debug: list[str] = []
+    match_evidence(build_source(resume, facts), requirements, llm, budget, progress, debug)
     return {"requirements": [asdict(r) for r in requirements],
             "baseline": score_resume(requirements, resume),
-            "context_tokens": budget.n_ctx, "notes": budget.notes, "facts": facts}
+            "context_tokens": budget.n_ctx, "notes": budget.notes, "facts": facts,
+            "debug_evidence": debug}
 
 
 # --- 3. Scoring --------------------------------------------------------------------------
@@ -457,6 +521,9 @@ def _plan(resume: str, budget: Budget) -> tuple[str, list[str], list[Section], l
         units.append(Unit("doc", 0, "document", "Résumé", resume.strip(), f"# {name}\n\n{body}"))
         return name, [], sections, units
     name, contacts, prose = split_header(sections[0].body)
+    for sec in sections:
+        if sec.kind == "contact":
+            contacts += [l for l in contact_lines(sec.body) if l not in contacts]
     kinds = {s.kind for s in sections}
     if "summary" not in kinds:
         units.append(Unit("summary", -1, "summary", "Professional Summary", prose, prose.strip()))
@@ -479,7 +546,10 @@ def _assemble(name: str, contacts: list[str], sections: list[Section], units: li
     for u in units:
         if u.section >= 0:
             by_section.setdefault(u.section, []).append(u)
-    blocks = [f"# {name}"] + ([" | ".join(contacts)] if contacts else [])
+    blocks = [f"# {name}"] + [c for c in contacts if len(c) > 70]
+    short = [c for c in contacts if len(c) <= 70]
+    if short:
+        blocks.append(" | ".join(short))
 
     def add(title: str, body: str) -> None:
         if body.strip():
@@ -500,7 +570,7 @@ def _assemble(name: str, contacts: list[str], sections: list[Section], units: li
             if sections[i].kind == kind:
                 add(sections[i].title, body_of(i))
     for i in ordered:
-        if sections[i].kind not in ("summary", "skills"):
+        if sections[i].kind not in ("summary", "skills", "contact"):
             add(sections[i].title, body_of(i))
     return "\n\n".join(blocks).strip() + "\n"
 
@@ -744,7 +814,8 @@ def tailor_resume(jd: str, resume: str, requirements: list[Requirement], llm: An
         "length_note": length_note(current_md, length), "notes": budget.notes,
         "sections": [{"title": s.title or "(header)", "kind": s.kind,
                       "handling": "rewritten" if s.rewritable else
-                      ("header" if s.kind == "header" else "kept verbatim")} for s in sections],
+                      {"header": "header", "contact": "merged into header"}.get(s.kind, "kept verbatim")}
+                     for s in sections],
     }
 
 

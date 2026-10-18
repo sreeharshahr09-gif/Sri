@@ -216,5 +216,43 @@ class TailorLoopTests(unittest.TestCase):
         self.assertEqual([r.text for r in requirements_from(rows)], [r["text"] for r in rows])
 
 
+
+class TolerantEvidenceParsingTests(unittest.TestCase):
+    def test_alternative_keys_statuses_and_quote_styles(self):
+        class Varied(FakeLLM):
+            def _match_evidence(self, prompt):
+                import json
+                return json.dumps({"results": [
+                    {"requirement_id": 1, "status": "Fully Supported",
+                     "evidence_quote": "“Performed finite element analysis (FEA) to study product durability”"},
+                    {"id": "R2", "status": "partially_supported",
+                     "quote": "Automated processing of engineering test data using Python  scripting"},
+                    {"id": 3, "status": "Not supported", "evidence": ""},
+                ]})
+        items = reqs()
+        from textutils import Budget
+        budget = Budget()
+        match_evidence(CV, items, Varied(), budget)
+        self.assertEqual([r.status for r in items], ["supported", "partial", "unsupported"])
+        self.assertIn("3 answers for 3 requirements", budget.notes[-1])
+
+    def test_unmatched_answer_is_an_error_not_a_silent_zero(self):
+        class Garbled(FakeLLM):
+            def _match_evidence(self, prompt):
+                return '{"matches": [{"id": "x99", "status": "supported", "evidence": "abc"}]}'
+        with self.assertRaises(LLMError):
+            match_evidence(CV, reqs(), Garbled())
+
+    def test_unfound_quote_is_explained(self):
+        class Inventive(FakeLLM):
+            def _match_evidence(self, prompt):
+                return ('{"matches": [{"id": "1", "status": "supported", '
+                        '"evidence": "Designed six-axis robots for wafer handling"}]}')
+        items = reqs()[:1]
+        match_evidence(CV, items, Inventive())
+        self.assertEqual(items[0].status, "unsupported")
+        self.assertIn("could not be found in your CV", items[0].rationale)
+
+
 if __name__ == "__main__":
     unittest.main()
