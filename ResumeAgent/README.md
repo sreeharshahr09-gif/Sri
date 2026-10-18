@@ -121,7 +121,8 @@ are closest in *meaning* to each job requirement. It runs on the CPU, so your GP
 for Qwen, and uses about 1 GB of RAM.
 
 1. Open `llama_embed_server_windows.bat` in Notepad and check `LLAMA_SERVER` (your
-   llama-server.exe). If `MODEL_PATH` doesn't exist, the first start downloads the model.
+   llama-server.exe). If `MODEL_PATH` doesn't exist, the first start downloads the model (639 MB)
+   with Windows `curl.exe`, or tells you how to download it in your browser.
 2. Double-click it and leave the window open; it serves on `http://127.0.0.1:8081`.
 3. Start the app as usual. In the sidebar, under **Semantic search**, click **Check embeddings**.
 
