@@ -202,7 +202,8 @@ def extract_reply(system: str, user: str, drop: set[int] = frozenset()) -> str:
                 "trade_offs": "not stated", "relevance": "Low" if theme == "noise" else "High",
                 "confidence": "High"}
         for key in re.findall(r'- "(x_\w+)":', system):
-            item[key] = "not stated"
+            item[key] = (f"{5 + (ref * 7) % 20} %" if "claimed" in key and theme != "noise" else
+                         component if "component" in key else "not stated")
         out.append(item)
     return json.dumps(out)
 
@@ -220,3 +221,17 @@ def narrative_reply(system: str, user: str, invent: bool = False) -> str:
     closing = "**Recommended R&D directions:**\n- Look at the gaps." if "executive summary" in system else \
         "**Implication for R&D:** focus where the gaps are."
     return "\n".join(lines + [closing])
+
+
+def agent_reply(messages: list[dict]) -> str:
+    """The data agent's turn: count patents per technology group with a chart, then answer from the output."""
+    last = messages[-1]["content"]
+    if "Status: success" in last:
+        rows = re.findall(r"^(\S[^\n]*?)\s{2,}(\d+)$", last, re.MULTILINE)
+        name, count = rows[0] if rows else ("n/a", "0")
+        return f"Final Answer: {name.strip()} has the most relevant patents, {count}."
+    return ("Counting relevant patents per technology group.\n```python\n"
+            "d = df[df['Relevance'] != 'Low']\n"
+            "t = d['Technology group'].value_counts()\n"
+            "import plotly.express as px\nshow(px.bar(t, title='Relevant patents per technology group'))\n"
+            "print(t.to_string())\n```")

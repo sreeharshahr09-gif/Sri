@@ -9,7 +9,7 @@ from analyst_agent.patents.data import detect_columns
 from analyst_agent.patents.pipeline import PipelineOptions, run_landscape
 from analyst_agent.patents.plan import AnalysisPlan
 
-from .patent_fixtures import extract_reply, make_export, name_clusters_reply, narrative_reply
+from .patent_fixtures import agent_reply, extract_reply, make_export, name_clusters_reply, narrative_reply
 from .test_patent_plan import MODEL_PLAN
 
 TFIDF = PipelineOptions(embedding_model="tfidf")
@@ -25,7 +25,7 @@ class FakeLLM:
 
     def __init__(self, plan, invent=False):
         self.groups = [b.name for b in plan.tech_buckets]
-        self.calls = {"names": 0, "extract": 0, "write": 0}
+        self.calls = {"names": 0, "extract": 0, "write": 0, "agent": 0}
         self.invent = invent
         self.prompts = []
 
@@ -38,6 +38,9 @@ class FakeLLM:
             self.calls["write"] += 1
             self.prompts.append((system, user))
             return Completion(content=narrative_reply(system, user, invent=self.invent), latency_s=0.0)
+        if system.startswith("You are a meticulous data analyst"):
+            self.calls["agent"] += 1
+            return Completion(content=agent_reply(messages), latency_s=0.0)
         assert "You extract structured facts from patents" in system
         self.calls["extract"] += 1
         return Completion(content=extract_reply(system, user), latency_s=0.0)

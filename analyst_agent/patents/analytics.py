@@ -28,7 +28,7 @@ TEMPLATE = "plotly_white"
 @dataclass
 class Exhibit:
     key: str
-    section: str  # summary | visuals | clusters | players | process | gaps
+    section: str  # summary | visuals | clusters | players | process | gaps | custom (brief-specific)
     title: str
     blocks: list[rb.Block] = field(default_factory=list)
     facts: str = ""
@@ -662,8 +662,81 @@ def process_insights(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     return Exhibit("process", "process", "Process and manufacturing", blocks, facts)
 
 
+_UNSTATED_VALUES = {"", "not stated", "none", "n/a", "na", "not specified", "unknown", "nan"}
+_NUMBER_UNIT = re.compile(r"(?<![\w.])(\d+(?:\.\d+)?)\s*(%|kg|g|db|hz|mm|phr)(?![a-z])", re.IGNORECASE)
+
+
+def extra_columns(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
+    """One view per extra column of the plan: how many patents state it, and what they state."""
+    import plotly.express as px
+
+    from .enrich import build_fields
+
+    specs = [f for f in build_fields(ctx.plan) if f.key.startswith("x_") and f.key in a]
+    if not specs:
+        return None
+    blocks, facts = [], []
+    for spec in specs:
+        values = a[spec.key].fillna("").astype(str).str.strip()
+        stated = values[~values.str.lower().isin(_UNSTATED_VALUES)]
+        n, k = len(values), len(stated)
+        blocks.append(rb.heading(spec.column, level=4))
+        if not k:
+            blocks.append(rb.note(f"No patent states a value for “{spec.column}”."))
+            facts.append(f"{spec.column}: no patent states a value.")
+            continue
+        found = stated.str.extract(_NUMBER_UNIT)
+        found.columns = ["number", "unit"]
+        found = found.dropna()
+        found["unit"] = found["unit"].str.lower()
+        unit = found["unit"].mode().iat[0] if len(found) else None
+        numeric = found[found["unit"] == unit] if unit else found
+        normal = stated.str.lower().str.rstrip(".")
+        top = normal.value_counts()
+        if unit and len(numeric) >= max(5, 0.5 * k):
+            numbers = numeric["number"].astype(float)
+            frame = pd.DataFrame({"Value": numbers, "tech_group": a.loc[numbers.index, "tech_group"]})
+            fig = px.box(frame, x="tech_group", y="Value", points="all", color="tech_group",
+                         color_discrete_map=ctx.colors, category_orders={"tech_group": ctx.groups},
+                         labels={"tech_group": "Technology group", "Value": f"{spec.column} ({unit})"})
+            _layout(fig, f"{spec.column} ({unit}) by technology group", height=420)
+            fig.update_layout(showlegend=False)
+            summary = frame.groupby("tech_group")["Value"].agg(["count", "median", "min", "max"]).round(2)
+            summary = summary.reindex([g for g in ctx.groups if g in summary.index]).reset_index()
+            summary.columns = ["Technology group", "Patents", "Median", "Min", "Max"]
+            blocks += [rb.chart(fig, caption=f"{k} of {n} patents state a value; {len(numeric)} as a number in {unit}. "
+                                             "Values as stated in the patents: test conditions and baselines differ."),
+                       rb.table(summary, title=f"{spec.column}: values in {unit} by technology group")]
+            facts.append(f"{spec.column}: {k} of {n} patents state a value, {len(numeric)} in {unit}; median "
+                         f"{numbers.median():.1f} {unit} (range {numbers.min():g}–{numbers.max():g}); by technology group: "
+                         + "; ".join(f"{r['Technology group']} median {r['Median']:g} ({r['Patents']} patents)"
+                                     for _, r in summary.iterrows()) + ".")
+        elif len(top) and top.head(10).sum() >= 0.5 * k and top.iloc[0] >= 2:
+            keep = top.head(10).index
+            frame = pd.DataFrame({"Value": normal[normal.isin(keep)], "tech_group": a.loc[normal[normal.isin(keep)].index, "tech_group"]})
+            counts = frame.groupby(["Value", "tech_group"]).size().rename("Patents").reset_index()
+            fig = px.bar(counts, y="Value", x="Patents", color="tech_group", orientation="h",
+                         color_discrete_map=ctx.colors, category_orders={"Value": list(keep), "tech_group": ctx.groups},
+                         labels={"tech_group": "Technology group", "Value": ""})
+            _layout(fig, f"{spec.column}: most frequent values", height=max(320, 30 * len(keep) + 140))
+            blocks.append(rb.chart(fig, caption=f"{k} of {n} patents state a value; the 10 most frequent values "
+                                                f"cover {top.head(10).sum()} of them (spelling as written by the model)."))
+            facts.append(f"{spec.column}: {k} of {n} patents state a value; most frequent: "
+                         + "; ".join(f"{v} {c}" for v, c in top.head(6).items()) + ".")
+        else:
+            examples = a.loc[stated.index[:10]]
+            blocks.append(rb.table(pd.DataFrame({"Patent ID": examples["id"], "Title": examples["title"].map(_short),
+                                                 spec.column: stated.iloc[:10].values}),
+                                   title=f"{spec.column}: examples",
+                                   caption=f"{k} of {n} patents state a value; the values vary too much to count, so "
+                                           "examples are shown. Ask a follow-up question to group them."))
+            facts.append(f"{spec.column}: {k} of {n} patents state a value; values vary (e.g. "
+                         + "; ".join(stated.iloc[:3].map(lambda v: _short(v, 60))) + ").")
+    return Exhibit("extra_columns", "custom", "Your extra columns", blocks, " ".join(facts))
+
+
 EXHIBITS = [trend, geography, segments, problem_solution, players, competitors, complexity, process_insights,
-            roadmap, white_space]
+            roadmap, white_space, extra_columns]
 
 
 def run_analytics(frame: pd.DataFrame, plan: AnalysisPlan, year_basis: str,

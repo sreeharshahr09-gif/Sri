@@ -20,7 +20,15 @@ from analyst_agent.patents import enrich, semantic
 from analyst_agent.patents import narrative as nar
 from analyst_agent.patents import report as rb
 from analyst_agent.patents.data import ROLE_LABELS, build_corpus, detect_columns
-from analyst_agent.patents.followup import FollowUp, analysis_dataset, apply_changes, landscape_profile, rewrite, route
+from analyst_agent.patents.followup import (
+    FollowUp,
+    agent_client,
+    analysis_dataset,
+    apply_changes,
+    landscape_profile,
+    rewrite,
+    route,
+)
 from analyst_agent.patents.pipeline import LandscapeResult, PipelineOptions, run_landscape
 from analyst_agent.patents.plan import (
     AnalysisPlan,
@@ -29,6 +37,7 @@ from analyst_agent.patents.plan import (
     list_from_text,
     parse_brief,
 )
+from analyst_agent.patents.presets import preset_names, preset_plan
 from analyst_agent.sandbox import Sandbox
 from ui import jobs
 from ui.common import remember
@@ -141,27 +150,46 @@ def sample_titles(n: int = 60) -> list[str]:
     return titles.sample(min(n, len(titles)), random_state=42).tolist()
 
 
+NO_PRESET = "— none: start from my brief —"
+
+
 def brief_step(busy: bool, llm_cfg: LLMConfig) -> None:
-    st.subheader("2 · Analysis brief")
+    st.subheader("2 · Objective and brief")
+    c1, c2 = st.columns([3, 2])
+    objective = c1.selectbox(
+        "Start from a standard objective (optional)", [NO_PRESET] + preset_names(), key=remember("pl_preset", NO_PRESET),
+        help="Each comes with a full analysis plan: categories, technology groups, complexity levels, extra CSV "
+             "columns, the objective's own questions and suggested search terms. You can edit everything.",
+    )
+    preset = None if objective == NO_PRESET else objective
+    c2.write("")
+    c2.write("")
+    if c2.button("📋 Use this objective's plan", disabled=busy or preset is None, width="stretch",
+                 help="Fills the plan below straight away, without the model."):
+        st.session_state.pl_plan = preset_plan(preset)
+        st.session_state.pl_plan_version += 1
+        st.rerun()
     brief = st.text_area(
-        "Paste your complete brief (role, scope, problem, timeframe, analysis dimensions, required charts, "
-        "questions, output format)", height=240, key=remember("pl_brief", ""),
+        "Your brief (optional with a standard objective): role, scope, problem, timeframe, analysis dimensions, "
+        "required charts, questions, output format", height=200, key=remember("pl_brief", ""),
         placeholder="e.g. Conduct a deep-research-grade patent landscape on uneven wear in TBR and PCR tires, "
                     "2014–2024 …",
     )
+    label = "🧭 Adapt the objective's plan to my brief" if preset else "🧭 Prepare analysis plan"
     # Not disabled while the box is empty: pasted text only reaches the app when the box loses focus,
     # which happens on this very click, so a disabled button would swallow the first click.
-    if st.button("🧭 Prepare analysis plan", type="primary", disabled=busy):
+    if st.button(label, type="primary", disabled=busy):
         text = brief.strip()
         if not text:
-            st.warning("Paste your brief first.")
+            st.warning("Paste your brief first" + (", or use the objective's plan as it is." if preset else "."))
             return
 
         titles = sample_titles()
+        base = preset_plan(preset) if preset else None
 
         def work(on_event, should_stop):
             on_event("phase", "Reading your brief" + (" and the export's titles" if titles else ""))
-            return PlanReady(parse_brief(LLMClient(llm_cfg), text, titles))
+            return PlanReady(parse_brief(LLMClient(llm_cfg), text, titles, base=base))
 
         st.session_state[JOB] = jobs.start_job("Prepare the analysis plan", "Patent landscape", work, describe_event)
         st.rerun()
@@ -181,13 +209,23 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
     raw_df: pd.DataFrame | None = st.session_state.pl_raw
     v = st.session_state.pl_plan_version
     st.subheader("3 · Analysis plan")
-    if plan.source == "fallback":
+    if plan.source == "preset":
+        st.caption("A standard objective's plan. Edit anything, then run; or paste a brief above to adapt it.")
+    elif plan.source == "fallback":
         st.warning("The model did not prepare this plan, so it was set up from the brief's text by rules. "
                    "Review the categories carefully.", icon="⚠️")
     else:
         st.caption("Prepared by the model from your brief. Edit anything, then run.")
     for item in plan.not_possible:
         st.info(item, icon="ℹ️")
+    if plan.keywords or plan.classification_codes:
+        with st.expander("🔎 Suggested search for your database export"):
+            if plan.keywords:
+                st.markdown("**Keywords:** " + ", ".join(f"“{k}”" for k in plan.keywords))
+            if plan.classification_codes:
+                st.markdown("**Classification codes:** " + "; ".join(plan.classification_codes))
+            st.caption("A starting point for the search in your patent database; check the codes there. The export "
+                       "you upload decides what the landscape covers.")
     if len(plan.problems) < 3:
         label = (plan.problem_label or "problem").lower()
         st.warning(f"Only {len(plan.problems)} {label} categor{'y' if len(plan.problems) == 1 else 'ies'}: patents "
@@ -217,6 +255,11 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
         extra = st.text_area(f"Extra columns for the CSV, beyond the standard ones ({STANDARD_COLUMNS})",
                              categories_to_text(plan.extra_fields), height=100)
         sections = st.text_area("Report sections (one per line)", "\n".join(plan.report_sections), height=130)
+        questions = st.text_area(
+            "Brief-specific questions, answered from the data in the report (one per line)",
+            "\n".join(plan.analysis_questions), height=110,
+            help="The data agent answers each with Python code on the enriched patent table, with charts and the "
+                 "code shown. Up to 6. Leave empty to skip.")
 
         answers = {}
         if plan.questions:
@@ -241,6 +284,7 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
             st.checkbox("Read every patent with the model (fills the study's columns for the CSV)",
                         key=remember("pl_extract", True))
             st.checkbox("Build the patent map and topic clusters", key=remember("pl_semantic", True))
+            st.checkbox("Answer the brief-specific questions (data agent)", key=remember("pl_questions", True))
             st.text_input(
                 "Text embedding model", key=remember("pl_embed_model", semantic.DEFAULT_MODEL),
                 help="PatentSBERTa needs `pip install sentence-transformers` and downloads once (about 0.5 GB); "
@@ -261,6 +305,7 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
             in_scope=in_scope.strip(), competitors=list_from_text(competitors), regions=list_from_text(regions),
             extra_fields=categories_from_text(extra),
             report_sections=[s.strip() for s in sections.splitlines() if s.strip()] or plan.report_sections,
+            analysis_questions=[q.strip().lstrip("-•* ").strip() for q in questions.splitlines() if q.strip()][:6],
             answers={q: a for q, a in answers.items() if a.strip()},
         )
         st.session_state.pl_plan = plan
@@ -295,6 +340,7 @@ def start_run(plan: AnalysisPlan, mapping: dict, sample: int, llm_cfg: LLMConfig
     options = PipelineOptions(
         sample_limit=sample, semantic_map=bool(st.session_state.get("pl_semantic", True)),
         extract_details=bool(st.session_state.get("pl_extract", True)),
+        answer_questions=bool(st.session_state.get("pl_questions", True)),
         embedding_model=(st.session_state.get("pl_embed_model") or semantic.DEFAULT_MODEL).strip(),
     )
 
@@ -314,7 +360,7 @@ def render_blocks(blocks: list[rb.Block], key: str) -> None:
         if block.kind == "heading":
             st.markdown(f"{'#' * max(1, min(block.level, 4))} {block.title}")
             continue
-        if block.title and block.kind not in ("plotly", "download"):
+        if block.title and block.kind not in ("plotly", "download", "code"):
             st.markdown(f"**{block.title}**")
         if block.kind == "markdown":
             st.markdown(block.text)
@@ -322,13 +368,18 @@ def render_blocks(blocks: list[rb.Block], key: str) -> None:
             st.info(block.text, icon="ℹ️")
         elif block.kind == "caption":
             st.caption(block.text)
+        elif block.kind == "image" and block.data:
+            st.image(block.data)
+        elif block.kind == "code":
+            with st.expander(block.title or "Code"):
+                st.code(block.text, language="python")
         elif block.kind == "metrics":
             cols = st.columns(max(1, len(block.metrics)))
             for col, (label, value) in zip(cols, block.metrics):
                 col.metric(label, value)
         elif block.kind == "table" and block.table is not None:
             if len(block.table) <= 30:  # report-style table: real text, readable and printable
-                st.table(block.table.style.hide(axis="index").format(precision=2, na_rep="", thousands=","))
+                report_table(block.table)
             else:  # long tables: scrollable, sortable grid
                 st.dataframe(block.table, width="stretch", hide_index=True)
         elif block.kind == "plotly" and block.figure is not None:
@@ -338,6 +389,23 @@ def render_blocks(blocks: list[rb.Block], key: str) -> None:
                                icon=":material/download:", key=f"{key}-dl-{i}", on_click="ignore")
         if block.caption:
             st.caption(block.caption)
+
+
+def _whole_number(v) -> str:
+    return "" if pd.isna(v) else f"{v:.0f}" if float(v).is_integer() else f"{v:.2f}"
+
+
+def report_table(df: pd.DataFrame) -> None:
+    """A short table as plain text: no index column, thousands separators except in year columns."""
+    df = df.reset_index(drop=True)
+    years = [c for c in df.columns if "year" in str(c).lower() and pd.api.types.is_numeric_dtype(df[c])]
+    styled = df.style.hide(axis="index").format(precision=2, na_rep="", thousands=",")
+    if years:
+        styled = styled.format(_whole_number, subset=years)
+    try:
+        st.table(styled, hide_index=True)
+    except TypeError:  # Streamlit releases whose st.table has no hide_index
+        st.table(styled)
 
 
 def download_row(blocks: list[rb.Block], key: str) -> None:
@@ -390,7 +458,7 @@ def followup_step(busy: bool, llm_cfg: LLMConfig) -> None:
 def start_followup(text: str, base: LandscapeResult, llm_cfg: LLMConfig) -> None:
     dataset = analysis_dataset(base)
     agent_cfg = AgentConfig()
-    agent = DataAnalystAgent(LLMClient(llm_cfg), st.session_state.pl_sandbox, dataset, config=agent_cfg,
+    agent = DataAnalystAgent(agent_client(LLMClient(llm_cfg)), st.session_state.pl_sandbox, dataset, config=agent_cfg,
                              profile=landscape_profile(base, dataset))
     history = [o.run for o in st.session_state.pl_outputs if isinstance(o, FollowUp) and o.run is not None]
     headings = [sec.heading for sec in base.sections]

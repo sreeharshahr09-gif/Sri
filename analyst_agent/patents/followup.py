@@ -10,16 +10,18 @@ from __future__ import annotations
 import copy
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from ..data import Dataset, describe_for_llm
+from ..llm import LLMClient
 from . import narrative as nar
 from .llmjson import JSONReplyError, LLMError, ask_json
 from .plan import AnalysisPlan, Category, clean_plan
 
 ACTIONS = ("analyse", "change_plan", "rewrite")
 PLAN_KEYS = ["title", "objective", "segments", "years", "problem_label", "problems", "tech_buckets",
-             "complexity_levels", "in_scope", "competitors", "regions", "extra_fields", "report_sections"]
+             "complexity_levels", "in_scope", "competitors", "regions", "extra_fields", "report_sections",
+             "analysis_questions"]
 
 ROUTER_SYSTEM = """\
 You route a follow-up request about a finished patent landscape report. Decide what the user wants:
@@ -37,7 +39,8 @@ Reply with ONLY one JSON object:
 
 Plan keys: title, objective, segments (list), years ([first, last], or null for no limit), problem_label, \
 problems / tech_buckets / complexity_levels / extra_fields (lists of {"name", "description"}), in_scope, \
-competitors (list), regions (list), report_sections (list). Keep everything the user did not ask to change.\
+competitors (list), regions (list), report_sections (list), analysis_questions (list of questions answered \
+from the data in the report). Keep everything the user did not ask to change.\
 """
 
 
@@ -120,7 +123,8 @@ def describe_changes(old: AnalysisPlan, new: AnalysisPlan) -> list[str]:
             continue
         label = {"years": "Years", "problems": old.problem_label or "Problems", "tech_buckets": "Technology groups",
                  "complexity_levels": "Complexity levels", "extra_fields": "Extra columns",
-                 "report_sections": "Report sections", "in_scope": "Scope", "problem_label": "Problem dimension"
+                 "report_sections": "Report sections", "in_scope": "Scope", "problem_label": "Problem dimension",
+                 "analysis_questions": "Brief-specific questions"
                  }.get(key, key.replace("_", " ").capitalize())
         if key == "years":
             fmt = lambda y: f"{y[0]}–{y[1]}" if y else "no limit"  # noqa: E731
@@ -178,6 +182,14 @@ def rewrite(result, llm, wanted: list[str], instruction: str) -> list[nar.Sectio
 
 
 # --------------------------------------------------------------------------- analysis
+
+
+def agent_client(llm):
+    """The data agent's client: no thinking (it reasons step by step in its own loop) and room for code."""
+    if not isinstance(llm, LLMClient):
+        return llm
+    cfg = llm.config
+    return type(llm)(replace(cfg, no_think=True, max_tokens=max(cfg.max_tokens, 3000)), session=llm.session)
 
 
 def analysis_dataset(result) -> Dataset:

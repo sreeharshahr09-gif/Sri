@@ -17,7 +17,8 @@ The app has three pages:
 - **📁 Workspace:** point the assistant at a local folder. It searches, reads and explains the
   files, citing file and line for everything it says. In **Edit** mode it proposes changes, which
   you review and apply.
-- **🔬 Patent landscape:** upload a patent export and paste your analysis brief. You get a full
+- **🔬 Patent landscape:** upload a patent export, pick a standard objective (lightweighting,
+  rolling resistance, NVH, ...) and/or paste your analysis brief. You get a full
   landscape report (trends, players, technology clusters, a semantic patent map, white space,
   crown jewels) and an enriched CSV in which the model has read every patent.
 
@@ -145,12 +146,23 @@ machine.
    other database. Columns are recognised automatically (number, title, abstract, claims,
    assignee, priority/filing/publication dates, CPC/IPC, family ID, citations, and AI summaries
    such as "Problem being solved"); you can correct the mapping.
-2. **Paste your complete brief** and press **Prepare analysis plan**. The model turns it into an
-   editable plan: title, objective, segments, period, the problem dimension (e.g. *Wear type*)
-   with its categories, technology groups, complexity levels, scope, competitors, regions,
-   extra CSV columns, the report's section headings and the brief's own questions. Things the
-   brief asks for that cannot be done offline (web search, image analysis) are listed.
-3. **Review the plan**, answer the brief's questions, and press **▶ Save & run analysis**. A
+2. **Choose a standard objective, paste your brief, or both.**
+   - **Standard objective** (optional): Lightweighting, Low rolling resistance, Durability,
+     Uneven wear, Smart / connected tyres, NVH, Wet / dry traction, Dynamic growth, High
+     performance or Sustainable materials. **📋 Use this objective's plan** fills a complete
+     plan at once, without the model: problem categories, technology groups, complexity
+     levels, scope, extra CSV columns (e.g. *Weight saving claimed*, *Mass-reduction route*),
+     the objective's own questions and suggested search terms for your database.
+   - **Your brief**: paste it and press **Prepare analysis plan**. The model turns it into an
+     editable plan: title, objective, segments, period, the problem dimension (e.g. *Wear type*)
+     with its categories, technology groups, complexity levels, scope, competitors, regions,
+     extra CSV columns, the report's section headings and the brief's own questions. Things the
+     brief asks for that cannot be done offline (web search, image analysis) are listed.
+   - **Both**: with an objective chosen the button reads **Adapt the objective's plan to my
+     brief**. The model keeps the objective's categories and adds or changes only what your
+     brief asks for (segments, period, competitors, more questions, ...).
+3. **Review the plan**, edit anything (categories, extra columns, the brief-specific questions),
+   and press **▶ Save & run analysis**. A
    trial run on 50–100 patents is a good first check. The job runs in the background with a
    progress bar and time estimate; you can switch pages or stop it.
 4. **Read the report** on one long page, and download the results.
@@ -165,12 +177,17 @@ machine.
 | Reading every patent | The model reads title, abstract, the export's summaries and the first claim of every patent, in batches sized to its context window, and fills the study's columns (below). Answers are validated against the plan's categories and cached on disk |
 | Off-topic screening | Patents rated *Relevance: Low* against the plan's scope leave the analytics (they stay in the CSV) |
 | Analytics | Computed, not written by the model: filing trend with the publication-lag zone and CAGR on complete years; technology roadmap and emerging/declining clusters; top assignees, HHI, assignee × technology; offices; segments; problem × solution heatmaps; complexity ranking; white space; competitor watch and crown jewels; process and manufacturing insights |
+| Brief-specific analyses | Charts for your extra columns (values with a unit as box plots by technology group, short labels as stacked bars), and each of the plan's questions answered by the data agent with Python code on the enriched table; the answers also feed the report text |
 | Report text | The model writes each of your brief's sections from the computed facts only; every number in its text is checked against them and unmatched ones are flagged |
 
 The report follows your brief's section headings in order (e.g. 📊 Executive Summary · 📈 Data
 Visualizations · 🧠 Technology Clusters & Solutions · 🏭 Process & Manufacturing Insights ·
 🔮 Research Gaps & Future Trends); results your brief has no heading for get one of their own.
-It ends with **Methodology and limitations**: data provenance (file, SHA-256, date), the record
+Before the end comes **🎯 Brief-specific analyses**: the charts for your extra columns, then
+every question in the plan's *Brief-specific questions* box with its answer, its charts or
+tables, a note on whether each number traces back to the code output, and the code itself
+(fold-out). Answering takes a few model requests per question; switch it off under **Advanced
+settings** if you only need the standard landscape. It ends with **Methodology and limitations**: data provenance (file, SHA-256, date), the record
 flow from export to analysed set, every method and parameter used, definitions, merged assignee
 names and limitations.
 
@@ -234,7 +251,7 @@ Type a request in the box under the report; the outcome is added below it.
   llama-server `--jinja` with Qwen3-style templates). If a model thinks anyway and runs out of
   reply tokens, the request is retried with more room and smaller batches, and the reason is
   recorded per patent. Starting llama-server with `--reasoning-budget 0` turns thinking off for
-  every page.
+  every page. The data agent (brief-specific questions and follow-ups) also runs without thinking.
 - The analysis covers exactly what your export contains: the search strategy behind it defines
   the landscape. It is a technology landscape, not a legal (validity or FTO) opinion.
 
@@ -337,13 +354,14 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `ui/patent_page.py` | Patent landscape page: upload, brief, plan, report, downloads, follow-ups |
 | `analyst_agent/patents/data.py` | Export columns, cleaning, de-duplication, assignee names, record flow |
 | `analyst_agent/patents/plan.py` | Brief to analysis plan (model, with a rule-based fallback) |
+| `analyst_agent/patents/presets.py` | Standard objectives (lightweighting, rolling resistance, ...) with complete plans |
 | `analyst_agent/patents/semantic.py` | Embeddings, UMAP map, HDBSCAN clusters, c-TF-IDF keywords, cluster names |
 | `analyst_agent/patents/enrich.py` | The model reads every patent: batching, validation, retries, cache |
 | `analyst_agent/patents/analytics.py` | Trends, players, heatmaps, complexity, white space, crown jewels |
 | `analyst_agent/patents/narrative.py` | Report sections, number-checked text, methodology, validation sample |
 | `analyst_agent/patents/html_report.py` | The report as one offline HTML file |
 | `analyst_agent/patents/followup.py` | Follow-ups: routing, plan changes, rewrites, data-agent context |
-| `analyst_agent/patents/pipeline.py` | Runs the stages and assembles the report and the enriched table |
+| `analyst_agent/patents/pipeline.py` | Runs the stages, answers the brief's questions, assembles the report and the enriched table |
 | `analyst_agent/workspace.py` | Read-only, root-bounded file access and text extraction |
 | `analyst_agent/workspace_agent.py` | Tool-using loop for the workspace assistant, plus citation checks |
 | `analyst_agent/editing.py` | Staged changes, diffs, apply with backup, undo, journal |

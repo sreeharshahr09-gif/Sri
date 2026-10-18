@@ -31,7 +31,8 @@ def _ex(result, key):
 
 def test_all_exhibits_computed(result):
     assert [e.key for e in result.exhibits] == ["trend", "geography", "segments", "problem_solution", "players",
-                                                "competitors", "complexity", "process", "roadmap", "white_space"]
+                                                "competitors", "complexity", "process", "roadmap", "white_space",
+                                                "extra_columns"]
     assert not [w for w in result.warnings if "could not be computed" in w]
     assert all(e.facts for e in result.exhibits)
 

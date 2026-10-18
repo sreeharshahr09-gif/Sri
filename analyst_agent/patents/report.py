@@ -10,7 +10,7 @@ import pandas as pd
 
 @dataclass
 class Block:
-    kind: str  # "heading" | "markdown" | "table" | "plotly" | "metrics" | "note" | "caption" | "download"
+    kind: str  # "heading" | "markdown" | "table" | "plotly" | "metrics" | "note" | "caption" | "download" | "image" | "code"
     title: str = ""
     text: str = ""
     table: pd.DataFrame | None = None
@@ -53,3 +53,11 @@ def metrics(items: list[tuple[str, str]], title: str = "") -> Block:
 
 def download(label: str, data: bytes, file_name: str, mime: str = "text/csv", caption: str = "") -> Block:
     return Block("download", title=label, data=data, file_name=file_name, mime=mime, caption=caption)
+
+
+def image(png: bytes, title: str = "", caption: str = "") -> Block:
+    return Block("image", title=title, data=png, mime="image/png", caption=caption)
+
+
+def code(text: str, title: str = "Code") -> Block:
+    return Block("code", title=title, text=text)

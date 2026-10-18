@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import asdict, dataclass, field
 
@@ -51,11 +52,12 @@ class AnalysisPlan:
     regions: list[str] = field(default_factory=list)
     extra_fields: list[Category] = field(default_factory=list)
     report_sections: list[str] = field(default_factory=lambda: list(DEFAULT_SECTIONS))
-    questions: list[str] = field(default_factory=list)
+    questions: list[str] = field(default_factory=list)  # to ask the user before the run
+    analysis_questions: list[str] = field(default_factory=list)  # to answer from the data, in the report
     not_possible: list[str] = field(default_factory=list)
     answers: dict[str, str] = field(default_factory=dict)
     brief: str = ""
-    source: str = "fallback"  # "model" when the model produced it
+    source: str = "fallback"  # "model" when the model produced it, "preset" for a standard objective
 
     def to_dict(self) -> dict:
         data = asdict(self)
@@ -125,6 +127,7 @@ ONLY one JSON object, no other text, with exactly these keys:
 "extra_fields": list of {"name", "description"}: up to 6 additional facts worth extracting from every patent for this topic, beyond these standard ones: topic, segment, problem, technology group, complexity, component, performance target, design lever, mechanism, core claim, key parameters, trade-offs. Use short column names.
 "report_sections": list of the report headings the brief asks for, in order and exactly as written (keep emojis)
 "questions": list of the questions the brief says to ask the user before running the analysis
+"analysis_questions": list of the specific analyses the brief asks for that can be answered from the patent table (counts, comparisons, trends or values per category, assignee or year), each written as one clear question; up to 6; [] if none
 "not_possible": list of things the brief asks for that cannot be done here, each with a short reason. This tool works offline on the patent export the user uploaded: it cannot search the web or online databases (the uploaded export replaces that search) and it cannot analyse images.
 
 Use only information from the brief and the sample titles, plus sensible defaults where a key is missing. \
@@ -132,10 +135,17 @@ Do not invent companies.\
 """
 
 
-def parse_brief(llm, brief: str, sample_titles: list[str] | None = None) -> AnalysisPlan:
-    """Plan from the brief (and titles from the export) via the model; falls back to rules if the model fails."""
-    fallback = fallback_plan(brief)
+def parse_brief(llm, brief: str, sample_titles: list[str] | None = None,
+                base: AnalysisPlan | None = None) -> AnalysisPlan:
+    """Plan from the brief (and titles from the export) via the model; falls back to rules if the model fails.
+    `base`: a standard objective's plan to start from; the brief adapts and extends it."""
+    fallback = fallback_plan(brief) if base is None else _with_brief(base, brief)
     user = f"Brief:\n\n{brief.strip()}"
+    if base is not None:
+        start = {k: v for k, v in base.to_dict().items() if k not in ("brief", "source", "answers", "not_possible")}
+        user = ("Start from this standard plan for the objective. Keep its categories, groups, levels and "
+                "questions unless the brief changes them, and add what the brief asks for:\n"
+                + json.dumps(start, ensure_ascii=False) + "\n\n" + user)
     titles = [" ".join(str(t).split())[:140] for t in (sample_titles or []) if str(t).strip()]
     if titles:
         user += (f"\n\nTitles of {len(titles)} randomly chosen patents in the uploaded export:\n"
@@ -148,7 +158,23 @@ def parse_brief(llm, brief: str, sample_titles: list[str] | None = None) -> Anal
         return fallback
     if not isinstance(data, dict):
         return fallback
-    return clean_plan(data, brief, fallback)
+    plan = clean_plan(data, brief, fallback)
+    if base is not None:  # what the model left out stays as in the standard plan
+        for key in ("problems", "tech_buckets", "complexity_levels", "extra_fields", "analysis_questions",
+                    "keywords", "classification_codes"):
+            if not getattr(plan, key):
+                setattr(plan, key, list(getattr(base, key)))
+    return plan
+
+
+def _with_brief(plan: AnalysisPlan, brief: str) -> AnalysisPlan:
+    data = plan.to_dict()
+    data["brief"] = brief
+    out = AnalysisPlan.from_dict(data)
+    out.not_possible = [*plan.not_possible, (
+        "The model could not adapt the plan to your brief, so the standard objective's plan is used as it is. "
+        "Edit it below where your brief differs.")]
+    return out
 
 
 def _categories(value, limit: int) -> list[Category]:
@@ -203,6 +229,7 @@ def clean_plan(data: dict, brief: str, fallback: AnalysisPlan | None = None) -> 
         extra_fields=_categories(data.get("extra_fields"), 6),
         report_sections=_strings(data.get("report_sections"), 12) or list(DEFAULT_SECTIONS),
         questions=_strings(data.get("questions"), 8),
+        analysis_questions=_strings(data.get("analysis_questions"), 6),
         not_possible=_strings(data.get("not_possible"), 8),
         brief=brief,
         source="model",

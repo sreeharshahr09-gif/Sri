@@ -32,6 +32,7 @@ class PipelineOptions:
     extract_details: bool = True  # the model reads every patent and fills the study's columns
     batch_size: int = 0  # patents per extraction request (0 = from the context window)
     write_report: bool = True  # the model writes each section's text from the computed facts
+    answer_questions: bool = True  # the data agent answers the plan's brief-specific questions
     validation_size: int = 30  # patents in the validation sample
 
 
@@ -57,6 +58,7 @@ class LandscapeResult:
     exhibits: list[an.Exhibit] = field(default_factory=list)
     sections: list[nar.Section] = field(default_factory=list)
     facts_by_kind: dict[str, str] = field(default_factory=dict)  # what the text was written from
+    question_runs: list = field(default_factory=list)  # (question, AgentRun) for the brief-specific questions
     all_facts: str = ""
     model_name: str = ""
     methods: dict[str, str] = field(default_factory=dict)  # method -> description, for the methodology
@@ -110,6 +112,9 @@ def run_landscape(
             extraction_stage(result, llm, options, emit, should_stop)
         checkpoint("Computing the landscape analytics")
         analytics_stage(result)
+        collect_facts(result)
+        if options.answer_questions and result.plan.analysis_questions:
+            questions_stage(result, llm, emit, checkpoint)
         if options.write_report:
             checkpoint("Writing the report")
             narrative_stage(result, llm, emit)
@@ -154,8 +159,8 @@ def export_date(corpus: PatentCorpus) -> float | None:
     return an.fractional_year(latest.date())
 
 
-def narrative_stage(result: LandscapeResult, llm, emit) -> None:
-    sections = nar.plan_sections(result.plan.report_sections)
+def collect_facts(result: LandscapeResult) -> None:
+    """The fact sheets the report text (and the data agent's context) are written from."""
     by_kind: dict[str, str] = {}
     for ex in result.exhibits:
         by_kind[ex.section] = by_kind.get(ex.section, "") + f"[{ex.title}] {ex.facts}\n"
@@ -164,9 +169,51 @@ def narrative_stage(result: LandscapeResult, llm, emit) -> None:
         by_kind["clusters"] = f"[Topic clusters] {clusters}\n" + by_kind.get("clusters", "")
     frame = result.analysis_frame if result.analysis_frame is not None else result.corpus.std
     ordered = sorted(result.exhibits, key=lambda e: FACT_PRIORITY.index(e.key) if e.key in FACT_PRIORITY else 99)
-    all_facts = an.summary_facts(frame, ordered[:1]) + (f" [Topic clusters] {clusters}" if clusters else "") + " " + \
-        " ".join(f"[{ex.title}] {ex.facts}" for ex in ordered[1:])
-    result.facts_by_kind, result.all_facts = by_kind, all_facts
+    result.all_facts = an.summary_facts(frame, ordered[:1]) + (f" [Topic clusters] {clusters}" if clusters else "") \
+        + " " + " ".join(f"[{ex.title}] {ex.facts}" for ex in ordered[1:])
+    result.facts_by_kind = by_kind
+
+
+MAX_QUESTIONS = 6
+
+
+def questions_stage(result: LandscapeResult, llm, emit, checkpoint) -> None:
+    """The data agent answers each brief-specific question with code run on the enriched patent table."""
+    if llm is None:
+        result.warnings.append("No model connected: the brief-specific questions were not answered.")
+        return
+    from ..agent import DataAnalystAgent
+    from ..config import AgentConfig, SandboxConfig
+    from ..sandbox import Sandbox
+    from .followup import agent_client, analysis_dataset, landscape_profile
+
+    result.enriched = enriched_table(result)
+    dataset = analysis_dataset(result)
+    questions = result.plan.analysis_questions[:MAX_QUESTIONS]
+    answers = []
+    with Sandbox(SandboxConfig()) as sandbox:
+        agent = DataAnalystAgent(agent_client(llm), sandbox, dataset, config=AgentConfig(),
+                                 profile=landscape_profile(result, dataset))
+        for i, question in enumerate(questions):
+            checkpoint(f"Answering the brief's questions ({i + 1} of {len(questions)})")
+            run = agent.run(question)
+            result.question_runs.append((question, run))
+            if run.answer:
+                answers.append(f"[Brief question] {question} Answer: {run.answer[:700]}")
+    if answers:
+        text = "\n".join(answers)
+        result.facts_by_kind["custom"] = result.facts_by_kind.get("custom", "") + text + "\n"
+        result.all_facts += " " + text
+    answered = sum(1 for _, run in result.question_runs if run.answer and run.executed)
+    result.methods["Brief-specific questions"] = (
+        f"{answered} of {len(questions)} answered by the data agent with code run on the enriched patent table "
+        f"(Python sandbox, up to {AgentConfig().max_steps} steps each); numbers in the answers are traced to the "
+        "code output.")
+
+
+def narrative_stage(result: LandscapeResult, llm, emit) -> None:
+    sections = nar.plan_sections(result.plan.report_sections)
+    by_kind, all_facts = result.facts_by_kind, result.all_facts
     nar.write_sections(sections, by_kind, all_facts, result.plan.brief, result.plan.answers, llm,
                        on_progress=lambda done, total: emit("progress", (done, total)))
     result.sections = sections
@@ -176,6 +223,71 @@ def narrative_stage(result: LandscapeResult, llm, emit) -> None:
         result.methods["Report text"] = (f"Written by {result_model(llm)} for {written} of {len(sections)} sections "
                                          f"from the computed facts only; {flagged} figures could not be matched to "
                                          "them and are flagged in the text.")
+
+
+def brief_specific_blocks(result: LandscapeResult) -> list[rb.Block]:
+    parts: list[rb.Block] = []
+    for ex in (e for e in result.exhibits if e.section == "custom"):
+        parts.append(rb.heading(ex.title, level=3))
+        parts.extend(ex.blocks)
+    for question, run in result.question_runs:
+        parts.append(rb.heading(question, level=3))
+        parts.extend(agent_run_blocks(run))
+    if not parts:
+        return []
+    return [rb.heading("🎯 Brief-specific analyses"),
+            rb.caption("Your extra columns, and your plan's own questions answered by the data agent with Python "
+                       "code run on the enriched patent table. The code behind each answer is shown.")] + parts
+
+
+def agent_run_blocks(run) -> list[rb.Block]:
+    """An AgentRun as report blocks: answer, number check, charts and tables, code."""
+    blocks: list[rb.Block] = []
+    if run.status in ("llm_error", "error"):
+        blocks.append(rb.note(f"Not answered: {run.error or 'the analysis stopped'}"))
+    if run.answer:
+        blocks.append(rb.markdown(run.answer))
+        if not run.executed:
+            blocks.append(rb.note("This answer is not backed by any executed code; treat it as unverified."))
+        elif run.status == "step_limit":
+            blocks.append(rb.note("The step limit was reached before the agent finished; the answer may be "
+                                  "incomplete."))
+    g = run.grounding
+    if g and g.checked and run.executed:
+        everything = ("The number in the answer traces back to the code output." if len(g.checked) == 1 else
+                      f"All {len(g.checked)} numbers in the answer trace back to the code output.")
+        blocks.append(rb.caption(everything if g.fully_traced else
+                                 f"{g.traced_count} of {len(g.checked)} numbers trace back to the code output; "
+                                 f"not traced: {', '.join(g.untraced[:8])}."))
+    for art in run.report_artifacts():
+        block = artifact_block(art)
+        if block is not None:
+            blocks.append(block)
+    code = "\n\n".join(run.successful_code)
+    if code:
+        blocks.append(rb.code(code))
+    return blocks
+
+
+def artifact_block(art) -> rb.Block | None:
+    import base64
+
+    try:
+        if art.kind == "plotly":
+            return rb.chart(art.to_plotly())
+        if art.kind == "table":
+            df = art.to_dataframe()
+            if not pd.api.types.is_integer_dtype(df.index):  # labelled index (e.g. value_counts): keep it
+                df = df.reset_index()
+            return rb.table(df, title=art.title or "")
+        if art.kind == "image":
+            return rb.image(base64.b64decode(art.payload["png_b64"]), title=art.title or "")
+        text = str(art.payload.get("text", art.summary))
+        if art.kind == "text":
+            return rb.markdown(text)
+        return rb.metrics([(art.title or "Result", text)]) if len(text) <= 40 else rb.markdown(f"`{text}`")
+    except (AttributeError, KeyError, TypeError, ValueError):  # a broken output must not break the report
+        return None
 
 
 def result_model(llm) -> str:
@@ -201,6 +313,7 @@ def assemble_blocks(result: LandscapeResult, options: PipelineOptions | None = N
         if parts:
             blocks.append(rb.heading(sec.heading))
             blocks.extend(parts)
+    blocks.extend(brief_specific_blocks(result))
     blocks.extend(nar.methodology_blocks(result))
     if result.warnings:
         blocks.append(rb.markdown("**Notes from this run**\n\n" + "\n".join(f"- {w}" for w in result.warnings)))

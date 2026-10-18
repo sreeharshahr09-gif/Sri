@@ -26,6 +26,8 @@ table.data th, table.data td { border-bottom: 1px solid var(--line); padding: 6p
 .tablewrap { overflow-x: auto; max-height: 560px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; }
 .block-title { font-weight: 600; margin: 18px 0 4px; } nav.toc { background: var(--soft); border-radius: 8px;
        padding: 12px 18px; margin: 18px 0 8px; } nav.toc a { color: var(--ink); } .meta { color: var(--muted); }
+details.code { margin: 8px 0 18px; } details.code summary { cursor: pointer; color: var(--muted); }
+details.code pre { background: var(--soft); padding: 10px 12px; border-radius: 6px; overflow-x: auto; font-size: 12.5px; }
 @media print { .tablewrap { max-height: none; overflow: visible; } h2 { break-before: page; } }
 """
 
@@ -117,7 +119,7 @@ def report_html(blocks: list[rb.Block], title: str, subtitle: str = "") -> bytes
                 parts.append(f'<p class="meta">{html.escape(subtitle)}</p>')
                 parts.append("<!--TOC-->")
             continue
-        if block.title and block.kind not in ("plotly", "download"):
+        if block.title and block.kind not in ("plotly", "download", "code"):
             parts.append(f'<div class="block-title">{html.escape(block.title)}</div>')
         if block.kind == "markdown":
             parts.append(markdown_to_html(block.text))
@@ -135,6 +137,15 @@ def report_html(blocks: list[rb.Block], title: str, subtitle: str = "") -> bytes
             parts.append(block.figure.to_html(full_html=False, include_plotlyjs=not plotly_loaded,
                                               config={"displaylogo": False, "responsive": True}))
             plotly_loaded = True
+        elif block.kind == "image" and block.data:
+            import base64
+
+            src = base64.b64encode(block.data).decode("ascii")
+            parts.append(f'<img alt="{html.escape(block.title or "chart")}" src="data:image/png;base64,{src}" '
+                         'style="max-width:100%">')
+        elif block.kind == "code":
+            parts.append(f'<details class="code"><summary>{html.escape(block.title or "Code")}</summary>'
+                         f"<pre><code>{html.escape(block.text)}</code></pre></details>")
         elif block.kind == "download":
             parts.append(f'<div class="caption">Download in the app: {html.escape(block.file_name)}</div>')
             continue
