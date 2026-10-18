@@ -207,7 +207,7 @@ def _has_entries(obj: dict[str, Any]) -> None:
 
 def match_evidence(source: str, requirements: list[Requirement], llm: Any,
                    budget: Budget | None = None, progress: Notify = _quiet,
-                   debug: list[str] | None = None) -> None:
+                   debug: list[str] | None = None, retriever: Any = None) -> None:
     """Assess each requirement against the source, chunk by chunk; keep the best evidence.
 
     Evidence must be findable in the source (layout differences and small slips are tolerated
@@ -217,7 +217,14 @@ def match_evidence(source: str, requirements: list[Requirement], llm: Any,
     compact = json.dumps([{"id": r.id, "requirement": r.text, "priority": r.priority}
                           for r in requirements], ensure_ascii=False)
     out_tokens = min(3200, 200 + 110 * len(requirements))
-    chunks = chunk_text(source, budget.chars_left(out_tokens, compact, _MATCH_RULES), overlap=200)
+    size = budget.chars_left(out_tokens, compact, _MATCH_RULES)
+    chunks = chunk_text(source, size, overlap=200)
+    if len(chunks) > 1 and retriever is not None:
+        focused = chunk_text(_focused_excerpt(source, requirements, retriever), size)
+        if len(focused) < len(chunks):
+            budget.notes.append(f"Long CV: semantic search sent only the lines most relevant to each "
+                                f"requirement ({len(focused)} model call(s) instead of {len(chunks)}).")
+            chunks = focused
     resume_part = source.split(FACTS_HEADER)[0]
     by_id = {r.id: r for r in requirements}
     by_text = {normalized(r.text): r for r in requirements}
@@ -292,17 +299,90 @@ Reply JSON only: {"matches":[{"id":"1","status":"supported|partial|unsupported",
 - Include ALL requirement ids."""
 
 
+def _focused_excerpt(source: str, requirements: list[Requirement], retriever: Any, k: int = 6) -> str:
+    """The CV's header, role/date lines and the k most relevant lines for each requirement."""
+    head = [l for l in source.splitlines() if l.strip()][:6]
+    picked: list[str] = []
+    for req in requirements:
+        picked += [line for line, _ in retriever.top(req.text + " " + " ".join(req.keywords), k)]
+    lines = list(dict.fromkeys(head + role_lines(source) + picked))
+    return "\n".join(lines)
+
+
+def second_look(source: str, requirements: list[Requirement], llm: Any, retriever: Any,
+                progress: Notify = _quiet, k: int = 4) -> int:
+    """Re-check unproven requirements against their most similar CV lines (one model call).
+
+    Only upgrades, and only with a quote found in the CV; similarity alone never counts."""
+    targets = [r for r in requirements if r.status != "supported"]
+    if not targets:
+        return 0
+    progress("Second look at the gaps using semantic search…")
+    blocks = []
+    for r in targets:
+        lines = retriever.top(r.text + " " + " ".join(r.keywords), k)
+        blocks.append({"id": r.id, "requirement": r.text, "current_status": r.status,
+                       "candidate_lines": [line for line, _ in lines]})
+    prompt = f"""TASK: SECOND_LOOK
+A first pass may have missed evidence. For each requirement below, decide again using ONLY its
+candidate lines, which come from the candidate's CV.
+{_MATCH_RULES}
+- Most candidate lines are merely related. Related or similar is NOT the requirement: answer
+  "unsupported" unless a line really demonstrates it, and keep "partial" for incomplete evidence.
+REQUIREMENTS WITH CANDIDATE LINES: {json.dumps(blocks, ensure_ascii=False)}"""
+    try:
+        obj = ask_json(llm, "You are a cautious résumé evidence auditor. Output strict JSON only.",
+                       prompt, min(2400, 200 + 120 * len(targets)), validate=_has_entries)
+    except LLMError:
+        return 0
+    by_id = {r.id: r for r in targets}
+    resume_part = source.split(FACTS_HEADER)[0]
+    upgraded = 0
+    for entry in _match_entries(obj):
+        raw_id = str(_first(entry, "id", "requirement_id", "req_id")).strip()
+        digits = re.search(r"\d+", raw_id)
+        req = by_id.get(raw_id) or (by_id.get(digits.group()) if digits else None)
+        if req is None:
+            continue
+        status = _normal_status(_first(entry, "status", "match", "verdict", "assessment"))
+        evidence = str(_first(entry, "evidence", "quote", "evidence_quote", "source_quote")).strip()
+        found = locate_quote(evidence, source) if evidence else ""
+        if status != "unsupported" and found and STATUS_RANK[status] > STATUS_RANK[req.status]:
+            req.status, req.evidence = status, found
+            req.rationale = "Second look: " + str(_first(entry, "rationale", "reason", "why"))[:380]
+            req.evidence_origin = "resume" if exact_quote_in(found, resume_part) else "confirmed_fact"
+            upgraded += 1
+    return upgraded
+
+
 def analyze(jd: str, resume: str, llm: Any, facts: str = "",
-            progress: Notify = _quiet) -> dict[str, Any]:
+            progress: Notify = _quiet, embedder: Any = None) -> dict[str, Any]:
     budget = budget_for(llm)
     progress("Extracting job requirements (with literal JD quotes)…")
     requirements = extract_requirements(jd, llm, budget, progress)
+    source = build_source(resume, facts)
+    retriever = None
+    if embedder is not None:
+        try:
+            progress("Indexing your CV with the local embedding model…")
+            from embeddings import Retriever
+            retriever = Retriever(embedder, source)
+        except Exception as exc:
+            budget.notes.append(f"Embedding server not used ({exc}); continuing without semantic search.")
     debug: list[str] = []
-    match_evidence(build_source(resume, facts), requirements, llm, budget, progress, debug)
+    match_evidence(source, requirements, llm, budget, progress, debug, retriever)
+    related: dict[str, list[tuple[str, float]]] = {}
+    if retriever is not None:
+        upgraded = second_look(source, requirements, llm, retriever, progress)
+        budget.notes.append(f"Second look with semantic search: {upgraded} requirement(s) upgraded "
+                            "after the model confirmed a verified quote.")
+        for r in requirements:
+            if r.status != "supported":
+                related[r.id] = retriever.top(r.text + " " + " ".join(r.keywords), 3)
     return {"requirements": [asdict(r) for r in requirements],
             "baseline": score_resume(requirements, resume),
             "context_tokens": budget.n_ctx, "notes": budget.notes, "facts": facts,
-            "debug_evidence": debug}
+            "debug_evidence": debug, "related": related}
 
 
 # --- 3. Scoring --------------------------------------------------------------------------
@@ -839,9 +919,9 @@ def tailor_resume(jd: str, resume: str, requirements: list[Requirement], llm: An
 
 def optimize(jd: str, resume: str, llm: Any, target: float = 100.0, max_rounds: int = 3,
              progress: Notify = _quiet, facts: str = "", length: str = DEFAULT_LENGTH,
-             analysis: dict[str, Any] | None = None) -> dict[str, Any]:
+             analysis: dict[str, Any] | None = None, embedder: Any = None) -> dict[str, Any]:
     """Analysis + résumé loop in one call (reuses a cached analysis when given)."""
-    analysis = analysis or analyze(jd, resume, llm, facts, progress)
+    analysis = analysis or analyze(jd, resume, llm, facts, progress, embedder)
     requirements = requirements_from(analysis["requirements"])
     result = tailor_resume(jd, resume, requirements, llm, facts, target, max_rounds, length,
                            progress=progress)

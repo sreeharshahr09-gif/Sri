@@ -58,6 +58,11 @@ echo API endpoint: %LLM_BASE_URL%
 echo.
 
 :select_python
+rem Optional semantic search: a small embedding llama-server on port 8081.
+call :ProbeEndpoint 8081
+if "%SERVER_READY%"=="1" echo Found optional embedding server on port 8081 - semantic search is on.
+if not "%SERVER_READY%"=="1" echo Optional embedding server not running - start llama_embed_server_windows.bat to enable semantic search.
+echo.
 rem --- 2. Select Python. Prefer an existing working project venv,
 rem then explicitly configured Anaconda, then another Python 3.11+.
 set "VENV_PY=%~dp0.venv\Scripts\python.exe"

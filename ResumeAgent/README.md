@@ -113,6 +113,29 @@ Things to know:
 - Only the official `https://openrouter.ai/api/v1` endpoint is accepted. The key is never written to
   the report, the ZIP or the log.
 
+## Optional: semantic search with a local embedding model
+
+A second, small llama-server running an **embedding model** (recommended: the official
+`Qwen/Qwen3-Embedding-0.6B-GGUF`, Q8_0, about 0.6 GB) lets the app find the CV lines that
+are closest in *meaning* to each job requirement. It runs on the CPU, so your GPU stays free
+for Qwen, and uses about 1 GB of RAM.
+
+1. Open `llama_embed_server_windows.bat` in Notepad and check `LLAMA_SERVER` (your
+   llama-server.exe). If `MODEL_PATH` doesn't exist, the first start downloads the model.
+2. Double-click it and leave the window open; it serves on `http://127.0.0.1:8081`.
+3. Start the app as usual. In the sidebar, under **Semantic search**, click **Check embeddings**.
+
+What it adds:
+
+- **A second look at gaps.** For each unproven requirement, the most similar CV lines go back to the
+  model once more, so evidence the first pass missed can be found. A requirement is upgraded only when
+  the model confirms it *and* the quote is found in your CV.
+- **"Closest lines in your CV"** appear under each gap as a reminder when you add true facts.
+- **Long CVs:** only the most relevant lines are sent, which means fewer model calls.
+
+Similarity is never counted as evidence: "related" is not "proven". If the embedding server isn't
+running, the app skips this step and works as before.
+
 ## Input tips
 
 - DOCX, text-based PDF, TXT and MD are supported, and so is pasting. Scanned PDFs need OCR first.
@@ -133,6 +156,7 @@ engine.py         analysis, scoring, checks, résumé loop, cover-letter loop
 llm_client.py     llama-server client + optional OpenRouter client (pacing, retries, redaction)
 textutils.py      file reading, section detection, chunking, phrase/number/term matching
 exporters.py      Word, offline PDF (Word COM or LibreOffice), TXT, ZIP, local save
+embeddings.py     optional local embedding client and semantic retrieval
 start_windows.bat launcher (reuses running llama-server + Anaconda/.venv)
 tests/            offline tests with a scripted fake model and a fake HTTP llama-server
 ```
@@ -143,7 +167,7 @@ tests/            offline tests with a scripted fake model and a fake HTTP llama
 python -m unittest discover -s tests -v
 ```
 
-These are 78 offline tests. The model is **mocked**: a scripted fake model, plus fake
+These are 84 offline tests. The model is **mocked**: a scripted fake model, plus fake
 llama-server and OpenRouter servers over real HTTP for the clients. They cover JD quote validation, long-JD and
 long-CV chunking (evidence found past the old 9,500-character limit), confirmed facts, malformed
 JSON retries, `<think>` stripping, the context-overflow message, invented numbers/tools/contacts,

@@ -13,6 +13,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from embeddings import EmbeddingClient
 from llm_client import DEFAULT_OPENROUTER_MODEL, Redactor, make_llm
 from textutils import contact_lines, split_header, split_sections
 from engine import (
@@ -115,6 +116,24 @@ with st.sidebar:
             st.code(reply[:400])
         except Exception as exc:
             st.error(f"Generation failed: {exc}")
+
+    st.divider()
+    st.header("Semantic search (optional)")
+    use_embed = st.checkbox("Use a local embedding model", value=True,
+                            help="A second, small llama-server started with --embedding (e.g. Qwen3-Embedding-0.6B). "
+                                 "Finds the CV lines most related to each requirement: a second look at gaps, "
+                                 "'possibly related' suggestions and fewer model calls for long CVs. "
+                                 "Similarity is never counted as evidence. Skipped automatically if not running.")
+    embed_url = os.environ.get("EMBED_BASE_URL", "http://127.0.0.1:8081/v1")
+    if use_embed:
+        embed_url = st.text_input("Embedding server URL", embed_url)
+        if st.button("Check embeddings"):
+            try:
+                client = EmbeddingClient(embed_url)
+                vec = client.embed(["finite element analysis"])[0]
+                st.success(f"Embedding server works · {len(vec)}-dimensional vectors")
+            except Exception as exc:
+                st.error(f"Not reachable: {exc}")
 
     st.divider()
     st.header("Tailoring loop")
@@ -226,7 +245,7 @@ class Progress:
 
 def cached_analysis(jd: str, cv: str, facts: str):
     item = ss.get("analysis")
-    key = fingerprint(jd, cv, facts, provider, endpoint, model)
+    key = fingerprint(jd, cv, facts, provider, endpoint, model, str(use_embed), embed_url)
     return (item if item and item["key"] == key else None), key
 
 
@@ -235,7 +254,13 @@ def run_analysis(jd: str, cv: str, facts: str, llm, progress) -> dict:
     if found:
         progress("Re-using the job/evidence analysis from before (inputs unchanged).")
         return found
-    result = analyze(jd, cv, llm, facts, progress)
+    embedder = None
+    if use_embed:
+        try:
+            embedder = EmbeddingClient(embed_url)
+        except ValueError as exc:
+            progress(f"Embedding URL ignored: {exc}")
+    result = analyze(jd, cv, llm, facts, progress, embedder)
     result["key"] = key
     ss["analysis"] = result
     return result
@@ -367,8 +392,15 @@ if analysis and not result:
         st.markdown("**Close the gaps honestly.** If you really have one of these, describe it "
                     "(where, when, what you did). Leave the rest blank — they will not be claimed.")
         with st.form("gap_form"):
-            answers = {r["id"]: st.text_input(f"[{r['priority']}] {r['text']} — currently {r['status']}",
-                                              key=f"gap_{r['id']}") for r in gaps}
+            answers = {}
+            related = analysis.get("related") or {}
+            for r in gaps:
+                answers[r["id"]] = st.text_input(f"[{r['priority']}] {r['text']} — currently {r['status']}",
+                                                 key=f"gap_{r['id']}")
+                if related.get(r["id"]):
+                    st.caption("Closest lines in your CV (related is not the same as proven; use them as a "
+                               "reminder of what you did): " +
+                               " · ".join(f"“{line[:110]}”" for line, _ in related[r["id"]]))
             if st.form_submit_button("Add my answers to the facts and re-check"):
                 lines = [f"- {text.strip()}" for rid, text in answers.items() if text.strip()]
                 if lines:

@@ -141,3 +141,13 @@ class FakeLLM:
 
     def _review_cover_letter(self, prompt: str) -> str:
         return json.dumps({"improvements": ["Make the Python scripting experience explicit."]})
+
+
+def _second_look_default(self, prompt: str) -> str:
+    """Conservative default: nothing new is proven."""
+    blocks = json.loads(_between(prompt, "REQUIREMENTS WITH CANDIDATE LINES: ", "\n\n") or
+                        prompt.split("REQUIREMENTS WITH CANDIDATE LINES: ", 1)[1])
+    return json.dumps({"matches": [{"id": b["id"], "status": "unsupported", "evidence": ""} for b in blocks]})
+
+
+FakeLLM._second_look = _second_look_default
