@@ -14,6 +14,11 @@ Windows / Anaconda / your existing llama.cpp server
 4. Sidebar: click "Check server", then "Test generation".
 
 5. Paste or upload the job description and your CV.
+   KEYWORD WORKBENCH (opens by default): the JD is on the left with keywords coloured
+   green (in your CV), amber (partly) and red (missing); your CV text is on the right.
+   Edit your CV, click "Refresh score", and repeat until you're happy (e.g. 75-80%).
+   Then click "Create my resume from this text" to get Word + PDF, word for word.
+   AI TAILORING (switch at the top of the page):
    Click "1 Analyze match only" to see what your CV proves and what is missing.
    If you genuinely have a missing skill, describe it in the gap box (it becomes evidence).
    Click "2 Tailor my resume + cover letter". The loop rewrites, fact-checks and re-scores.

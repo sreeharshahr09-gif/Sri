@@ -14,10 +14,12 @@ import pandas as pd
 import streamlit as st
 
 from embeddings import EmbeddingClient
+from keywords import Keyword, extract_keywords, highlight, merge_requirement_terms
+from keywords import _count as kw_status_count, report as kw_report, status as kw_status
 from llm_client import DEFAULT_OPENROUTER_MODEL, Redactor, make_llm
 from textutils import contact_lines, split_header, split_sections
 from engine import (
-    DEFAULT_LENGTH, LENGTH_OPTIONS, LETTER_WORDS, LocalLLM, analyze, build_source, letter_metrics,
+    DEFAULT_LENGTH, LENGTH_OPTIONS, LETTER_WORDS, LocalLLM, analyze, build_source, format_resume, letter_metrics,
     optimize, optimize_cover_letter, read_file, requirements_from, review_text, score_resume,
 )
 from exporters import cover_letter_docx, package_files, save_package, to_docx, to_pdf, to_text, zip_files
@@ -154,6 +156,10 @@ st.caption("Paste a job description and your CV → evidence audit → iterative
            ("Runs on your own llama.cpp model; nothing leaves this PC." if provider == "local" else
             f"Using OpenRouter model {model}" + (" with your contact details hidden." if redact else ".")))
 
+WORKBENCH = "🛠 Keyword workbench — I edit my CV, the score updates"
+AI_MODE = "🤖 AI tailoring — the agent rewrites and fact-checks"
+mode = st.radio("Mode", [WORKBENCH, AI_MODE], horizontal=True, key="mode", label_visibility="collapsed")
+
 # --- inputs ------------------------------------------------------------------------------------------
 left, right = st.columns(2)
 with left:
@@ -166,7 +172,7 @@ with right:
     cv_paste = st.text_area("…or paste your CV", height=200, key="cv_paste")
 
 with st.expander("3 · Extra true facts about you (optional, raises the evidence score honestly)",
-                 expanded=bool(ss["facts"])):
+                 expanded=bool(ss["facts"]) and mode == AI_MODE):
     st.caption("Skills or achievements that are true but missing from your CV. They are treated as evidence "
                "exactly like your CV, so add only what you could defend in an interview.")
     st.text_area("Confirmed facts (one per line)", key="facts", height=120,
@@ -179,20 +185,26 @@ with st.expander("3 · Extra true facts about you (optional, raises the evidence
         ss["facts_replace"] = FACTS_FILE.read_text(encoding="utf-8")
         st.rerun()
 
-st.subheader("4 · Cover letter")
-make_letter = st.checkbox("Also write a fact-checked cover letter", value=True)
-company = role = addressee = motivation = ""
-tone, letter_rounds, letter_words = "Professional", 3, 300
-if make_letter:
-    a, b, c = st.columns(3)
-    company = a.text_input("Company name", placeholder="e.g. Beta Engineering")
-    role = b.text_input("Position title", placeholder="e.g. Senior R&D Engineer")
-    addressee = c.text_input("Recipient (optional)", placeholder="blank → Dear Hiring Manager")
-    d, e, f = st.columns(3)
-    tone = d.selectbox("Style", ["Professional", "Technical / Research", "Academic", "Executive / Leadership"])
-    letter_words = e.slider("Approximate length (words)", 200, 450, 300, step=25)
-    letter_rounds = f.slider("Cover-letter rounds", 1, 4, 3)
-    motivation = st.text_area("Why this job? (optional; guides tone, never used as evidence)", height=70)
+if mode == AI_MODE:
+    st.subheader("4 · Cover letter")
+    letter_box = st.container()
+else:
+    letter_box = st.expander("Company, role and cover-letter options (used by the AI buttons below)")
+with letter_box:
+    make_letter = st.checkbox("Also write a fact-checked cover letter", value=True)
+    company = role = addressee = motivation = ""
+    tone, letter_rounds, letter_words = "Professional", 3, 300
+    if make_letter or mode == WORKBENCH:
+        a, b, c = st.columns(3)
+        company = a.text_input("Company name", placeholder="e.g. Beta Engineering")
+        role = b.text_input("Position title", placeholder="e.g. Senior R&D Engineer")
+        addressee = c.text_input("Recipient (optional)", placeholder="blank → Dear Hiring Manager")
+    if make_letter:
+        d, e, f = st.columns(3)
+        tone = d.selectbox("Style", ["Professional", "Technical / Research", "Academic", "Executive / Leadership"])
+        letter_words = e.slider("Approximate length (words)", 200, 450, 300, step=25)
+        letter_rounds = f.slider("Cover-letter rounds", 1, 4, 3)
+        motivation = st.text_area("Why this job? (optional; guides tone, never used as evidence)", height=70)
 
 
 def read_inputs() -> tuple[str, str]:
@@ -262,6 +274,7 @@ def run_analysis(jd: str, cv: str, facts: str, llm, progress) -> dict:
             progress(f"Embedding URL ignored: {exc}")
     result = analyze(jd, cv, llm, facts, progress, embedder)
     result["key"] = key
+    result["jd_hash"] = fingerprint(jd)
     ss["analysis"] = result
     return result
 
@@ -309,31 +322,11 @@ def build_exports(result: dict) -> None:
             warnings.append(f"Could not save to {out_dir}: {exc}")
 
 
-# --- actions ----------------------------------------------------------------------------------------
-st.divider()
-b1, b2 = st.columns([1, 2])
-do_analyze = b1.button("① Analyze match only", **wide()) or ss.pop("auto_analyze", False)
-do_tailor = b2.button("② Tailor my résumé" + (" + cover letter" if make_letter else "") +
-                      " (runs the loop)", type="primary", **wide())
-
-if do_analyze:
+def run_tailoring(jd_text: str, cv_text: str) -> None:
+    """Analysis (cached) + fact-checked résumé loop + optional cover letter + exports."""
     ss.pop("result", None)
     try:
-        jd_text, cv_text = read_inputs()
-        llm = new_llm(cv_text, ss["facts"])
-        with st.status("Analyzing the job against your CV…", expanded=True) as box:
-            run_analysis(jd_text, cv_text, ss["facts"], llm, Progress(box, llm))
-            box.update(label=f"Analysis done · {llm.stats.summary()}", state="complete", expanded=False)
-    except Exception as exc:
-        st.error(f"Analysis failed: {exc}")
-        with st.expander("Technical details"):
-            st.code(traceback.format_exc())
-
-if do_tailor:
-    ss.pop("result", None)
-    try:
-        jd_text, cv_text = read_inputs()
-        facts = ss["facts"]
+        facts = ss["facts"] if mode == AI_MODE else ""
         llm = new_llm(cv_text, facts)
         with st.status("Tailoring your application…", expanded=True) as box:
             progress = Progress(box, llm)
@@ -368,10 +361,214 @@ if do_tailor:
         with st.expander("Technical details"):
             st.code(traceback.format_exc())
 
+
+STATUS_ICON = {"matched": "✅ in CV", "partial": "🟡 partly", "missing": "❌ missing"}
+
+
+def _kw_key(phrase: str) -> str:
+    return re.sub(r"\s+", " ", phrase.lower().replace("-", " ")).strip()
+
+
+def html_block(marked: str) -> str:
+    """One-line HTML (no blank lines), so Markdown never re-interprets the highlighted text."""
+    return ('<div style="line-height:1.55;font-size:0.93rem">'
+            + marked.replace("\n", "<br>") + "</div>")
+
+
+def render_workbench() -> None:
+    """Manual editing loop: JD with highlighted keywords, editable CV, instant keyword score."""
+    st.divider()
+    st.subheader("Keyword workbench")
+    try:
+        jd_text, cv_text = read_inputs()
+    except ValueError as exc:
+        st.info(f"{exc} Then edit your CV here and watch the keyword score update.")
+        return
+    cv_key, jd_key = fingerprint(cv_text), fingerprint(jd_text)
+    if ss.get("wb_key") != cv_key:  # a new CV starts a fresh session
+        for k in [k for k in ss if str(k).startswith("wb_editor_")]:
+            del ss[k]
+        ss.update({"wb_key": cv_key, "wb_text": cv_text, "wb_history": [], "wb_output": None})
+    ss.setdefault("wb_ignored", set())
+    ss.setdefault("wb_extra", [])
+
+    keywords = extract_keywords(jd_text)
+    analysis = ss.get("analysis")
+    has_terms = bool(analysis and analysis.get("jd_hash") == jd_key)
+    if has_terms:
+        keywords = merge_requirement_terms(keywords, analysis["requirements"])
+    known = {_kw_key(k.phrase) for k in keywords}
+    for extra in ss["wb_extra"]:
+        if _kw_key(extra) not in known:
+            keywords.append(Keyword(extra, max(1, kw_status_count(jd_text, extra)), 1.0, "you"))
+            known.add(_kw_key(extra))
+    tracked = [k for k in keywords if _kw_key(k.phrase) not in ss["wb_ignored"]]
+    text = ss["wb_text"]
+    now, start = kw_report(tracked, text), kw_report(tracked, cv_text)
+
+    # --- score dashboard
+    goal = st.slider("Your target keyword score (%)", 50, 100, 75, key="wb_target",
+                     help="Many people aim for about 75-80%. Higher is not better if it means "
+                          "keywords you can't back up.")
+    a, b, c, d = st.columns(4)
+    a.metric("Keyword match", f"{now['score']:.0f}%", f"{now['score'] - start['score']:+.0f} pts vs your file")
+    b.metric("In your CV", str(len(now["matched"])))
+    c.metric("Partly there", str(len(now["partial"])), help="All the words appear, but not as this exact phrase.")
+    d.metric("Missing", str(len(now["missing"])))
+    st.progress(min(1.0, now["score"] / 100))
+    if now["score"] >= goal:
+        st.success(f"Target reached ({now['score']:.0f}% ≥ {goal}%). When you're happy, create your résumé below.")
+    if now["missing"]:
+        st.markdown("**Missing, most important first:** " + " · ".join(
+            f"**{k}**" if any(t.phrase == k and t.weight > 1 for t in tracked) else k for k in now["missing"][:25]))
+    if now["stuffed"]:
+        st.warning("Used more than 5 times (looks like keyword stuffing): " + ", ".join(now["stuffed"]))
+    st.caption("Add a keyword only where it truthfully describes your work; an interviewer will ask about it. "
+               + ("**Bold** = key requirement terms from the model's analysis (count double)." if has_terms else
+                  "Tip: 'Add key requirement terms' below lets the model pick the must-haves (they count double)."))
+
+    # --- side by side: JD (highlighted) | CV editor
+    left, right = st.columns(2)
+    with left:
+        st.markdown("##### Job description")
+        st.markdown('<span style="background:#bbf7d0;color:#111;padding:0 4px">in your CV</span> '
+                    '<span style="background:#fde68a;color:#111;padding:0 4px">partly</span> '
+                    '<span style="background:#fecaca;color:#111;padding:0 4px">missing</span>',
+                    unsafe_allow_html=True)
+        with st.container(height=600):
+            st.markdown(html_block(highlight(jd_text, tracked, text)), unsafe_allow_html=True)
+    with right:
+        st.markdown("##### Your CV (edit here)")
+        with st.form(f"wb_form_{cv_key}", border=False):
+            edited = st.text_area("Your CV text", value=text, height=560, key=f"wb_editor_{cv_key}",
+                                  label_visibility="collapsed",
+                                  help="'## ' starts a section, '- ' a bullet. Keep your own facts.")
+            r1, r2 = st.columns(2)
+            refresh = r1.form_submit_button("🔄 Refresh score", type="primary", **wide())
+            reset = r2.form_submit_button("↺ Back to my original file", **wide())
+        if refresh:
+            ss["wb_text"] = edited
+            ss["wb_history"].append({"refresh": len(ss["wb_history"]) + 1,
+                                     "score": kw_report(tracked, edited)["score"]})
+            st.rerun()
+        if reset:
+            ss["wb_text"] = cv_text
+            ss.pop(f"wb_editor_{cv_key}", None)
+            st.rerun()
+
+    if ss["wb_history"]:
+        hist = pd.DataFrame([{"refresh": 0, "score": start["score"]}] + ss["wb_history"]).set_index("refresh")
+        st.line_chart(hist, height=180)
+
+    # --- keyword list the user controls
+    with st.expander(f"Keyword list ({len(keywords)}): untick any that don't matter, or add your own"):
+        rows = pd.DataFrame([{"Track": _kw_key(k.phrase) not in ss["wb_ignored"], "Keyword": k.phrase,
+                              "Status": STATUS_ICON[kw_status(text, k.phrase)], "In JD": k.count,
+                              "In your CV": kw_status_count(text, k.phrase),
+                              "From": {"requirement": "model (×2)" if k.weight > 1 else "model",
+                                       "you": "you"}.get(k.source, "JD")} for k in keywords])
+        table = st.data_editor(rows, hide_index=True, disabled=["Keyword", "Status", "In JD", "In your CV", "From"],
+                               key=f"wb_table_{fingerprint(rows.to_json())}", **wide())
+        ignored = {_kw_key(r["Keyword"]) for _, r in table.iterrows() if not r["Track"]}
+        if ignored != ss["wb_ignored"]:
+            ss["wb_ignored"] = ignored
+            st.rerun()
+        x, y = st.columns([3, 1])
+        new = x.text_input("Add keywords (comma-separated)", key="wb_add", label_visibility="collapsed",
+                           placeholder="Add keywords, comma-separated, e.g. SolidWorks, GD&T")
+        if y.button("Add", **wide()) and new.strip():
+            ss["wb_extra"] += [w.strip() for w in new.split(",") if w.strip()]
+            st.rerun()
+        if not has_terms and st.button("🔍 Add key requirement terms from the model (one analysis run)"):
+            try:
+                llm = new_llm(cv_text, "")
+                with st.status("Asking the model for the job's key requirements…", expanded=True) as box:
+                    run_analysis(jd_text, cv_text, "", llm, Progress(box, llm))
+                    box.update(label="Done", state="complete", expanded=False)
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Could not run the analysis: {exc}")
+
+    with st.expander("Your CV with keywords highlighted"):
+        st.markdown(html_block(highlight(text, tracked, text)), unsafe_allow_html=True)
+
+    # --- finish
+    st.markdown("#### When you're happy with the score")
+    f1, f2 = st.columns(2)
+    if f1.button("✅ Create my résumé from this text (word for word, no AI)", type="primary", **wide()):
+        md = format_resume(ss["wb_text"])
+        out = {"markdown": md, "docx": to_docx(md), "pdf": None, "saved_to": "", "warning": ""}
+        try:
+            out["pdf"] = to_pdf(out["docx"])
+        except Exception as exc:
+            out["warning"] = str(exc)
+        files = {"My_Resume.docx": out["docx"], "My_Resume.txt": to_text(md).encode("utf-8"),
+                 "Keyword_Report.json": json.dumps({"score": now["score"], "matched": now["matched"],
+                                                    "partial": now["partial"], "missing": now["missing"]},
+                                                   ensure_ascii=False, indent=2).encode("utf-8")}
+        if out["pdf"]:
+            files["My_Resume.pdf"] = out["pdf"]
+        if autosave:
+            try:
+                label = "_".join(x for x in (company, role) if x) or "my_resume"
+                out["saved_to"] = str(save_package(out_dir, label + "_workbench", files))
+            except Exception as exc:
+                out["warning"] += f" Could not save to {out_dir}: {exc}"
+        ss["wb_output"] = out
+    polish = "✨ Polish with AI, fact-checked" + (" + cover letter" if make_letter else "")
+    if f2.button(polish, **wide(),
+                 help="Runs the AI tailoring loop with your edited text as the source of truth. "
+                      "Results appear below."):
+        run_tailoring(jd_text, ss["wb_text"])
+
+    out = ss.get("wb_output")
+    if out:
+        if out["saved_to"]:
+            st.success(f"Saved locally to: {out['saved_to']}")
+        if out["warning"] and not out["pdf"]:
+            st.info("PDF needs Microsoft Word (+ pywin32) or LibreOffice on this PC; the Word file is ready.")
+        x, y, z = st.columns(3)
+        x.download_button("Word résumé", out["docx"], "My_Resume.docx", mime=DOCX_MIME, **wide())
+        if out["pdf"]:
+            y.download_button("PDF résumé", out["pdf"], "My_Resume.pdf", mime="application/pdf", **wide())
+        z.download_button("Plain text", to_text(out["markdown"]).encode("utf-8"), "My_Resume.txt",
+                          mime="text/plain", **wide())
+        with st.expander("Preview"):
+            st.markdown(soft_breaks(out["markdown"]))
+
+
+if mode == AI_MODE:
+    st.divider()
+    b1, b2 = st.columns([1, 2])
+    do_analyze = b1.button("① Analyze match only", **wide()) or ss.pop("auto_analyze", False)
+    do_tailor = b2.button("② Tailor my résumé" + (" + cover letter" if make_letter else "") +
+                          " (runs the loop)", type="primary", **wide())
+
+    if do_analyze:
+        ss.pop("result", None)
+        try:
+            jd_text, cv_text = read_inputs()
+            llm = new_llm(cv_text, ss["facts"])
+            with st.status("Analyzing the job against your CV…", expanded=True) as box:
+                run_analysis(jd_text, cv_text, ss["facts"], llm, Progress(box, llm))
+                box.update(label=f"Analysis done · {llm.stats.summary()}", state="complete", expanded=False)
+        except Exception as exc:
+            st.error(f"Analysis failed: {exc}")
+            with st.expander("Technical details"):
+                st.code(traceback.format_exc())
+
+    if do_tailor:
+        try:
+            run_tailoring(*read_inputs())
+        except ValueError as exc:
+            st.error(str(exc))
+else:
+    render_workbench()
+
 # --- analysis view (before tailoring) ------------------------------------------------------------------
 result = ss.get("result")
 analysis = ss.get("analysis")
-if analysis and not result:
+if analysis and not result and mode == AI_MODE:
     base = analysis["baseline"]
     st.subheader("Match analysis")
     m1, m2, m3 = st.columns(3)

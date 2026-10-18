@@ -637,6 +637,33 @@ def _plan(resume: str, budget: Budget) -> tuple[str, list[str], list[Section], l
     return name, contacts, sections, units
 
 
+def _header_blocks(name: str, contacts: list[str]) -> list[str]:
+    blocks = [f"# {name}"] + [c for c in contacts if len(c) > 70]
+    short = [c for c in contacts if len(c) <= 70]
+    if short:
+        blocks.append(" | ".join(short))
+    return blocks
+
+
+def format_resume(text: str) -> str:
+    """The candidate's own text laid out as a clean résumé, word for word (no model involved):
+    name, headline and contact line, then every section in the candidate's own order."""
+    sections = split_sections(text)
+    if sections[0].kind == "document":
+        lines = [l for l in text.strip().splitlines() if l.strip()]
+        name = lines[0].strip().lstrip("#").strip() if lines else ""
+        return f"# {name}\n\n" + format_verbatim("\n".join(lines[1:])) + "\n"
+    name, contacts, prose = split_header(sections[0].body)
+    for sec in sections:
+        if sec.kind == "contact":
+            contacts += [l for l in contact_lines(sec.body) if l not in contacts]
+    blocks = _header_blocks(name, contacts) + ([prose] if prose.strip() else [])
+    for sec in sections[1:]:
+        if sec.kind != "contact" and sec.body.strip():
+            blocks.append(f"## {sec.title}\n\n{format_verbatim(sec.body)}")
+    return "\n\n".join(blocks).strip() + "\n"
+
+
 def _assemble(name: str, contacts: list[str], sections: list[Section], units: list[Unit]) -> str:
     if units and units[0].kind == "document":
         return units[0].text.strip()
@@ -644,10 +671,7 @@ def _assemble(name: str, contacts: list[str], sections: list[Section], units: li
     for u in units:
         if u.section >= 0:
             by_section.setdefault(u.section, []).append(u)
-    blocks = [f"# {name}"] + [c for c in contacts if len(c) > 70]
-    short = [c for c in contacts if len(c) <= 70]
-    if short:
-        blocks.append(" | ".join(short))
+    blocks = _header_blocks(name, contacts)
 
     def add(title: str, body: str) -> None:
         if body.strip():

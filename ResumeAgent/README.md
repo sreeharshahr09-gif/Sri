@@ -1,6 +1,13 @@
 # Local Résumé & Cover Letter Agent — V3
 
-Paste a job description and your current CV. The agent analyses the job, checks what your CV
+The app has two modes (switch at the top of the page):
+
+- **🛠 Keyword workbench** (the default): you edit your CV yourself next to the JD and a keyword
+  score updates each time you refresh. When you're happy, one click turns your text into a Word/PDF
+  résumé. See [Keyword workbench](#keyword-workbench) below.
+- **🤖 AI tailoring**: the agent rewrites the résumé and cover letter for you, and fact-checks them.
+
+In AI tailoring mode you paste a job description and your current CV. The agent analyses the job, checks what your CV
 actually proves, then rewrites your résumé and cover letter in a loop with your **own local
 llama.cpp model**. Each draft is fact-checked before it's accepted. You get editable Word files,
 PDFs, plain text for web forms, an audit CSV/JSON and a ZIP, all saved locally.
@@ -22,7 +29,46 @@ So if the JD asks for C++ and your CV has no C++, the résumé will **not** clai
 app lists it as a gap and asks you about it. If you really have it, type a sentence ("Built a C++
 plug-in for the test-rig controller at Alpha Motors, 2023"). It becomes evidence and the fit goes up.
 
-## How the loop works
+## Keyword workbench
+
+Upload or paste the JD and your CV (Word, PDF or text). The workbench shows:
+
+- **A score dashboard:** keyword match %, the number of keywords found, partly there and missing, the
+  change since your original file, a progress bar towards your target (default 75%), and a small chart of
+  your refreshes.
+- **Left: the JD with every tracked keyword highlighted.** Green means it's in your CV, amber means all
+  its words are there but not as this phrase, and red means it's missing. The missing list is ordered by
+  importance.
+- **Right: your CV as editable text.** Edit it, click **🔄 Refresh score**, and the score and colours
+  update. **↺ Back to my original file** undoes all edits.
+
+How the score works (no AI needed, instant, the same every time):
+
+- Keywords are skill/requirement phrases taken from the JD's responsibilities and qualifications sections
+  ("tolerance analysis", "Python scripting", "PhD"). Company blurbs, benefits and filler words are skipped.
+  Phrases that appear more often, multi-word terms, acronyms and phrases in the qualifications section
+  weigh more.
+- Matching is tolerant of plurals, hyphens and "Ph.D." vs "PhD", but not of synonyms. ATS software is
+  literal too, so use the JD's own words where they're true.
+- Score = weighted share of keywords found; "partly there" counts half. A keyword repeated more than 5
+  times is flagged as possible stuffing.
+- Under **Keyword list** you can untick keywords that don't matter, add your own, or click
+  **🔍 Add key requirement terms from the model**. That runs one local-model analysis, and the job's
+  must-have terms count double.
+
+When you're done:
+
+- **✅ Create my résumé from this text** builds Word, PDF (when Word or LibreOffice is installed) and plain
+  text **word for word** from your edited text, with no AI. Use `## ` at the start of a line for a section
+  heading and `- ` for a bullet; headings in capitals such as `EXPERIENCE` are recognised too. The files
+  are saved to `outputs\` with a `Keyword_Report.json`.
+- **✨ Polish with AI, fact-checked** runs the AI tailoring loop with your edited text as the source, plus
+  the cover letter if it's switched on.
+
+Add a keyword only where it truthfully describes your work: an interviewer will ask about it. 75–80% with
+honest wording usually reads better than 100% with stuffed keywords.
+
+## How the AI tailoring loop works
 
 ```
 JD ──► requirements (each with a literal JD quote; long JDs read in parts)
@@ -60,7 +106,8 @@ Word + PDF + TXT + audit CSV/JSON + ZIP  (downloaded and auto-saved to outputs/)
      private `.venv` and installs `requirements.txt` (one-time, needs internet),
    - opens the app on **http://127.0.0.1:8502** (8503 if busy; your Research Agent stays on 8501).
 3. In the sidebar, click **Check server** and then **Test generation**.
-4. Paste or upload the JD and your CV, then click **① Analyze match only**.
+4. Paste or upload the JD and your CV. The **Keyword workbench** opens by default (see below). For the
+   AI loop, switch to **🤖 AI tailoring** and click **① Analyze match only**.
    Answer any gaps you genuinely have, then click **② Tailor my résumé + cover letter**.
 5. Review the side-by-side view, edit if you want (the editor re-checks your edits), and download.
    Each run is also saved to `outputs\<date>_<company>_<role>\`.
@@ -158,6 +205,7 @@ llm_client.py     llama-server client + optional OpenRouter client (pacing, retr
 textutils.py      file reading, section detection, chunking, phrase/number/term matching
 exporters.py      Word, offline PDF (Word COM or LibreOffice), TXT, ZIP, local save
 embeddings.py     optional local embedding client and semantic retrieval
+keywords.py       keyword workbench: JD keyword extraction, tolerant matching, score, highlighting
 start_windows.bat launcher (reuses running llama-server + Anaconda/.venv)
 tests/            offline tests with a scripted fake model and a fake HTTP llama-server
 ```
@@ -168,13 +216,13 @@ tests/            offline tests with a scripted fake model and a fake HTTP llama
 python -m unittest discover -s tests -v
 ```
 
-These are 84 offline tests. The model is **mocked**: a scripted fake model, plus fake
+These are 92 offline tests. The model is **mocked**: a scripted fake model, plus fake
 llama-server and OpenRouter servers over real HTTP for the clients. They cover JD quote validation, long-JD and
 long-CV chunking (evidence found past the old 9,500-character limit), confirmed facts, malformed
 JSON retries, `<think>` stripping, the context-overflow message, invented numbers/tools/contacts,
 unsupported JD terms, dropped dates and roles, retrying with feedback, verbatim publications, the
 Skills patch (supported terms only, never partial), scoring maths, the cover-letter checks,
-DOCX/TXT/ZIP export, and a PDF text-order check (runs only when LibreOffice is installed).
+the workbench keyword extraction, matching and score, DOCX/TXT/ZIP export, and a PDF text-order check (runs only when LibreOffice is installed).
 
 **Not yet verified:** a live run against your Qwen3.6-35B-A3B model or a real OpenRouter model, and the Word-COM PDF
 path on your PC. Do your first run with `samples/` (fictional), then with your real CV.
