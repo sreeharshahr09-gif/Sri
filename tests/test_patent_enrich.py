@@ -76,7 +76,8 @@ def test_system_prompt_lists_choices_with_descriptions(plan):
     assert "Study: Uneven wear in TBR and PCR tires." in text
     assert "Scope: Patents on TBR or PCR tires" in text
     assert '"tech_group": the technology group of the solution. Exactly one of: Structural/Design (Tread ' in text
-    assert '"segment": the product segment(s) the patent is for. One or more of: TBR; PCR; Not specified' in text
+    assert ('"segment": the vehicle or market segment(s) the tyre is for (e.g. passenger car, truck & bus, '
+            'off-road), not a tyre component. One or more of: TBR; PCR; Not specified') in text
     assert '"x_test_method": how the benefit was measured' in text
     assert "ONLY a JSON list" in text and '"ref"' in text
 

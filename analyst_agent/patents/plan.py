@@ -160,7 +160,7 @@ def parse_brief(llm, brief: str, sample_titles: list[str] | None = None,
         return fallback
     plan = clean_plan(data, brief, fallback)
     if base is not None:  # what the model left out stays as in the standard plan
-        for key in ("problems", "tech_buckets", "complexity_levels", "extra_fields", "analysis_questions",
+        for key in ("segments", "problems", "tech_buckets", "complexity_levels", "extra_fields", "analysis_questions",
                     "keywords", "classification_codes"):
             if not getattr(plan, key):
                 setattr(plan, key, list(getattr(base, key)))

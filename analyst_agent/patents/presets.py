@@ -453,11 +453,17 @@ def preset_names() -> list[str]:
     return list(PRESETS)
 
 
+# Vehicle segments for every objective: without a list the model fills "Segment" freely, and once wrote tyre
+# components there (belt, tread) for a lightweighting study.
+DEFAULT_SEGMENTS = ["Passenger car", "SUV & light truck", "Truck & bus", "Off-road & agricultural", "Two-wheeler"]
+
+
 def preset_plan(name: str) -> AnalysisPlan:
     """A fresh, editable plan for the objective."""
     spec = PRESETS[name]
     plan = AnalysisPlan(
         title=spec["title"], objective=spec["objective"], problem_label=spec["problem_label"],
+        segments=list(spec.get("segments", DEFAULT_SEGMENTS)),
         problems=list(spec["problems"]), tech_buckets=list(spec["tech_buckets"]),
         complexity_levels=list(spec["complexity_levels"]), in_scope=spec["in_scope"],
         extra_fields=list(spec["extra_fields"]), analysis_questions=list(spec["analysis_questions"]),
@@ -471,7 +477,8 @@ def preset_plan(name: str) -> AnalysisPlan:
 def preset_brief(name: str, plan: AnalysisPlan) -> str:
     """The plan as a brief, so the report text has a brief to follow."""
     lines = [f"Patent landscape: {plan.title} (standard objective: {name}).", "", f"Objective: {plan.objective}",
-             f"Scope: {plan.in_scope}", "", f"{plan.problem_label} categories:"]
+             f"Scope: {plan.in_scope}", f"Segments: {', '.join(plan.segments)}", "",
+             f"{plan.problem_label} categories:"]
     lines += [f"- {c.name}: {c.description}" for c in plan.problems]
     lines += ["", "Technology groups:"] + [f"- {c.name}: {c.description}" for c in plan.tech_buckets]
     lines += ["", "Specific questions to answer:"] + [f"- {q}" for q in plan.analysis_questions]

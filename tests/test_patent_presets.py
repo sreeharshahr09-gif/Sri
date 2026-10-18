@@ -123,6 +123,19 @@ def test_extra_column_with_categories_or_free_text():
     assert "no patent states a value" in an.extra_columns(frame, _ctx(frame)).facts
 
 
+def test_extra_column_with_several_values_per_patent_counts_patents_per_value():
+    """'durability; handling' in one patent: 'durability' counts once for it. Counting whole values gave the user's
+    report 18 patents for durability where 36 name it."""
+    values = ["durability; handling", "durability", "rolling resistance, durability", "handling; noise",
+              "durability; rolling resistance", "not stated", "durability; durability"]
+    frame = _frame(values)
+    ex = an.extra_columns(frame, _ctx(frame))
+    assert [b.kind for b in ex.blocks] == ["heading", "plotly"]
+    assert "patents naming each value (a patent can name several): durability 5; handling 2; rolling resistance 2" \
+        in ex.facts
+    assert "a patent can name several" in ex.blocks[1].caption
+
+
 # --------------------------------------------------------------------------- questions answered in the report
 
 

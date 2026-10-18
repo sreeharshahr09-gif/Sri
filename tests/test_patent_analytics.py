@@ -177,25 +177,50 @@ def test_white_space_flags_missing_combinations():
     assert ("Cupping", "Structural/Design") not in gaps
 
 
-def test_white_space_skips_combinations_of_linked_dimensions():
-    """A problem dimension that mirrors the technology groups (as in the user's lightweighting run: Cramér's V
-    0.71) leaves every other combination empty by nature: those are not gaps."""
-    plan = AnalysisPlan.from_dict(MODEL_PLAN)
-    counts = {("Cupping", "Structural/Design"): 30, ("Shoulder wear", "Material Science"): 12,
-              ("Feathering", "Active/Electronic"): 6, ("Cupping", "Material Science"): 2}
+def _ws_frame(counts):
     rows = [(p, g, "Simple") for (p, g), k in counts.items() for _ in range(k)]
-    frame = pd.DataFrame(rows, columns=["problem", "tech_group", "complexity"]).assign(
+    return pd.DataFrame(rows, columns=["problem", "tech_group", "complexity"]).assign(
         year=2020.0, assignee="X", country="EP", title="t", id="1", first_claim="", cited_by=np.nan,
         relevance="High", design_lever="x")
-    grid = pd.crosstab(frame["problem"], frame["tech_group"])
-    assert an.cramers_v(grid) > an.LINKED_V
+
+
+def test_white_space_skips_combinations_of_dimensions_that_mirror_each_other():
+    """The user's first lightweighting plan: routes named like the technology groups (Cramér's V 0.71). Every
+    combination off the natural pairing is empty by definition: not a gap."""
+    plan = AnalysisPlan.from_dict({**MODEL_PLAN, "problem_label": "Weight-reduction route", "problems": [
+        {"name": "Lighter reinforcement"}, {"name": "Low-density compounds & fillers"},
+        {"name": "Ply & belt architecture"}, {"name": "Gauge & volume reduction"}], "tech_buckets": [
+        {"name": "Reinforcement materials"}, {"name": "Rubber compounds & fillers"}, {"name": "Novel architecture"}]})
+    frame = _ws_frame({("Lighter reinforcement", "Reinforcement materials"): 33,
+                       ("Low-density compounds & fillers", "Rubber compounds & fillers"): 10,
+                       ("Ply & belt architecture", "Novel architecture"): 4,
+                       ("Gauge & volume reduction", "Rubber compounds & fillers"): 3,
+                       ("Lighter reinforcement", "Rubber compounds & fillers"): 3})
+    assert an.cramers_v(pd.crosstab(frame["problem"], frame["tech_group"])) > an.LINKED_V
+    assert an.shared_names([c.name for c in plan.problems], [c.name for c in plan.tech_buckets]) >= an.LINKED_NAMES
     ex = an.white_space(frame, an.make_context(frame, plan, "publication date", ref_year=2030))
-    table = ex.blocks[0].table
-    assert "few patents for this combination" not in set(table["Gap"])
-    assert ("Camber wear", "any") in set(zip(table["Wear type"], table["Technology group"]))  # still a real gap
-    assert "strongly linked" in ex.blocks[0].caption and "strongly linked" in ex.facts
+    assert "few patents for this combination" not in ex.blocks[0].text if ex.blocks[0].kind == "note" else \
+        "few patents for this combination" not in set(ex.blocks[0].table["Gap"])
+    assert "describe much the same thing" in ex.facts
     independent = pd.DataFrame([[10, 10], [10, 10]])
     assert an.cramers_v(independent) == 0 and an.cramers_v(pd.DataFrame([[10, 0], [0, 10]])) == 1
+
+
+def test_white_space_still_flags_gaps_between_naturally_associated_dimensions():
+    """The redesigned plan (component lightened x kind of solution): belts go with lighter cords for a reason,
+    so the association is strong (V 0.69 in the user's run), but a belt lightened by compounds is a real question."""
+    components = ["Tread & under-tread", "Sidewall", "Belt & cap ply", "Carcass ply", "Bead & apex", "Innerliner",
+                  "Whole tyre"]
+    groups = ["Lighter reinforcement", "Lower-density compounds", "Gauge & structural design", "Manufacturing process"]
+    plan = AnalysisPlan.from_dict({**MODEL_PLAN, "problem_label": "Component lightened",
+                                   "problems": [{"name": c} for c in components],
+                                   "tech_buckets": [{"name": g} for g in groups]})
+    grid = [[2, 8, 1, 0], [1, 1, 1, 0], [26, 3, 5, 0], [7, 1, 3, 0], [3, 2, 1, 0], [0, 3, 0, 0], [0, 0, 0, 1]]
+    frame = _ws_frame({(c, g): k for c, row in zip(components, grid) for g, k in zip(groups, row) if k})
+    assert an.cramers_v(pd.crosstab(frame["problem"], frame["tech_group"])) > an.LINKED_V
+    ex = an.white_space(frame, an.make_context(frame, plan, "publication date", ref_year=2030))
+    gaps = set(zip(ex.blocks[0].table["Component lightened"], ex.blocks[0].table["Technology group"]))
+    assert ("Belt & cap ply", "Lower-density compounds") in gaps and "describe much the same thing" not in ex.facts
 
 
 def test_process_insights_pick_the_process_group(result):

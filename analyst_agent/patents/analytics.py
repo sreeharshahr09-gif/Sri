@@ -284,7 +284,8 @@ def roadmap(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
                 continue
             k = int((part["year"] >= recent_from).sum())
             momentum = round((k / len(part)) / base, 2) if base else np.nan
-            rows.append({"Topic cluster": label, "Patents": len(part), "First year": int(part["year"].min()),
+            rows.append({"Topic cluster": label, "Patents (complete years)": len(part),
+                         "First year": int(part["year"].min()),
                          f"Patents in {window}": k, "Momentum": momentum,
                          "Reading": ("growing faster than the field" if momentum >= 1.2 and k >= 3 else
                                      "slowing" if momentum <= 0.8 else "about as the field"),
@@ -301,7 +302,7 @@ def roadmap(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
             slowing = mom[mom["Reading"] == "slowing"]
             def listing(frame):
                 return "; ".join(f"{r['Topic cluster']} (momentum {r['Momentum']}, {r[f'Patents in {window}']} of "
-                                 f"{r['Patents']} patents in {window})" for _, r in frame.iterrows())
+                                 f"{r['Patents (complete years)']} patents in {window})" for _, r in frame.iterrows())
             facts.append(f"Topic cluster momentum over {window}, the last three complete years ({n_recent} patents"
                          + ("; few patents, indicative only" if few else "") + "). Growing faster than the field: "
                          + (listing(growing) or "none") + ". Slowing (momentum below 0.8): " + (listing(slowing) or "none")
@@ -499,9 +500,25 @@ def complexity(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     return Exhibit("complexity", "clusters", "Complexity ranking", blocks, ". ".join(facts) + ".")
 
 
-# Above this association the two dimensions largely describe the same thing (e.g. "lighter reinforcement" and
-# "reinforcement materials"): counts expected "if spread evenly" are meaningless, so no cell is flagged as a gap.
+# Dimensions that describe the same thing (categories "lighter reinforcement", "low-density compounds" next to
+# groups "reinforcement materials", "rubber compounds"): when their names overlap this much and the counts are
+# this strongly associated, combinations off the natural pairing are empty by definition, not gaps. A strong
+# association alone is not enough: "belt" and "lighter reinforcement" go together for a reason worth knowing.
 LINKED_V = 0.6
+LINKED_NAMES = 0.4
+_GENERIC_WORDS = {"other", "material", "materials", "design", "system", "systems", "technology", "technologies",
+                  "solution", "solutions", "based", "novel", "process", "processes", "general"}
+
+
+def _name_words(name: str) -> set[str]:
+    words = [w for w in re.findall(r"[a-z]+", name.lower()) if len(w) >= 4 and w not in _GENERIC_WORDS]
+    return {w[:-1] if w.endswith("s") and len(w) > 4 else w for w in words}
+
+
+def shared_names(problems: list[str], groups: list[str]) -> float:
+    """Share of the problem categories whose name shares a word with a technology group's name."""
+    group_words = set().union(*(_name_words(g) for g in groups)) if groups else set()
+    return sum(bool(_name_words(p) & group_words) for p in problems) / len(problems) if problems else 0.0
 
 
 def cramers_v(grid: pd.DataFrame) -> float | None:
@@ -532,11 +549,13 @@ def white_space(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     rows = []
     row_tot, col_tot = grid.sum(axis=1), grid.sum(axis=0)
     v = cramers_v(grid)
-    linked = v is not None and v >= LINKED_V
+    linked = v is not None and v >= LINKED_V and shared_names(list(grid.index), list(grid.columns)) >= LINKED_NAMES
     label = ctx.problem_label.lower()
-    linked_note = (f"{ctx.problem_label} and technology group are strongly linked in this set (Cramér's V {v:.2f}): "
-                   f"each {label} mostly comes with one technology group, so the other combinations are rare by "
-                   "nature and are not flagged as gaps." if linked else "")
+    linked_note = (f"{ctx.problem_label} and technology group describe much the same thing here (their categories "
+                   f"share names, and Cramér's V is {v:.2f}): each {label} mostly comes with one technology group by "
+                   "definition, so the other combinations are not flagged as gaps. Plan categories that answer a "
+                   "different question (e.g. which component, against which kind of solution) make this analysis "
+                   "meaningful." if linked else "")
     for p in grid.index if not linked else []:
         for g in grid.columns:
             expected = row_tot[p] * col_tot[g] / n if n else 0
@@ -625,7 +644,8 @@ def competitors(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
             pooled.append(f"{comp} = " + " + ".join(hits))
         if "problem" in part:
             probs = _explode(part, "problem")["problem"].value_counts()
-            row[f"Main {ctx.problem_label.lower()}"] = probs.index[0] if len(probs) else ""
+            named = probs.drop("Other", errors="ignore")  # "Other" only when nothing else is named
+            row[f"Main {ctx.problem_label.lower()}"] = (named if len(named) else probs).index[0] if len(probs) else ""
         if ctx.has_clusters and len(part):
             row["Largest topic cluster"] = part["cluster"].mode().iat[0]
         rows.append(row)
@@ -692,6 +712,20 @@ _UNSTATED_VALUES = {"", "not stated", "none", "n/a", "na", "not specified", "unk
 _NUMBER_UNIT = re.compile(r"(?<![\w.])(\d+(?:\.\d+)?)\s*(%|kg|g|db|hz|mm|phr)(?![a-z])", re.IGNORECASE)
 
 
+def _patents_per_value(stated: pd.Series) -> tuple[pd.DataFrame, pd.Series] | None:
+    """For a column that often lists several values per patent: (one row per patent and value, patents per value),
+    if a few values cover most mentions; else None."""
+    if stated.str.contains(r"[;,]").mean() < 0.2:
+        return None
+    values = stated.str.lower().str.split(r"\s*[;,]\s*").explode().str.strip().str.rstrip(".")
+    pairs = pd.DataFrame({"pid": values.index, "Value": values.values})
+    pairs = pairs[pairs["Value"].ne("") & ~pairs["Value"].isin(_UNSTATED_VALUES)].drop_duplicates()
+    counts = pairs["Value"].value_counts()
+    if not len(counts) or counts.iloc[0] < 2 or counts.head(10).sum() < 0.5 * len(pairs):
+        return None
+    return pairs, counts
+
+
 def extra_columns(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     """One view per extra column of the plan: how many patents state it, and what they state."""
     import plotly.express as px
@@ -737,6 +771,22 @@ def extra_columns(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
                          f"{numbers.median():.1f} {unit} (range {numbers.min():g}–{numbers.max():g}); by technology group: "
                          + "; ".join(f"{r['Technology group']} median {r['Median']:g} ({r['Patents']} patents)"
                                      for _, r in summary.iterrows()) + ".")
+        elif (per_value := _patents_per_value(stated)) is not None:
+            # Several values per patent ("durability; handling"): count the patents naming each value, so a value
+            # is not split over every combination it appears in.
+            pairs, counts_by_value = per_value
+            keep = counts_by_value.head(10).index
+            pairs = pairs[pairs["Value"].isin(keep)].assign(tech_group=lambda d: a.loc[d["pid"], "tech_group"].values)
+            counts = pairs.groupby(["Value", "tech_group"]).size().rename("Patents").reset_index()
+            fig = px.bar(counts, y="Value", x="Patents", color="tech_group", orientation="h",
+                         color_discrete_map=ctx.colors, category_orders={"Value": list(keep), "tech_group": ctx.groups},
+                         labels={"tech_group": "Technology group", "Value": ""})
+            _layout(fig, f"{spec.column}: most frequent values", height=max(320, 30 * len(keep) + 140))
+            blocks.append(rb.chart(fig, caption=f"{k} of {n} patents state a value; a patent can name several, so each "
+                                                "bar counts the patents naming that value (spelling as written by the "
+                                                "model)."))
+            facts.append(f"{spec.column}: {k} of {n} patents state a value; patents naming each value (a patent can "
+                         "name several): " + "; ".join(f"{v} {c}" for v, c in counts_by_value.head(8).items()) + ".")
         elif len(top) and top.head(10).sum() >= 0.5 * k and top.iloc[0] >= 2:
             keep = top.head(10).index
             frame = pd.DataFrame({"Value": normal[normal.isin(keep)], "tech_group": a.loc[normal[normal.isin(keep)].index, "tech_group"]})

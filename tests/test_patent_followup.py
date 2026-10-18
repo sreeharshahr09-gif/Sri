@@ -108,11 +108,21 @@ def test_rewrite_uses_the_same_facts_with_the_instruction(result):
 
 def test_agent_context(result):
     ds = fu.analysis_dataset(result)
-    assert "Map X" not in ds.df and "Wear type" in ds.df and len(ds.df) == len(result.enriched)
+    # the patents the report analyses, so the agent's counts match the report's
+    assert "Map X" not in ds.df and "Wear type" in ds.df and len(ds.df) == len(result.analysis_frame)
+    assert len(ds.df) < len(result.enriched) and set(ds.df["Relevance"]) <= {"High", "Partial"}
     profile = fu.landscape_profile(result, ds)
     assert profile.startswith("This table is the enriched patent set of a patent landscape study: Uneven wear")
     assert "'Technology group' ∈ {Structural/Design, Material Science, Process/Manufacturing, Active/Electronic}" in profile
-    assert "'Relevance' = Low means off-topic" in profile and "publication date year" in profile
+    off = len(result.enriched) - len(ds.df)
+    assert f"The table holds the {len(ds.df):,} patents the report analyses; the {off:,} patents judged off-topic" \
+        in profile and "publication date year" in profile
+    import copy
+
+    lagged = copy.copy(result)
+    lagged.incomplete_years = [2024, 2025]
+    assert "Years 2024, 2025 are incomplete because patents publish about 18 months after filing: never read a " \
+           "lower count there as a decline." in fu.landscape_profile(lagged, ds)
     assert "Key results of the report" in profile and "[Filing trend]" in profile
     assert "Dataset `enriched_patents.csv`" in profile
     assert len(profile) < 20000  # fits a 16k-token context with room for the conversation

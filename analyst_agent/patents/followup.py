@@ -193,7 +193,13 @@ def agent_client(llm):
 
 
 def analysis_dataset(result) -> Dataset:
+    """The enriched table of the patents the report analyses: off-topic patents are left out, as in the report,
+    so the data agent's counts match the report's."""
     table = result.enriched.drop(columns=[c for c in ("Map X", "Map Y") if c in result.enriched])
+    if getattr(result, "analysis_frame", None) is not None:
+        keep = result.corpus.std.index.isin(result.analysis_frame.index)  # the enriched table follows std's order
+        if len(keep) == len(table):
+            table = table[keep]
     return Dataset(df=table, name="enriched_patents.csv", sha256=(result.dataset_sha256 or "0" * 64),
                    source_format="patent landscape (enriched)")
 
@@ -229,8 +235,17 @@ def _landscape_profile(result, dataset: Dataset, sample_rows: int, fact_chars: i
         cats = {f.column: f.choices for f in result.extraction.fields if f.choices}
         lines.append("Columns filled by the model for every patent (values separated by '; ' where several apply): "
                      + "; ".join(f"'{col}' ∈ {{{', '.join(ch)}}}" for col, ch in cats.items()) + ".")
-        lines.append("'Relevance' = Low means off-topic: the report's analytics leave those patents out, so do the "
-                     "same unless asked. 'Year' is the " + result.corpus.year_basis + " year.")
+        off_topic = len(result.enriched) - len(dataset.df)
+        lines.append(f"The table holds the {len(dataset.df):,} patents the report analyses"
+                     + (f"; the {off_topic:,} patents judged off-topic (Relevance: Low) are left out, as in the report"
+                        if off_topic > 0 else "") + ". 'Year' is the " + result.corpus.year_basis + " year.")
+    incomplete = getattr(result, "incomplete_years", None) or []
+    if incomplete:
+        lines.append(f"Years {', '.join(map(str, incomplete))} are incomplete because patents publish about 18 months "
+                     "after filing: never read a lower count there as a decline.")
+    if len(dataset.df) < 300:
+        lines.append("Counts here are small: with fewer than about 10 patents per year or per group, describe changes "
+                     "as indicative and do not explain them by shifts in the industry the data cannot show.")
     if "Topic cluster" in dataset.df:
         lines.append("'Topic cluster' comes from the semantic patent map (text embeddings + clustering).")
     facts = (result.all_facts or "")[:fact_chars]

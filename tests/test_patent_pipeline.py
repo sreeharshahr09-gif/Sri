@@ -80,8 +80,9 @@ def test_full_run_builds_map_and_topic_table():
     patent_map = next(b.figure for b in result.blocks if b.title == "Patent map")
     assert "off-topic, in grey" in patent_map.layout.title.text
     assert any(t.name == "Off-topic (left out)" for t in patent_map.data)
+    # every patent's relevance was judged, so the cluster-level guess is left out
     assert list(topic_table.columns) == ["#", "Topic cluster", "Patents", "Share", "Off-topic (left out)",
-                                         "Technology group", "Relevance", "Key terms", "What these patents do"]
+                                         "Technology group", "Key terms", "What these patents do"]
     fig = next(b.figure for b in result.blocks if b.title == "Patent map")
     assert sum(len(t.x) for t in fig.data) == len(std)
     assert len(fig.layout.annotations) == len(topic_table)  # one numbered tag per cluster

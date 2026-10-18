@@ -63,6 +63,7 @@ class LandscapeResult:
     all_facts: str = ""
     model_name: str = ""
     stop_reason: str = ""  # why the run stopped early, if not at the user's request
+    incomplete_years: list = field(default_factory=list)  # years cut short by the publication lag
     methods: dict[str, str] = field(default_factory=dict)  # method -> description, for the methodology
 
 
@@ -138,6 +139,8 @@ def analytics_stage(result: LandscapeResult) -> None:
         corpus.flow.append(FlowStep("Removed: judged off-topic by the model (Relevance: Low)", int(keep.sum()),
                                     int((~keep).sum())))
     result.analysis_frame = frame[keep]
+    result.incomplete_years = an.make_context(result.analysis_frame, result.plan, corpus.year_basis,
+                                              ref_year=export_date(corpus)).incomplete_years
     result.exhibits, notes = an.run_analytics(result.analysis_frame, result.plan, corpus.year_basis,
                                               ref_year=export_date(corpus))
     result.warnings.extend(notes)
@@ -313,7 +316,7 @@ def assemble_blocks(result: LandscapeResult, options: PipelineOptions | None = N
                 parts.append(rb.markdown(f"**Scope of this study:** {scope}"))
         if "clusters" in sec.kinds and result.semantic is not None:
             parts.extend(semantic_blocks(result.corpus, result.semantic, analysed_topics(result),
-                                         analysed_index(result)))
+                                         analysed_index(result), per_patent=result.extraction is not None))
         for ex in (e for e in result.exhibits if e.section in sec.kinds):
             parts.append(rb.heading(ex.title, level=3))
             parts.extend(ex.blocks)
@@ -433,8 +436,9 @@ def analysed_topics(result: LandscapeResult) -> pd.DataFrame | None:
 
 
 def semantic_blocks(corpus: PatentCorpus, res: sem.SemanticResult, topics: pd.DataFrame | None = None,
-                    analysed: pd.Index | None = None) -> list[rb.Block]:
-    """The map shows every patent (off-topic ones in grey); the table and treemap count the analysed set."""
+                    analysed: pd.Index | None = None, per_patent: bool = False) -> list[rb.Block]:
+    """The map shows every patent (off-topic ones in grey); the table and treemap count the analysed set. With
+    `per_patent` (every patent's relevance judged), the cluster-level relevance guess is left out."""
     import plotly.express as px
 
     std = corpus.std
@@ -486,7 +490,7 @@ def semantic_blocks(corpus: PatentCorpus, res: sem.SemanticResult, topics: pd.Da
         "Share": (topics["patents"] / max(n, 1) * 100).round(1).astype(str) + " %",
         "Off-topic (left out)": (topics["all_patents"] - topics["patents"]) if n_off else "",
         "Technology group": topics.get("tech_group", ""),
-        "Relevance": topics.get("relevance", ""),
+        "Relevance": "" if per_patent else topics.get("relevance", ""),
         "Key terms": topics["keywords"].map(lambda k: ", ".join(k[:6])),
         "What these patents do": topics.get("description", ""),
     })

@@ -42,7 +42,8 @@ def build_fields(plan: AnalysisPlan) -> list[FieldSpec]:
     problems = [p.name for p in plan.problems]
     fields = [
         FieldSpec("topic", "Topic", "the specific technical topic, at most 8 words"),
-        FieldSpec("segment", "Segment", "the product segment(s) the patent is for",
+        FieldSpec("segment", "Segment", "the vehicle or market segment(s) the tyre is for (e.g. passenger car, "
+                  "truck & bus, off-road), not a tyre component",
                   choices=segments + ["Not specified"] if segments else None, multi=True),
         FieldSpec("problem", plan.problem_label or "Problem",
                   f"the {(plan.problem_label or 'problem').lower()} the patent addresses",
