@@ -65,9 +65,10 @@ def to_docx(markdown_resume: str) -> bytes:
             p = doc.add_paragraph(style="Heading 2")
             _append_text(p, clean[3:])
         elif re.match(r"^[-*]\s+", clean):
+            level = min(3, (len(line) - len(line.lstrip(" "))) // 2)
             p = doc.add_paragraph(style="Normal")
             p.style = styles["List Bullet"]
-            p.paragraph_format.left_indent = Inches(.19)
+            p.paragraph_format.left_indent = Inches(.19 + .22 * level)
             p.paragraph_format.first_line_indent = Inches(-.12)
             p.paragraph_format.space_after = Pt(1.6)
             _append_text(p, re.sub(r"^[-*]\s+", "", clean))

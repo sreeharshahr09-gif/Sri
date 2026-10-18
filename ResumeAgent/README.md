@@ -87,8 +87,11 @@ macOS/Linux: `./start.sh`.
 
 ## Input tips
 
-- DOCX, text-based PDF, TXT and MD are supported, and so is pasting. Two-column PDFs such as
-  LinkedIn "Save to PDF" profiles are read column by column. Scanned PDFs need OCR first.
+- DOCX, text-based PDF, TXT and MD are supported, and so is pasting. Scanned PDFs need OCR first.
+  - Two-column PDFs such as LinkedIn "Save to PDF" profiles are read column by column.
+  - Word CVs: list bullets (with nesting), bold section headings, tables and text boxes are read.
+  - Classic CVs with "Title | Employer | City" lines, dates on the next line, and "o" / "▪" sub-bullets
+    are understood. The fact checks then ensure no employer, job title or date is changed or dropped.
 - Clear section headings in your CV (EXPERIENCE, EDUCATION, SKILLS, PUBLICATIONS…) give the best
   results: each section is rewritten and checked on its own, and factual sections are kept verbatim.
   A CV with no recognisable headings is rewritten as one document.

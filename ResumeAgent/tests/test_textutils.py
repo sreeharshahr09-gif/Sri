@@ -48,7 +48,7 @@ class SectionTests(unittest.TestCase):
         self.assertEqual(split_sections("Jane\nDid things\nMore things")[0].kind, "document")
 
     def test_verbatim_format(self):
-        self.assertEqual(format_verbatim("• One\n  ● Two\n# Hash"), "- One\n- Two\n\\# Hash")
+        self.assertEqual(format_verbatim("• One\n  ● Two\no Three\n# Hash"), "- One\n  - Two\n  - Three\n\\# Hash")
 
 
 class ChunkTests(unittest.TestCase):
@@ -179,6 +179,89 @@ class QuoteTests(unittest.TestCase):
         self.assertNotIn("Mechanical Technology", found)  # tightest window, not a neighbour line
         self.assertEqual(locate_quote("Designed robotic arms for wafer handling in cleanrooms",
                                       self.SOURCE), "")
+
+
+CLASSIC_CV = """JANE DOE, Ph.D.
+Email: jane@example.test | Mobile: +1-555-0100
+
+Professional Summary
+
+• Engineer with 10+ years in precision mechanisms.
+
+Technical Skills
+
+• Thin Film Deposition
+(PVD, CVD)
+• Finite Element Analysis
+
+Professional Certification | Courses | Training
+
+• Certification in Semiconductor Manufacturing (2025).
+
+Work Experience
+
+• Research Fellow | Example University, Singapore
+02/2024 - 07/2025
+o Project-1: Positioning stages.
+▪ Designed flexure stages and verified them with FEA.
+
+Awards and Recognition
+
+• Best Paper award (2020).
+
+International Publications
+
+• Doe, J. et al. (2019). Flexure Design. Precision Eng."""
+
+
+class ClassicFormatTests(unittest.TestCase):
+    def test_title_case_headings_and_sub_bullets(self):
+        from textutils import _clean_pdf_lines
+        text = _clean_pdf_lines(CLASSIC_CV.splitlines())
+        kinds = [(s.kind, s.title) for s in split_sections(text)]
+        self.assertEqual([k for k, _ in kinds], ["header", "summary", "skills", "verbatim",
+                                                 "experience", "verbatim", "verbatim"])
+        self.assertIn("• Thin Film Deposition (PVD, CVD)", text)  # wrapped bullet re-joined
+        self.assertIn("\no Project-1: Positioning stages.\n", text)  # 'o' sub-bullet kept separate
+
+    def test_job_title_word_is_not_a_heading(self):
+        self.assertIsNone(heading_kind("Research Fellow", isolated=True))
+        self.assertIsNone(heading_kind("Training Manager", isolated=True))
+        self.assertEqual(heading_kind("International Publications", isolated=True), "verbatim")
+        self.assertIsNone(heading_kind("International Publications", isolated=False))
+
+    def test_role_lines_and_dates(self):
+        from textutils import is_date_line, role_lines
+        self.assertTrue(is_date_line("02/2024 - 07/2025"))
+        self.assertTrue(is_date_line("November 2025 - Present (1 year)"))
+        self.assertFalse(is_date_line("Best Paper award (2020)."))
+        body = "- Research Fellow | Example University, Singapore\n02/2024 - 07/2025\n- Built rigs in 2024."
+        self.assertEqual(role_lines(body), ["Research Fellow | Example University, Singapore"])
+        linkedin = "Example Robotics\nPrincipal Engineer\nMarch 2019 - Present (5 years)\nBoston"
+        self.assertEqual(role_lines(linkedin), ["Example Robotics", "Principal Engineer"])
+
+
+class WordFormatTests(unittest.TestCase):
+    def test_numbered_bullets_bold_headings_nesting_and_text_boxes(self):
+        from docx.enum.text import WD_BREAK  # noqa: F401  (python-docx import check)
+        doc = Document()
+        doc.add_paragraph("JANE DOE")
+        heading = doc.add_paragraph()
+        heading.add_run("Awards and Recognition").bold = True
+        item = doc.add_paragraph("Best Paper award (2020).", style="List Bullet")
+        sub = doc.add_paragraph("Second level detail.", style="List Bullet 2")
+        role = doc.add_paragraph()
+        role.add_run("Research Fellow").bold = True  # bold job title must stay content
+        doc.add_paragraph("Final paragraph with enough words to pass the minimum length check.")
+        buf = io.BytesIO()
+        doc.save(buf)
+        text = read_file("cv.docx", buf.getvalue())
+        self.assertIn("## Awards and Recognition", text)
+        self.assertIn("- Best Paper award (2020).", text)
+        self.assertIn("Research Fellow", text)
+        self.assertNotIn("## Research Fellow", text)
+        self.assertEqual(item.style.name, "List Bullet")
+        self.assertIn("Second level detail.", text)
 
 
 if __name__ == "__main__":

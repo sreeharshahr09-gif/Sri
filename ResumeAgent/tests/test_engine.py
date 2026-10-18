@@ -254,5 +254,27 @@ class TolerantEvidenceParsingTests(unittest.TestCase):
         self.assertIn("could not be found in your CV", items[0].rationale)
 
 
+class RoleIntegrityTests(unittest.TestCase):
+    ORIGINAL = ("- Mechanical Program Lead Engineer | Lam Research India, Bengaluru\n09/2021 - 06/2023\n"
+                "- Led failure analysis of chamber components.\n"
+                "- FEA Engineer | TE Connectivity Pvt Ltd, Bengaluru, India\n04/2012 - 04/2013\n"
+                "- Project Scientist | IIT Delhi, India\n08/2011 - 03/2012")
+    GOOD = ("**Mechanical Program Lead Engineer** — Lam Research India, Bengaluru | 09/2021 - 06/2023\n"
+            "- Led failure analysis of chamber components.\n"
+            "**FEA Engineer** — TE Connectivity, Bengaluru, India | 04/2012 - 04/2013\n"
+            "**Project Scientist** — IIT Delhi, India | 08/2011 - 03/2012")
+
+    def test_faithful_reformat_passes(self):
+        self.assertEqual(structure_checks(self.ORIGINAL, self.GOOD, "experience", .3), [])
+
+    def test_dropped_role_renamed_employer_and_inflated_title(self):
+        dropped = "\n".join(l for l in self.GOOD.splitlines() if "TE Connectivity" not in l)
+        self.assertTrue(structure_checks(self.ORIGINAL, dropped, "experience", .3))
+        renamed = self.GOOD.replace("Lam Research India", "Applied Materials India")
+        self.assertTrue(any("Employer" in e for e in structure_checks(self.ORIGINAL, renamed, "experience", .3)))
+        inflated = self.GOOD.replace("**FEA Engineer**", "**Senior FEA Engineer**")
+        self.assertTrue(any("Job title" in e for e in structure_checks(self.ORIGINAL, inflated, "experience", .3)))
+
+
 if __name__ == "__main__":
     unittest.main()

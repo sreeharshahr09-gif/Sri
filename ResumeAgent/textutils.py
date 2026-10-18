@@ -182,16 +182,7 @@ def read_file(name: str, contents: bytes) -> str:
     if suffix in (".txt", ".md"):
         text = contents.decode("utf-8-sig", errors="replace")
     elif suffix == ".docx":
-        doc = Document(io.BytesIO(contents))
-        parts = []
-        for item in doc.iter_inner_content():  # body order: paragraphs and tables
-            if hasattr(item, "rows"):
-                for row in item.rows:
-                    cells = list(dict.fromkeys(c.text.strip() for c in row.cells if c.text.strip()))
-                    parts.append(" | ".join(cells))
-            else:
-                parts.append(item.text)
-        text = "\n".join(parts)
+        text = _docx_text(Document(io.BytesIO(contents)))
     elif suffix == ".pdf":
         reader = PdfReader(io.BytesIO(contents))
         if reader.is_encrypted:
@@ -305,6 +296,12 @@ def _clean_pdf_lines(lines: list[str]) -> str:
     for line in lines:
         prev = out[-1] if out else ""
         stripped = line.strip()
+        if (prev and _BULLET_RE.match(prev) and stripped and not _BULLET_RE.match(line)
+                and not prev.rstrip().endswith(".") and heading_kind(line) is None
+                and not re.match(r"^\d+[.)]\s", stripped)):
+            glue = "" if prev.endswith(("-", "/")) and not prev.endswith(" -") else " "
+            out[-1] = prev.rstrip() + glue + stripped  # wrapped bullet continues
+            continue
         joinable = (prev.strip() and stripped and not _BULLET_RE.match(line)
                     and not re.match(r"^\d+[.)]\s", stripped)
                     and heading_kind(prev) is None and heading_kind(line) is None)
@@ -318,6 +315,51 @@ def _clean_pdf_lines(lines: list[str]) -> str:
                 continue
         out.append(line)
     return "\n".join(out)
+
+
+def _docx_paragraph(par) -> str:
+    text = re.sub(r"[ \t\xa0]+", " ", par.text).strip()
+    if not text:
+        return ""
+    ppr = par._p.pPr
+    numbered = ppr is not None and ppr.numPr is not None
+    style = (par.style.name if par.style is not None else "").lower()
+    if numbered or style.startswith("list bullet") or style.startswith("list number"):
+        level = ppr.numPr.ilvl.val if numbered and ppr.numPr.ilvl is not None else 0
+        return "  " * min(int(level or 0), 3) + "- " + _BULLET_RE.sub("", text)
+    runs = [r for r in par.runs if r.text.strip()]
+    bold = bool(runs) and all(r.bold or (r.style is not None and r.style.font.bold) for r in runs)
+    if (style.startswith("heading") or bold) and heading_kind("## " + text):
+        return "## " + text
+    return text
+
+
+def _docx_text(doc) -> str:
+    from docx.oxml.ns import qn
+
+    parts: list[str] = []
+    for item in doc.iter_inner_content():  # body order: paragraphs and tables
+        if hasattr(item, "rows"):
+            for row in item.rows:
+                cells = list(dict.fromkeys(c.text.strip() for c in row.cells if c.text.strip()))
+                if cells:
+                    parts.append(" | ".join(re.sub(r"\s*\n\s*", " / ", c) for c in cells))
+        else:
+            parts.append(_docx_paragraph(item))
+    body = "\n".join(parts)
+    # Text boxes (often a contact/skills sidebar) are not part of paragraph text.
+    boxed: list[str] = []
+    for box in doc.element.body.iter(qn("w:txbxContent")):
+        for p in box.iter(qn("w:p")):
+            line = re.sub(r"\s+", " ", "".join(t.text or "" for t in p.iter(qn("w:t")))).strip()
+            if line and line not in boxed and line not in body:
+                boxed.append(line)
+    header_lines = []
+    for par in doc.sections[0].header.paragraphs if doc.sections else []:
+        line = par.text.strip()
+        if line and line not in body:
+            header_lines.append(line)
+    return "\n".join(header_lines + boxed + ([""] if header_lines or boxed else []) + [body])
 
 
 # --- context budgeting --------------------------------------------------------
@@ -407,7 +449,11 @@ SECTION_VOCAB: list[tuple[str, tuple[str, ...]]] = [
                   "references", "referees", "grants", "funding", "awards", "honors", "honours",
                   "awards and honors", "honors awards", "honours awards", "awards and honours",
                   "honors and awards", "honours and awards", "certifications", "certificates", "licenses",
-                  "licenses and certifications", "languages", "interests", "hobbies",
+                  "licenses and certifications", "certification", "professional certification",
+                  "professional certifications", "languages", "language", "language proficiency",
+                  "language skills", "interests", "hobbies", "training", "courses",
+                  "professional development", "ongoing professional development",
+                  "courses and training", "awards and recognition", "recognition",
                   "memberships", "professional memberships", "affiliations", "thesis",
                   "dissertation", "citations")),
     ("summary", ("summary", "professional summary", "career summary", "executive summary",
@@ -428,15 +474,22 @@ SECTION_VOCAB: list[tuple[str, tuple[str, ...]]] = [
     ("other", ("projects", "selected projects", "key projects", "research projects",
                "research", "research interests", "teaching", "teaching experience",
                "leadership", "volunteer", "volunteering", "volunteer experience",
-               "activities", "extracurricular activities", "training", "courses",
-               "professional development", "achievements", "key achievements",
+               "activities", "extracurricular activities", "achievements", "key achievements",
                "accomplishments", "service", "supervision", "mentoring", "internships",
-               "internship")),
+               "internship", "leadership and lab operations experience")),
 ]
+# Words too common in job titles to mark a heading on their own ("Research Fellow",
+# "Training Manager"); they still count when they are the whole heading.
+_AMBIGUOUS = {"research", "career", "about", "service", "software", "tools", "technologies",
+              "positions", "appointments", "papers", "talks", "supervision", "mentoring",
+              "internship", "internships", "activities", "overview", "training", "courses",
+              "expertise", "profile", "funding", "thesis", "recognition", "language",
+              "certification", "patent", "publication"}
+_SMALL_WORDS = {"and", "of", "the", "for", "in", "to", "on", "with", "a", "an", "&", "|"}
 _VOCAB_LOOKUP = {phrase: kind for kind, phrases in SECTION_VOCAB for phrase in phrases}
 # Factual sections that are reproduced exactly; dates, titles and authorship are not rewritten.
 PRESERVE_KINDS = {"education", "verbatim", "contact"}
-_BULLET_RE = re.compile(r"^\s*(?:[-*•●▪◦‣–—·]|•)\s+")
+_BULLET_RE = re.compile(r"^\s*(?:[-*•●▪◦‣–—·\u2022\uf0b7\uf0a7]|o(?=\s+[A-Z(]))\s+")
 
 
 @dataclass
@@ -450,9 +503,23 @@ class Section:
         return self.kind not in PRESERVE_KINDS and self.kind != "header"
 
 
-def heading_kind(line: str) -> str | None:
+def _scan_kind(canon: str) -> str | None:
+    words = canon.split()
+    for size in (3, 2, 1):
+        for i in range(len(words) - size + 1):
+            phrase = " ".join(words[i:i + size])
+            if phrase in _VOCAB_LOOKUP and (size > 1 or phrase not in _AMBIGUOUS):
+                return _VOCAB_LOOKUP[phrase]
+    return None
+
+
+def heading_kind(line: str, isolated: bool = False) -> str | None:
+    """Section kind if ``line`` is a section heading.
+
+    ``isolated`` (blank line before or after) allows plain Title-Case headings such as
+    'Awards and Recognition' or 'Professional Certification | Courses | Training'."""
     raw = line.strip()
-    if not raw or len(raw) > 60:
+    if not raw or len(raw) > 60 or _BULLET_RE.match(raw):
         return None
     is_md = raw.startswith("#")
     text = raw.lstrip("#").strip().strip("*_").strip()
@@ -467,13 +534,10 @@ def heading_kind(line: str) -> str | None:
         return None  # "SKILLS: Python, MATLAB" is content, not a heading
     letters = [c for c in text if c.isalpha()]
     shouty = bool(letters) and all(c.isupper() for c in letters)
-    if is_md or shouty or ends_colon:
-        words = canon.split()
-        for size in (3, 2, 1):
-            for i in range(len(words) - size + 1):
-                kind = _VOCAB_LOOKUP.get(" ".join(words[i:i + size]))
-                if kind:
-                    return kind
+    words = [w for w in re.findall(r"[A-Za-z][\w&'-]*", text) if w.lower() not in _SMALL_WORDS]
+    title_case = bool(words) and all(w[0].isupper() for w in words) and not text.endswith((".", ","))
+    if is_md or shouty or ends_colon or (isolated and title_case):
+        return _scan_kind(canon)
     return None
 
 
@@ -483,8 +547,9 @@ def split_sections(text: str) -> list[Section]:
     sections: list[Section] = []
     header: list[str] = []
     current: Section | None = None
-    for line in lines:
-        kind = heading_kind(line)
+    for i, line in enumerate(lines):
+        isolated = (i == 0 or not lines[i - 1].strip()) or (i + 1 < len(lines) and not lines[i + 1].strip())
+        kind = heading_kind(line, isolated)
         if kind:
             if current:
                 sections.append(current)
@@ -505,6 +570,14 @@ def split_sections(text: str) -> list[Section]:
     return [Section("", "header", head)] + sections
 
 
+def bullet_level(line: str) -> int:
+    """Nesting depth of a bullet line: from indentation, or Word's 'o' / '▪' sub-bullet glyphs."""
+    marker = line.lstrip()[:1]
+    indent = len(line) - len(line.lstrip(" "))
+    level = {"o": 1, "\u25e6": 1, "\u25aa": 2, "\uf0a7": 2}.get(marker, 0)
+    return min(3, max(level, indent // 2))
+
+
 def format_verbatim(body: str) -> str:
     """Original lines, Markdown-safe, with bullet glyphs normalised to '- '."""
     out = []
@@ -513,7 +586,7 @@ def format_verbatim(body: str) -> str:
             out.append("")
             continue
         if _BULLET_RE.match(line):
-            out.append("- " + _BULLET_RE.sub("", line).strip())
+            out.append("  " * bullet_level(line) + "- " + _BULLET_RE.sub("", line).strip())
         else:
             stripped = line.strip()
             out.append("\\" + stripped if stripped.startswith("#") else stripped)
@@ -551,16 +624,42 @@ def contact_lines(body: str) -> list[str]:
     return out
 
 
+_MONTHS = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?"
+
+
+def is_date_line(line: str) -> bool:
+    """'11/2025 - Present', 'Sept 2021 – Jun 2023 (1 year 10 months)', '(2018-2021)' and similar."""
+    rest = re.sub(r"\(?\s*\d+\s*(?:years?|yrs?)(?:\s*\d+\s*months?)?\s*\)?|\(?\s*\d+\s*months?\s*\)?", "", line.lower())
+    rest = re.sub(_MONTHS, "", rest)
+    rest = re.sub(r"present|current|now|till date|to date|ongoing|\bto\b", "", rest)
+    return bool(YEAR_RE.search(line)) and not re.sub(r"[\s\d/.,()~–—-]", "", rest)
+
+
 def role_lines(text: str) -> list[str]:
-    """Non-bullet lines carrying a year: usually 'Title, Employer, 2019–2023' or a degree."""
-    return [l.strip() for l in text.splitlines()
-            if YEAR_RE.search(l) and not _BULLET_RE.match(l) and 8 <= len(l.strip()) <= 160]
+    """Lines naming a role, employer or degree: lines that carry a date themselves
+    ('Title | Employer | 2019-2023') or sit just above a date line ('Employer' / 'Title' / dates)."""
+    lines = [l.strip() for l in text.splitlines()]
+    out = []
+    for i, line in enumerate(lines):
+        if not 3 <= len(line) <= 160 or is_date_line(line):
+            continue
+        bullet = bool(_BULLET_RE.match(line))
+        following = [l for l in lines[i + 1:i + 5] if l][:3]
+        if bullet:
+            role = bool(following) and is_date_line(following[0]) or \
+                (" | " in line and bool(YEAR_RE.search(line)))
+        else:
+            role = bool(YEAR_RE.search(line)) or any(is_date_line(l) for l in following)
+        if role:
+            out.append(_BULLET_RE.sub("", line))
+    return out
 
 
 def significant_words(line: str) -> list[str]:
     stop = {"and", "the", "of", "for", "in", "at", "to", "a", "an", "on", "with", "present",
             "current", "now", "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep",
             "sept", "oct", "nov", "dec", "january", "february", "march", "april", "june",
-            "july", "august", "september", "october", "november", "december"}
+            "july", "august", "september", "october", "november", "december", "pvt", "ltd",
+            "inc", "llc", "gmbh", "co", "corp", "corporation", "limited", "private", "plc"}
     words = re.findall(r"[A-Za-z][A-Za-z&+#.'-]*", line)
     return [w.strip(".'") for w in words if w.lower().strip(".'") not in stop and len(w) > 1]

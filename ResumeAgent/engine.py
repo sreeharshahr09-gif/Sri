@@ -427,13 +427,31 @@ def structure_checks(original: str, draft: str, kind: str, min_ratio: float) -> 
     missing_years = sorted(set(YEAR_RE.findall(original)) - set(YEAR_RE.findall(draft)))
     if missing_years:
         errors.append("Dates from the original were dropped: " + ", ".join(missing_years))
+    draft_lines = [l for l in draft.splitlines() if l.strip()]
+    windows = ["\n".join(draft_lines[i:i + 2]) for i in range(len(draft_lines))] or [""]
     for line in role_lines(original):
         words = significant_words(line)
-        if len(words) >= 2:
-            kept = sum(contains_phrase(draft, w) for w in words)
-            if kept / len(words) < 0.6:
-                errors.append(f'Role/employer line changed or dropped: "{line[:90]}"')
-                break
+        if len(words) < 2:
+            continue
+        # Prefer the window whose own first line matches best (title/employer usually lead it).
+        best = max(windows, key=lambda w: (sum(contains_phrase(w, x) for x in words),
+                                           sum(contains_phrase(w.split("\n")[0][:len(w) // 2 + 1], x)
+                                               for x in words)))
+        if sum(contains_phrase(best, x) for x in words) / len(words) < 0.75:
+            errors.append(f'Role/employer line changed or dropped: "{line[:90]}"')
+            continue
+        if " | " in line:
+            title, employer = line.split(" | ")[0], line.split(" | ")[1]
+            lost = [w for w in significant_words(employer.split(",")[0]) if not contains_phrase(best, w)]
+            if lost:
+                errors.append(f'Employer/institution name changed (keep "{employer.split(",")[0].strip()}" '
+                              f'exactly): "{line[:90]}"')
+            bold = re.match(r"\s*(?:- )?\*\*(.+?)\*\*", best)
+            if bold:
+                extra = [w for w in significant_words(bold.group(1))
+                         if w.casefold() not in {x.casefold() for x in significant_words(title)}]
+                if extra:
+                    errors.append(f'Job title changed (added {", ".join(extra)}); keep "{title.strip()}".')
     orig_words, draft_words = len(original.split()), len(draft.split())
     if orig_words > 60 and draft_words < min_ratio * orig_words:
         errors.append(f"Too much original content was dropped ({draft_words} of {orig_words} words kept).")
