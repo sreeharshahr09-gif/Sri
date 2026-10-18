@@ -130,8 +130,8 @@ legal status, freedom to operate or licensing unless a fact states it. When a fa
 possible or found nothing, report that plainly as a limit of this data set, not as a finding about the field.
 - The facts come from one patent export, not the whole industry: say "in this patent set" and draw no \
 conclusion about the industry, the market or new entrants.
-- White-space combinations are statistical leads: recommend only those that make technical sense for the \
-brief, as leads to check.
+- White-space combinations are statistical leads, not tested for significance: recommend only those that make \
+technical sense for the brief, as leads to check, and do not call them significant.
 - Write in Markdown: 5 to 8 bullet points with the most important findings (each starting with a short bold \
 phrase), then "**Recommended R&D directions:**" with 2 or 3 bullet points grounded in the gaps and trends. \
 At most 320 words. No heading, no preamble.\
@@ -146,6 +146,38 @@ def _clean_text(text: str, heading: str) -> str:
         lines.pop(0)  # the model repeated the heading
     # A bold label line right after a bullet ("**Implication for R&D:** ...") would join that bullet.
     return re.sub(r"\n(?=\*\*[^*\n]+:?\*\*)", "\n\n", "\n".join(lines).strip())
+
+
+_COMMON_WORDS = {"with", "that", "this", "these", "from", "what", "which", "where", "when", "does", "their", "each",
+                 "have", "into", "patent", "patents", "brief", "data", "asks", "facts", "provided", "covered",
+                 "present", "available", "specific", "number", "show"}
+
+
+def _stem(word: str) -> str:
+    for suffix in ("ments", "ment", "ing", "ed", "es", "s"):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 4:
+            return word[: -len(suffix)]
+    return word
+
+
+def _content_words(text: str) -> set[str]:
+    return {_stem(w) for w in re.findall(r"[a-z]+", text.lower()) if len(w) >= 4 and w not in _COMMON_WORDS}
+
+
+def drop_answered_gaps(text: str, answered: list[str]) -> str:
+    """Removes "Not covered by this data" lines about questions the report answers in its own section: a section
+    with few facts tends to list the brief's questions there even when told not to."""
+    if not answered:
+        return text
+    questions = [_content_words(q) for q in answered]
+    kept = []
+    for line in text.splitlines():
+        if "not covered by this data" in line.lower():
+            words = _content_words(line)
+            if any(q and len(words & q) >= max(3, 0.3 * len(q)) for q in questions):
+                continue
+        kept.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
 
 
 def section_facts(sec: Section, facts_by_kind: dict[str, str], all_facts: str) -> str:
@@ -195,7 +227,7 @@ def write_sections(sections: list[Section], facts_by_kind: dict[str, str], all_f
         except LLMError as exc:
             sec.note = f"The model could not write this section ({exc}); the charts and tables below are complete."
             continue
-        sec.text = _clean_text(reply, sec.heading)
+        sec.text = drop_answered_gaps(_clean_text(reply, sec.heading), answered_elsewhere or [])
         if not sec.text:
             sec.note = "The model returned no text for this section; the charts and tables below are complete."
             continue

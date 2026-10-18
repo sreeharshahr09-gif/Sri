@@ -223,3 +223,30 @@ def test_empty_section_text_leaves_a_note():
     nar.write_sections(sections, {}, "facts 12", "brief", {}, Blank())
     assert sections[0].text == "" and "returned no text" in sections[0].note
     assert "Say nothing about market maturity" in nar.SECTION_SYSTEM and "freedom to operate" in nar.SUMMARY_SYSTEM
+
+
+def test_not_covered_lines_about_answered_questions_are_dropped():
+    """The user's 4th lightweighting report: the one-patent Process section listed three of the brief's questions
+    as "not covered" although the report answers them in its own section."""
+    from analyst_agent.patents.narrative import drop_answered_gaps
+
+    answered = [
+        ("Which components and which technology groups do the five largest assignees work on? Show patents per "
+         "assignee, component and technology group."),
+        "Which performance attributes are most often kept or traded off alongside weight reduction?",
+        ("How has the number of patents using lighter reinforcement (aramid, PET, nylon, hybrid, carbon fibre) "
+         "developed per year compared with all patents?"),
+    ]
+    text = ("- **Scope:** One process patent.\n"
+            "- **Not covered by this data:** The brief asks for the development of lighter reinforcement patents per "
+            "year compared with all patents; this temporal trend is not present in the provided facts.\n"
+            "- **Not covered by this data:** The brief asks for performance attributes kept or traded off alongside "
+            "weight reduction.\n"
+            "- **Not covered by this data:** The brief asks for a breakdown of the five largest assignees by "
+            "component and technology group.\n"
+            "- **Not covered by this data:** Curing temperatures and press times are not reported.\n\n"
+            "**Implication for R&D:** Few process patents.")
+    out = drop_answered_gaps(text, answered)
+    assert out.count("Not covered by this data") == 1 and "Curing temperatures" in out
+    assert out.startswith("- **Scope:**") and out.endswith("Few process patents.")
+    assert drop_answered_gaps(text, []) == text
