@@ -239,16 +239,16 @@ def test_export_date_comes_from_the_latest_publication():
 
 
 def test_growth_is_not_computed_from_a_tiny_base():
-    text, fact = an.growth(pd.Series({2008: 1, 2009: 0, 2010: 2, 2011: 3, 2012: 5, 2013: 4, 2014: 6}))
+    _, fact = an.growth(pd.Series({2008: 1, 2009: 0, 2010: 2, 2011: 3, 2012: 5, 2013: 4, 2014: 6}))
     assert "too few patents at the start for a meaningful growth rate" in fact and "%" not in fact
-    text, fact = an.growth(pd.Series({2015: 10, 2016: 12, 2017: 14, 2018: 15, 2019: 18, 2020: 20}))
+    _, fact = an.growth(pd.Series({2015: 10, 2016: 12, 2017: 14, 2018: 15, 2019: 18, 2020: 20}))
     assert fact.startswith("Growth (3-year averages, complete years): average 12.0 patents a year in 2015–2017")
 
 
 def test_momentum_and_periods_respect_the_publication_lag(result):
     ex = _ex(result, "roadmap")
     momentum = next(b for b in ex.blocks if b.title == "Topic clusters: momentum").table
-    window = [c for c in momentum.columns if c.startswith("Patents in ")][0]
+    window = next(c for c in momentum.columns if c.startswith("Patents in "))
     assert set(momentum["Reading"]) <= {"growing faster than the field", "slowing", "about as the field"}
     assert (momentum.loc[momentum["Reading"] == "growing faster than the field", "Momentum"] >= 1.2).all()
     assert (momentum.loc[momentum["Reading"] == "slowing", "Momentum"] <= 0.8).all()
