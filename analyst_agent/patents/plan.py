@@ -114,7 +114,7 @@ ONLY one JSON object, no other text, with exactly these keys:
 "segments": list of product segments in scope as short codes or names (for example ["TBR", "PCR"]); [] if none given
 "years": [first_year, last_year] if the brief limits the period, otherwise null
 "problem_label": what the problem dimension is called in this study (for example "Wear type", "Noise source", "Failure mode"); "Problem" if unclear
-"problems": list of {"name", "description"}: the specific problems or phenomena the brief lists or clearly implies (keep the brief's terms); if the brief lists none, propose 5-8 categories of the technical problems these patents solve, fitting the topic and the sample titles
+"problems": list of {"name", "description"}: the specific problems or phenomena the brief lists or clearly implies (keep the brief's terms); if the brief lists fewer than 4, add categories of the technical problems these patents solve (fitting the topic and the sample titles) so that most patents fit one, 4-8 in total
 "tech_buckets": list of {"name", "description"}: the technology groups to cluster solutions into, exactly as the brief defines them; if the brief gives none, propose 4-6 suitable groups
 "complexity_levels": list of {"name", "description"} ordered from simplest to most complex, as the brief defines them; if none, use Simple / Intermediate / Complex, each described for this topic (what makes a solution simple or complex here)
 "in_scope": one or two sentences defining which patents are relevant and which are not; name the kinds of patents in the sample that are off-topic, if any

@@ -188,6 +188,11 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
         st.caption("Prepared by the model from your brief. Edit anything, then run.")
     for item in plan.not_possible:
         st.info(item, icon="ℹ️")
+    if len(plan.problems) < 3:
+        label = (plan.problem_label or "problem").lower()
+        st.warning(f"Only {len(plan.problems)} {label} categor{'y' if len(plan.problems) == 1 else 'ies'}: patents "
+                   f"that fit none are counted as Other, and the {label} × solution map and white space then show "
+                   f"little. Add the {label}s that matter for your topic below, one per line.", icon="⚠️")
 
     with st.form(f"plan_form_{v}"):
         c1, c2 = st.columns([3, 2])

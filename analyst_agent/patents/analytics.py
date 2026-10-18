@@ -131,6 +131,33 @@ def cagr(counts: pd.Series) -> tuple[float | None, int | None, int | None]:
     return (counts.iloc[-1] / counts.iloc[0]) ** (1 / (y1 - y0)) - 1, y0, y1
 
 
+def growth(complete: pd.Series) -> tuple[str, str]:
+    """(caption text, fact) for the growth of patents per year over complete years.
+
+    With six or more complete years, compares the average of the first three with the last three, so one
+    unusual year at either end does not decide the rate; at fewer than 2 patents a year at the start, a
+    rate would mislead and the averages are reported instead.
+    """
+    complete = complete.sort_index()
+    years = list(complete.index)
+    if len(years) >= 6:
+        first, last = complete.iloc[:3], complete.iloc[-3:]
+        a, b = first.mean(), last.mean()
+        span = f"{years[0]}–{years[2]}", f"{years[-3]}–{years[-1]}"
+        averages = f"average {a:.1f} patents a year in {span[0]}, {b:.1f} in {span[1]}"
+        if a < 2:
+            text = f"{averages}; too few patents at the start for a meaningful growth rate"
+            return text, f"Growth: {text}."
+        rate = (b / a) ** (1 / (years[-2] - years[1])) - 1
+        text = f"{averages}: {rate * 100:+.1f} % a year"
+        return text, f"Growth (3-year averages, complete years): {text}."
+    rate, y0, y1 = cagr(complete)
+    if rate is None or complete.get(y0, 0) < 5:
+        return "too few complete years or patents for a growth rate", "Growth: too few complete years or patents for a growth rate."
+    text = f"CAGR {y0}–{y1} {rate * 100:+.1f} % a year"
+    return text, f"Growth (complete years): {text}."
+
+
 def _layout(fig, title: str, height: int = 460):
     fig.update_layout(template=TEMPLATE, title=title, height=height, margin={"l": 10, "r": 10, "t": 60, "b": 10},
                       legend={"orientation": "h", "yanchor": "bottom", "y": 1.0, "xanchor": "left", "x": 0,
@@ -179,12 +206,11 @@ def trend(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     fig.update_xaxes(dtick=1)
     _layout(fig, f"Patents per year by technology group ({ctx.year_basis})")
     complete = total.drop(ctx.incomplete_years, errors="ignore")
-    rate, y0, y1 = cagr(complete)
+    growth_text, growth_fact = growth(complete)
     peak = int(complete.idxmax()) if len(complete) and complete.max() > 0 else None
     caption = (f"Bars: patents per year and technology group; line: all patents. Year basis: {ctx.year_basis}. "
-               "Shaded years are incomplete because applications publish about 18 months after filing")
-    caption += (f"; growth is measured on complete years only: CAGR {y0}–{y1} {rate * 100:+.1f} % a year."
-                if rate is not None else ".")
+               "Shaded years are incomplete because applications publish about 18 months after filing. "
+               f"Growth, on complete years only: {growth_text}.")
     half = (lo + hi) // 2
     first, second = dated[dated["year"] <= half], dated[dated["year"] > half]
     shifts = []
@@ -195,9 +221,9 @@ def trend(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     facts = [f"Patents per year ({ctx.year_basis}): " + ", ".join(f"{y}: {int(c)}" for y, c in total.items()) + "."]
     if ctx.incomplete_years:
         facts.append(f"Incomplete years (publication lag): {', '.join(map(str, ctx.incomplete_years))}.")
-    if rate is not None:
-        facts.append(f"CAGR {y0}–{y1} (complete years): {rate * 100:+.1f} % a year. Peak complete year: {peak} "
-                     f"({int(complete.max())} patents).")
+    facts.append(growth_fact)
+    if peak is not None:
+        facts.append(f"Peak complete year: {peak} ({int(complete.max())} patents).")
     facts.append(f"Share of patents by technology group, {lo}–{half} vs {half + 1}–{hi}: " + "; ".join(
         f"{g} {s1 * 100:.0f} % → {s2 * 100:.0f} %" for g, s1, s2 in shifts) + ".")
     return Exhibit("trend", "visuals", "Filing trend", [rb.chart(fig, caption=caption)], " ".join(facts))
@@ -228,39 +254,55 @@ def roadmap(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     lo, hi = int(dated["year"].min()), int(dated["year"].max())
     edges = np.linspace(lo, hi + 1, num=min(4, hi - lo + 1) + 1).round().astype(int)
     periods = [(int(edges[i]), int(edges[i + 1]) - 1) for i in range(len(edges) - 1) if edges[i + 1] - 1 >= edges[i]]
-    labels = [f"{p0}–{p1}" if p1 > p0 else str(p0) for p0, p1 in periods]
+    partial = set(ctx.incomplete_years)
+    labels = [(f"{p0}–{p1}" if p1 > p0 else str(p0)) + ("*" if partial & set(range(p0, p1 + 1)) else "")
+              for p0, p1 in periods]
     period_of = {y: lab for (p0, p1), lab in zip(periods, labels) for y in range(p0, p1 + 1)}
     grid = pd.crosstab(dated["tech_group"], dated["year"].map(period_of)).reindex(columns=labels, fill_value=0)
     grid = grid.reindex([g for g in ctx.groups if g in grid.index])
     grid.index.name = "Technology group"
     grid.columns.name = None
-    blocks.append(rb.table(grid.reset_index(), title="Patents per technology group and period"))
+    star = ("* includes years still incomplete because of the publication lag: a lower count there is not "
+            "(yet) a decline." if any(lab.endswith("*") for lab in labels) else "")
+    blocks.append(rb.table(grid.reset_index(), title="Patents per technology group and period", caption=star))
     facts.append("Patents per technology group and period: " + "; ".join(
-        f"{g}: " + ", ".join(f"{p} {int(v)}" for p, v in row.items()) for g, row in grid.iterrows()) + ".")
-    if ctx.has_clusters:
-        recent_from = hi - 2  # the last three years
-        recent = dated["year"] >= recent_from
-        base = recent.mean()
+        f"{g}: " + ", ".join(f"{p} {int(v)}" for p, v in row.items()) for g, row in grid.iterrows()) + "."
+        + (f" {star}" if star else ""))
+    complete = dated[~dated["year"].isin(ctx.incomplete_years)]
+    if ctx.has_clusters and complete["year"].nunique() >= 4:
+        last = int(complete["year"].max())
+        recent_from = last - 2  # the last three complete years
+        window = f"{recent_from}–{last}"
+        base = (complete["year"] >= recent_from).mean()
+        n_recent = int((complete["year"] >= recent_from).sum())
         rows = []
-        for label, part in dated.groupby("cluster"):
+        for label, part in complete.groupby("cluster"):
             if len(part) < 5:
                 continue
-            share_recent = (part["year"] >= recent_from).mean()
+            k = int((part["year"] >= recent_from).sum())
+            momentum = round((k / len(part)) / base, 2) if base else np.nan
             rows.append({"Topic cluster": label, "Patents": len(part), "First year": int(part["year"].min()),
-                         f"Share since {recent_from}": f"{share_recent * 100:.0f} %",
-                         "Momentum": round(share_recent / base, 2) if base else np.nan,
+                         f"Patents in {window}": k, "Momentum": momentum,
+                         "Reading": ("growing faster than the field" if momentum >= 1.2 and k >= 3 else
+                                     "slowing" if momentum <= 0.8 else "about as the field"),
                          "Technology group": part["tech_group"].mode().iat[0]})
         if rows:
             mom = pd.DataFrame(rows).sort_values("Momentum", ascending=False)
-            rising, falling = mom.head(5), mom.tail(3).iloc[::-1]
-            table = pd.concat([rising, falling[~falling["Topic cluster"].isin(rising["Topic cluster"])]])
-            blocks.append(rb.table(table, title="Emerging and declining topic clusters", caption=(
-                f"Momentum = the cluster's share of patents since {recent_from} divided by the share of all patents "
-                f"since then ({base * 100:.0f} %). Above 1: growing faster than the field; below 1: slowing. "
-                "Clusters with at least 5 patents.")))
-            facts.append("Emerging clusters (momentum): " + "; ".join(
-                f"{r['Topic cluster']} {r['Momentum']}" for _, r in rising.iterrows()) + ". Slowing: " + "; ".join(
-                f"{r['Topic cluster']} {r['Momentum']}" for _, r in falling.iterrows()) + ".")
+            few = n_recent < 30
+            blocks.append(rb.table(mom, title="Topic clusters: momentum", caption=(
+                f"Momentum = the cluster's share of its patents in {window} (the last three complete years) divided "
+                f"by that share for all patents ({base * 100:.0f} %, {n_recent} patents). Above 1: growing faster "
+                "than the field; below 1: slowing. Growing needs at least 1.2 and 3 recent patents. Clusters with "
+                "at least 5 patents." + (" Based on few patents: indicative only." if few else ""))))
+            growing = mom[mom["Reading"] == "growing faster than the field"]
+            slowing = mom[mom["Reading"] == "slowing"]
+            def listing(frame):
+                return "; ".join(f"{r['Topic cluster']} (momentum {r['Momentum']}, {r[f'Patents in {window}']} of "
+                                 f"{r['Patents']} patents in {window})" for _, r in frame.iterrows())
+            facts.append(f"Topic cluster momentum over {window}, the last three complete years ({n_recent} patents"
+                         + ("; few patents, indicative only" if few else "") + "). Growing faster than the field: "
+                         + (listing(growing) or "none") + ". Slowing (momentum below 0.8): " + (listing(slowing) or "none")
+                         + ". A momentum below 1 means slowing, never growth.")
     return Exhibit("roadmap", "gaps", "Technology roadmap", blocks, " ".join(facts))
 
 
@@ -299,8 +341,10 @@ def players(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
                f"Top 5 hold {top5 * 100:.0f} % of patents; HHI {hhi:,.0f} "
                f"({'concentrated' if hhi > 2500 else 'moderately concentrated' if hhi > 1500 else 'fragmented'}).")
     blocks = [rb.chart(fig, caption=caption)]
+    label = "concentrated" if hhi > 2500 else "moderately concentrated" if hhi > 1500 else "fragmented"
     facts = ["Top assignees: " + "; ".join(f"{n} {int(c)} ({_pct(c, total)})" for n, c in top.head(10).items()) + ".",
-             f"Top-5 share {top5 * 100:.0f} %, HHI {hhi:,.0f}."]
+             f"Top-5 share {top5 * 100:.0f} %, HHI {hhi:,.0f}, which means {label} (below 1,500 fragmented, "
+             "1,500-2,500 moderately concentrated, above 2,500 concentrated)."]
     # player x technology matrix
     top12 = top.head(12).index
     grid = pd.crosstab(named.loc[named["assignee"].isin(top12), "assignee"],
@@ -386,7 +430,16 @@ def problem_solution(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     blocks = [rb.chart(fig, caption=f"Patents per {ctx.problem_label.lower()} (rows) and technology group "
                                     "(columns). A patent addressing several counts in each row.")]
     pairs = grid.stack().sort_values(ascending=False)
-    facts = [f"{ctx.problem_label} counts: " + ", ".join(f"{p} {int(c)}" for p, c in grid.sum(axis=1).items()) + ".",
+    only_other = int((a["problem"].fillna("") == "Other").sum())
+    if only_other > 0.4 * len(a):
+        warn = (f"{only_other} of {len(a)} patents fit none of the plan's {ctx.problem_label.lower()} categories "
+                f"(counted as Other): the categories do not cover this data well, so this map shows little. Add "
+                "categories in the plan (step 3) and run again.")
+        blocks.insert(0, rb.note(warn))
+    else:
+        warn = ""
+    facts = ([warn] if warn else []) + [
+        f"{ctx.problem_label} counts: " + ", ".join(f"{p} {int(c)}" for p, c in grid.sum(axis=1).items()) + ".",
              "Densest combinations: " + "; ".join(f"{p} × {g} {int(c)}" for (p, g), c in pairs.head(6).items()) + "."]
     if ctx.has_clusters:
         top = prob["cluster"].value_counts().head(12).index
@@ -529,16 +582,21 @@ def competitors(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
         return None
     a = a.assign(score=crown_jewel_scores(a))
     total = len(a)
-    hi = int(a["year"].max()) if a["year"].notna().any() else None
-    rows, jewels, facts = [], [], []
+    complete_years = a["year"].dropna()
+    complete_years = complete_years[~complete_years.isin(ctx.incomplete_years)]
+    last = int(complete_years.max()) if len(complete_years) else None
+    window = f"{last - 2}–{last}" if last else ""
+    rows, jewels, facts, pooled = [], [], [], []
     for comp, hits in chosen:
         part = a[a["assignee"].isin(hits)]
-        recent = int((part["year"] >= hi - 2).sum()) if hi else 0
+        recent = int(part["year"].between(last - 2, last).sum()) if last else 0
         row = {"Competitor": comp, "Patents": len(part), "Share": _pct(len(part), total),
                "First–last year": (f"{int(part['year'].min())}–{int(part['year'].max())}"
                                    if part["year"].notna().any() else "n/a"),
-               f"Since {hi - 2}" if hi else "Recent": recent,
+               f"In {window}" if last else "Recent": recent,
                "Main technology group": part["tech_group"].mode().iat[0] if len(part) else ""}
+        if len(hits) > 1 or (hits and hits[0].lower() != comp.lower()):
+            pooled.append(f"{comp} = " + " + ".join(hits))
         if "problem" in part:
             probs = _explode(part, "problem")["problem"].value_counts()
             row[f"Main {ctx.problem_label.lower()}"] = probs.index[0] if len(probs) else ""
@@ -546,7 +604,8 @@ def competitors(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
             row["Largest topic cluster"] = part["cluster"].mode().iat[0]
         rows.append(row)
         facts.append(f"{comp}: {len(part)} patents ({row['Share']}), mainly {row['Main technology group']}, "
-                     f"{recent} in the last three years")
+                     f"{recent} in {window}, the last three complete years"
+                     + (f" (counted together: {' + '.join(hits)})" if len(hits) > 1 else ""))
         for r in part.sort_values("score", ascending=False).head(3).itertuples():
             jewels.append({"Competitor": comp, "Patent ID": r.id, "Year": "" if pd.isna(r.year) else int(r.year),
                            "Title": _short(r.title, 90), "Topic": getattr(r, "topic", ""),
@@ -560,7 +619,12 @@ def competitors(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
         caption += " Include forward citations in the export for a stronger measure."
     jewel_df = pd.DataFrame(jewels).dropna(axis=1, how="all")
     jewel_df = jewel_df.loc[:, [c for c in jewel_df.columns if jewel_df[c].astype(str).str.strip().ne("").any()]]
-    blocks = [rb.table(pd.DataFrame(rows), title="Competitor watch", caption=f"Competitors: {source}."),
+    watch_caption = (f"Competitors: {source}. Recent activity counts the last three complete years ({window}); "
+                     "later years are still incomplete because of the publication lag." if last else
+                     f"Competitors: {source}.")
+    if pooled:
+        watch_caption += " Assignees counted together: " + "; ".join(pooled) + "."
+    blocks = [rb.table(pd.DataFrame(rows), title="Competitor watch", caption=watch_caption),
               rb.table(jewel_df, title="Crown jewels: each competitor's strongest patents", caption=caption)]
     best = pd.DataFrame(jewels).groupby("Competitor", sort=False).head(1) if jewels else pd.DataFrame()
     facts.append("Highest-scoring patent per competitor: " + "; ".join(

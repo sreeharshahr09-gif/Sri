@@ -130,5 +130,5 @@ def test_plan_sees_titles_from_the_export():
     user = llm.calls[0][1]["content"]
     assert "Titles of 2 randomly chosen patents in the uploaded export:\n- Tire comprising aramid cord" in user
     system = llm.calls[0][0]["content"]
-    assert "if the brief lists none, propose 5-8 categories" in system
+    assert "if the brief lists fewer than 4, add categories" in system and "4-8 in total" in system
     assert "name the topic most sample titles share" in system and "off-topic" in system

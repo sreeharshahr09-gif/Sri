@@ -55,8 +55,10 @@ def test_trend_facts_match_the_data(result):
     for year in (2014, 2019, 2024):
         assert f"{year}: {counts.get(year, 0)}" in facts
     assert "2012" not in facts.split("CAGR")[0]  # outside the plan's 2014–2024 window
-    rate, y0, y1 = an.cagr(counts.loc[2014:2024])
-    assert f"CAGR {y0}–{y1} (complete years): {rate * 100:+.1f} % a year" in facts
+    first, last = counts.loc[2014:2016].mean(), counts.loc[2022:2024].mean()
+    rate = (last / first) ** (1 / (2023 - 2015)) - 1
+    assert (f"Growth (3-year averages, complete years): average {first:.1f} patents a year in 2014–2016, "
+            f"{last:.1f} in 2022–2024: {rate * 100:+.1f} % a year.") in facts
     assert "Active/Electronic" in facts
 
 
@@ -87,7 +89,7 @@ def test_incomplete_years_are_shaded_and_left_out_of_growth():
     ctx = an.make_context(frame, AnalysisPlan(), "priority date", ref_year=2021.9)
     assert ctx.incomplete_years == [2020]
     ex = an.trend(frame, ctx)
-    assert "CAGR 2018–2019 (complete years): +100.0 % a year" in ex.facts
+    assert "Growth (complete years): CAGR 2018–2019 +100.0 % a year." in ex.facts
     fig = ex.blocks[0].figure
     assert any(shape.x0 == 2019.5 for shape in fig.layout.shapes)
 
@@ -97,7 +99,7 @@ def test_players_concentration_and_competitor_marks(result):
     shares = frame["assignee"].value_counts(normalize=True)
     hhi = (shares**2).sum() * 10000
     ex = _ex(result, "players")
-    assert f"HHI {hhi:,.0f}" in ex.facts
+    assert f"HHI {hhi:,.0f}, which means fragmented" in ex.facts
     top = frame["assignee"].value_counts().index[0]
     assert ex.facts.startswith(f"Top assignees: {top} {frame['assignee'].value_counts().iloc[0]}")
     bar = ex.blocks[0].figure
@@ -234,3 +236,50 @@ def test_export_date_comes_from_the_latest_publication():
     assert export_date(corpus) == pytest.approx(2026.038, abs=0.01)
     raw["Publication Date"] = [20250115, 20260115]  # numbers: not trusted as dates
     assert export_date(build_corpus(raw, detect_columns(list(raw.columns)))) is None
+
+
+def test_growth_is_not_computed_from_a_tiny_base():
+    text, fact = an.growth(pd.Series({2008: 1, 2009: 0, 2010: 2, 2011: 3, 2012: 5, 2013: 4, 2014: 6}))
+    assert "too few patents at the start for a meaningful growth rate" in fact and "%" not in fact
+    text, fact = an.growth(pd.Series({2015: 10, 2016: 12, 2017: 14, 2018: 15, 2019: 18, 2020: 20}))
+    assert fact.startswith("Growth (3-year averages, complete years): average 12.0 patents a year in 2015–2017")
+
+
+def test_momentum_and_periods_respect_the_publication_lag(result):
+    ex = _ex(result, "roadmap")
+    momentum = next(b for b in ex.blocks if b.title == "Topic clusters: momentum").table
+    window = [c for c in momentum.columns if c.startswith("Patents in ")][0]
+    assert set(momentum["Reading"]) <= {"growing faster than the field", "slowing", "about as the field"}
+    assert (momentum.loc[momentum["Reading"] == "growing faster than the field", "Momentum"] >= 1.2).all()
+    assert (momentum.loc[momentum["Reading"] == "slowing", "Momentum"] <= 0.8).all()
+    assert "A momentum below 1 means slowing, never growth." in ex.facts and window[len("Patents in "):] in ex.facts
+
+
+def test_periods_with_incomplete_years_are_starred():
+    frame = pd.DataFrame({"year": [2015.0, 2016, 2018, 2019, 2021, 2022, 2023, 2024] * 3, "tech_group": "A",
+                          "assignee": "X", "country": "EP", "title": "t", "id": "1", "first_claim": "", "cited_by": np.nan})
+    ctx = an.make_context(frame, AnalysisPlan(), "priority date", ref_year=2025.5)
+    assert ctx.incomplete_years == [2024]
+    ex = an.roadmap(frame, ctx)
+    grid = ex.blocks[1].table
+    assert list(grid.columns)[-1].endswith("*") and "is not (yet) a decline" in ex.blocks[1].caption
+
+
+def test_pooled_competitors_are_disclosed():
+    plan = AnalysisPlan.from_dict({**MODEL_PLAN, "competitors": ["Sumitomo"]})
+    frame = pd.DataFrame({"assignee": ["Sumitomo Rubber"] * 4 + ["Sumitomo Electric"] * 2 + ["Bridgestone"] * 3,
+                          "year": [2018.0] * 9, "tech_group": "A", "country": "JP", "title": "t", "id": [str(i) for i in range(9)],
+                          "first_claim": "x", "cited_by": np.nan})
+    ctx = an.make_context(frame, plan, "priority date", ref_year=2030)
+    ex = an.competitors(frame, ctx)
+    assert "Assignees counted together: Sumitomo = Sumitomo Rubber + Sumitomo Electric" in ex.blocks[0].caption
+    assert "(counted together: Sumitomo Rubber + Sumitomo Electric)" in ex.facts
+
+
+def test_too_many_other_answers_are_called_out():
+    plan = AnalysisPlan.from_dict({**MODEL_PLAN, "problems": [{"name": "Weight reduction"}]})
+    frame = pd.DataFrame({"problem": ["Other"] * 7 + ["Weight reduction"] * 3, "tech_group": "Structural/Design",
+                          "year": 2020.0, "assignee": "X", "country": "EP", "title": "t", "id": "1", "first_claim": "",
+                          "cited_by": np.nan})
+    ex = an.problem_solution(frame, an.make_context(frame, plan, "priority date", ref_year=2030))
+    assert ex.blocks[0].kind == "note" and ex.facts.startswith("7 of 10 patents fit none of the plan's")
