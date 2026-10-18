@@ -124,39 +124,37 @@ class LocalLLM:
             self.model = ids[0]
         return self.model
 
+    label = "llama-server"
+
     def chat(self, system: str, user: str, max_tokens: int = 2000,
              json_mode: bool | None = None) -> str:
         if json_mode is None:
             json_mode = "json" in system.lower()
         payload: dict[str, Any] = {
             "model": self._model_id(),
-            "messages": [{"role": "system", "content": system},
-                         {"role": "user", "content": user}],
+            "messages": [{"role": "system", "content": self._outgoing(system)},
+                         {"role": "user", "content": self._outgoing(user)}],
             "temperature": self.temperature, "max_tokens": int(max_tokens), "stream": False,
         }
         if self.disable_thinking:
-            # Qwen3-family chat templates (with llama-server --jinja) honour this switch.
-            payload["chat_template_kwargs"] = {"enable_thinking": False}
+            self._thinking_off(payload)
         if json_mode and self._json_mode_ok:
             payload["response_format"] = {"type": "json_object"}
 
         started = time.monotonic()
-        response = self._post(payload)
+        response = self._send(payload)
         if response.status_code == 400 and "response_format" in payload and \
                 "context" not in response.text.lower():
-            # Older builds reject response_format; prompts still ask for JSON.
+            # Some servers/models reject response_format; prompts still ask for JSON.
             self._json_mode_ok = False
             payload.pop("response_format")
-            response = self._post(payload)
+            response = self._send(payload)
         if response.status_code >= 400:
-            detail = response.text[:300]
-            if "context" in detail.lower() or "too long" in detail.lower():
-                raise LLMError("The prompt is larger than the llama-server context window. "
-                               "Restart llama-server with a larger --ctx-size (16384 recommended) "
-                               f"or shorten the inputs. Server said: {detail}")
-            raise LLMError(f"llama-server returned HTTP {response.status_code}: {detail}")
+            self._raise_http_error(response)
 
         data = response.json()
+        if isinstance(data.get("error"), dict):  # some gateways report errors with HTTP 200
+            raise LLMError(f"{self.label} error: {str(data['error'].get('message', data['error']))[:300]}")
         self.stats.calls += 1
         self.stats.seconds += time.monotonic() - started
         usage = data.get("usage") or {}
@@ -167,22 +165,256 @@ class LocalLLM:
         message = choice.get("message") or {}
         content = strip_thinking(message.get("content") or "")
         if not content:
-            if message.get("reasoning_content") or self.last_finish_reason == "length":
-                raise LLMError("The model spent its whole output budget thinking and returned no "
-                               "answer. Keep 'Disable model thinking' on, or start llama-server "
-                               "with --reasoning-budget 0.")
-            raise LLMError("The local model returned an empty answer.")
-        return content
+            if message.get("reasoning_content") or message.get("reasoning") or \
+                    self.last_finish_reason == "length":
+                raise LLMError(self._thinking_hint())
+            raise LLMError(f"The {self.label} model returned an empty answer.")
+        return self._incoming(content)
+
+    # --- provider hooks -----------------------------------------------------------------------
+    def _thinking_off(self, payload: dict[str, Any]) -> None:
+        # Qwen3-family chat templates (with llama-server --jinja) honour this switch.
+        payload["chat_template_kwargs"] = {"enable_thinking": False}
+
+    def _thinking_hint(self) -> str:
+        return ("The model spent its whole output budget thinking and returned no answer. Keep "
+                "'Disable model thinking' on, or start llama-server with --reasoning-budget 0.")
+
+    def _outgoing(self, text: str) -> str:
+        return text
+
+    def _incoming(self, text: str) -> str:
+        return text
+
+    def _send(self, payload: dict[str, Any]) -> requests.Response:
+        return self._post(payload)
+
+    def _raise_http_error(self, response: requests.Response) -> None:
+        detail = response.text[:300]
+        if "context" in detail.lower() or "too long" in detail.lower():
+            raise LLMError("The prompt is larger than the llama-server context window. "
+                           "Restart llama-server with a larger --ctx-size (16384 recommended) "
+                           f"or shorten the inputs. Server said: {detail}")
+        raise LLMError(f"llama-server returned HTTP {response.status_code}: {detail}")
 
     def _post(self, payload: dict[str, Any]) -> requests.Response:
         try:
             return self.session.post(self.base_url + "/chat/completions", json=payload,
                                      timeout=(15, self.timeout))
         except requests.ConnectionError as exc:
-            raise LLMError(f"Cannot reach llama-server at {self.base_url}. Is it running?") from exc
+            raise LLMError(f"Cannot reach {self.label} at {self.base_url}. Is it running?") from exc
         except requests.Timeout as exc:
-            raise LLMError("llama-server did not answer in time. It may be busy serving "
-                           "another app; try again.") from exc
+            raise LLMError(f"{self.label} did not answer in time. It may be busy; try again.") from exc
+
+
+# --- OpenRouter (optional cloud backend) -------------------------------------------------------
+
+OPENROUTER_URL = "https://openrouter.ai/api/v1"
+DEFAULT_OPENROUTER_MODEL = "nvidia/nemotron-nano-9b-v2:free"
+_PLACEHOLDER = re.compile(r"\[\s*((?:NAME|EMAIL|PHONE|LINK|CONTACT)[_ ]\d+)\s*\]", re.I)
+
+
+class Redactor:
+    """Replaces personal details with placeholders before text leaves the PC; restores them after.
+
+    Literal values (name, header contact lines) are registered from the CV; e-mail addresses,
+    phone numbers and profile links are also caught by pattern wherever they appear."""
+
+    _PATTERNS = (
+        ("EMAIL", re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")),
+        ("LINK", re.compile(r"(?i)\b(?:https?://|www\.)[^\s)>\]|]+|\b(?:linkedin|github|researchgate)"
+                            r"\.(?:com|net)/[^\s)>\]|]+")),
+        ("PHONE", re.compile(r"(?<![\w/])\+?\d[\d ()-]{7,}\d(?![\w/])")),
+    )
+
+    def __init__(self) -> None:
+        self.values: dict[str, str] = {}   # placeholder -> original
+        self._literals: list[tuple[str, str]] = []
+
+    def _token(self, kind: str, value: str) -> str:
+        for token, original in self.values.items():
+            if original == value:
+                return token
+        count = sum(1 for t in self.values if t.startswith(f"[{kind}_"))
+        token = f"[{kind}_{count + 1}]"
+        self.values[token] = value
+        return token
+
+    def add_name(self, name: str) -> None:
+        name = re.sub(r",?\s*(Ph\.?\s?D\.?|MBA|P\.?E\.?)$", "", name.strip(" ,*#"), flags=re.I).strip()
+        if len(name) >= 4:
+            self._literals.append((name, "NAME"))
+
+    def add_contact(self, line: str) -> None:
+        value = re.sub(r"^\s*(address|location|mobile|phone|tel|email|e-mail)\s*:\s*", "", line.strip(), flags=re.I)
+        if len(value) >= 6 and not self._PATTERNS[0][1].fullmatch(value):
+            self._literals.append((value, "CONTACT"))
+
+    def redact(self, text: str) -> str:
+        for value, kind in sorted(self._literals, key=lambda x: -len(x[0])):
+            # Each spelling ("Jane Doe" / "JANE DOE") gets its own placeholder so it comes back unchanged.
+            text = re.sub(re.escape(value), lambda m: self._token(kind, m.group(0)), text, flags=re.I)
+        for kind, pattern in self._PATTERNS:
+            text = pattern.sub(lambda m: self._token(kind, m.group(0)) if self._personal(kind, m.group(0))
+                               else m.group(0), text)
+        return text
+
+    @staticmethod
+    def _personal(kind: str, value: str) -> bool:
+        if kind != "PHONE":
+            return True
+        # '+91-9900434319' or '(555) 123-4567' are phones; '2018 - 2021' or '1200 2009 2011' are not.
+        if len(re.sub(r"\D", "", value)) < 9:
+            return False
+        groups = [re.sub(r"\D", "", g) for g in re.split(r"\s+", value.strip())]
+        return value.lstrip().startswith("+") or any(len(g) >= 6 for g in groups)
+
+    def restore(self, text: str) -> str:
+        def back(m: re.Match) -> str:
+            key = "[" + re.sub(r"\s+", "_", m.group(1).upper()) + "]"
+            return self.values.get(key, m.group(0))
+        return _PLACEHOLDER.sub(back, text)
+
+
+class OpenRouterLLM(LocalLLM):
+    """OpenRouter's OpenAI-compatible API. Opt-in only: text is sent to openrouter.ai and the
+    model provider. Free (':free') models are rate limited and may log prompts."""
+
+    label = "OpenRouter"
+
+    def __init__(self, api_key: str, model: str = DEFAULT_OPENROUTER_MODEL,
+                 disable_thinking: bool = True, temperature: float = 0.2, timeout: float = 300,
+                 redactor: Redactor | None = None, min_interval: float = 3.2,
+                 base_url: str = OPENROUTER_URL):
+        if not api_key or not api_key.strip():
+            raise ValueError("An OpenRouter API key is needed (openrouter.ai → Keys).")
+        parsed = urlparse(base_url)
+        if base_url != OPENROUTER_URL and parsed.hostname not in LOCAL_HOSTS:  # loopback only for tests
+            raise ValueError("Only the official OpenRouter endpoint is allowed.")
+        self.base_url = base_url.rstrip("/")
+        self.root_url = self.base_url
+        self.model = model.strip() or DEFAULT_OPENROUTER_MODEL
+        self.disable_thinking = disable_thinking
+        self.temperature = temperature
+        self.timeout = timeout
+        self.session = requests.Session()  # system proxy settings apply for internet access
+        self.session.headers.update({"Authorization": f"Bearer {api_key.strip()}",
+                                     "HTTP-Referer": "http://localhost",
+                                     "X-Title": "Local Resume Agent"})
+        self.stats = UsageStats()
+        self.last_finish_reason = ""
+        self._json_mode_ok = True
+        self._n_ctx = None
+        self._reasoning_off_ok = True
+        self.redactor = redactor
+        self.min_interval = min_interval  # free models allow 20 requests per minute
+        self._last_call = 0.0
+        self._catalog: list[dict[str, Any]] | None = None
+
+    def __repr__(self) -> str:  # never show the key
+        return f"OpenRouterLLM(model={self.model!r})"
+
+    def catalog(self) -> list[dict[str, Any]]:
+        if self._catalog is None:
+            try:
+                r = self.session.get(self.base_url + "/models", timeout=20)
+                r.raise_for_status()
+            except requests.RequestException as exc:
+                raise LLMError(f"Cannot reach OpenRouter: {exc}") from exc
+            self._catalog = [m for m in r.json().get("data", []) if m.get("id")]
+        return self._catalog
+
+    def models(self) -> list[str]:
+        return [m["id"] for m in self.catalog()]
+
+    def free_models(self) -> list[str]:
+        def free(m: dict[str, Any]) -> bool:
+            price = m.get("pricing") or {}
+            return m["id"].endswith(":free") or (str(price.get("prompt")) in ("0", "0.0") and
+                                                  str(price.get("completion")) in ("0", "0.0"))
+        ids = [m["id"] for m in self.catalog() if free(m) and "embed" not in m["id"]
+               and "rerank" not in m["id"] and "safety" not in m["id"]]
+        return sorted(ids, key=lambda i: (not i.startswith("nvidia/"), i))
+
+    def context_size(self) -> int:
+        if self._n_ctx is None:
+            n_ctx = 0
+            try:
+                entry = next((m for m in self.catalog() if m["id"] == self.model), {})
+                n_ctx = int(entry.get("context_length") or 0)
+            except Exception:
+                n_ctx = 0
+            self._n_ctx = n_ctx if n_ctx >= 1024 else 32768
+        return self._n_ctx
+
+    def _model_id(self) -> str:
+        return self.model
+
+    def _thinking_off(self, payload: dict[str, Any]) -> None:
+        if self._reasoning_off_ok:
+            payload["reasoning"] = {"effort": "none", "exclude": True}
+        else:  # model insists on reasoning: hide it and leave room for it
+            payload["reasoning"] = {"exclude": True}
+            payload["max_tokens"] = int(payload["max_tokens"] * 2 + 1000)
+
+    def _thinking_hint(self) -> str:
+        return ("The OpenRouter model used its whole output budget on reasoning. Try another model, "
+                "or keep 'Disable model thinking' on.")
+
+    def _outgoing(self, text: str) -> str:
+        return self.redactor.redact(text) if self.redactor else text
+
+    def _incoming(self, text: str) -> str:
+        return self.redactor.restore(text) if self.redactor else text
+
+    def _send(self, payload: dict[str, Any]) -> requests.Response:
+        for attempt in range(4):
+            wait = self.min_interval - (time.monotonic() - self._last_call)
+            if wait > 0:
+                time.sleep(wait)
+            self._last_call = time.monotonic()
+            response = self._post(payload)
+            text = response.text.lower()
+            if response.status_code == 400 and "reasoning" in text and \
+                    payload.get("reasoning", {}).get("effort") == "none":
+                self._reasoning_off_ok = False  # this model cannot switch reasoning off
+                self._thinking_off(payload)
+                continue
+            if response.status_code == 429:
+                if "per-day" in text or "per day" in text or "daily" in text:
+                    raise LLMError("OpenRouter's daily limit for free models is reached (50 requests/day, "
+                                   "or 1,000/day after buying $10 of credits). Switch to your local "
+                                   "model or try again tomorrow.")
+                retry_after = response.headers.get("Retry-After", "")
+                delay = float(retry_after) if retry_after.replace(".", "", 1).isdigit() else 5 * 2 ** attempt
+                time.sleep(min(delay, 60))
+                continue
+            if response.status_code in (502, 503) and attempt < 2:
+                time.sleep(3 * (attempt + 1))
+                continue
+            return response
+        return response
+
+    def _raise_http_error(self, response: requests.Response) -> None:
+        detail = response.text[:300]
+        if response.status_code == 401:
+            raise LLMError("OpenRouter rejected the API key (HTTP 401). Check the key in the sidebar.")
+        if response.status_code == 402:
+            raise LLMError("OpenRouter says this model needs credits (HTTP 402). Pick a ':free' model.")
+        if response.status_code == 429:
+            raise LLMError("OpenRouter is rate limiting requests (HTTP 429) even after waiting. "
+                           "Free models allow about 20 requests per minute; try again shortly.")
+        if "context" in detail.lower():
+            raise LLMError(f"The prompt is too long for this OpenRouter model: {detail}")
+        raise LLMError(f"OpenRouter returned HTTP {response.status_code}: {detail}")
+
+
+def make_llm(provider: str, *, base_url: str = "", model: str = "", disable_thinking: bool = True,
+             api_key: str = "", redactor: Redactor | None = None) -> LocalLLM:
+    if provider == "openrouter":
+        return OpenRouterLLM(api_key, model or DEFAULT_OPENROUTER_MODEL, disable_thinking,
+                             redactor=redactor)
+    return LocalLLM(base_url or "http://127.0.0.1:8080/v1", model, disable_thinking)
 
 
 def ask_json(llm: Any, system: str, prompt: str, max_tokens: int,

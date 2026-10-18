@@ -8,8 +8,9 @@ for p in ${LLAMA_PORT:-8080 8090}; do
   if curl -fsS --max-time 5 "http://127.0.0.1:$p/v1/models" >/dev/null 2>&1; then port=$p; break; fi
 done
 if [ -z "$port" ]; then
-  echo "No llama-server answered on 127.0.0.1:8080 or :8090 (/v1/models). Start it first." >&2
-  exit 1
+  echo "No local llama-server answered on 127.0.0.1:8080 or :8090 (/v1/models)." >&2
+  echo "Starting anyway: choose 'OpenRouter' in the app sidebar, or start llama-server and restart." >&2
+  port=8080
 fi
 
 if [ ! -x .venv/bin/python ]; then

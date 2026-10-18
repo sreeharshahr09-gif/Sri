@@ -13,6 +13,12 @@ rem Or specify a fixed port, e.g. set "LLAMA_PORT=8090".
 set "LLAMA_PORT=auto"
 rem Other Research Agent commonly uses 8501, so start this on 8502.
 set "APP_PORT=8502"
+rem OPTIONAL cloud model (OpenRouter). Leave empty to use only the local model.
+rem The key stays on this PC; it is only sent to openrouter.ai when you choose
+rem "OpenRouter" in the app and tick the consent box.
+rem To use it, delete "rem " at the start of the next line and paste your key:
+rem set "OPENROUTER_API_KEY=sk-or-v1-paste-your-key-here"
+if not defined OPENROUTER_MODEL set "OPENROUTER_MODEL=nvidia/nemotron-nano-9b-v2:free"
 rem =============================================================
 
 echo =====================================================
@@ -51,6 +57,7 @@ set "LLM_BASE_URL=http://127.0.0.1:%API_PORT%/v1"
 echo API endpoint: %LLM_BASE_URL%
 echo.
 
+:select_python
 rem --- 2. Select Python. Prefer an existing working project venv,
 rem then explicitly configured Anaconda, then another Python 3.11+.
 set "VENV_PY=%~dp0.venv\Scripts\python.exe"
@@ -168,12 +175,13 @@ goto fail
 echo [ERROR] Windows curl.exe was not found. Install/enable curl or use Windows 10/11.
 goto fail
 :no_server
-echo [ERROR] No compatible llama.cpp model API answered on the expected local port(s).
-echo Start your existing Research Agent's model server first.
-echo Confirm http://127.0.0.1:8080/v1/models in your browser.
-echo Or set LLAMA_PORT=8090 in the SETTINGS block if that is your server.
-echo An occupied port is NOT enough: /v1/models must answer successfully.
-goto fail
+echo [WARNING] No local llama.cpp model API answered on the expected port(s).
+echo To use your local model: start llama-server and check http://127.0.0.1:8080/v1/models
+echo (or set LLAMA_PORT in the SETTINGS block), then restart this launcher.
+echo Starting the app anyway: you can choose "OpenRouter" in the app's sidebar.
+echo.
+set "LLM_BASE_URL=http://127.0.0.1:8080/v1"
+goto select_python
 :no_python
 echo [ERROR] Python 3.11+ was not found.
 echo Check C:\ProgramData\anaconda3\python.exe and update PYTHON in SETTINGS.

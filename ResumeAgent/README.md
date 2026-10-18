@@ -5,7 +5,8 @@ actually proves, then rewrites your résumé and cover letter in a loop with you
 llama.cpp model**. Each draft is fact-checked before it's accepted. You get editable Word files,
 PDFs, plain text for web forms, an audit CSV/JSON and a ZIP, all saved locally.
 
-No cloud API, no OpenAI key, and no LangChain. Inference goes only to `127.0.0.1`.
+No LangChain and no paid API. By default inference goes only to `127.0.0.1`. You can
+**optionally** switch to OpenRouter's free cloud models (for example NVIDIA Nemotron); see below.
 
 ## What "100% match" means here
 
@@ -85,6 +86,33 @@ macOS/Linux: `./start.sh`.
 - `llama_server_example_windows.bat` is an **optional** template for when no server is running,
   including `--n-cpu-moe` so a 35B-A3B MoE model fits in 8 GB of VRAM. Check the paths first.
 
+## Optional: OpenRouter cloud models (e.g. NVIDIA Nemotron, free)
+
+The sidebar's **Where the model runs** switch selects either your local llama.cpp model (the default)
+or **OpenRouter**. To use OpenRouter:
+
+1. Create a key at openrouter.ai → Keys. Either paste it into the sidebar (it stays in memory only)
+   or put it in `start_windows.bat`: remove `rem ` from the `OPENROUTER_API_KEY` line and paste it there.
+2. Click **List free models**. NVIDIA models are listed first, for example
+   `nvidia/nemotron-nano-9b-v2:free` (128K context) or `nvidia/nemotron-3-nano-30b-a3b:free`.
+   You can also type any model ID.
+3. Tick the consent box, then click **Test generation** before a real run.
+
+Things to know:
+
+- **Privacy:** the JD and CV text go to OpenRouter and the model provider. NVIDIA's free endpoints say
+  that prompts and outputs are logged to improve their models. With **Hide my name, email, phone,
+  address and links** ticked (the default), those details are replaced by placeholders such as
+  `[EMAIL_1]` / `[NAME_1]` before sending and restored in the answers, so your documents still contain
+  them. Employers, dates and achievements are not hidden, because the model needs them.
+- **Limits:** free models allow about 20 requests/minute and 50 requests/day (1,000/day once you have
+  bought $10 of credits). One tailoring run uses roughly 15–40 requests. The app paces requests,
+  waits and retries on rate limits, and tells you when the daily cap is reached.
+- **Same safeguards:** quote checks, fact audits, verbatim sections and the scoring are identical for
+  both providers. Only the model doing the writing changes.
+- Only the official `https://openrouter.ai/api/v1` endpoint is accepted. The key is never written to
+  the report, the ZIP or the log.
+
 ## Input tips
 
 - DOCX, text-based PDF, TXT and MD are supported, and so is pasting. Scanned PDFs need OCR first.
@@ -102,7 +130,7 @@ macOS/Linux: `./start.sh`.
 ```
 app.py            Streamlit UI and workflow
 engine.py         analysis, scoring, checks, résumé loop, cover-letter loop
-llm_client.py     loopback-only llama-server client (JSON retries, thinking switch, /props)
+llm_client.py     llama-server client + optional OpenRouter client (pacing, retries, redaction)
 textutils.py      file reading, section detection, chunking, phrase/number/term matching
 exporters.py      Word, offline PDF (Word COM or LibreOffice), TXT, ZIP, local save
 start_windows.bat launcher (reuses running llama-server + Anaconda/.venv)
@@ -115,14 +143,14 @@ tests/            offline tests with a scripted fake model and a fake HTTP llama
 python -m unittest discover -s tests -v
 ```
 
-These are 54 offline tests. The model is **mocked**: a scripted fake model, plus a fake
-llama-server over real HTTP for the client. They cover JD quote validation, long-JD and
+These are 78 offline tests. The model is **mocked**: a scripted fake model, plus fake
+llama-server and OpenRouter servers over real HTTP for the clients. They cover JD quote validation, long-JD and
 long-CV chunking (evidence found past the old 9,500-character limit), confirmed facts, malformed
 JSON retries, `<think>` stripping, the context-overflow message, invented numbers/tools/contacts,
 unsupported JD terms, dropped dates and roles, retrying with feedback, verbatim publications, the
 Skills patch (supported terms only, never partial), scoring maths, the cover-letter checks,
 DOCX/TXT/ZIP export, and a PDF text-order check (runs only when LibreOffice is installed).
 
-**Not yet verified:** a live run against your Qwen3.6-35B-A3B model, and the Word-COM PDF
+**Not yet verified:** a live run against your Qwen3.6-35B-A3B model or a real OpenRouter model, and the Word-COM PDF
 path on your PC. Do your first run with `samples/` (fictional), then with your real CV.
 Read every claim before you send an application.

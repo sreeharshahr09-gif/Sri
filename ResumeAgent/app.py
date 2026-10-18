@@ -13,6 +13,8 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from llm_client import DEFAULT_OPENROUTER_MODEL, Redactor, make_llm
+from textutils import contact_lines, split_header, split_sections
 from engine import (
     DEFAULT_LENGTH, LENGTH_OPTIONS, LETTER_WORDS, LocalLLM, analyze, build_source, letter_metrics,
     optimize, optimize_cover_letter, read_file, requirements_from, review_text, score_resume,
@@ -50,32 +52,63 @@ if "facts_append" in ss:
     ss["facts"] = (ss["facts"].rstrip() + "\n" + ss.pop("facts_append")).strip()
 
 st.title("Local Job Application Agent")
-st.caption("Paste a job description and your CV → evidence audit → iterative, fact-checked tailoring "
-           "→ cover letter → Word / PDF / ZIP. Runs on your own llama.cpp model; nothing leaves this PC.")
+CLOUD = "OpenRouter (cloud, opt-in)"
 
 # --- sidebar --------------------------------------------------------------------------------------
 with st.sidebar:
-    st.header("Local model (llama.cpp)")
-    endpoint = st.text_input("llama-server URL", os.environ.get("LLM_BASE_URL", "http://127.0.0.1:8080/v1"),
-                             help="Your already running llama-server. Only localhost addresses are accepted.")
-    model = st.text_input("Model ID (blank = server default)", "")
-    no_think = st.checkbox("Disable model thinking (recommended for Qwen3)", value=True,
-                           help="Sends enable_thinking=false so reasoning tokens don't use up the "
-                                "output budget. Turn off only for models without this switch.")
+    st.header("Model")
+    provider_label = st.radio("Where the model runs", ["Local llama.cpp (private)", CLOUD],
+                              help="Local keeps everything on this PC. OpenRouter sends the job description "
+                                   "and your CV text to openrouter.ai and the model provider.")
+    provider = "openrouter" if provider_label == CLOUD else "local"
+    no_think = st.checkbox("Disable model thinking (recommended)", value=True,
+                           help="Local: sends enable_thinking=false (Qwen3 + llama-server --jinja). "
+                                "OpenRouter: asks for reasoning effort 'none' where the model allows it.")
+    endpoint, model, api_key, redact, consent = "", "", "", True, True
+    if provider == "local":
+        endpoint = st.text_input("llama-server URL", os.environ.get("LLM_BASE_URL", "http://127.0.0.1:8080/v1"),
+                                 help="Your already running llama-server. Only localhost addresses are accepted.")
+        model = st.text_input("Model ID (blank = server default)", "")
+    else:
+        api_key = st.text_input("OpenRouter API key", os.environ.get("OPENROUTER_API_KEY", ""), type="password",
+                                help="From openrouter.ai → Keys. Kept in memory only; never saved or exported. "
+                                     "Tip: set OPENROUTER_API_KEY in start_windows.bat instead of typing it.")
+        choices = ss.get("or_free_models") or [os.environ.get("OPENROUTER_MODEL", DEFAULT_OPENROUTER_MODEL)]
+        picked = st.selectbox("Model", choices, help="Click 'List free models' to load the current catalogue.")
+        model = st.text_input("…or type a model ID", "", placeholder="e.g. nvidia/nemotron-nano-9b-v2:free") or picked
+        redact = st.checkbox("Hide my name, email, phone, address and links from the cloud model", value=True,
+                             help="They are replaced by placeholders such as [EMAIL_1] before sending and put back "
+                                  "in the answers, so your documents still contain them.")
+        consent = st.checkbox("I understand the JD and my CV text are sent to OpenRouter and the model provider "
+                              "(free models may log prompts to improve their models).", value=False)
+        st.caption("Free models: about 20 requests/minute and 50/day (1,000/day after buying $10 of credits). "
+                   "One tailoring run uses roughly 15-40 requests.")
     c1, c2 = st.columns(2)
-    if c1.button("Check server"):
+    check_label = "Check server" if provider == "local" else "List free models"
+    if c1.button(check_label):
         try:
-            probe = LocalLLM(endpoint, model, no_think)
-            ids = probe.models()
-            st.success(f"Connected · {', '.join(ids) or 'no model id'} · context {probe.context_size():,} tokens")
-            if probe.context_size() < 8192:
-                st.warning("Context below 8k tokens: long CVs will be processed in many small parts. "
-                           "Consider --ctx-size 16384.")
+            if provider == "local":
+                probe = LocalLLM(endpoint, model, no_think)
+                ids = probe.models()
+                st.success(f"Connected · {', '.join(ids) or 'no model id'} · context {probe.context_size():,} tokens")
+                if probe.context_size() < 8192:
+                    st.warning("Context below 8k tokens: long CVs will be processed in many small parts. "
+                               "Consider --ctx-size 16384.")
+            else:
+                free = make_llm("openrouter", api_key=api_key, model=model).free_models()
+                if not free:
+                    st.warning("No free models found in the OpenRouter catalogue.")
+                else:
+                    ss["or_free_models"] = free
+                    st.success(f"{len(free)} free models found (NVIDIA first).")
+                    st.rerun()
         except Exception as exc:
             st.error(f"Connection failed: {exc}")
     if c2.button("Test generation"):
         try:
-            probe = LocalLLM(endpoint, model, no_think)
+            if provider == "openrouter" and not consent:
+                raise ValueError("Tick the OpenRouter consent box first.")
+            probe = make_llm(provider, base_url=endpoint, model=model, disable_thinking=no_think, api_key=api_key)
             started = time.monotonic()
             reply = probe.chat("Answer in one sentence.", "What is a cover letter?", max_tokens=80, json_mode=False)
             st.success(f"Generation works ({time.monotonic() - started:.1f}s)")
@@ -96,6 +129,11 @@ with st.sidebar:
     st.header("Saving")
     autosave = st.checkbox("Also save every package to a local folder", value=True)
     out_dir = st.text_input("Output folder", DEFAULT_OUTPUT)
+
+st.caption("Paste a job description and your CV → evidence audit → iterative, fact-checked tailoring "
+           "→ cover letter → Word / PDF / ZIP. " +
+           ("Runs on your own llama.cpp model; nothing leaves this PC." if provider == "local" else
+            f"Using OpenRouter model {model}" + (" with your contact details hidden." if redact else ".")))
 
 # --- inputs ------------------------------------------------------------------------------------------
 left, right = st.columns(2)
@@ -148,7 +186,30 @@ def read_inputs() -> tuple[str, str]:
     return jd, cv
 
 
-def new_llm() -> LocalLLM:
+def build_redactor(cv: str, facts: str) -> Redactor:
+    """Register the candidate's name and header contact lines found in the CV."""
+    redactor = Redactor()
+    sections = split_sections(cv)
+    if sections[0].kind == "header":
+        name, contacts, _ = split_header(sections[0].body)
+    else:
+        lines = [l for l in cv.splitlines() if l.strip()]
+        name, contacts = (lines[0] if lines else ""), []
+    contacts += [l for s in sections if s.kind == "contact" for l in contact_lines(s.body)]
+    redactor.add_name(name)
+    for line in contacts:
+        if len(line) <= 70:  # short lines are contact details; long ones are the headline
+            redactor.add_contact(line)
+    return redactor
+
+
+def new_llm(cv: str = "", facts: str = ""):
+    if provider == "openrouter":
+        if not consent:
+            raise ValueError("OpenRouter is selected: tick the consent box in the sidebar first "
+                             "(or switch back to the local model).")
+        return make_llm("openrouter", model=model, disable_thinking=no_think, api_key=api_key,
+                        redactor=build_redactor(cv, facts) if redact else None)
     return LocalLLM(endpoint, model, no_think)
 
 
@@ -165,7 +226,7 @@ class Progress:
 
 def cached_analysis(jd: str, cv: str, facts: str):
     item = ss.get("analysis")
-    key = fingerprint(jd, cv, facts, endpoint, model)
+    key = fingerprint(jd, cv, facts, provider, endpoint, model)
     return (item if item and item["key"] == key else None), key
 
 
@@ -234,7 +295,7 @@ if do_analyze:
     ss.pop("result", None)
     try:
         jd_text, cv_text = read_inputs()
-        llm = new_llm()
+        llm = new_llm(cv_text, ss["facts"])
         with st.status("Analyzing the job against your CV…", expanded=True) as box:
             run_analysis(jd_text, cv_text, ss["facts"], llm, Progress(box, llm))
             box.update(label=f"Analysis done · {llm.stats.summary()}", state="complete", expanded=False)
@@ -248,7 +309,7 @@ if do_tailor:
     try:
         jd_text, cv_text = read_inputs()
         facts = ss["facts"]
-        llm = new_llm()
+        llm = new_llm(cv_text, facts)
         with st.status("Tailoring your application…", expanded=True) as box:
             progress = Progress(box, llm)
             analysis = run_analysis(jd_text, cv_text, facts, llm, progress)
@@ -271,6 +332,8 @@ if do_tailor:
                     result["letter_error"] = f"Cover letter could not be completed: {exc}"
             progress("Building Word / PDF / ZIP files…")
             result["llm_usage"] = asdict(llm.stats)
+            result["model_used"] = {"provider": provider, "model": getattr(llm, "model", model),
+                                    "contact_details_hidden": bool(provider == "openrouter" and redact)}
             result["progress_log"] = progress.lines
             build_exports(result)
             box.update(label=f"Done · {llm.stats.summary()}", state="complete", expanded=False)
@@ -452,6 +515,11 @@ if result:
                 "but a local model can still misjudge whether a quote really proves a requirement.")
 
     elif view == "Run log":
+        used = result.get("model_used") or {}
+        if used:
+            st.write(f"**Model:** {used.get('model') or 'server default'} via "
+                     f"{'OpenRouter (cloud)' if used.get('provider') == 'openrouter' else 'local llama.cpp'}"
+                     + (" · contact details were hidden from the model" if used.get("contact_details_hidden") else ""))
         usage = result.get("llm_usage") or {}
         st.write(f"**Model usage:** {usage.get('calls', 0)} calls · {usage.get('prompt_tokens', 0):,} prompt "
                  f"tokens · {usage.get('completion_tokens', 0):,} output tokens · "
