@@ -197,7 +197,7 @@ def section_blocks(sec: Section) -> list[rb.Block]:
         if sec.flagged:
             blocks.append(rb.note("Check before quoting: these figures in the text above were not found in the "
                                   f"computed results: {', '.join(sec.flagged)}."))
-        blocks.append(rb.caption("Text written by the local model from the computed results below; numbers are "
+        blocks.append(rb.caption("Text written by the model from the computed results below; numbers are "
                                  "checked against them."))
     elif sec.note:
         blocks.append(rb.caption(sec.note))

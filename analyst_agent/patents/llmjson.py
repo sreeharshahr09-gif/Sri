@@ -1,4 +1,4 @@
-"""Asking the local model for JSON and getting usable JSON back."""
+"""Asking the model for JSON and getting usable JSON back."""
 
 from __future__ import annotations
 

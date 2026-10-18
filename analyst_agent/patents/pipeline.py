@@ -11,6 +11,7 @@ from typing import Any, Callable
 import numpy as np
 import pandas as pd
 
+from ..llm import is_openrouter
 from . import analytics as an
 from . import enrich
 from . import narrative as nar
@@ -61,6 +62,7 @@ class LandscapeResult:
     question_runs: list = field(default_factory=list)  # (question, AgentRun) for the brief-specific questions
     all_facts: str = ""
     model_name: str = ""
+    stop_reason: str = ""  # why the run stopped early, if not at the user's request
     methods: dict[str, str] = field(default_factory=dict)  # method -> description, for the methodology
 
 
@@ -120,7 +122,8 @@ def run_landscape(
             narrative_stage(result, llm, emit)
     except Cancelled:
         result.status = "cancelled"
-    result.model_name = getattr(getattr(llm, "config", None), "model", "") if llm is not None else ""
+    cfg = getattr(llm, "config", None)
+    result.model_name = (cfg.model + (" via OpenRouter" if is_openrouter(cfg.base_url) else "")) if cfg else ""
     result.enriched = enriched_table(result)
     result.blocks = assemble_blocks(result, options)
     result.duration_s = time.perf_counter() - started
@@ -338,6 +341,7 @@ def extraction_stage(result: LandscapeResult, llm, options: PipelineOptions, emi
                                f"{reasons.index[0].removeprefix('failed: ')}). Run the analysis again to retry "
                                "them; finished patents are kept.")
     if res.stopped:
+        result.stop_reason = res.stop_reason
         raise Cancelled()
 
 

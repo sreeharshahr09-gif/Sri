@@ -11,8 +11,13 @@ rem It is read after the defaults below, and updates of the app never overwrite 
 rem Full path of llama-server.exe
 set "LLAMA_SERVER=D:\llama.cpp\llama-server.exe"
 rem Full path of the model file to start, OR the word open to use whichever model server is
-rem already running: start llama-server yourself with any model, and the launcher waits for it.
+rem already running: start llama-server yourself with any model, and the launcher waits for it,
+rem OR the word cloud to use a cloud model through OpenRouter (settings below) and nothing on this PC.
 set "MODEL=D:\llama.cpp\models\Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL.gguf"
+rem Only for the cloud: your OpenRouter API key (openrouter.ai, Keys) and the model id. Keep the key
+rem in my_settings.bat, never in this file. You can also switch to the cloud in the app's sidebar.
+set "OPENROUTER_API_KEY="
+set "OPENROUTER_MODEL=nvidia/nemotron-3.5-super-vl:free"
 rem Context window in tokens (-c) and CPU threads (-t: use your number of PHYSICAL cores)
 set "CTX=65536"
 set "THREADS=6"
@@ -62,6 +67,7 @@ if "%CODE%"=="200" goto app_check
 :app_checked
 
 rem ---- 3. Model server: reuse it if running, otherwise start it in its own window.
+if /i "%MODEL%"=="cloud" goto cloud_model
 call :status "http://127.0.0.1:%LLAMA_PORT%/health"
 if "%CODE%"=="200" goto model_ready
 if /i "%MODEL%"=="open" goto wait_open
@@ -101,6 +107,15 @@ if %WAITED% geq 1800 goto model_slow
 <nul set /p "=."
 goto wait_open_loop
 
+:cloud_model
+rem MODEL=cloud: nothing is started on this PC; the app talks to OpenRouter.
+echo MODEL=cloud: the app uses %OPENROUTER_MODEL% through OpenRouter. No model server is started.
+if not defined OPENROUTER_API_KEY echo [i] No OPENROUTER_API_KEY in my_settings.bat: enter the key in the app under "Model server".
+set "LLM_BASE_URL=https://openrouter.ai/api/v1"
+set "LLM_MODEL=%OPENROUTER_MODEL%"
+set "LLM_CONTEXT_TOKENS=131072"
+goto app_env_ready
+
 :model_ready
 echo.
 echo Model server is ready on port %LLAMA_PORT%. The app uses whichever model it has loaded.
@@ -108,6 +123,7 @@ echo Model server is ready on port %LLAMA_PORT%. The app uses whichever model it
 rem ---- 4. The app.
 set "LLM_BASE_URL=http://127.0.0.1:%LLAMA_PORT%"
 set "LLM_CONTEXT_TOKENS=%CTX%"
+:app_env_ready
 
 rem Skip Streamlit's one-time "enter your email" question, which would otherwise wait here.
 if exist "%USERPROFILE%\.streamlit\credentials.toml" goto run_app

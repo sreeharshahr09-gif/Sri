@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import threading
 import time
 from dataclasses import dataclass
 from typing import Protocol
@@ -18,6 +20,77 @@ class LLMError(RuntimeError):
 
 class ReplyCutOff(LLMError):
     """The model used the whole reply budget before writing an answer (usually while thinking)."""
+
+
+class RequestLimitReached(LLMError):
+    """The service's request quota is used up for longer than is worth waiting (e.g. a daily limit)."""
+
+
+# OPENROUTER_BASE_URL: the same API behind another address (a company gateway, a test double).
+OPENROUTER_URL = os.environ.get("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1"
+# OpenRouter's free models (ids ending in ":free") accept 20 requests a minute per account; requests start
+# at most about 17 a minute, so that delays between pacing and sending never push a minute over 20.
+FREE_MODEL_INTERVAL_S = 3.5
+MAX_RATE_LIMIT_WAITS = 4
+MAX_WAIT_S = 90.0
+
+
+def is_openrouter(base_url: str) -> bool:
+    url = (base_url or "").lower().rstrip("/")
+    return "openrouter.ai" in url or (bool(url) and url == OPENROUTER_URL.lower().rstrip("/"))
+
+
+def is_free_model(cfg: LLMConfig) -> bool:
+    return is_openrouter(cfg.base_url) and cfg.model.strip().endswith(":free")
+
+
+# Start time of the last request per service, shared by all clients in this process (the app's
+# pages and background jobs), to keep a free model under its per-minute limit.
+_pace_lock = threading.Lock()
+_last_start: dict[str, float] = {}
+# Models that refused to switch their reasoning off: not asked again.
+_reasoning_required: set[str] = set()
+
+
+def _pace(cfg: LLMConfig) -> None:
+    if not is_free_model(cfg):
+        return
+    with _pace_lock:
+        key = cfg.base_url.rstrip("/").lower()
+        wait = _last_start.get(key, 0.0) + FREE_MODEL_INTERVAL_S - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        _last_start[key] = time.monotonic()
+
+
+def _rate_limit_wait(resp) -> float | None:
+    """Seconds until the service accepts requests again, if it says so."""
+    headers = getattr(resp, "headers", None) or {}
+    retry_after = headers.get("Retry-After")
+    if retry_after:
+        try:
+            return max(0.0, float(retry_after))
+        except ValueError:
+            pass
+    reset = headers.get("X-RateLimit-Reset")
+    if reset:
+        try:
+            value = float(reset)
+            value = value / 1000 if value > 1e11 else value  # epoch milliseconds or seconds
+            return max(0.0, value - time.time())
+        except ValueError:
+            pass
+    return None
+
+
+def _limit_message(resp, cfg: LLMConfig) -> str:
+    text = resp.text[:300]
+    if is_free_model(cfg):
+        return ("OpenRouter's daily limit for free models is used up (50 requests a day, or 1,000 once the account "
+                "has bought at least $10 of credits; it resets at midnight UTC). Patents read so far are kept: run "
+                "the analysis again after the reset, or use the paid model id (without \":free\"). "
+                f"Service reply: {text}")
+    return f"The model service's request limit is reached. Service reply: {text}"
 
 
 @dataclass
@@ -63,12 +136,18 @@ class LLMClient:
         if cfg.seed is not None:
             payload["seed"] = cfg.seed
         if cfg.no_think:
-            payload["chat_template_kwargs"] = {"enable_thinking": False}
+            if not is_openrouter(cfg.base_url):
+                payload["chat_template_kwargs"] = {"enable_thinking": False}
+            elif cfg.model not in _reasoning_required:
+                payload["reasoning"] = {"enabled": False}
 
         last_error: Exception | None = None
-        for attempt in range(cfg.max_retries + 1):
+        attempt = waits = 0
+        while attempt <= cfg.max_retries:
             if attempt:
                 time.sleep(min(2**attempt, 10))
+            attempt += 1
+            _pace(cfg)
             start = time.perf_counter()
             try:
                 resp = self.session.post(
@@ -87,14 +166,43 @@ class LLMClient:
                 last_error = exc
                 continue
 
-            if resp.status_code >= 500 or resp.status_code == 429:
+            if resp.status_code == 429:
+                wait = _rate_limit_wait(resp)
+                if "per-day" in resp.text or (wait is not None and wait > MAX_WAIT_S):
+                    raise RequestLimitReached(_limit_message(resp, cfg))
+                if waits < MAX_RATE_LIMIT_WAITS:  # a per-minute limit: wait it out, without using up a retry
+                    waits += 1
+                    attempt -= 1
+                    time.sleep(wait if wait is not None else 10.0 * waits)
+                last_error = LLMError(f"HTTP 429 (too many requests): {resp.text[:500]}")
+                continue
+            if resp.status_code >= 500:
                 last_error = LLMError(f"HTTP {resp.status_code}: {resp.text[:500]}")
                 continue
+            if (resp.status_code == 400 and "reasoning" in payload and "reasoning" in resp.text.lower()
+                    and cfg.model not in _reasoning_required):
+                # A model whose reasoning cannot be switched off: ask again without the switch.
+                _reasoning_required.add(cfg.model)
+                payload = {k: v for k, v in payload.items() if k != "reasoning"}
+                attempt -= 1
+                continue
+            if resp.status_code in (401, 403) and is_openrouter(cfg.base_url):
+                raise LLMError(f"OpenRouter refused the API key (HTTP {resp.status_code}). Check the key under "
+                               f"🧠 Model server. Service reply: {resp.text[:300]}")
             if resp.status_code != 200:
                 raise LLMError(f"HTTP {resp.status_code}: {resp.text[:500]}")
 
             try:
                 data = resp.json()
+                if isinstance(data, dict) and data.get("error") and not data.get("choices"):
+                    # Services such as OpenRouter can report a provider's failure inside a 200 reply.
+                    err = data["error"] if isinstance(data["error"], dict) else {"message": str(data["error"])}
+                    last_error = LLMError(f"The model service reported an error: {err.get('message', err)}")
+                    if "per-day" in str(err.get("message", "")):
+                        raise RequestLimitReached(_limit_message(resp, cfg))
+                    if str(err.get("code")) in ("429", "502", "503", "504", "408"):
+                        continue
+                    raise last_error
                 choice = data["choices"][0]
                 content = choice["message"].get("content") or ""
                 if not content.strip():
@@ -108,8 +216,9 @@ class LLMClient:
             if not content.strip() and choice.get("finish_reason") == "length":
                 raise ReplyCutOff(
                     f"The model used all {cfg.max_tokens:,} reply tokens without writing an answer; it was "
-                    "probably still thinking. Turn thinking off (llama-server --reasoning-budget 0) or raise "
-                    "the max tokens."
+                    "probably still thinking. "
+                    + ("Raise the max tokens per reply." if is_openrouter(cfg.base_url) else
+                       "Turn thinking off (llama-server --reasoning-budget 0) or raise the max tokens.")
                 )
             return Completion(
                 content=content,
@@ -120,10 +229,43 @@ class LLMClient:
             )
 
         if isinstance(last_error, requests.ConnectionError):
+            if is_openrouter(cfg.base_url):
+                raise LLMError("Cannot reach openrouter.ai. Check the internet connection.") from last_error
             raise LLMError(
                 f"Cannot reach model server at {self._base}. Is llama-server running?"
             ) from last_error
         raise LLMError(str(last_error)) from last_error
+
+    def model_details(self) -> dict | None:
+        """The service's entry for the configured model (id, context_length, ...): {} if the service does not
+        list it, None if the service cannot be reached."""
+        try:
+            resp = self.session.get(f"{self._base}/v1/models", headers=self._headers(), timeout=(5, 20))
+            entries = resp.json().get("data", []) if resp.status_code == 200 else None
+        except (requests.RequestException, ValueError, AttributeError):
+            return None
+        if not isinstance(entries, list):
+            return None
+        return next((m for m in entries if isinstance(m, dict) and m.get("id") == self.config.model), {})
+
+    def key_details(self) -> dict | None:
+        """OpenRouter: what the service knows about the API key (is_free_tier, limit, usage, ...), or
+        {"error": ...} if it refuses the key; None if the service cannot be reached."""
+        for path in ("/v1/key", "/v1/auth/key"):
+            try:
+                resp = self.session.get(f"{self._base}{path}", headers=self._headers(), timeout=(5, 20))
+            except requests.RequestException:
+                return None
+            if resp.status_code == 404:
+                continue
+            if resp.status_code != 200:
+                return {"error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+            try:
+                data = resp.json().get("data")
+            except (ValueError, AttributeError):
+                data = None
+            return data if isinstance(data, dict) else {}
+        return {}
 
     def context_size(self) -> int | None:
         """The server's context window in tokens, if it reports one (llama-server /props)."""

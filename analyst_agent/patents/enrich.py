@@ -17,7 +17,7 @@ from typing import Callable
 
 import pandas as pd
 
-from ..llm import LLMClient, LLMError
+from ..llm import LLMClient, LLMError, RequestLimitReached
 from .llmjson import ReplyCutOff, chat_text, json_objects, structured_client
 from .plan import AnalysisPlan
 from .semantic import CACHE_DIR
@@ -205,6 +205,7 @@ class ExtractionResult:
     stats: dict = field(default_factory=dict)
     info: str = ""
     stopped: bool = False
+    stop_reason: str = ""  # why it stopped, if not at the user's request (e.g. the service's daily limit)
 
 
 def batch_size_for(context_tokens: int) -> int:
@@ -327,6 +328,7 @@ def extract_details(
             on_progress(len(values) + stats["failed"], total)
 
     stopped = False
+    stop_reason = ""
     hard_failures = 0
     last_error = ""
     report()
@@ -341,6 +343,9 @@ def extract_details(
             hard_failures, last_error = 0, ""
         except ReplyCutOff as exc:  # the model answers, but ran out of room: smaller requests may work
             got, last_error = {}, str(exc)
+        except RequestLimitReached as exc:  # every further request would be refused: stop, keep what is done
+            stopped, stop_reason = True, str(exc)
+            break
         except LLMError as exc:
             got = {}
             last_error = str(exc)
@@ -365,7 +370,7 @@ def extract_details(
         report()
 
     for idx in std.index:
-        status.setdefault(idx, "not run (stopped)")
+        status.setdefault(idx, "not run (request limit reached)" if stop_reason else "not run (stopped)")
     columns = [f.column for f in fields]
     table = pd.DataFrame.from_dict({idx: values.get(idx, {}) for idx in std.index}, orient="index")
     table = table.reindex(index=std.index, columns=columns)
@@ -375,4 +380,5 @@ def extract_details(
     info = (f"{model_name}, {size} patents per request, temperature ≤ 0.2, seed {seed}; categories checked against "
             f"the plan ({stats['values corrected']} values corrected); "
             f"{stats['extracted']} extracted now, {stats['from cache']} from the cache, {stats['failed']} failed")
-    return ExtractionResult(table=table, fields=fields, stats=stats, info=info, stopped=stopped)
+    return ExtractionResult(table=table, fields=fields, stats=stats, info=info, stopped=stopped,
+                            stop_reason=stop_reason)

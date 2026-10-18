@@ -138,7 +138,7 @@ Set `WORKSPACE_DIR` to pre-fill the folder path.
 
 A professional patent landscape from your own database export, on any topic (uneven wear,
 lightweighting, rolling resistance, durability, NVH, smart tyres, ...), run entirely on your
-machine.
+machine, or with a cloud model through OpenRouter (see *Cloud models*).
 
 ### How it works
 
@@ -255,6 +255,45 @@ Type a request in the box under the report; the outcome is added below it.
 - The analysis covers exactly what your export contains: the search strategy behind it defines
   the landscape. It is a technology landscape, not a legal (validity or FTO) opinion.
 
+## Cloud models (OpenRouter)
+
+Instead of a model on your PC you can use a model hosted on [OpenRouter](https://openrouter.ai),
+for example the free `nvidia/nemotron-3.5-super-vl:free`.
+
+1. Create an account and an API key on openrouter.ai (*Keys*).
+2. In the sidebar, open **🧠 Model server**, choose **OpenRouter (cloud API)**, paste the key and
+   press **Check connection**. It checks the key and the model id, reads the model's context
+   window, and for free models shows your daily request limit; for paid models, the price.
+   Switching back to **Local model server** restores your local settings.
+3. To start with the cloud every time, put these lines in `my_settings.bat` (the launcher then
+   starts no model server):
+   ```bat
+   set "MODEL=cloud"
+   set "OPENROUTER_API_KEY=sk-or-..."
+   set "OPENROUTER_MODEL=nvidia/nemotron-3.5-super-vl:free"
+   ```
+   The key is stored there in plain text, on your PC only.
+
+Things to know:
+
+- **Your data leaves the PC.** Everything the app sends to the model goes to OpenRouter and the
+  model's provider: patent texts, your brief, plan and questions, data you analyse, files you
+  ask about on the Workspace page. Free models usually log prompts; NVIDIA's free endpoint says
+  not to send confidential information. Patent texts are public, but your brief and questions
+  show what you are researching. The sidebar shows ☁️ while a cloud model is in use.
+- **Free models are rate limited:** 20 requests a minute, and 50 a day, or 1,000 a day once the
+  account has bought at least $10 of credits. A landscape of 2,000 patents needs about 400
+  requests; the plan step shows the estimate for your run. The app keeps under the per-minute
+  limit by itself. When the daily limit is reached, the run stops with a clear message; patents
+  read so far are cached, and running it again after the reset (midnight UTC) continues from
+  them. Paid model ids (without `:free`) have no such limits and cost little for this work.
+- Thinking is switched off for the structured steps with OpenRouter's `reasoning` setting; a
+  model whose reasoning cannot be switched off is asked again without it.
+- The report's methodology records the model as "… via OpenRouter". Patent answers are cached
+  per model, so local and cloud runs never mix.
+- Check the extraction quality on your own patents with the validation sample before relying on
+  a new model.
+
 ## Windows: one-click start
 
 1. Double-click `start_agent.bat` once. It creates `my_settings.bat` next to it: your own
@@ -330,6 +369,8 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `LLM_BASE_URL` | `http://localhost:8080` | Server root (a trailing `/v1` is fine) |
 | `LLM_MODEL` | `Qwen3-30B-A3B-Instruct` | Model name sent to the server |
 | `LLM_API_KEY` | *(empty)* | Bearer token, if the server needs one |
+| `OPENROUTER_API_KEY` | *(empty)* | OpenRouter API key, pre-filled in the sidebar |
+| `OPENROUTER_MODEL` | `nvidia/nemotron-3.5-super-vl:free` | Model id used when you switch to OpenRouter |
 | `LLM_TEMPERATURE` | `0.2` | Sampling temperature |
 | `LLM_MAX_TOKENS` | `2048` | Max tokens per model reply |
 | `LLM_TIMEOUT` | `180` | Seconds to wait for a reply |
@@ -372,7 +413,7 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `analyst_agent/_worker.py` | Standalone worker that runs inside the sandbox process |
 | `analyst_agent/data.py` | Loading, cleaning and profiling of datasets |
 | `analyst_agent/grounding.py` | Numeric grounding audit of answers |
-| `analyst_agent/llm.py` | OpenAI-compatible client with retries and clear errors |
+| `analyst_agent/llm.py` | OpenAI-compatible client (llama-server, OpenRouter, ...): retries, rate limits, clear errors |
 | `analyst_agent/export.py` | Notebook, JSON and Markdown exports |
 
 The `analyst_agent` package doesn't depend on Streamlit, so you can use it from scripts or other UIs:

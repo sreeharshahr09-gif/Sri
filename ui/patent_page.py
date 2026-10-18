@@ -16,6 +16,7 @@ from analyst_agent import LLMClient, LLMConfig
 from analyst_agent.agent import DataAnalystAgent
 from analyst_agent.config import AgentConfig, SandboxConfig
 from analyst_agent.data import SUPPORTED_EXTENSIONS, DataLoadError, list_sheets, load_dataset
+from analyst_agent.llm import is_free_model
 from analyst_agent.patents import enrich, semantic
 from analyst_agent.patents import narrative as nar
 from analyst_agent.patents import report as rb
@@ -328,8 +329,24 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
             st.caption(f"The model reads them in about {-(-n // size):,} requests of {size} patents (context window "
                        f"{llm_cfg.context_tokens:,} tokens). Answers are cached, so a stopped run continues where it "
                        "left off. For a first look, try a trial run of 50–100 patents.")
+            if is_free_model(llm_cfg):
+                free_model_note(min(n, int(sample)) if sample else n, size, plan)
         for note in notes:
             st.caption(f"ℹ️ {note}")
+
+
+def free_model_note(n: int, size: int, plan: AnalysisPlan) -> None:
+    """Requests a run needs against a free OpenRouter model's daily limit."""
+    needed = -(-n // size) + 15 + len(plan.report_sections) + 4 * len(plan.analysis_questions)
+    daily = st.session_state.get("llm_daily_limit")
+    limit = f"{daily:,} a day on your account" if daily else "50 a day, or 1,000 once the account has bought $10 of credits"
+    text = (f"Free OpenRouter model: this run ({n:,} patents) needs about {needed:,} requests; the limit is {limit} "
+            "(and 20 a minute).")
+    if daily and needed > daily:
+        st.warning(text + " The run stops at the limit: patents read so far are kept, and running it again after the "
+                          "reset (midnight UTC) continues from them. A smaller trial run fits in one day.", icon="⏳")
+    else:
+        st.caption("ℹ️ " + text)
 
 
 def start_run(plan: AnalysisPlan, mapping: dict, sample: int, llm_cfg: LLMConfig) -> None:
@@ -419,7 +436,9 @@ def download_row(blocks: list[rb.Block], key: str) -> None:
 
 
 def render_result(result: LandscapeResult, idx: int) -> None:
-    if result.status == "cancelled":
+    if result.status == "cancelled" and result.stop_reason:
+        st.warning(f"The analysis stopped early; what was finished is shown. {result.stop_reason}", icon="⏹")
+    elif result.status == "cancelled":
         st.info("The analysis was stopped at your request; what was finished is shown.", icon="⏹")
     for w in result.warnings:
         st.caption(f"ℹ️ {w}")
