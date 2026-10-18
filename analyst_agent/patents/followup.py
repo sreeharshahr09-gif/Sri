@@ -175,8 +175,9 @@ def rewrite(result, llm, wanted: list[str], instruction: str) -> list[nar.Sectio
     for sec in pick_sections(result, wanted):
         fresh = copy.copy(sec)
         fresh.text, fresh.flagged, fresh.note = "", [], ""
+        answered = [q for q, run in getattr(result, "question_runs", []) if run.answer and not run.error]
         nar.write_sections([fresh], result.facts_by_kind, result.all_facts, result.plan.brief, result.plan.answers,
-                           llm, instruction=instruction)
+                           llm, instruction=instruction, answered_elsewhere=answered)
         out.append(fresh)
     return out
 
@@ -246,6 +247,11 @@ def _landscape_profile(result, dataset: Dataset, sample_rows: int, fact_chars: i
     if len(dataset.df) < 300:
         lines.append("Counts here are small: with fewer than about 10 patents per year or per group, describe changes "
                      "as indicative and do not explain them by shifts in the industry the data cannot show.")
+    lines.append("Cells can hold several values: category columns separate them with '; ', free-text columns with "
+                 "'; ' or ', '. Split before counting and count patents per value, e.g. "
+                 "df[col].str.split('; ').explode().value_counts() for a category column.")
+    lines.append("This table is one patent export, not the whole industry: describe findings as 'in this patent "
+                 "set', not as trends of the industry or the market.")
     if "Topic cluster" in dataset.df:
         lines.append("'Topic cluster' comes from the semantic patent map (text embeddings + clustering).")
     facts = (result.all_facts or "")[:fact_chars]

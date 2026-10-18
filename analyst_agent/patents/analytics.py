@@ -581,8 +581,8 @@ def white_space(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
                        linked_note or "No clear white-space combinations.")
     table = pd.DataFrame(rows).sort_values(["Patents", "Expected"], ascending=[True, False], na_position="last")
     caption = linked_note or (
-        "Expected = (row total × column total) / all, i.e. the count if solutions were spread evenly across "
-        f"{label}s. Cells with at most half the expected count are flagged. Few patents can mean an opening, or a "
+        "Expected = (row total × column total) / all, i.e. the count if solutions were spread evenly across the "
+        f"{label} categories. Cells with at most half the expected count are flagged. Few patents can mean an opening, or a "
         "combination that does not make technical sense: check before acting.")
     facts = "White space: " + "; ".join(
         f"{r[ctx.problem_label]} × {r['Technology group']}: {r['Patents']} patents"

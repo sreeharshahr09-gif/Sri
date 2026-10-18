@@ -109,6 +109,8 @@ Rules:
 - Draw no conclusion the facts do not support. Say nothing about market maturity, saturation, crowding, \
 legal status, freedom to operate or licensing unless a fact states it. When a fact says an analysis was not \
 possible or found nothing, report that plainly as a limit of this data set, not as a finding about the field.
+- The facts come from one patent export, not the whole industry: say "in this patent set" and draw no \
+conclusion about the industry, the market or new entrants.
 - Write in Markdown: 3 to 7 bullet points, each starting with a short bold phrase, then one final line \
 "**Implication for R&D:** ...". At most 220 words. No heading, no preamble.
 - Do what the brief asks for this section where the facts allow. If the brief asks for something that belongs \
@@ -126,6 +128,10 @@ Rules:
 - Draw no conclusion the facts do not support. Say nothing about market maturity, saturation, crowding, \
 legal status, freedom to operate or licensing unless a fact states it. When a fact says an analysis was not \
 possible or found nothing, report that plainly as a limit of this data set, not as a finding about the field.
+- The facts come from one patent export, not the whole industry: say "in this patent set" and draw no \
+conclusion about the industry, the market or new entrants.
+- White-space combinations are statistical leads: recommend only those that make technical sense for the \
+brief, as leads to check.
 - Write in Markdown: 5 to 8 bullet points with the most important findings (each starting with a short bold \
 phrase), then "**Recommended R&D directions:**" with 2 or 3 bullet points grounded in the gaps and trends. \
 At most 320 words. No heading, no preamble.\
@@ -148,9 +154,11 @@ def section_facts(sec: Section, facts_by_kind: dict[str, str], all_facts: str) -
 
 
 def write_sections(sections: list[Section], facts_by_kind: dict[str, str], all_facts: str, brief: str,
-                   answers: dict[str, str], llm, on_progress=None, instruction: str = "") -> None:
+                   answers: dict[str, str], llm, on_progress=None, instruction: str = "",
+                   answered_elsewhere: list[str] | None = None) -> None:
     """Fills `text`/`flagged` of every section with model text; on failure, a note instead.
-    `instruction`: the user's revision request when a section is rewritten."""
+    `instruction`: the user's revision request when a section is rewritten. `answered_elsewhere`: the brief's
+    questions the report answers in its own section, which the other sections must not call missing."""
     if llm is None:
         for sec in sections:
             sec.note = "No model connected: this section has charts and tables only."
@@ -163,6 +171,10 @@ def write_sections(sections: list[Section], facts_by_kind: dict[str, str], all_f
     context = f"Study brief:\n{brief.strip()[:5000]}"
     if answers:
         context += "\n\nThe user's answers to the brief's questions:\n" + "\n".join(f"- {q} {a}" for q, a in answers.items())
+    if answered_elsewhere:
+        context += ("\n\nThe report answers these questions of the brief with code in its own section "
+                    "(\"Brief-specific analyses\"); never write that they are missing or not covered:\n"
+                    + "\n".join(f"- {q}" for q in answered_elsewhere))
     for i, sec in enumerate(sections):
         if on_progress:
             on_progress(i, len(sections))

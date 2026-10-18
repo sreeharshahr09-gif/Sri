@@ -185,6 +185,11 @@ def collect_facts(result: LandscapeResult) -> None:
 MAX_QUESTIONS = 6
 
 
+def answered_questions(result: LandscapeResult) -> list[str]:
+    """The brief's questions the data agent answered for the report's own section."""
+    return [q for q, run in result.question_runs if run.answer and not run.error]
+
+
 def questions_stage(result: LandscapeResult, llm, emit, checkpoint) -> None:
     """The data agent answers each brief-specific question with code run on the enriched patent table."""
     if llm is None:
@@ -224,7 +229,8 @@ def narrative_stage(result: LandscapeResult, llm, emit) -> None:
     sections = nar.plan_sections(result.plan.report_sections)
     by_kind, all_facts = result.facts_by_kind, result.all_facts
     nar.write_sections(sections, by_kind, all_facts, result.plan.brief, result.plan.answers, llm,
-                       on_progress=lambda done, total: emit("progress", (done, total)))
+                       on_progress=lambda done, total: emit("progress", (done, total)),
+                       answered_elsewhere=answered_questions(result))
     result.sections = sections
     if llm is not None:
         written = sum(1 for sec in sections if sec.text)

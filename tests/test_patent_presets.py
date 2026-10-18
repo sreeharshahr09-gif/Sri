@@ -161,6 +161,24 @@ def test_brief_questions_are_answered_with_code(answered):
     assert "[Brief question]" in res.all_facts
 
 
+def test_other_sections_are_told_the_questions_are_answered(answered):
+    """The user's report said under Research Gaps that the trend and trade-off questions were 'not covered',
+    while the Brief-specific section answered them."""
+    prompts = [user for _, user in answered.model.prompts]
+    assert prompts and all("never write that they are missing or not covered" in u for u in prompts)
+    assert all(q in prompts[0] for q, _ in answered.question_runs)
+    system = answered.model.prompts[0][0]
+    assert 'say "in this patent set"' in system
+
+
+def test_data_agent_is_told_how_to_count_and_what_the_set_is(answered):
+    from analyst_agent.patents.followup import analysis_dataset, landscape_profile
+
+    profile = landscape_profile(answered, analysis_dataset(answered))
+    assert "Split before counting and count patents per value" in profile
+    assert "one patent export, not the whole industry" in profile
+
+
 def test_brief_specific_section_sits_before_the_methodology(answered):
     titles = [b.title for b in answered.blocks]
     start, meth = titles.index("🎯 Brief-specific analyses"), titles.index("Methodology and limitations")
