@@ -1,0 +1,30 @@
+LOCAL RESUME + COVER LETTER AGENT V3
+Windows / Anaconda / your existing llama.cpp server
+
+1. Start your EXISTING llama-server with Qwen loaded (the one your Research Agent uses).
+   Check in a browser: http://127.0.0.1:8080/v1/models   (port 8090 is also detected)
+
+2. Double-click start_windows.bat in this folder.
+   - It reuses C:\ProgramData\anaconda3\python.exe if it has the packages,
+     otherwise it creates a private .venv and installs requirements.txt (first run only).
+   - It never starts a second copy of the model.
+
+3. Open http://127.0.0.1:8502 (or 8503 if 8502 is busy). Your Research Agent stays on 8501.
+
+4. Sidebar: click "Check server", then "Test generation".
+
+5. Paste or upload the job description and your CV.
+   Click "1 Analyze match only" to see what your CV proves and what is missing.
+   If you genuinely have a missing skill, describe it in the gap box (it becomes evidence).
+   Click "2 Tailor my resume + cover letter". The loop rewrites, fact-checks and re-scores.
+
+6. Review the side-by-side view, edit if you want, and download the ZIP.
+   Every run is also saved in the "outputs" folder next to this file.
+
+TROUBLESHOOTING
+- "No compatible llama.cpp model API": start llama-server first; or set LLAMA_PORT in start_windows.bat.
+- "spent its whole output budget thinking": keep "Disable model thinking" ticked and start
+  llama-server with --jinja (or --reasoning-budget 0).
+- "prompt is larger than the context window": restart llama-server with --ctx-size 16384.
+- PDF missing: needs Microsoft Word + pywin32 (pip install pywin32) or LibreOffice. Word files always work.
+- Python not found: edit PYTHON=... at the top of start_windows.bat.

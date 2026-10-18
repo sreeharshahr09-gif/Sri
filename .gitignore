@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Resume agent: personal data and generated packages stay local
+ResumeAgent/outputs/
+ResumeAgent/my_fact_library.md

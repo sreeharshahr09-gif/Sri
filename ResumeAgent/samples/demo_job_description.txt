@@ -1,0 +1,17 @@
+FICTIONAL EXAMPLE — DEMO ONLY
+Senior Mechanical R&D Engineer, Beta Engineering
+
+About the role
+You will evaluate structural durability with simulations and experiments and turn test data
+into design decisions.
+
+Required qualifications
+- Required: finite element analysis (FEA) for product durability.
+- Required: Python scripting for analysis and automation.
+- Required: technical reporting to engineering stakeholders.
+
+Preferred qualifications
+- Preferred: commercial C++ software development.
+
+Benefits
+Flexible working, pension scheme and a friendly team.

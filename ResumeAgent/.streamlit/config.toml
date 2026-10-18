@@ -1,0 +1,7 @@
+# All inference and document processing runs locally.
+# Streamlit telemetry disabled below can also be set by an actual .streamlit/config.toml.
+[browser]
+gatherUsageStats = false
+[server]
+address = "127.0.0.1"
+headless = false
