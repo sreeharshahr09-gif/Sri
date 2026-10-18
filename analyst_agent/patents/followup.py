@@ -198,8 +198,27 @@ def analysis_dataset(result) -> Dataset:
                    source_format="patent landscape (enriched)")
 
 
-def landscape_profile(result, dataset: Dataset, sample_rows: int = 2) -> str:
-    """What the data agent knows: the study, what the columns mean, the report's key facts, the table."""
+def profile_budget(llm) -> int | None:
+    """Characters the data agent's description of the table may take: the context window minus room for the
+    reply and a few steps of code and output (about 3 characters a token)."""
+    cfg = getattr(llm, "config", None)
+    if cfg is None:
+        return None
+    return max(6_000, (cfg.context_tokens - cfg.max_tokens - 5_000) * 3)
+
+
+def landscape_profile(result, dataset: Dataset, sample_rows: int = 2, max_chars: int | None = None) -> str:
+    """What the data agent knows: the study, what the columns mean, the report's key facts, the table. Shortened
+    (no sample rows, fewer facts, then cut) when it would not fit `max_chars`."""
+    text = _landscape_profile(result, dataset, sample_rows, 3000)
+    if max_chars and len(text) > max_chars:
+        text = _landscape_profile(result, dataset, 0, 1200)
+    if max_chars and len(text) > max_chars:
+        text = text[: max_chars - 80].rsplit("\n", 1)[0] + "\n… (description shortened to fit the model's context window)"
+    return text
+
+
+def _landscape_profile(result, dataset: Dataset, sample_rows: int, fact_chars: int) -> str:
     plan = result.plan
     lines = [f"This table is the enriched patent set of a patent landscape study: {plan.title}."]
     if plan.objective:
@@ -214,7 +233,7 @@ def landscape_profile(result, dataset: Dataset, sample_rows: int = 2) -> str:
                      "same unless asked. 'Year' is the " + result.corpus.year_basis + " year.")
     if "Topic cluster" in dataset.df:
         lines.append("'Topic cluster' comes from the semantic patent map (text embeddings + clustering).")
-    facts = (result.all_facts or "")[:3000]
+    facts = (result.all_facts or "")[:fact_chars]
     if facts:
         lines.append(f"Key results of the report (for context; recompute from the table when answering):\n{facts}")
     return "\n".join(lines) + "\n\n" + describe_for_llm(dataset, sample_rows=sample_rows)

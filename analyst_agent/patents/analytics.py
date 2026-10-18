@@ -147,7 +147,10 @@ def growth(complete: pd.Series) -> tuple[str, str]:
         averages = f"average {a:.1f} patents a year in {span[0]}, {b:.1f} in {span[1]}"
         if a < 2:
             text = f"{averages}; too few patents at the start for a meaningful growth rate"
-            return text, f"Growth: {text}."
+            # Worded as a level, not a growth: "average 3.3" was read as "growth of 3.3 patents a year".
+            return text, (f"Filing level, complete years: {a:.1f} patents a year on average in {span[0]} and {b:.1f} "
+                          f"a year in {span[1]} (patents per year, not a growth rate); too few patents at the start "
+                          "for a meaningful growth rate.")
         rate = (b / a) ** (1 / (years[-2] - years[1])) - 1
         text = f"{averages}: {rate * 100:+.1f} % a year"
         return text, f"Growth (3-year averages, complete years): {text}."
@@ -496,6 +499,22 @@ def complexity(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     return Exhibit("complexity", "clusters", "Complexity ranking", blocks, ". ".join(facts) + ".")
 
 
+# Above this association the two dimensions largely describe the same thing (e.g. "lighter reinforcement" and
+# "reinforcement materials"): counts expected "if spread evenly" are meaningless, so no cell is flagged as a gap.
+LINKED_V = 0.6
+
+
+def cramers_v(grid: pd.DataFrame) -> float | None:
+    """Association between the rows and columns of a count table: 0 = independent, 1 = one determines the other."""
+    grid = grid.loc[grid.sum(axis=1) > 0, grid.sum(axis=0) > 0]
+    n, k = grid.values.sum(), min(grid.shape) - 1
+    if n == 0 or k < 1:
+        return None
+    expected = np.outer(grid.sum(axis=1), grid.sum(axis=0)) / n
+    chi2 = float((((grid.values - expected) ** 2) / expected).sum())
+    return float(np.sqrt(chi2 / (n * k)))
+
+
 def white_space(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     if "problem" not in a:
         return None
@@ -512,7 +531,13 @@ def white_space(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     n = grid.values.sum()
     rows = []
     row_tot, col_tot = grid.sum(axis=1), grid.sum(axis=0)
-    for p in grid.index:
+    v = cramers_v(grid)
+    linked = v is not None and v >= LINKED_V
+    label = ctx.problem_label.lower()
+    linked_note = (f"{ctx.problem_label} and technology group are strongly linked in this set (Cramér's V {v:.2f}): "
+                   f"each {label} mostly comes with one technology group, so the other combinations are rare by "
+                   "nature and are not flagged as gaps." if linked else "")
+    for p in grid.index if not linked else []:
         for g in grid.columns:
             expected = row_tot[p] * col_tot[g] / n if n else 0
             observed = int(grid.loc[p, g])
@@ -531,18 +556,19 @@ def white_space(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
                 rows.append({ctx.problem_label: p, "Technology group": f"{top_level} solutions", "Patents": 0,
                              "Expected": np.nan, "Gap": f"no {top_level.lower()} solution patented yet"})
     if not rows:
-        return Exhibit("white_space", "gaps", "White space", [rb.note(
-            f"No clear white space: every {ctx.problem_label.lower()} × technology group combination has about "
-            "as many patents as its row and column totals predict.")], "No clear white-space combinations.")
+        text = linked_note or (f"No clear white space: every {label} × technology group combination has about as "
+                               "many patents as its row and column totals predict.")
+        return Exhibit("white_space", "gaps", "White space", [rb.note(text)],
+                       linked_note or "No clear white-space combinations.")
     table = pd.DataFrame(rows).sort_values(["Patents", "Expected"], ascending=[True, False], na_position="last")
-    caption = ("Expected = (row total × column total) / all, i.e. the count if solutions were spread evenly across "
-               f"{ctx.problem_label.lower()}s. Cells with at most half the expected count are flagged. "
-               "Few patents can mean an opening, or a combination that does not make technical sense: check before "
-               "acting.")
+    caption = linked_note or (
+        "Expected = (row total × column total) / all, i.e. the count if solutions were spread evenly across "
+        f"{label}s. Cells with at most half the expected count are flagged. Few patents can mean an opening, or a "
+        "combination that does not make technical sense: check before acting.")
     facts = "White space: " + "; ".join(
         f"{r[ctx.problem_label]} × {r['Technology group']}: {r['Patents']} patents"
         + (f" (expected {r['Expected']})" if not pd.isna(r["Expected"]) else "") + f", {r['Gap']}"
-        for _, r in table.head(8).iterrows()) + "."
+        for _, r in table.head(8).iterrows()) + "." + (f" {linked_note}" if linked_note else "")
     return Exhibit("white_space", "gaps", "White space", [rb.table(table, title="Under-explored combinations",
                                                                      caption=caption)], facts)
 

@@ -51,9 +51,10 @@ def test_objective_plans_are_fresh_copies():
 def test_extraction_asks_for_the_objectives_columns():
     fields = enrich.build_fields(preset_plan("Lightweighting"))
     by_column = {f.column: f for f in fields}
-    assert by_column["Weight-reduction route"].choices[:2] == ["Gauge & volume reduction", "Lighter reinforcement"]
-    assert by_column["Weight-reduction route"].multi and "Other" in by_column["Weight-reduction route"].choices
-    assert {"Weight saving claimed", "Component lightened", "Material replaced -> by"} <= set(by_column)
+    assert by_column["Component lightened"].choices[:2] == ["Tread & under-tread", "Sidewall"]
+    assert by_column["Component lightened"].multi and "Other" in by_column["Component lightened"].choices
+    assert "Lighter reinforcement" in by_column["Technology group"].choices
+    assert {"Weight saving claimed", "Material replaced -> by", "Performance kept or traded"} <= set(by_column)
 
 
 # --------------------------------------------------------------------------- objective + brief
@@ -67,7 +68,7 @@ def test_brief_adapts_the_objectives_plan():
     llm = ScriptedLLM([json.dumps(reply)])
     plan = parse_brief(llm, "Focus on TBR tyres 2015-2025; compare Michelin and Bridgestone.", base=base)
     user = llm.calls[0][1]["content"]
-    assert user.startswith("Start from this standard plan for the objective.") and '"Tread compound hysteresis"' in user
+    assert user.startswith("Start from this standard plan for the objective.") and '"Base & under-tread"' in user
     assert plan.title == "Low rolling resistance TBR tyres" and plan.segments == ["TBR"] and plan.years == (2015, 2025)
     assert [c.name for c in plan.problems] == [c.name for c in base.problems]  # kept from the standard plan
     assert plan.extra_fields == base.extra_fields

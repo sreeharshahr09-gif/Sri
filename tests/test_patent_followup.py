@@ -118,6 +118,28 @@ def test_agent_context(result):
     assert len(profile) < 20000  # fits a 16k-token context with room for the conversation
 
 
+def test_agent_context_fits_with_full_text_columns(result):
+    """The user's export has descriptions of ~30,000 characters per patent: two sample rows printed in full made
+    the agent's first request 26,000 tokens, more than the 16k context window."""
+    import copy
+
+    from analyst_agent.config import LLMConfig
+    from analyst_agent.llm import LLMClient
+
+    long = copy.copy(result)
+    long.enriched = result.enriched.assign(Description="A tyre with a lighter belt. " * 1100,
+                                           Claims="1. A pneumatic tyre comprising ... " * 300)
+    ds = fu.analysis_dataset(long)
+    assert len(ds.df["Description"].iloc[0]) > 30000
+    profile = fu.landscape_profile(long, ds)
+    assert len(profile) < 20000 and "First 2 rows" in profile
+    small = fu.agent_client(LLMClient(LLMConfig(context_tokens=12000)))
+    budget = fu.profile_budget(small)
+    tight = fu.landscape_profile(long, ds, max_chars=budget)
+    assert len(tight) <= budget and "First 2 rows" not in tight  # sample rows dropped first
+    assert fu.profile_budget(FakeLLM(PLAN)) is None
+
+
 def test_agent_answers_from_the_enriched_table(result, sandbox):
     ds = fu.analysis_dataset(result)
     frame = ds.df[ds.df["Relevance"] != "Low"]

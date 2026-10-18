@@ -190,3 +190,15 @@ def test_structured_calls_retry_a_cut_off_reply_with_more_room():
     first, second = session.posts[0][1]["json"], session.posts[1][1]["json"]
     assert first["max_tokens"] == 3000 and second["max_tokens"] == 6000
     assert first["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_request_longer_than_the_context_window_is_explained():
+    too_long = FakeResponse(400, payload={"error": {"code": 400, "message": "request (26082 tokens) exceeds the "
+                                                    "available context size (16384 tokens), try increasing it",
+                                          "type": "exceed_context_size_error", "n_prompt_tokens": 26082,
+                                          "n_ctx": 16384}}, text="exceed_context_size_error")
+    llm, session = client([too_long, OK])
+    with pytest.raises(LLMError, match=r"longer than the model's context window \(26,082 tokens for a window of "
+                                       r"16,384\)\. Start llama-server with a larger -c"):
+        llm.chat([])
+    assert len(session.posts) == 1  # not retried: it would fail the same way

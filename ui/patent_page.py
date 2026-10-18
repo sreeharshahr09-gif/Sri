@@ -27,6 +27,7 @@ from analyst_agent.patents.followup import (
     analysis_dataset,
     apply_changes,
     landscape_profile,
+    profile_budget,
     rewrite,
     route,
 )
@@ -477,8 +478,9 @@ def followup_step(busy: bool, llm_cfg: LLMConfig) -> None:
 def start_followup(text: str, base: LandscapeResult, llm_cfg: LLMConfig) -> None:
     dataset = analysis_dataset(base)
     agent_cfg = AgentConfig()
-    agent = DataAnalystAgent(agent_client(LLMClient(llm_cfg)), st.session_state.pl_sandbox, dataset, config=agent_cfg,
-                             profile=landscape_profile(base, dataset))
+    client = agent_client(LLMClient(llm_cfg))
+    agent = DataAnalystAgent(client, st.session_state.pl_sandbox, dataset, config=agent_cfg,
+                             profile=landscape_profile(base, dataset, max_chars=profile_budget(client)))
     history = [o.run for o in st.session_state.pl_outputs if isinstance(o, FollowUp) and o.run is not None]
     headings = [sec.heading for sec in base.sections]
 

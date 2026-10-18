@@ -167,7 +167,9 @@ def collect_facts(result: LandscapeResult) -> None:
     by_kind: dict[str, str] = {}
     for ex in result.exhibits:
         by_kind[ex.section] = by_kind.get(ex.section, "") + f"[{ex.title}] {ex.facts}\n"
-    clusters = nar.cluster_facts(result.semantic.topics if result.semantic else None, len(result.corpus))
+    topics = analysed_topics(result)
+    clusters = nar.cluster_facts(None if topics is None else topics[topics["patents"] > 0],
+                                 len(analysed_index(result)))
     if clusters:
         by_kind["clusters"] = f"[Topic clusters] {clusters}\n" + by_kind.get("clusters", "")
     frame = result.analysis_frame if result.analysis_frame is not None else result.corpus.std
@@ -188,15 +190,16 @@ def questions_stage(result: LandscapeResult, llm, emit, checkpoint) -> None:
     from ..agent import DataAnalystAgent
     from ..config import AgentConfig, SandboxConfig
     from ..sandbox import Sandbox
-    from .followup import agent_client, analysis_dataset, landscape_profile
+    from .followup import agent_client, analysis_dataset, landscape_profile, profile_budget
 
     result.enriched = enriched_table(result)
     dataset = analysis_dataset(result)
     questions = result.plan.analysis_questions[:MAX_QUESTIONS]
     answers = []
+    client = agent_client(llm)
     with Sandbox(SandboxConfig()) as sandbox:
-        agent = DataAnalystAgent(agent_client(llm), sandbox, dataset, config=AgentConfig(),
-                                 profile=landscape_profile(result, dataset))
+        agent = DataAnalystAgent(client, sandbox, dataset, config=AgentConfig(),
+                                 profile=landscape_profile(result, dataset, max_chars=profile_budget(client)))
         for i, question in enumerate(questions):
             checkpoint(f"Answering the brief's questions ({i + 1} of {len(questions)})")
             run = agent.run(question)
@@ -309,7 +312,8 @@ def assemble_blocks(result: LandscapeResult, options: PipelineOptions | None = N
             if scope:
                 parts.append(rb.markdown(f"**Scope of this study:** {scope}"))
         if "clusters" in sec.kinds and result.semantic is not None:
-            parts.extend(semantic_blocks(result.corpus, result.semantic))
+            parts.extend(semantic_blocks(result.corpus, result.semantic, analysed_topics(result),
+                                         analysed_index(result)))
         for ex in (e for e in result.exhibits if e.section in sec.kinds):
             parts.append(rb.heading(ex.title, level=3))
             parts.extend(ex.blocks)
@@ -406,16 +410,42 @@ def _short(text: str, limit: int = 90) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-def semantic_blocks(corpus: PatentCorpus, res: sem.SemanticResult) -> list[rb.Block]:
+OFF_TOPIC = "Off-topic (left out)"
+
+
+def analysed_index(result: LandscapeResult) -> pd.Index:
+    """The patents the report's analytics use: the corpus without those judged off-topic."""
+    return result.analysis_frame.index if result.analysis_frame is not None else result.corpus.std.index
+
+
+def analysed_topics(result: LandscapeResult) -> pd.DataFrame | None:
+    """The topic clusters with their patents counted in the analysed set, as everywhere else in the report
+    ('all_patents': the count over the whole export, off-topic patents included), largest first."""
+    res = result.semantic
+    if res is None or res.topics is None or res.topics.empty or "cluster_id" not in result.corpus.std:
+        return None
+    std = result.corpus.std
+    counts = std.loc[std.index.isin(analysed_index(result)), "cluster_id"].value_counts()
+    topics = res.topics.copy()
+    topics["all_patents"] = topics["patents"]
+    topics["patents"] = topics["id"].map(counts).fillna(0).astype(int)
+    return topics.sort_values(["patents", "all_patents"], ascending=False, kind="stable")
+
+
+def semantic_blocks(corpus: PatentCorpus, res: sem.SemanticResult, topics: pd.DataFrame | None = None,
+                    analysed: pd.Index | None = None) -> list[rb.Block]:
+    """The map shows every patent (off-topic ones in grey); the table and treemap count the analysed set."""
     import plotly.express as px
 
     std = corpus.std
-    topics = res.topics
-    n = len(std)
+    topics = res.topics.assign(all_patents=res.topics["patents"]) if topics is None else topics
+    analysed = std.index if analysed is None else analysed
+    off = ~std.index.isin(analysed)
+    n, n_off = int((~off).sum()), int(off.sum())
     names = {cid: f"{cid} · {_short(label, 48)}" for cid, label in zip(topics["id"], topics["label"])}
-    order = [names[cid] for cid in topics["id"]]
+    order = [names[cid] for cid in sorted(topics["id"])] + ([OFF_TOPIC] if n_off else [])
     frame = pd.DataFrame({
-        "x": std["map_x"], "y": std["map_y"], "Topic": std["cluster_id"].map(names),
+        "x": std["map_x"], "y": std["map_y"], "Topic": std["cluster_id"].map(names).where(~off, OFF_TOPIC),
         "Title": std["title"].map(_short), "Assignee": std["assignee"].map(lambda a: _short(a, 40)),
         "Year": std["year"].astype("Int64").astype(str).replace("<NA>", "n/a"), "ID": std["id"],
     })
@@ -423,7 +453,7 @@ def semantic_blocks(corpus: PatentCorpus, res: sem.SemanticResult) -> list[rb.Bl
     fig = px.scatter(
         frame, x="x", y="y", color="Topic", category_orders={"Topic": order},
         hover_data={"x": False, "y": False, "Title": True, "Assignee": True, "Year": True, "ID": True},
-        color_discrete_sequence=palette, render_mode="webgl", height=640,
+        color_discrete_sequence=palette, color_discrete_map={OFF_TOPIC: "#c4c4c4"}, render_mode="webgl", height=640,
     )
     fig.update_traces(marker={"size": 6, "opacity": 0.75})
     # A numbered tag at each cluster's centre; the legend gives the number's name.
@@ -434,13 +464,17 @@ def semantic_blocks(corpus: PatentCorpus, res: sem.SemanticResult) -> list[rb.Bl
                            borderpad=1)
     fig.update_layout(
         xaxis={"visible": False}, yaxis={"visible": False}, legend_title_text="Topic cluster",
-        margin={"l": 10, "r": 10, "t": 40, "b": 10}, title=f"Patent map: {n:,} patents, {len(topics)} topic clusters",
+        margin={"l": 10, "r": 10, "t": 40, "b": 10},
+        title=f"Patent map: {n + n_off:,} patents, {len(topics)} topic clusters"
+              + (f" ({n_off:,} off-topic, in grey)" if n_off else ""),
     )
     blocks = [
         rb.heading("Patent map and topic clusters", level=3),
         rb.chart(fig, title="Patent map", caption=(
             "Each dot is one patent; patents with similar text sit close together. Colours are topic clusters, "
-            "numbered as in the table below. "
+            "numbered as in the table below"
+            + ("; grey dots are patents judged off-topic, which the analytics leave out. " if n_off else ". ")
+            + 
             f"Text embedding: {res.info['embedding']} Map: {res.info['map']}. Clusters: {res.info['clustering']}."
         )),
     ]
@@ -450,15 +484,18 @@ def semantic_blocks(corpus: PatentCorpus, res: sem.SemanticResult) -> list[rb.Bl
         "Topic cluster": topics["label"],
         "Patents": topics["patents"],
         "Share": (topics["patents"] / max(n, 1) * 100).round(1).astype(str) + " %",
+        "Off-topic (left out)": (topics["all_patents"] - topics["patents"]) if n_off else "",
         "Technology group": topics.get("tech_group", ""),
         "Relevance": topics.get("relevance", ""),
         "Key terms": topics["keywords"].map(lambda k: ", ".join(k[:6])),
         "What these patents do": topics.get("description", ""),
     })
     table = table[[c for c in table.columns if table[c].astype(str).str.strip().astype(bool).any()]]
-    blocks.append(rb.table(table, title="Topic clusters", caption=res.info["naming"]))
+    caption = res.info["naming"] + (f" Patents and share: the {n:,} analysed patents, as in the rest of the "
+                                    "report; the clusters were found on all patents in the export." if n_off else "")
+    blocks.append(rb.table(table, title="Topic clusters", caption=caption))
     if has_groups:
-        tree = topics.assign(tech_group=topics["tech_group"].replace("", "Unassigned"))
+        tree = topics[topics["patents"] > 0].assign(tech_group=lambda t: t["tech_group"].replace("", "Unassigned"))
         fig2 = px.treemap(tree, path=[px.Constant("All patents"), "tech_group", "label"], values="patents",
                           color="tech_group", color_discrete_sequence=px.colors.qualitative.Set2, height=520)
         fig2.update_traces(root_color="#f4f4f4", textinfo="label+value+percent root")

@@ -83,6 +83,19 @@ def _rate_limit_wait(resp) -> float | None:
     return None
 
 
+def _context_message(resp, cfg: LLMConfig) -> str:
+    sizes = ""
+    try:
+        err = resp.json().get("error") or {}
+        if err.get("n_prompt_tokens") and err.get("n_ctx"):
+            sizes = f" ({int(err['n_prompt_tokens']):,} tokens for a window of {int(err['n_ctx']):,})"
+    except (ValueError, AttributeError, TypeError):
+        pass
+    fix = ("Use a model with a larger context window." if is_openrouter(cfg.base_url) else
+           "Start llama-server with a larger -c (and set the same value under 🧠 Model server).")
+    return f"The request is longer than the model's context window{sizes}. {fix}"
+
+
 def _limit_message(resp, cfg: LLMConfig) -> str:
     text = resp.text[:300]
     if is_free_model(cfg):
@@ -186,6 +199,9 @@ class LLMClient:
                 payload = {k: v for k, v in payload.items() if k != "reasoning"}
                 attempt -= 1
                 continue
+            if resp.status_code == 400 and ("exceed_context_size" in resp.text or "context size" in resp.text
+                                            or "context length" in resp.text):
+                raise LLMError(_context_message(resp, cfg))
             if resp.status_code in (401, 403) and is_openrouter(cfg.base_url):
                 raise LLMError(f"OpenRouter refused the API key (HTTP {resp.status_code}). Check the key under "
                                f"🧠 Model server. Service reply: {resp.text[:300]}")

@@ -74,13 +74,18 @@ def test_full_run_builds_map_and_topic_table():
     assert titles.index("Methodology and limitations") < titles.index("How the patent set was built")
     assert {"Patent map and topic clusters", "Patent map", "Topic clusters", "Topic hierarchy"} <= set(titles)
     topic_table = next(b.table for b in result.blocks if b.title == "Topic clusters")
-    assert topic_table["Patents"].sum() == len(std)
-    assert list(topic_table.columns) == ["#", "Topic cluster", "Patents", "Share", "Technology group", "Relevance",
-                                         "Key terms", "What these patents do"]
+    # counted in the analysed set, like the rest of the report; off-topic patents in their own column
+    assert topic_table["Patents"].sum() == len(result.analysis_frame) < len(std)
+    assert (topic_table["Patents"] + topic_table["Off-topic (left out)"]).sum() == len(std)
+    patent_map = next(b.figure for b in result.blocks if b.title == "Patent map")
+    assert "off-topic, in grey" in patent_map.layout.title.text
+    assert any(t.name == "Off-topic (left out)" for t in patent_map.data)
+    assert list(topic_table.columns) == ["#", "Topic cluster", "Patents", "Share", "Off-topic (left out)",
+                                         "Technology group", "Relevance", "Key terms", "What these patents do"]
     fig = next(b.figure for b in result.blocks if b.title == "Patent map")
     assert sum(len(t.x) for t in fig.data) == len(std)
     assert len(fig.layout.annotations) == len(topic_table)  # one numbered tag per cluster
-    assert all(t.name.split(" · ")[0].isdigit() for t in fig.data)
+    assert all(t.name.split(" · ")[0].isdigit() or t.name == "Off-topic (left out)" for t in fig.data)
     assert set(result.methods) == {"Year basis", "Text embedding", "Patent map", "Topic clusters", "Cluster keywords",
                                    "Cluster names", "Patent details", "Report text"}
     assert result.methods["Cluster names"].startswith("Cluster names written by the model for")

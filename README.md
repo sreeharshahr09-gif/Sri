@@ -151,7 +151,7 @@ machine, or with a cloud model through OpenRouter (see *Cloud models*).
      Uneven wear, Smart / connected tyres, NVH, Wet / dry traction, Dynamic growth, High
      performance or Sustainable materials. **📋 Use this objective's plan** fills a complete
      plan at once, without the model: problem categories, technology groups, complexity
-     levels, scope, extra CSV columns (e.g. *Weight saving claimed*, *Mass-reduction route*),
+     levels, scope, extra CSV columns (e.g. *Weight saving claimed*, *Material replaced -> by*),
      the objective's own questions and suggested search terms for your database.
    - **Your brief**: paste it and press **Prepare analysis plan**. The model turns it into an
      editable plan: title, objective, segments, period, the problem dimension (e.g. *Wear type*)

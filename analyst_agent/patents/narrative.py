@@ -111,8 +111,10 @@ legal status, freedom to operate or licensing unless a fact states it. When a fa
 possible or found nothing, report that plainly as a limit of this data set, not as a finding about the field.
 - Write in Markdown: 3 to 7 bullet points, each starting with a short bold phrase, then one final line \
 "**Implication for R&D:** ...". At most 220 words. No heading, no preamble.
-- Do what the brief asks for this section where the facts allow. If the brief asks for something the facts \
-do not cover, say so in one bullet starting with "**Not covered by this data:**".\
+- Do what the brief asks for this section where the facts allow. If the brief asks for something that belongs \
+under this heading and the facts do not cover it, say so in one bullet starting with "**Not covered by this \
+data:**". Leave out what belongs under other headings, and the brief's specific questions: the report answers \
+those in a section of its own.\
 """
 SUMMARY_SYSTEM = """\
 You write the executive summary of a patent landscape report for an R&D team. You get the study brief \

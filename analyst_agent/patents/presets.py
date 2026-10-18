@@ -23,23 +23,25 @@ PRESETS: dict[str, dict] = {
     "Lightweighting": {
         "title": "Lightweight tyre technologies",
         "objective": "Map how patents reduce tyre weight while keeping rolling resistance, durability and handling: "
-                  "the routes, materials and design levers used, and which companies use which.",
-        "problem_label": "Weight-reduction route",
+                  "which components are made lighter, by which kind of solution, and which companies use which.",
+        # Where the weight is saved (rows) and how (technology groups): two independent questions, so the
+        # combinations - and the gaps among them - mean something.
+        "problem_label": "Component lightened",
         "problems": _cats([
-            ("Gauge & volume reduction", "thinner tread, sidewall or innerliner gauges; less rubber volume"),
-            ("Lighter reinforcement", "steel replaced by aramid, PET, nylon, hybrid or carbon-fibre cords; fewer or thinner cords"),
-            ("Bead & apex mass reduction", "lighter bead cores, smaller or no apex"),
-            ("Low-density compounds & fillers", "lower-density polymers or fillers, reduced filler loading"),
-            ("Ply & belt architecture", "fewer plies, new belt packages, spiral or monoply layers"),
-            ("Innerliner & barrier", "thinner or higher-barrier innerliners and films"),
-            ("New architectures", "airless or non-pneumatic tyres, integrated tyre-wheel concepts"),
-            ("Manufacturing-enabled", "processes that make thinner or more uniform components possible"),
+            ("Tread & under-tread", "tread cap, base and under-tread rubber"),
+            ("Sidewall", "sidewall rubber and its gauge"),
+            ("Belt & cap ply", "steel belts, cap and overlay plies"),
+            ("Carcass ply", "body plies and turn-ups"),
+            ("Bead & apex", "bead core, apex, bead filler and chafer"),
+            ("Innerliner", "innerliner and air barrier"),
+            ("Whole tyre", "the tyre as a whole: overall construction, non-pneumatic or other new tyre concepts"),
         ]),
         "tech_buckets": _cats([
-            ("Reinforcement materials", "cords, fabrics, bead wire and their adhesion"),
-            ("Rubber compounds & fillers", "polymers, fillers, oils, resins, cure systems"),
-            ("Structural design", "construction, contour, ply and belt layout, gauges"),
-            ("Manufacturing process", "building, calendering, curing and other production methods"),
+            ("Lighter reinforcement", ("steel replaced by aramid, PET, nylon, hybrid or carbon-fibre cords; fewer "
+                                       "or thinner cords and filaments")),
+            ("Lower-density compounds", "lower-density polymers or fillers, less filler, light or hollow fillers"),
+            ("Gauge & structural design", "thinner gauges, fewer plies, new belt, bead or contour layouts"),
+            ("Manufacturing process", "building, calendering, curing and other processes that allow lighter parts"),
             ("Novel architecture", "non-pneumatic and other new tyre concepts"),
         ]),
         "complexity_levels": _levels("gauge or geometry change within an existing construction",
@@ -49,14 +51,14 @@ PRESETS: dict[str, dict] = {
                  "scope: wheels, brakes or other vehicle parts; material patents with no tyre application.",
         "extra_fields": _cats([
             ("Weight saving claimed", "the weight saving as stated, with unit (% , g or kg); 'not stated' if none"),
-            ("Component lightened", "the tyre component made lighter"),
             ("Material replaced -> by", "e.g. 'steel cord -> aramid cord'; 'not stated' if none"),
             ("Performance kept or traded", "attributes kept or traded off: rolling resistance, durability, handling, noise"),
         ]),
         "analysis_questions": [
-            ("For each weight-reduction route, how many patents state a numeric weight saving, and what are the "
+            ("For each component lightened, how many patents state a numeric weight saving, and what are the "
              "median and range of the stated percentages?"),
-            "Which weight-reduction routes do the five largest assignees use? Show patents per assignee and route.",
+            ("Which components and which technology groups do the five largest assignees work on? Show patents per "
+             "assignee, component and technology group."),
             "Which performance attributes are most often kept or traded off alongside weight reduction?",
             ("How has the number of patents using lighter reinforcement (aramid, PET, nylon, hybrid, carbon fibre) "
              "developed per year compared with all patents?"),
@@ -69,16 +71,16 @@ PRESETS: dict[str, dict] = {
         "title": "Low rolling resistance tyres",
         "objective": "Map how patents lower rolling resistance (energy loss) without losing wet grip, wear life or "
                   "handling: the levers used, the trade-offs managed and the companies behind them.",
-        "problem_label": "Rolling-resistance lever",
+        # Where the energy is lost (rows) and how it is reduced (technology groups): independent questions.
+        "problem_label": "Loss source",
         "problems": _cats([
-            ("Tread compound hysteresis", "silica/silane systems, functionalised polymers, resins lowering tan δ at 60 °C"),
-            ("Base & under-tread compound", "low-loss base or cap-base designs"),
-            ("Sidewall & bead flexing", "lower-loss sidewall, apex and bead compounds or geometry"),
-            ("Belt & carcass deformation", "belt and carcass constructions that reduce deformation losses"),
-            ("Contour & footprint shape", "profile and footprint optimisation"),
-            ("Tread pattern stiffness", "block and rib stiffness, groove volume, tread depth"),
-            ("Mass reduction", "lighter tyres lowering rolling loss"),
-            ("Air retention", "innerliners and sealing that keep inflation pressure"),
+            ("Tread", "hysteresis and deformation of the tread cap"),
+            ("Base & under-tread", "base, cap-base and under-tread rubber"),
+            ("Sidewall & bead area", "flexing of sidewall, apex and bead area"),
+            ("Belt & carcass", "deformation of belt and carcass"),
+            ("Footprint & contour", "deformation set by profile and footprint shape"),
+            ("Tyre mass", "overall tyre mass"),
+            ("Inflation pressure", "pressure lost through the innerliner, valve or seals"),
         ]),
         "tech_buckets": _cats([
             ("Compound & materials", "polymers, fillers, coupling agents, resins, oils"),
@@ -102,9 +104,9 @@ PRESETS: dict[str, dict] = {
             "How often is the wet grip versus rolling resistance trade-off addressed, and in which technology groups?",
             ("Which key compound ingredients appear most often, and how has that changed between the first and second "
              "half of the period?"),
-            ("For each rolling-resistance lever, how many patents state a numeric improvement, and what are the "
-             "typical stated values?"),
-            "Which assignees rely mostly on compound levers and which on structural levers?",
+            ("For each loss source, how many patents state a numeric improvement, and what are the typical stated "
+             "values?"),
+            "Which assignees rely mostly on compound solutions and which on structural design?",
         ],
         "keywords": ["rolling resistance", "low rolling resistance", "fuel efficiency", "hysteresis", "tan delta",
                   "energy loss", "low heat build-up"],
@@ -403,25 +405,26 @@ PRESETS: dict[str, dict] = {
     },
     "Sustainable materials": {
         "title": "Sustainable tyre materials",
-        "objective": "Map patented routes to renewable and recycled tyre materials: the routes, the materials and "
-                  "their claimed content, the performance kept or traded, and who leads.",
-        "problem_label": "Sustainability route",
+        "objective": "Map patented routes to renewable and recycled tyre materials: the sustainability levers, the "
+                  "materials and their claimed content, the performance kept or traded, and who leads.",
+        # Which sustainability lever (rows) and in which kind of material or design (technology groups).
+        "problem_label": "Sustainability lever",
         "problems": _cats([
-            ("Renewable polymers", "bio-based rubber: guayule, dandelion, bio-butadiene and others"),
-            ("Bio-based fillers & oils", "rice-husk silica, lignin, vegetable oils and resins"),
-            ("Recycled rubber", "reclaim, devulcanisation, crumb rubber"),
-            ("Recovered carbon black", "pyrolysis and recovered carbon black"),
-            ("Recycled or bio reinforcement", "recycled PET, bio-based polyamide and other cords"),
-            ("Cleaner processing", "lower-energy or lower-emission production"),
+            ("Bio-based / renewable", ("renewable feedstocks: guayule, dandelion, bio-butadiene, rice-husk silica, "
+                                       "vegetable oils, bio-based cords")),
+            ("Recycled content", "reclaim, devulcanised or crumb rubber, recycled PET or steel"),
+            ("Recovered materials", "recovered carbon black, pyrolysis oil and other recovered streams"),
+            ("Cleaner processing", "lower-energy, lower-emission or solvent-free production"),
             ("Longer life & retreading", "durability and retreadability that extend tyre life"),
-            ("Wear particle reduction", "less tyre and road wear particles"),
+            ("Lower wear particles", "less tyre and road wear particles"),
+            ("End-of-life recyclability", "materials or designs that make tyres easier to recycle"),
         ]),
         "tech_buckets": _cats([
             ("Polymers & elastomers", "base polymers"),
-            ("Fillers & additives", "fillers, oils, resins, additives"),
+            ("Fillers, oils & additives", "fillers, oils, resins, additives"),
             ("Reinforcement materials", "cords and fabrics"),
-            ("Processing & recycling technology", "recycling and production processes"),
-            ("Product design", "design for longevity, retreading and recycling"),
+            ("Process technology", "mixing, curing and recycling processes"),
+            ("Tyre design", "design for longevity, retreading and recycling"),
         ]),
         "complexity_levels": _levels("drop-in replacement of an ingredient", "new material needing compound redesign",
                                   "new material system or recycling process at industrial scale"),
@@ -433,10 +436,10 @@ PRESETS: dict[str, dict] = {
             ("Performance kept or traded", "attributes kept or traded off"),
         ]),
         "analysis_questions": [
-            "How have renewable versus recycled routes developed per year?",
-            "What sustainable content is claimed (as stated) for each route?",
+            "How have bio-based versus recycled levers developed per year?",
+            "What sustainable content is claimed (as stated) for each lever?",
             "Which feedstocks are named most often?",
-            "Which assignees lead for each route?",
+            "Which assignees lead for each lever?",
         ],
         "keywords": ["sustainable", "renewable", "bio-based", "recycled", "devulcanized", "recovered carbon black",
                   "guayule", "dandelion"],

@@ -177,6 +177,27 @@ def test_white_space_flags_missing_combinations():
     assert ("Cupping", "Structural/Design") not in gaps
 
 
+def test_white_space_skips_combinations_of_linked_dimensions():
+    """A problem dimension that mirrors the technology groups (as in the user's lightweighting run: Cramér's V
+    0.71) leaves every other combination empty by nature: those are not gaps."""
+    plan = AnalysisPlan.from_dict(MODEL_PLAN)
+    counts = {("Cupping", "Structural/Design"): 30, ("Shoulder wear", "Material Science"): 12,
+              ("Feathering", "Active/Electronic"): 6, ("Cupping", "Material Science"): 2}
+    rows = [(p, g, "Simple") for (p, g), k in counts.items() for _ in range(k)]
+    frame = pd.DataFrame(rows, columns=["problem", "tech_group", "complexity"]).assign(
+        year=2020.0, assignee="X", country="EP", title="t", id="1", first_claim="", cited_by=np.nan,
+        relevance="High", design_lever="x")
+    grid = pd.crosstab(frame["problem"], frame["tech_group"])
+    assert an.cramers_v(grid) > an.LINKED_V
+    ex = an.white_space(frame, an.make_context(frame, plan, "publication date", ref_year=2030))
+    table = ex.blocks[0].table
+    assert "few patents for this combination" not in set(table["Gap"])
+    assert ("Camber wear", "any") in set(zip(table["Wear type"], table["Technology group"]))  # still a real gap
+    assert "strongly linked" in ex.blocks[0].caption and "strongly linked" in ex.facts
+    independent = pd.DataFrame([[10, 10], [10, 10]])
+    assert an.cramers_v(independent) == 0 and an.cramers_v(pd.DataFrame([[10, 0], [0, 10]])) == 1
+
+
 def test_process_insights_pick_the_process_group(result):
     ex = _ex(result, "process")
     assert ex.facts.startswith("Process/Manufacturing: ")

@@ -375,8 +375,10 @@ def describe_for_llm(dataset: Dataset, sample_rows: int = 5, max_columns: int = 
     if sample_rows > 0 and len(df):
         lines.append("")
         lines.append(f"First {min(sample_rows, len(df))} rows:")
-        with pd.option_context("display.width", 200, "display.max_columns", 30, "display.max_colwidth", 30):
-            lines.append(df.head(sample_rows).to_string(index=False))
+        # Cells cut to 40 characters: a column of full texts (claims, descriptions) would otherwise fill
+        # the model's whole context window with two rows.
+        with pd.option_context("display.width", 200):
+            lines.append(df.head(sample_rows).to_string(index=False, max_cols=30, max_colwidth=40))
     return "\n".join(lines)
 
 
