@@ -330,3 +330,47 @@ def test_too_many_other_answers_are_called_out():
                           "cited_by": np.nan})
     ex = an.problem_solution(frame, an.make_context(frame, plan, "priority date", ref_year=2030))
     assert ex.blocks[0].kind == "note" and ex.facts.startswith("7 of 10 patents fit none of the plan's")
+
+
+def _windowed(cut: bool):
+    """Patents filed 2005-2023, 10-25 a year; publication about 2 years after filing. `cut`: the export holds
+    publications from January 2015 on only (as all three of the user's exports did), so most early patents are
+    missing and the remaining ones were published late (as grants)."""
+    rng = np.random.default_rng(3)
+    rows = []
+    for year in range(2005, 2024):
+        for k in range(10 + (year - 2005)):
+            published = year + 1.6 + rng.random()
+            if k % 4 == 0:
+                published = year + 4 + 6 * rng.random()  # a late grant
+            if cut and published < 2015.01:
+                continue
+            rows.append({"year": float(year), "published": published})
+    rows.append({"year": 2013.0, "published": 2015.01})  # published in the first week of the window
+    return pd.DataFrame(rows).assign(tech_group=lambda d: np.where(d.index % 2, "A", "B"), assignee="X",
+                                     country="EP", title="t", id="1", first_claim="", cited_by=np.nan)
+
+
+def test_export_cut_to_recent_publications_marks_its_first_years():
+    frame = _windowed(cut=True)
+    ctx = an.make_context(frame, AnalysisPlan(), "earliest priority date", ref_year=2025.3)
+    first = int(frame["year"].min())
+    assert ctx.early_years == list(range(first, 2014)) and round(ctx.window_start, 2) == 2015.01
+    assert ctx.incomplete_years == [2023] and ctx.partial_years[0] == first
+    ex = an.trend(frame, ctx)
+    assert f"The export holds publications from January 2015 on, so inventions first filed in {first}–2013" in ex.facts
+    assert "average" in ex.facts and "in 2014–2016" in ex.facts  # growth from the first complete years only
+    assert "2005–2013 vs" not in ex.facts and "2014–2018 vs 2019–2022" in ex.facts
+    assert "Shaded at the start" in ex.blocks[0].caption
+    road = an.roadmap(frame, ctx)
+    assert "At the start: the export holds publications from January 2015 on" in road.blocks[1].caption
+
+
+def test_an_export_that_is_not_cut_has_no_early_years():
+    frame = _windowed(cut=False)
+    ctx = an.make_context(frame, AnalysisPlan(), "earliest priority date", ref_year=2025.3)
+    assert ctx.early_years == [] and ctx.window_start is None
+    assert an.make_context(frame.drop(columns="published"), AnalysisPlan(), "earliest priority date",
+                           ref_year=2025.3).early_years == []
+    on_publication = an.make_context(_windowed(cut=True), AnalysisPlan(), "publication date", ref_year=2025.3)
+    assert on_publication.early_years == []  # publication years are what the window cuts: nothing missing inside

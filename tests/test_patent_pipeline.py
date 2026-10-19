@@ -9,7 +9,14 @@ from analyst_agent.patents.data import detect_columns
 from analyst_agent.patents.pipeline import PipelineOptions, run_landscape
 from analyst_agent.patents.plan import AnalysisPlan
 
-from .patent_fixtures import agent_reply, extract_reply, make_export, name_clusters_reply, narrative_reply
+from .patent_fixtures import (
+    agent_reply,
+    extract_reply,
+    make_export,
+    name_clusters_reply,
+    narrative_reply,
+    white_space_reply,
+)
 from .test_patent_plan import MODEL_PLAN
 
 TFIDF = PipelineOptions(embedding_model="tfidf")
@@ -41,6 +48,9 @@ class FakeLLM:
         if system.startswith("You are a meticulous data analyst"):
             self.calls["agent"] += 1
             return Completion(content=agent_reply(messages), latency_s=0.0)
+        if system.startswith("You are a tyre R&D expert"):
+            self.calls["white_space"] = self.calls.get("white_space", 0) + 1
+            return Completion(content=white_space_reply(user), latency_s=0.0)
         assert "You extract structured facts from patents" in system
         self.calls["extract"] += 1
         return Completion(content=extract_reply(system, user), latency_s=0.0)
@@ -211,3 +221,30 @@ def test_full_text_columns_stay_out_of_the_csv():
     assert "Description" not in back and "Claims" in back and "First claim" in back
     assert "Left out to keep the file small: Description" in dl.caption
     assert "Description" in result.enriched  # still there for follow-up questions
+
+
+def test_clusters_take_their_patents_group_and_white_space_is_checked():
+    """3.xlsx: the cluster namer filed "Carcass Ply Architecture" under Novel architecture from its name; once
+    every patent is read, a cluster takes its patents' most frequent group."""
+    from analyst_agent.patents.pipeline import analysed_topics
+
+    plan = AnalysisPlan.from_dict(MODEL_PLAN)
+    model = FakeLLM(plan)
+    result, _ = _run(plan=plan, llm=model)
+    topics = analysed_topics(result)
+    frame = result.analysis_frame
+    cluster = result.corpus.std.loc[frame.index, "cluster_id"]
+    checked = 0
+    for _, topic in topics[topics["patents"] > 0].iterrows():
+        groups = frame.loc[(cluster == topic["id"]).values, "tech_group"]
+        groups = groups[groups != "Unclassified"]
+        if len(groups):
+            assert topic["tech_group"] == groups.value_counts().index[0]
+            checked += 1
+    assert checked >= 3
+    hierarchy = next(b for b in result.blocks if b.title == "Topic hierarchy")
+    assert "most frequent technology group of its patents" in hierarchy.caption
+    white = next(e for e in result.exhibits if e.key == "white_space")
+    if any(b.kind == "table" for b in white.blocks):
+        assert model.calls.get("white_space") == 1 and result.methods["White-space check"].startswith("The model")
+        assert white.facts.startswith("White space (statistical leads, each checked by the model")

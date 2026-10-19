@@ -1,4 +1,5 @@
 import io
+import json
 import re
 
 import pandas as pd
@@ -14,6 +15,7 @@ from analyst_agent.patents.html_report import markdown_to_html, report_html
 from analyst_agent.patents.pipeline import PipelineOptions, run_landscape
 from analyst_agent.patents.plan import DEFAULT_SECTIONS, AnalysisPlan
 
+from .conftest import ScriptedLLM
 from .patent_fixtures import make_export
 from .test_patent_pipeline import FakeLLM
 from .test_patent_plan import BRIEF, MODEL_PLAN
@@ -250,3 +252,58 @@ def test_not_covered_lines_about_answered_questions_are_dropped():
     assert out.count("Not covered by this data") == 1 and "Curing temperatures" in out
     assert out.startswith("- **Scope:**") and out.endswith("Few process patents.")
     assert drop_answered_gaps(text, []) == text
+
+
+def test_facts_over_budget_keep_every_part():
+    """241 patents in the user's 3.xlsx run: the summary's facts were cut at the end, which dropped the extra
+    columns and the brief's answers, so the summary said trade-off data was missing."""
+    from analyst_agent.patents.narrative import fit_facts
+
+    parts = [f"[Exhibit {i}] " + f"Fact {i} holds. " * (60 if i % 3 == 0 else 4) for i in range(12)]
+    text = "241 relevant patents. " + " ".join(parts) + " [Brief question] Which attributes? Answer: durability 102."
+    out = fit_facts(text, 2500)
+    assert len(out) <= 2500 and out.count("[Exhibit") == 12 and out.endswith("durability 102.")
+    assert "[Exhibit 1] Fact 1 holds. Fact 1 holds. Fact 1 holds. Fact 1 holds." in out  # short parts stay whole
+    assert fit_facts("short", 2500) == "short"
+
+
+def test_white_space_combinations_get_a_technical_check():
+    from analyst_agent.patents import analytics as an
+    from analyst_agent.patents.narrative import CHECK_COLUMN, check_white_space
+    from analyst_agent.patents.presets import preset_plan
+
+    plan = preset_plan("Lightweighting")
+    table = pd.DataFrame([
+        {"Component lightened": "Innerliner", "Technology group": "Lighter reinforcement", "Patents": 0,
+         "Expected": 5.1, "Gap": "few patents for this combination"},
+        {"Component lightened": "Belt & cap ply", "Technology group": "Lower-density compounds", "Patents": 0,
+         "Expected": 6.6, "Gap": "few patents for this combination"},
+        {"Component lightened": "Sidewall", "Technology group": "Complex solutions", "Patents": 0,
+         "Expected": float("nan"), "Gap": "no complex solution patented yet"},
+    ])
+    ex = an.Exhibit("white_space", "gaps", "White space", [rb.table(table, title="Under-explored combinations",
+                                                                    caption="Expected = ...")], "old facts")
+    reply = json.dumps([{"n": 1, "verdict": "unlikely", "reason": "innerliners carry no reinforcement"},
+                        {"n": 2, "verdict": "plausible", "reason": "lower-density belt skim compounds"},
+                        {"n": 3, "verdict": "maybe?", "reason": ""}])
+    llm = ScriptedLLM([reply])
+    note = check_white_space(ex, plan, llm)
+    sent = llm.calls[0][1]["content"]
+    assert "1. Innerliner × Lighter reinforcement: few patents for this combination (0 patents, about 5.1 expected)" in sent
+    assert "3. Sidewall × Complex solutions: no complex solution patented yet (0 patents)" in sent
+    checked = ex.blocks[0].table
+    assert list(checked["Component lightened"]) == ["Belt & cap ply", "Sidewall", "Innerliner"]  # leads first
+    assert list(checked[CHECK_COLUMN]) == ["plausible: lower-density belt skim compounds", "unsure",
+                                           "unlikely: innerliners carry no reinforcement"]
+    assert ex.facts.startswith("White space (statistical leads, each checked by the model for technical sense). "
+                               "Plausible leads: Belt & cap ply × Lower-density compounds (0 patents, expected 6.6")
+    assert "Rare for technical reasons, not leads: Innerliner × Lighter reinforcement" in ex.facts
+    assert note.startswith("The model judged the 3 under-explored combinations: 1 plausible, 1 unsure, 1 unlikely")
+    assert "an expert should confirm it" in ex.blocks[0].caption
+
+    class Down:
+        def chat(self, messages):
+            raise LLMError("Cannot reach model server")
+
+    ex2 = an.Exhibit("white_space", "gaps", "White space", [rb.table(table, title="t")], "old facts")
+    assert check_white_space(ex2, plan, Down()).startswith("Not done") and ex2.facts == "old facts"

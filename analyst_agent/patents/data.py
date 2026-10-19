@@ -7,6 +7,7 @@ every filtering step is recorded so the report can state exactly how the corpus 
 
 from __future__ import annotations
 
+import datetime
 import re
 from dataclasses import dataclass, field
 
@@ -327,6 +328,15 @@ def _year_of(value) -> float:
     return min(years) if years else np.nan
 
 
+def publication_years(values: pd.Series) -> pd.Series:
+    """Dates as fractional years (2015.02 = early January 2015). Only real dates count: a bare number such as
+    2015 says nothing about the day."""
+    if not pd.api.types.is_datetime64_any_dtype(values):
+        dated = values.map(lambda v: isinstance(v, (str, datetime.date)) and not re.fullmatch(r"\s*\d{4}\s*", str(v)))
+        values = pd.to_datetime(values.where(dated), errors="coerce", format="mixed")
+    return values.dt.year + (values.dt.dayofyear - 1) / 365.25
+
+
 def parse_year(series: pd.Series) -> pd.Series:
     """Year from dates in any common format: dates, bare years, yyyymmdd numbers, Excel serial dates,
     and cells listing several dates (the earliest). Years outside 1900-2100 count as missing."""
@@ -448,6 +458,9 @@ def build_corpus(
     else:
         year_basis = "not available"
         notes.append("No usable date column: year-based charts are skipped.")
+
+    # When each patent was published (fractional year): shows whether the export was cut to a publication window.
+    std["published"] = publication_years(col("pub_date")) if mapping.get("pub_date") else np.nan
 
     country_col = col("country").map(_clean_text).str.upper().str[:2]
     std["country"] = np.where(country_col.str.fullmatch(r"[A-Z]{2}"), country_col, std["id"].map(country_of))

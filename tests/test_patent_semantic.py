@@ -262,3 +262,24 @@ def test_semantic_map_reports_phases_and_names(corpus):
     assert res.topics["label"].tolist() == [f"Topic {i}" for i in res.topics["id"]]
     assert set(res.topics["tech_group"]) == {"Material science"}
     assert namer.calls == -(-len(res.topics) // 10)
+
+
+def test_umap_is_imported_without_tensorflow(monkeypatch):
+    """The user's Anaconda has TensorFlow: umap-learn loaded it (and Keras) for an unused variant, printing
+    oneDNN and deprecation messages on every run."""
+    import sys
+
+    from analyst_agent.patents import semantic
+
+    asked = []
+
+    class Watch:
+        def find_spec(self, name, path=None, target=None):
+            if name.split(".")[0] in ("tensorflow", "keras"):
+                asked.append(name)
+
+    monkeypatch.setattr(sys, "meta_path", [Watch(), *sys.meta_path])
+    for name in [m for m in sys.modules if m == "umap" or m.startswith("umap.")]:
+        monkeypatch.delitem(sys.modules, name)
+    umap = semantic.import_umap()
+    assert hasattr(umap, "UMAP") and asked == [] and "tensorflow" not in sys.modules

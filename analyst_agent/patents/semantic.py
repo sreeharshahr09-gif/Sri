@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import sys
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -112,6 +113,22 @@ def _tfidf_lsa(texts: list[str], seed: int) -> np.ndarray:
 # --------------------------------------------------------------------------- projection and clustering
 
 
+def import_umap():
+    """umap-learn, without TensorFlow. On import it loads TensorFlow and Keras for its optional parametric
+    variant whenever TensorFlow is installed (Anaconda ships it): seconds of start-up, memory and a screen of log
+    messages, for a variant this app never uses. TensorFlow is hidden during that import only."""
+    if "tensorflow" in sys.modules:  # already loaded by something else: nothing to save
+        import umap
+
+        return umap
+    sys.modules["tensorflow"] = None  # `import tensorflow` now fails at once; umap then skips the variant
+    try:
+        import umap
+    finally:
+        del sys.modules["tensorflow"]
+    return umap
+
+
 def reduce(emb: np.ndarray, dims: int, seed: int, min_dist: float) -> tuple[np.ndarray, str]:
     n = len(emb)
     if n < 6:
@@ -119,8 +136,7 @@ def reduce(emb: np.ndarray, dims: int, seed: int, min_dist: float) -> tuple[np.n
 
         return PCA(n_components=min(dims, n, emb.shape[1]), random_state=seed).fit_transform(emb), "PCA"
     try:
-        import umap
-
+        umap = import_umap()
         model = umap.UMAP(n_components=dims, n_neighbors=min(15, n - 1), min_dist=min_dist, metric="cosine",
                           random_state=seed)
         with warnings.catch_warnings():  # "n_jobs overridden by setting random_state" and similar notices

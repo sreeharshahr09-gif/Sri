@@ -15,7 +15,7 @@ import pandas as pd
 from ..llm import LLMClient, LLMError
 from ..parsing import strip_thinking
 from . import report as rb
-from .llmjson import chat_text, structured_client
+from .llmjson import JSONReplyError, ask_json_list, chat_text, structured_client
 
 CANONICAL = ["summary", "visuals", "players", "clusters", "process", "gaps"]
 SECTION_RULES = [  # first match wins; "Research gaps & future trends" is about gaps, not trend charts
@@ -130,8 +130,9 @@ legal status, freedom to operate or licensing unless a fact states it. When a fa
 possible or found nothing, report that plainly as a limit of this data set, not as a finding about the field.
 - The facts come from one patent export, not the whole industry: say "in this patent set" and draw no \
 conclusion about the industry, the market or new entrants.
-- White-space combinations are statistical leads, not tested for significance: recommend only those that make \
-technical sense for the brief, as leads to check, and do not call them significant.
+- White-space combinations are statistical leads, not tested for significance: recommend only those marked \
+plausible (or, if none are checked, those that make technical sense), as leads to check, and do not call them \
+significant. Never recommend a combination marked rare for technical reasons.
 - Write in Markdown: 5 to 8 bullet points with the most important findings (each starting with a short bold \
 phrase), then "**Recommended R&D directions:**" with 2 or 3 bullet points grounded in the gaps and trends. \
 At most 320 words. No heading, no preamble.\
@@ -180,9 +181,37 @@ def drop_answered_gaps(text: str, answered: list[str]) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
 
 
+def fit_facts(text: str, limit: int = MAX_FACTS) -> str:
+    """Facts shortened to `limit` characters so that every "[Exhibit] ..." part keeps a share: cutting the end
+    instead dropped whole exhibits (and the brief's answers) from the executive summary of a larger patent set.
+    Short parts stay whole; the long ones share the rest, each cut at a sentence end."""
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    parts = [p.strip() for p in re.split(r"(?=\[[^\[\]\n]{2,80}\] )", text) if p.strip()]
+    sizes = sorted(len(p) for p in parts)
+    budget, cap = limit - len(parts), 0  # one separator per part
+    for i, size in enumerate(sizes):  # the largest cap at which all parts fit
+        share = budget // (len(sizes) - i)
+        if size > share:
+            cap = share
+            break
+        budget -= size
+    else:
+        cap = max(sizes)
+    out = []
+    for part in parts:
+        if len(part) > cap:
+            cut = part[:cap]
+            end = max(cut.rfind(". "), cut.rfind("; "))
+            part = (cut[: end + 1] if end > cap // 2 else cut.rstrip()) + " …"
+        out.append(part)
+    return " ".join(out)[:limit]
+
+
 def section_facts(sec: Section, facts_by_kind: dict[str, str], all_facts: str) -> str:
     facts = all_facts if "summary" in sec.kinds or not sec.kinds else "\n".join(facts_by_kind.get(k, "") for k in sec.kinds)
-    return facts.strip()[:MAX_FACTS]
+    return fit_facts(facts)
 
 
 def write_sections(sections: list[Section], facts_by_kind: dict[str, str], all_facts: str, brief: str,
@@ -264,6 +293,75 @@ def cluster_facts(topics: pd.DataFrame | None, total: int) -> str:
     return f"Topic clusters from the patent map ({len(topics)} clusters): " + "; ".join(parts) + "."
 
 
+# --------------------------------------------------------------------------- white space: technical check
+
+WHITE_SPACE_SYSTEM = """\
+You are a tyre R&D expert. You get the objective of a patent landscape study, its two dimensions and \
+combinations that have few or no patents in the study's patent set. Judge each combination as an R&D option:
+- "plausible": a real technical option; say briefly how it could work,
+- "unlikely": rare for a technical reason (e.g. the component has no such part); say why,
+- "unsure": you cannot tell.
+Reply with only a JSON list, one object per combination: \
+{"n": <its number>, "verdict": "plausible" | "unlikely" | "unsure", "reason": "<at most 15 words>"}\
+"""
+CHECK_COLUMN = "Technical check (model)"
+_VERDICT_ORDER = {"plausible": 0, "unsure": 1, "unlikely": 2}
+
+
+def check_white_space(exhibit, plan, llm) -> str:
+    """Asks the model whether each under-explored combination makes technical sense (statistics alone flagged
+    "lighter reinforcement for the innerliner"). Adds its verdict to the table, lists only plausible and unsure
+    combinations as leads in the facts, and returns a line for the methodology ("" if nothing was checked)."""
+    block = next((b for b in exhibit.blocks if b.kind == "table" and b.table is not None), None)
+    if block is None or block.table.empty:
+        return ""
+    table = block.table.reset_index(drop=True)
+    label = plan.problem_label or "Problem"
+    lines = [f"Objective: {plan.objective}", f"{label} categories:"]
+    lines += [f"- {c.name}: {c.description}" for c in plan.problems]
+    lines += ["Technology groups:"] + [f"- {c.name}: {c.description}" for c in plan.tech_buckets]
+    lines += ["Complexity levels:"] + [f"- {c.name}: {c.description}" for c in plan.complexity_levels]
+    lines.append("Combinations with few or no patents:")
+    for i, r in table.iterrows():
+        where = r[label] if r["Technology group"] == "any" else f"{r[label]} × {r['Technology group']}"
+        counted = "" if pd.isna(r["Expected"]) else f", about {r['Expected']} expected"
+        lines.append(f"{i + 1}. {where}: {r['Gap']} ({r['Patents']} patents{counted})")
+    try:
+        items = ask_json_list(llm, WHITE_SPACE_SYSTEM, "\n".join(lines), retries=1, max_tokens=2000)
+    except (LLMError, JSONReplyError) as exc:
+        return f"Not done: the model could not judge the combinations ({str(exc)[:120]})."
+    verdicts = {}
+    for item in items:
+        try:
+            n = int(item.get("n"))
+        except (TypeError, ValueError):
+            continue
+        verdict = str(item.get("verdict", "")).strip().lower()
+        verdict = verdict if verdict in _VERDICT_ORDER else "unsure"
+        verdicts[n - 1] = (verdict, " ".join(str(item.get("reason", "")).split())[:160])
+    if not verdicts:
+        return "Not done: the model's reply held no judgements."
+    table[CHECK_COLUMN] = [f"{verdicts[i][0]}: {verdicts[i][1]}".rstrip(": ") if i in verdicts else "not judged"
+                           for i in table.index]
+    rank = [_VERDICT_ORDER.get(verdicts.get(i, ("unsure",))[0], 1) for i in table.index]
+    block.table = table.assign(_rank=rank).sort_values("_rank", kind="stable").drop(columns="_rank")
+    block.caption += (" Technical check: the model's view of whether each combination is a real R&D option; "
+                      "an expert should confirm it.")
+
+    def listing(kind: str) -> str:
+        rows = [(table.loc[i], verdicts[i][1]) for i in table.index if verdicts.get(i, ("",))[0] == kind]
+        return "; ".join(
+            (r[label] if r["Technology group"] == "any" else f"{r[label]} × {r['Technology group']}")
+            + f" ({r['Patents']} patents" + ("" if pd.isna(r["Expected"]) else f", expected {r['Expected']}")
+            + (f": {why}" if why else "") + ")" for r, why in rows) or "none"
+    exhibit.facts = (f"White space (statistical leads, each checked by the model for technical sense). Plausible "
+                     f"leads: {listing('plausible')}. Unsure: {listing('unsure')}. Rare for technical reasons, not "
+                     f"leads: {listing('unlikely')}.")
+    counts = {k: sum(v[0] == k for v in verdicts.values()) for k in _VERDICT_ORDER}
+    return (f"The model judged the {len(table)} under-explored combinations: {counts['plausible']} plausible, "
+            f"{counts['unsure']} unsure, {counts['unlikely']} unlikely; only plausible and unsure ones are leads.")
+
+
 # --------------------------------------------------------------------------- methodology
 
 
@@ -309,7 +407,10 @@ def methodology_blocks(result) -> list[rb.Block]:
     }), title="How the patent set was built", caption=f"Year basis: {corpus.year_basis}."))
     methods = pd.DataFrame({"Method": list(result.methods), "Detail": list(result.methods.values())})
     blocks.append(rb.table(methods, title="Methods used in this run"))
-    blocks.append(rb.table(pd.DataFrame(DEFINITIONS, columns=["Measure", "Definition"]), title="Definitions"))
+    definitions = list(DEFINITIONS)
+    if getattr(result, "window_note", ""):
+        definitions.insert(2, ("Publication window", result.window_note))
+    blocks.append(rb.table(pd.DataFrame(definitions, columns=["Measure", "Definition"]), title="Definitions"))
     amap = corpus.assignee_map
     if amap is not None and not amap.empty:
         merged = (amap.groupby("assignee")

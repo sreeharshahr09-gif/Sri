@@ -40,9 +40,11 @@ PRESETS: dict[str, dict] = {
             ("Lighter reinforcement", ("steel replaced by aramid, PET, nylon, hybrid or carbon-fibre cords; fewer "
                                        "or thinner cords and filaments")),
             ("Lower-density compounds", "lower-density polymers or fillers, less filler, light or hollow fillers"),
-            ("Gauge & structural design", "thinner gauges, fewer plies, new belt, bead or contour layouts"),
+            ("Gauge & structural design", ("thinner gauges, fewer plies, new ply, belt, bead or contour layouts "
+                                           "within a pneumatic tyre")),
             ("Manufacturing process", "building, calendering, curing and other processes that allow lighter parts"),
-            ("Novel architecture", "non-pneumatic and other new tyre concepts"),
+            ("Novel architecture", ("non-pneumatic, airless or other fundamentally new tyre concepts; not a new "
+                                    "ply, belt or bead layout of a pneumatic tyre")),
         ]),
         "complexity_levels": _levels("gauge or geometry change within an existing construction",
                                   "material substitution within the existing construction (new cord, compound)",

@@ -42,10 +42,19 @@ class Context:
     levels: list[str]  # complexity levels, simple to complex
     problem_label: str
     colors: dict[str, str]
-    incomplete_years: list[int]
+    incomplete_years: list[int]  # the last years: their patents are not all published yet (publication lag)
     years: tuple[int, int] | None
     has_details: bool  # the model's per-patent columns are present
     has_clusters: bool
+    # The first years, when the export only holds publications from `window_start` on (a search limited to
+    # recent publications): inventions filed then appear only if published late, e.g. as grants.
+    early_years: list[int] = field(default_factory=list)
+    window_start: float | None = None
+
+    @property
+    def partial_years(self) -> list[int]:
+        """Years whose counts are not comparable: cut short at the start or at the end."""
+        return sorted(set(self.early_years) | set(self.incomplete_years))
 
 
 # --------------------------------------------------------------------------- the analysis set
@@ -57,6 +66,7 @@ def build_frame(std: pd.DataFrame, details: pd.DataFrame | None, fields) -> pd.D
         "id": std["id"], "title": std["title"], "year": std["year"], "assignee": std["assignee"],
         "country": std["country"], "first_claim": std.get("first_claim", ""),
         "cited_by": pd.to_numeric(std.get("cited_by"), errors="coerce") if "cited_by" in std else np.nan,
+        "published": std.get("published", np.nan),
     }, index=std.index)
     if details is not None:
         for f in fields:
@@ -79,6 +89,33 @@ def in_scope(frame: pd.DataFrame) -> pd.Series:
 
 def fractional_year(day: date) -> float:
     return day.year + (day.timetuple().tm_yday - 1) / 365.25
+
+
+def cut_off_at_start(frame: pd.DataFrame, year_basis: str, span: tuple[int, int] | None) -> tuple[list[int], float | None]:
+    """(years cut short, first publication) when the export starts at a publication date well after its first
+    priority/filing years, as with a database search limited to recent publications. The patents of those years
+    were published years later than usual (grants, late family members) - the sign that the rest of them are
+    missing. An export that is not cut shows usual delays for its first years too."""
+    if not span or "published" not in frame or not re.search(r"priority|filing", year_basis):
+        return [], None
+    dated = frame.dropna(subset=["year", "published"])
+    if len(dated) < 20:
+        return [], None
+    start = float(dated["published"].min())
+    first_complete = math.ceil(start - 1.5)  # filed then, published from about 18 months later: all inside
+    if first_complete - span[0] < 2:
+        return [], None
+    delay = dated["published"] - dated["year"]
+    early, later = delay[dated["year"] < first_complete], delay[dated["year"] >= first_complete]
+    if len(early) < 3 or len(later) < 3 or early.median() < later.median() + 1.5:
+        return [], None
+    return list(range(span[0], first_complete)), start
+
+
+def month_year(fractional: float) -> str:
+    year = int(fractional)
+    month = min(12, int((fractional - year) * 12) + 1)
+    return f"{date(year, month, 1):%B %Y}"
 
 
 def make_context(frame: pd.DataFrame, plan: AnalysisPlan, year_basis: str, ref_year: float | None = None) -> Context:
@@ -105,11 +142,23 @@ def make_context(frame: pd.DataFrame, plan: AnalysisPlan, year_basis: str, ref_y
         else:  # publication dates: only a year that had not ended at the export is partial
             first_incomplete = math.floor(ref) + (1 if ref % 1 > 0.97 else 0)
         incomplete = [y for y in range(span[0], span[1] + 1) if y >= first_incomplete]
+    early, start = cut_off_at_start(frame, year_basis, span)
     return Context(
         plan=plan, year_basis=year_basis, groups=groups, levels=[c.name for c in plan.complexity_levels],
         problem_label=plan.problem_label or "Problem", colors=colors, incomplete_years=incomplete, years=span,
-        has_details="relevance" in frame, has_clusters="cluster" in frame,
+        has_details="relevance" in frame, has_clusters="cluster" in frame, early_years=early, window_start=start,
     )
+
+
+def early_years_text(ctx: Context) -> str:
+    """Why the first years are left out of comparisons, for captions and facts."""
+    if not ctx.early_years:
+        return ""
+    first, last = ctx.early_years[0], ctx.early_years[-1]
+    span = f"{first}–{last}" if last > first else str(first)
+    return (f"The export holds publications from {month_year(ctx.window_start)} on, so inventions first filed in "
+            f"{span} appear only when published late (e.g. as grants): those years are incomplete and left out of "
+            "growth and trend comparisons.")
 
 
 def _explode(frame: pd.DataFrame, col: str) -> pd.DataFrame:
@@ -206,14 +255,24 @@ def trend(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
         fig.add_vrect(x0=min(ctx.incomplete_years) - 0.5, x1=max(ctx.incomplete_years) + 0.5, fillcolor="#999",
                       opacity=0.12, line_width=0, annotation_text="incomplete (publication lag)",
                       annotation_position="top left", annotation_font_size=11)
+    if ctx.early_years:
+        fig.add_vrect(x0=min(ctx.early_years) - 0.5, x1=max(ctx.early_years) + 0.5, fillcolor="#999",
+                      opacity=0.12, line_width=0, annotation_text="incomplete (export starts later)",
+                      annotation_position="top left", annotation_font_size=11)
     fig.update_xaxes(dtick=1)
     _layout(fig, f"Patents per year by technology group ({ctx.year_basis})")
-    complete = total.drop(ctx.incomplete_years, errors="ignore")
+    complete = total.drop(ctx.partial_years, errors="ignore")
     growth_text, growth_fact = growth(complete)
     peak = int(complete.idxmax()) if len(complete) and complete.max() > 0 else None
     caption = (f"Bars: patents per year and technology group; line: all patents. Year basis: {ctx.year_basis}. "
-               "Shaded years are incomplete because applications publish about 18 months after filing. "
-               f"Growth, on complete years only: {growth_text}.")
+               + ("Shaded at the end: years incomplete because applications publish about 18 months after filing. "
+                  if ctx.incomplete_years else "")
+               + (f"Shaded at the start: {early_years_text(ctx)} " if ctx.early_years else "")
+               + f"Growth, on complete years only: {growth_text}.")
+    # Shares compared between the halves of the complete years: cut-short years would tilt them.
+    full = dated[~dated["year"].isin(ctx.partial_years)]
+    if full["year"].nunique() >= 2:
+        dated, lo, hi = full, int(full["year"].min()), int(full["year"].max())
     half = (lo + hi) // 2
     first, second = dated[dated["year"] <= half], dated[dated["year"] > half]
     shifts = []
@@ -224,6 +283,8 @@ def trend(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     facts = [f"Patents per year ({ctx.year_basis}): " + ", ".join(f"{y}: {int(c)}" for y, c in total.items()) + "."]
     if ctx.incomplete_years:
         facts.append(f"Incomplete years (publication lag): {', '.join(map(str, ctx.incomplete_years))}.")
+    if ctx.early_years:
+        facts.append(early_years_text(ctx) + " A lower count in those years is not a lower activity.")
     facts.append(growth_fact)
     if peak is not None:
         facts.append(f"Peak complete year: {peak} ({int(complete.max())} patents).")
@@ -257,7 +318,7 @@ def roadmap(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     lo, hi = int(dated["year"].min()), int(dated["year"].max())
     edges = np.linspace(lo, hi + 1, num=min(4, hi - lo + 1) + 1).round().astype(int)
     periods = [(int(edges[i]), int(edges[i + 1]) - 1) for i in range(len(edges) - 1) if edges[i + 1] - 1 >= edges[i]]
-    partial = set(ctx.incomplete_years)
+    partial = set(ctx.partial_years)
     labels = [(f"{p0}–{p1}" if p1 > p0 else str(p0)) + ("*" if partial & set(range(p0, p1 + 1)) else "")
               for p0, p1 in periods]
     period_of = {y: lab for (p0, p1), lab in zip(periods, labels) for y in range(p0, p1 + 1)}
@@ -265,13 +326,19 @@ def roadmap(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     grid = grid.reindex([g for g in ctx.groups if g in grid.index])
     grid.index.name = "Technology group"
     grid.columns.name = None
-    star = ("* includes years still incomplete because of the publication lag: a lower count there is not "
-            "(yet) a decline." if any(lab.endswith("*") for lab in labels) else "")
+    star = ""
+    if any(lab.endswith("*") for lab in labels):
+        star = "* includes years with incomplete counts. " + " ".join(
+            ([("At the end: the last years are not all published yet (publication lag), so a lower count there "
+               "is not (yet) a decline.")] if ctx.incomplete_years else [])
+            + ([(f"At the start: the export holds publications from {month_year(ctx.window_start)} on, so the first "
+                 "years are only partly included and their lower counts are not lower activity.")]
+               if ctx.early_years else []))
     blocks.append(rb.table(grid.reset_index(), title="Patents per technology group and period", caption=star))
     facts.append("Patents per technology group and period: " + "; ".join(
         f"{g}: " + ", ".join(f"{p} {int(v)}" for p, v in row.items()) for g, row in grid.iterrows()) + "."
         + (f" {star}" if star else ""))
-    complete = dated[~dated["year"].isin(ctx.incomplete_years)]
+    complete = dated[~dated["year"].isin(ctx.partial_years)]
     if ctx.has_clusters and complete["year"].nunique() >= 4:
         last = int(complete["year"].max())
         recent_from = last - 2  # the last three complete years
@@ -628,7 +695,7 @@ def competitors(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     a = a.assign(score=crown_jewel_scores(a))
     total = len(a)
     complete_years = a["year"].dropna()
-    complete_years = complete_years[~complete_years.isin(ctx.incomplete_years)]
+    complete_years = complete_years[~complete_years.isin(ctx.partial_years)]
     last = int(complete_years.max()) if len(complete_years) else None
     window = f"{last - 2}–{last}" if last else ""
     rows, jewels, facts, pooled = [], [], [], []

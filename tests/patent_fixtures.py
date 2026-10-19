@@ -235,3 +235,15 @@ def agent_reply(messages: list[dict]) -> str:
             "t = d['Technology group'].value_counts()\n"
             "import plotly.express as px\nshow(px.bar(t, title='Relevant patents per technology group'))\n"
             "print(t.to_string())\n```")
+
+
+def white_space_reply(user: str) -> str:
+    """The technical check of white-space combinations: odd ones plausible, even ones unlikely."""
+    items = []
+    for line in user.splitlines():
+        head = line.split(".", 1)[0]
+        if head.isdigit():
+            n = int(head)
+            items.append({"n": n, "verdict": "plausible" if n % 2 else "unlikely",
+                          "reason": "a lighter compound could do it" if n % 2 else "the part has no such element"})
+    return json.dumps(items)

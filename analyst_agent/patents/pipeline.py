@@ -64,6 +64,8 @@ class LandscapeResult:
     model_name: str = ""
     stop_reason: str = ""  # why the run stopped early, if not at the user's request
     incomplete_years: list = field(default_factory=list)  # years cut short by the publication lag
+    early_years: list = field(default_factory=list)  # first years cut short: the export starts at a later date
+    window_note: str = ""  # explains early_years
     methods: dict[str, str] = field(default_factory=dict)  # method -> description, for the methodology
 
 
@@ -115,6 +117,8 @@ def run_landscape(
             extraction_stage(result, llm, options, emit, should_stop)
         checkpoint("Computing the landscape analytics")
         analytics_stage(result)
+        if llm is not None and options.write_report:
+            white_space_stage(result, llm)
         collect_facts(result)
         if options.answer_questions and result.plan.analysis_questions:
             questions_stage(result, llm, emit, checkpoint)
@@ -139,11 +143,22 @@ def analytics_stage(result: LandscapeResult) -> None:
         corpus.flow.append(FlowStep("Removed: judged off-topic by the model (Relevance: Low)", int(keep.sum()),
                                     int((~keep).sum())))
     result.analysis_frame = frame[keep]
-    result.incomplete_years = an.make_context(result.analysis_frame, result.plan, corpus.year_basis,
-                                              ref_year=export_date(corpus)).incomplete_years
+    ctx = an.make_context(result.analysis_frame, result.plan, corpus.year_basis, ref_year=export_date(corpus))
+    result.incomplete_years, result.early_years = ctx.incomplete_years, ctx.early_years
+    result.window_note = an.early_years_text(ctx)
+    if result.window_note:
+        result.warnings.append(result.window_note)
     result.exhibits, notes = an.run_analytics(result.analysis_frame, result.plan, corpus.year_basis,
                                               ref_year=export_date(corpus))
     result.warnings.extend(notes)
+
+
+def white_space_stage(result: LandscapeResult, llm) -> None:
+    ex = next((e for e in result.exhibits if e.key == "white_space"), None)
+    if ex is not None:
+        note = nar.check_white_space(ex, result.plan, llm)
+        if note:
+            result.methods["White-space check"] = note
 
 
 FACT_PRIORITY = ["trend", "players", "problem_solution", "white_space", "roadmap", "complexity", "competitors",
@@ -438,6 +453,14 @@ def analysed_topics(result: LandscapeResult) -> pd.DataFrame | None:
     topics = res.topics.copy()
     topics["all_patents"] = topics["patents"]
     topics["patents"] = topics["id"].map(counts).fillna(0).astype(int)
+    frame = result.analysis_frame
+    if result.extraction is not None and frame is not None and "tech_group" in frame:
+        # Every patent's group was read from the patent itself: the cluster takes its patents' most frequent
+        # group, not the namer's guess from keywords (which put "Carcass ply architecture" under "Novel
+        # architecture" for the user).
+        groups = frame.loc[frame["tech_group"] != an.UNCLASSIFIED].assign(cid=std.loc[frame.index, "cluster_id"])
+        majority = groups.groupby("cid")["tech_group"].agg(lambda g: g.value_counts().index[0])
+        topics["tech_group"] = topics["id"].map(majority).fillna(topics.get("tech_group", ""))
     return topics.sort_values(["patents", "all_patents"], ascending=False, kind="stable")
 
 
@@ -510,9 +533,10 @@ def semantic_blocks(corpus: PatentCorpus, res: sem.SemanticResult, topics: pd.Da
                           color="tech_group", color_discrete_sequence=px.colors.qualitative.Set2, height=520)
         fig2.update_traces(root_color="#f4f4f4", textinfo="label+value+percent root")
         fig2.update_layout(margin={"l": 5, "r": 5, "t": 40, "b": 5}, title="Topic clusters by technology group")
-        blocks.append(rb.chart(fig2, title="Topic hierarchy",
-                               caption="Box size is the number of patents. Groups come from your plan; the model "
-                                       "assigned each cluster to one."))
+        blocks.append(rb.chart(fig2, title="Topic hierarchy", caption=(
+            "Box size is the number of patents. Each cluster sits under the most frequent technology group of its "
+            "patents." if per_patent else
+            "Box size is the number of patents. Groups come from your plan; the model assigned each cluster to one.")))
     return blocks
 
 

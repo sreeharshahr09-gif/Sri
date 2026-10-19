@@ -244,6 +244,8 @@ def _landscape_profile(result, dataset: Dataset, sample_rows: int, fact_chars: i
     if incomplete:
         lines.append(f"Years {', '.join(map(str, incomplete))} are incomplete because patents publish about 18 months "
                      "after filing: never read a lower count there as a decline.")
+    if getattr(result, "window_note", ""):
+        lines.append(result.window_note + " Never read their lower counts as lower activity or as growth since.")
     if len(dataset.df) < 300:
         lines.append("Counts here are small: with fewer than about 10 patents per year or per group, describe changes "
                      "as indicative and do not explain them by shifts in the industry the data cannot show.")

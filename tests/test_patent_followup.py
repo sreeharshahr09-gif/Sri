@@ -164,3 +164,14 @@ def test_agent_answers_from_the_enriched_table(result, sandbox):
     assert run.status == "answered" and run.executed and run.grounding.fully_traced
     assert "This table is the enriched patent set" in llm.calls[0][0]["content"]
     assert [a.kind for a in run.report_artifacts()] == ["table"]
+
+
+def test_agent_is_told_about_a_cut_off_export(result):
+    import copy
+
+    cut = copy.copy(result)
+    cut.window_note = ("The export holds publications from January 2015 on, so inventions first filed in 2005–2013 "
+                       "appear only when published late (e.g. as grants): those years are incomplete and left out "
+                       "of growth and trend comparisons.")
+    profile = fu.landscape_profile(cut, fu.analysis_dataset(cut))
+    assert cut.window_note in profile and "Never read their lower counts as lower activity" in profile
