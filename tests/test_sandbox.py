@@ -209,6 +209,16 @@ def test_secrets_not_exposed_to_worker(sandbox, sales_df, monkeypatch):
     assert seen["MPLBACKEND"] == "Agg"
 
 
+def test_tables_keep_text_and_duplicate_columns(sandbox, sales_df):
+    sandbox.set_dataframe(sales_df)
+    result = sandbox.run("t = pd.DataFrame({'zip': ['00123', '04567'], 'timestamp': [1700000000, 1700000001]})\n"
+                         "show(t)\nshow(pd.concat([t, t], axis=1))")
+    table, doubled = (a.to_dataframe() for a in result.artifacts)
+    assert table["zip"].tolist() == ["00123", "04567"]  # text stays text: leading zeros survive
+    assert table["timestamp"].tolist() == [1700000000, 1700000001]  # a date-like name does not make it a date
+    assert list(doubled.columns) == ["zip", "timestamp", "zip.1", "timestamp.1"]
+
+
 def test_result_is_json_round_trippable(sandbox, sales_df):
     sandbox.set_dataframe(sales_df)
     result = sandbox.run("show(df.describe())\nshow('**bold**')")

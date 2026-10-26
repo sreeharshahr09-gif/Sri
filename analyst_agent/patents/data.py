@@ -334,7 +334,7 @@ def publication_years(values: pd.Series) -> pd.Series:
     if not pd.api.types.is_datetime64_any_dtype(values):
         dated = values.map(lambda v: isinstance(v, (str, datetime.date)) and not re.fullmatch(r"\s*\d{4}\s*", str(v)))
         values = pd.to_datetime(values.where(dated), errors="coerce", format="mixed")
-    return values.dt.year + (values.dt.dayofyear - 1) / 365.25
+    return values.dt.year + (values.dt.day_of_year - 1) / 365.25
 
 
 def parse_year(series: pd.Series) -> pd.Series:

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import ast
 import importlib.util
-import io
 import json
 import os
 import re
@@ -146,6 +145,20 @@ def validate_code(code: str) -> list[str]:
 # --------------------------------------------------------------------------- results
 
 
+def _unique_names(names: list) -> list[str]:
+    """Column names made unique the way pandas readers do it: a, a.1, a.2."""
+    seen: dict[str, int] = {}
+    out = []
+    for name in map(str, names):
+        if name in seen:
+            seen[name] += 1
+            name = f"{name}.{seen[name]}"
+        else:
+            seen[name] = 0
+        out.append(name)
+    return out
+
+
 @dataclass
 class Artifact:
     """A displayable output (figure, table, image, value or text) from one execution."""
@@ -162,7 +175,10 @@ class Artifact:
         return pio.from_json(self.payload["figure_json"])
 
     def to_dataframe(self) -> pd.DataFrame:
-        return pd.read_json(io.StringIO(self.payload["table_json"]), orient="split", convert_dates=False)
+        # Read by hand rather than with pd.read_json, whose type guessing turns text such as "00123" into
+        # 123 and whose date options differ between pandas versions.
+        data = json.loads(self.payload["table_json"])
+        return pd.DataFrame(data["data"], columns=_unique_names(data["columns"]), index=data.get("index"))
 
     def to_dict(self) -> dict[str, Any]:
         return {"kind": self.kind, "title": self.title, "summary": self.summary,

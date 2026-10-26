@@ -76,7 +76,8 @@ def build_frame(std: pd.DataFrame, details: pd.DataFrame | None, fields) -> pd.D
         frame["cluster_group"] = std["cluster_tech_group"]
     if "tech_group" not in frame or frame["tech_group"].fillna("").eq("").all():
         frame["tech_group"] = frame.get("cluster_group", np.nan)
-    frame["tech_group"] = frame["tech_group"].replace("", np.nan).fillna(UNCLASSIFIED)
+    # As objects first: without the model's answers the column is all-NaN floats, which cannot hold a label.
+    frame["tech_group"] = frame["tech_group"].astype(object).replace("", np.nan).fillna(UNCLASSIFIED)
     return frame
 
 

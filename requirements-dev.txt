@@ -1,4 +1,5 @@
 -r requirements.txt
-pytest>=8
-matplotlib>=3.7
-pypdf>=4
+pytest>=8,<10
+matplotlib>=3.7,<4
+pypdf>=4,<7
+ruff>=0.6
