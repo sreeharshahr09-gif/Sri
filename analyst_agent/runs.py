@@ -12,10 +12,43 @@ from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
 from typing import Any, Callable, ClassVar
 
+from .enums import StrEnum
 from .sandbox import Artifact, ExecutionResult
 
+
+class Event(StrEnum):
+    """Kinds of progress report passed to on_event(kind, payload)."""
+
+    LLM_CALL = "llm_call"  # payload: the step index; the model is being asked
+    EXECUTING = "executing"  # payload: the AgentStep whose code is about to run
+    TOOL = "tool"  # payload: the AgentStep whose tool call is about to run
+    STEP = "step"  # payload: the finished AgentStep
+    DONE = "done"  # payload: the finished AgentRun
+    PHASE = "phase"  # payload: the label of a pipeline phase that starts
+    PROGRESS = "progress"  # payload: (done, total) items of the current phase
+
+
 # on_event(kind, payload): progress reports from an agent or pipeline to whoever displays it.
-EventHandler = Callable[[str, Any], None]
+EventHandler = Callable[[Event, Any], None]
+
+
+class RunStatus(StrEnum):
+    RUNNING = "running"
+    ANSWERED = "answered"
+    STEP_LIMIT = "step_limit"  # answered because the step limit was reached
+    LLM_ERROR = "llm_error"
+    ERROR = "error"
+    CANCELLED = "cancelled"
+
+
+class StepNote(StrEnum):
+    """Why a step carried nothing out (shown in the trace)."""
+
+    PREMATURE = "premature answer"  # an answer before any evidence: sent back to check
+    REPEATED = "repeated"  # the same action as an earlier step
+    TRUNCATED = "truncated"  # the reply was cut off inside a block
+    INVALID_TOOL_CALL = "invalid tool call"
+    NO_PYTHON = "python unavailable"
 
 
 @dataclass
@@ -25,7 +58,7 @@ class AgentStep:
     thought: str = ""
     code: str | None = None
     result: ExecutionResult | None = None
-    note: str | None = None  # "repeated", "truncated", ...
+    note: StepNote | None = None
     llm_latency_s: float = 0.0
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
@@ -50,6 +83,8 @@ class AgentStep:
     def from_dict(cls, data: dict[str, Any]) -> AgentStep:
         data = dict(data)
         result = data.pop("result", None)
+        if data.get("note"):
+            data["note"] = StepNote(data["note"])
         return cls(result=ExecutionResult.from_dict(result) if result else None, **data)
 
 
@@ -57,7 +92,7 @@ class AgentStep:
 class AgentRun:
     question: str
     answer: str = ""
-    status: str = "running"  # answered | step_limit | llm_error | error | cancelled
+    status: RunStatus = RunStatus.RUNNING
     error: str | None = None
     steps: list[AgentStep] = field(default_factory=list)
     started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat(timespec="seconds"))
@@ -118,6 +153,8 @@ class AgentRun:
         known = {f.name for f in fields(run_type)}
         values = {k: v for k, v in data.items() if k in known}
         values["steps"] = [AgentStep.from_dict(s) for s in values.get("steps", [])]
+        if "status" in values:
+            values["status"] = RunStatus(values["status"])
         return run_type(**run_type._restore(values))
 
     @classmethod

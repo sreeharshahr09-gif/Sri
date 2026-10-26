@@ -23,6 +23,7 @@ from analyst_agent.patents import report as rb
 from analyst_agent.patents.data import ROLE_LABELS, build_corpus, detect_columns
 from analyst_agent.patents.followup import (
     FollowUp,
+    FollowUpStatus,
     agent_client,
     analysis_dataset,
     apply_changes,
@@ -32,6 +33,7 @@ from analyst_agent.patents.followup import (
     route,
 )
 from analyst_agent.patents.pipeline import LandscapeResult, PipelineOptions, run_landscape
+from analyst_agent.patents.result import LandscapeStatus
 from analyst_agent.patents.plan import (
     AnalysisPlan,
     categories_from_text,
@@ -40,6 +42,7 @@ from analyst_agent.patents.plan import (
     parse_brief,
 )
 from analyst_agent.patents.presets import preset_names, preset_plan
+from analyst_agent.runs import Event
 from analyst_agent.sandbox import Sandbox
 from ui import jobs
 from ui.common import remember
@@ -84,10 +87,8 @@ jobs.JOB_SINKS[JOB] = _sink
 
 
 def describe_event(kind: str, payload) -> tuple[str | None, tuple[str, str] | None]:
-    if kind == "phase":
+    if kind == Event.PHASE:
         return f"{payload}…", ("caption", f"▸ {payload}")
-    if kind == "note":
-        return None, ("caption", str(payload))
     return describe_agent_event(kind, payload)  # follow-up questions run the data agent
 
 
@@ -190,7 +191,7 @@ def brief_step(busy: bool, llm_cfg: LLMConfig) -> None:
         base = preset_plan(preset) if preset else None
 
         def work(on_event, should_stop):
-            on_event("phase", "Reading your brief" + (" and the export's titles" if titles else ""))
+            on_event(Event.PHASE, "Reading your brief" + (" and the export's titles" if titles else ""))
             return PlanReady(parse_brief(LLMClient(llm_cfg), text, titles, base=base))
 
         st.session_state[JOB] = jobs.start_job("Prepare the analysis plan", "Patent landscape", work, describe_event)
@@ -437,11 +438,11 @@ def download_row(blocks: list[rb.Block], key: str) -> None:
 
 
 def render_result(result: LandscapeResult, idx: int) -> None:
-    if result.status == "cancelled" and result.stop_reason:
+    if result.status == LandscapeStatus.CANCELLED and result.stop_reason:
         st.warning(f"The analysis stopped early; what was finished is shown. {result.stop_reason}", icon="⏹")
-    elif result.status == "cancelled":
+    elif result.status == LandscapeStatus.CANCELLED:
         st.info("The analysis was stopped at your request; what was finished is shown.", icon="⏹")
-    elif result.status == "error":
+    elif result.status == LandscapeStatus.ERROR:
         st.warning(f"{result.error} Everything else the analysis produced is shown.", icon="⚠️")
     for w in result.warnings:
         st.caption(f"ℹ️ {w}")
@@ -488,14 +489,14 @@ def start_followup(text: str, base: LandscapeResult, llm_cfg: LLMConfig) -> None
 
     def work(on_event, should_stop):
         llm = LLMClient(llm_cfg)
-        on_event("phase", "Understanding your request")
+        on_event(Event.PHASE, "Understanding your request")
         decision = route(llm, text, base.plan, headings)
         fu = FollowUp(question=text, route=decision)
         if decision.action == "change_plan":
             fu.new_plan, fu.diff = apply_changes(base.plan, decision.changes)
-            fu.status = "proposed" if fu.diff else "done"
+            fu.status = FollowUpStatus.PROPOSED if fu.diff else FollowUpStatus.DONE
         elif decision.action == "rewrite":
-            on_event("phase", "Rewriting the text")
+            on_event(Event.PHASE, "Rewriting the text")
             fu.sections = rewrite(base, llm, decision.sections, decision.instruction or text)
         else:
             fu.run = agent.run(text, history=history, on_event=on_event, should_stop=should_stop)
@@ -517,19 +518,19 @@ def render_followup(fu: FollowUp, idx: int, busy: bool, llm_cfg: LLMConfig) -> N
             st.info("Nothing in the plan would change with this request.", icon="ℹ️")
             return
         st.markdown("**Proposed plan changes**\n\n" + "\n".join(f"- {line}" for line in fu.diff))
-        if fu.status == "proposed":
+        if fu.status == FollowUpStatus.PROPOSED:
             c1, c2, _ = st.columns([2, 1, 3])
             if c1.button("▶ Apply and run again", key=f"fu-apply-{idx}", type="primary", disabled=busy):
-                fu.status = "applied"
+                fu.status = FollowUpStatus.APPLIED
                 st.session_state.pl_plan = fu.new_plan
                 st.session_state.pl_plan_version += 1
                 start_run(fu.new_plan, st.session_state.pl_mapping, st.session_state.pl_sample, llm_cfg)
             if c2.button("Discard", key=f"fu-discard-{idx}", disabled=busy):
-                fu.status = "discarded"
+                fu.status = FollowUpStatus.DISCARDED
                 st.rerun()
         else:
             st.caption("Applied: the plan above is updated and the new analysis follows below."
-                       if fu.status == "applied" else "Discarded.")
+                       if fu.status == FollowUpStatus.APPLIED else "Discarded.")
     elif fu.route.action == "rewrite":
         for i, sec in enumerate(fu.sections):
             st.markdown(f"**Revised: {sec.heading}**")

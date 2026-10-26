@@ -13,6 +13,8 @@ import math
 import re
 from dataclasses import dataclass, field
 
+from .enums import StrEnum
+
 _ANSWER_NUMBER = re.compile(
     r"(?<![\w.])([<>≤≥~≈]\s*)?(-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)"
     r"(\s*(?:%|percent\b|[kKmMbB]\b|thousand\b|million\b|billion\b|pp\b))?"
@@ -128,12 +130,18 @@ _CITATION = re.compile(
 )
 
 
+class CitationStatus(StrEnum):
+    VERIFIED = "verified"  # the agent opened these lines in this run
+    UNSEEN = "unseen"  # the lines exist but were not opened
+    INVALID = "invalid"  # no such file or lines
+
+
 @dataclass
 class Citation:
     path: str
     start: int
     end: int
-    status: str  # "verified" (seen in this run), "unseen" (exists, not opened), "invalid"
+    status: CitationStatus
     detail: str = ""
 
     @property
@@ -145,7 +153,7 @@ class Citation:
 class CitationReport:
     citations: list[Citation] = field(default_factory=list)
 
-    def by_status(self, status: str) -> list[Citation]:
+    def by_status(self, status: CitationStatus) -> list[Citation]:
         return [c for c in self.citations if c.status == status]
 
     def to_dict(self) -> dict:
@@ -153,7 +161,7 @@ class CitationReport:
 
     @classmethod
     def from_dict(cls, data: dict) -> "CitationReport":
-        return cls([Citation(**c) for c in data.get("citations", [])])
+        return cls([Citation(**{**c, "status": CitationStatus(c["status"])}) for c in data.get("citations", [])])
 
 
 def check_citations(answer: str, line_counts, seen: dict[str, list[tuple[int, int]]]) -> CitationReport:
@@ -172,14 +180,14 @@ def check_citations(answer: str, line_counts, seen: dict[str, list[tuple[int, in
         try:
             norm, n_lines = line_counts(path)
         except ValueError as exc:
-            cite = Citation(path, start, end, "invalid", str(exc))
+            cite = Citation(path, start, end, CitationStatus.INVALID, str(exc))
         else:
             if start < 1 or end > n_lines:
-                cite = Citation(norm, start, end, "invalid", f"the file has {n_lines} lines")
+                cite = Citation(norm, start, end, CitationStatus.INVALID, f"the file has {n_lines} lines")
             elif any(a <= end and start <= b for a, b in seen.get(norm, [])):
-                cite = Citation(norm, start, end, "verified")
+                cite = Citation(norm, start, end, CitationStatus.VERIFIED)
             else:
-                cite = Citation(norm, start, end, "unseen", "these lines were not opened in this answer")
+                cite = Citation(norm, start, end, CitationStatus.UNSEEN, "these lines were not opened in this answer")
         key = (cite.path, cite.start, cite.end)
         if key not in keys:
             keys.add(key)

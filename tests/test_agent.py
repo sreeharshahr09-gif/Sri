@@ -327,3 +327,16 @@ def test_context_budget_without_model_settings_uses_the_default(monkeypatch):
     assert context_budget_chars() == DEFAULT_CONTEXT_CHARS
     monkeypatch.setenv("AGENT_MAX_CONTEXT_CHARS", "50000")
     assert context_budget_chars() == 50_000
+
+
+def test_statuses_read_and_save_as_plain_text(sandbox, dataset):
+    from analyst_agent.editing import ChangeStatus
+    from analyst_agent.runs import RunStatus
+
+    assert f"{RunStatus.ANSWERED}" == "answered" and str(ChangeStatus.PENDING) == "pending"
+    assert json.dumps({"s": ChangeStatus.PENDING}) == '{"s": "pending"}'
+    assert {"pending": 1}[ChangeStatus.PENDING] == 1 and RunStatus("cancelled") is RunStatus.CANCELLED
+    _, agent = make_agent(["```python\nprint(1)\n```", "Final Answer: 1"], sandbox, dataset)
+    saved = json.loads(json.dumps(agent.run("q").to_dict()))
+    assert saved["status"] == "answered"
+    assert AgentRun.from_dict(saved).status is RunStatus.ANSWERED

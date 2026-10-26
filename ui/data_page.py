@@ -28,6 +28,7 @@ from analyst_agent.data import (
     load_dataset,
 )
 from analyst_agent.export import to_json, to_markdown, to_notebook
+from analyst_agent.runs import Event, RunStatus, StepNote
 from ui import jobs
 from ui.common import remember, render_artifact, render_execution
 
@@ -192,11 +193,11 @@ def render_step(step, run_idx: int) -> None:
             title += " · 🚫 rejected by policy"
         else:
             title += f" · ❌ {r.error_type}"
-    elif step.note == "repeated":
+    elif step.note == StepNote.REPEATED:
         title += " · ↩️ duplicate code skipped"
-    elif step.note == "truncated":
+    elif step.note == StepNote.TRUNCATED:
         title += " · ✂️ reply truncated"
-    elif step.note == "premature answer":
+    elif step.note == StepNote.PREMATURE:
         title += " · ↩️ answered without evidence, sent back to verify"
     elif step.code is None:
         title += " · 📝 answer"
@@ -212,18 +213,18 @@ def render_step(step, run_idx: int) -> None:
 
 
 def render_run(run: DataRun, run_idx: int) -> None:
-    if run.status == "llm_error":
+    if run.status == RunStatus.LLM_ERROR:
         st.error(f"Model error: {run.error}")
-    elif run.status == "error":
+    elif run.status == RunStatus.ERROR:
         st.error(f"The analysis stopped unexpectedly: {run.error}")
-    elif run.status == "cancelled":
+    elif run.status == RunStatus.CANCELLED:
         st.info("Stopped at your request. The steps completed so far are in the trace below.", icon="⏹")
     if run.answer:
         st.markdown(run.answer)
 
     if run.answer and not run.executed:
         st.warning("This answer is not backed by any executed code. Treat it as unverified.", icon="⚠️")
-    elif run.status == "step_limit":
+    elif run.status == RunStatus.STEP_LIMIT:
         st.warning("The step limit was reached before the agent finished; the answer may be incomplete.",
                    icon="⏱️")
     g = run.grounding
@@ -287,11 +288,11 @@ def render_data_tab(dataset: Dataset, profile: str) -> None:
 
 def describe_event(kind: str, payload) -> tuple[str | None, tuple[str, str] | None]:
     """Progress text for an agent event (runs in the worker thread: no Streamlit calls)."""
-    if kind == "llm_call":
+    if kind == Event.LLM_CALL:
         return f"Thinking (step {payload + 1})…", None
-    if kind == "executing":
+    if kind == Event.EXECUTING:
         return f"Running code (step {payload.index + 1})…", ("code", payload.code)
-    if kind == "step":
+    if kind == Event.STEP:
         r = payload.result
         if r is None:
             return None, ("caption", f"Step {payload.index + 1}: {payload.note}")

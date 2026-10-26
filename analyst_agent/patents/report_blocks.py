@@ -6,18 +6,20 @@ renders them; this module decides what goes where for a LandscapeResult.
 
 from __future__ import annotations
 
-import base64
 import re
 from datetime import datetime
 
 import pandas as pd
 
+from ..agent import DataRun
+from ..runs import RunStatus
+from ..sandbox import Artifact, ArtifactKind, has_row_labels
 from . import narrative as nar
 from . import report as rb
 from . import semantic as sem
 from .data import PatentCorpus
 from .html_report import report_html
-from .result import LandscapeResult, PipelineOptions, analysed_index, analysed_topics
+from .result import LandscapeResult, LandscapeStatus, PipelineOptions, analysed_index, analysed_topics
 
 
 def assemble_blocks(result: LandscapeResult, options: PipelineOptions | None = None) -> list[rb.Block]:
@@ -164,16 +166,16 @@ def brief_specific_blocks(result: LandscapeResult) -> list[rb.Block]:
                        "code run on the enriched patent table. The code behind each answer is shown.")] + parts
 
 
-def agent_run_blocks(run) -> list[rb.Block]:
+def agent_run_blocks(run: DataRun) -> list[rb.Block]:
     """An AgentRun as report blocks: answer, number check, charts and tables, code."""
     blocks: list[rb.Block] = []
-    if run.status in ("llm_error", "error"):
+    if run.status in (RunStatus.LLM_ERROR, RunStatus.ERROR):
         blocks.append(rb.note(f"Not answered: {run.error or 'the analysis stopped'}"))
     if run.answer:
         blocks.append(rb.markdown(run.answer))
         if not run.executed:
             blocks.append(rb.note("This answer is not backed by any executed code; treat it as unverified."))
-        elif run.status == "step_limit":
+        elif run.status == RunStatus.STEP_LIMIT:
             blocks.append(rb.note("The step limit was reached before the agent finished; the answer may be "
                                   "incomplete."))
     g = run.grounding
@@ -193,21 +195,20 @@ def agent_run_blocks(run) -> list[rb.Block]:
     return blocks
 
 
-def artifact_block(art) -> rb.Block | None:
+def artifact_block(art: Artifact) -> rb.Block | None:
     try:
-        if art.kind == "plotly":
+        if art.kind == ArtifactKind.PLOTLY:
             return rb.chart(art.to_plotly())
-        if art.kind == "table":
+        if art.kind == ArtifactKind.TABLE:
             df = art.to_dataframe()
-            if not pd.api.types.is_integer_dtype(df.index):  # labelled index (e.g. value_counts): keep it
+            if has_row_labels(df):  # e.g. the values counted by value_counts: keep them as a column
                 df = df.reset_index()
             return rb.table(df, title=art.title or "")
-        if art.kind == "image":
-            return rb.image(base64.b64decode(art.payload["png_b64"]), title=art.title or "")
-        text = str(art.payload.get("text", art.summary))
-        if art.kind == "text":
-            return rb.markdown(text)
-        return rb.metrics([(art.title or "Result", text)]) if len(text) <= 40 else rb.markdown(f"`{text}`")
+        if art.kind == ArtifactKind.IMAGE:
+            return rb.image(art.image_bytes(), title=art.title or "")
+        if art.kind == ArtifactKind.TEXT:
+            return rb.markdown(art.text)
+        return rb.metrics([(art.title or "Result", art.text)]) if art.is_metric else rb.markdown(f"`{art.text}`")
     except (AttributeError, KeyError, TypeError, ValueError):  # a broken output must not break the report
         return None
 
@@ -278,9 +279,9 @@ def html_download(result: LandscapeResult, blocks: list[rb.Block]) -> rb.Block:
                 + f" · {result.dataset_name or 'uploaded export'} · generated "
                 + datetime.fromisoformat(result.started_at).strftime("%d %b %Y")
                 + (f" with {result.model_name}" if result.model_name else ""))
-    if result.status == "cancelled":
+    if result.status == LandscapeStatus.CANCELLED:
         subtitle += " · stopped before the end: partial results"
-    elif result.status == "error":
+    elif result.status == LandscapeStatus.ERROR:
         subtitle += " · part of the analysis failed: see the notes"
     page = report_html(blocks, f"Patent landscape: {result.plan.title}", subtitle)
     return rb.download("Download the full report (HTML)", page, f"{_slug(result.plan.title)}_report.html",

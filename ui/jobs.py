@@ -19,6 +19,7 @@ from typing import Any, Callable
 import streamlit as st
 
 from analyst_agent import AgentRun
+from analyst_agent.runs import Event, RunStatus
 
 # Session-state key for each page's job, the key of the conversation it belongs to, and its page title.
 JOB_PAGES = {
@@ -41,7 +42,8 @@ class Job:
     mode: str | None = None
     label: str = "Starting…"
     lines: list[tuple[str, str]] = field(default_factory=list)  # (kind, text), kind: "caption" | "code"
-    run: AgentRun | None = None
+    # What work() returned: an AgentRun, or for the patent page a PlanReady, LandscapeResult or FollowUp.
+    run: Any = None
     error: str | None = None
     step: int = 0
     max_steps: int = 0
@@ -73,7 +75,7 @@ class Job:
 
 def start_job(question: str, page: str, work: Callable, describe: Describe, mode: str | None = None,
               max_steps: int = 0) -> Job:
-    """Run `work(on_event, should_stop) -> AgentRun` in a worker thread.
+    """Run `work(on_event, should_stop)` in a worker thread; what it returns becomes `job.run`.
 
     The worker must not call Streamlit; `describe(kind, payload)` turns agent events into a
     status label and/or a progress line using plain data only.
@@ -81,16 +83,16 @@ def start_job(question: str, page: str, work: Callable, describe: Describe, mode
     job = Job(question=question, page=page, mode=mode, max_steps=max_steps)
 
     def on_event(kind: str, payload: Any) -> None:
-        if kind == "llm_call":
+        if kind == Event.LLM_CALL:
             job.step = int(payload) + 1
-        elif kind == "progress":  # payload: (done, total)
+        elif kind == Event.PROGRESS:  # payload: (done, total)
             done, total = payload
             if total != job.total_items or done < job.done_items:
                 job.phase_started = time.time()
                 job.done_items = 0
             job.total_items, job.done_items = int(total), int(done)
             return
-        if kind == "phase":  # a count belongs to the phase that reported it
+        if kind == Event.PHASE:  # a count belongs to the phase that reported it
             job.total_items = job.done_items = 0
         label, line = describe(kind, payload)
         if label:
@@ -121,7 +123,7 @@ def is_running(job_key: str) -> bool:
     return job is not None and job.running
 
 
-def collect(job_key: str) -> AgentRun | None:
+def collect(job_key: str) -> Any:
     """Move a finished job's result into its conversation. Returns the run, or None if not finished."""
     job = active(job_key)
     if job is None or job.running:
@@ -134,11 +136,16 @@ def collect(job_key: str) -> AgentRun | None:
     run = job.run
     if run is None:  # the worker itself failed; keep the question visible with the error
         mode = job.mode or "data"
-        run = AgentRun.for_mode(mode)(question=job.question, status="error", error=job.error or "Unknown error",
-                                      duration_s=job.elapsed, mode=mode)
+        run = AgentRun.for_mode(mode)(question=job.question, status=RunStatus.ERROR,
+                                      error=job.error or "Unknown error", duration_s=job.elapsed, mode=mode)
     st.session_state.setdefault(runs_key, []).append(run)
     st.session_state[job_key] = None
     return run
+
+
+def outcome(job: Job) -> str:
+    """How a finished job ended, in a word. Not every result has a status (a prepared plan has none)."""
+    return "stopped" if getattr(job.run, "status", None) == RunStatus.CANCELLED else "finished"
 
 
 def _request_stop(job_key: str) -> None:
@@ -190,8 +197,7 @@ def status_bar(current_page: str) -> None:
         if not job.running:
             collect(job_key)
             if page != current_page:
-                outcome = "stopped" if job.run is not None and job.run.status == "cancelled" else "finished"
-                st.session_state.job_notice = f"{page} {outcome}: “{job.question[:60]}”. Open {page} to see it."
+                st.session_state.job_notice = f"{page} {outcome(job)}: “{job.question[:60]}”. Open {page} to see it."
             st.rerun()
         stopping = job.cancel.is_set()
         icon = PAGE_ICONS.get(page, "🔄")

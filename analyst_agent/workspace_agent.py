@@ -33,7 +33,7 @@ from .prompts import (
     WORKSPACE_PYTHON_TOOL,
     WORKSPACE_SYSTEM_PROMPT,
 )
-from .runs import AgentRun, AgentStep, EventHandler
+from .runs import AgentRun, AgentStep, Event, EventHandler, StepNote
 from .sandbox import Sandbox
 from .workspace import Workspace, WorkspaceError
 
@@ -259,18 +259,18 @@ class WorkspaceAgent(AgentLoop):
     def _act(self, step: AgentStep, action: ParsedAction, state: _RunState, emit: EventHandler) -> str:
         cfg = self.config
         if action.truncated:
-            step.note = "truncated"
+            step.note = StepNote.TRUNCATED
             return NUDGE_TRUNCATED
         if action.error:
-            step.note = "invalid tool call"
+            step.note = StepNote.INVALID_TOOL_CALL
             return f"{action.error} Example:\n```tool\n{{\"tool\": \"search\", \"query\": \"...\"}}\n```"
         if action.edits:
             step.tool, step.tool_args = "propose_edits", {"edits": action.edits}
             key = "edits:" + json.dumps(action.edits, sort_keys=True)
             if key in state.done:
-                step.note = "repeated"
+                step.note = StepNote.REPEATED
                 return "These exact edits were already staged. Read the file to check it, or finish."
-            emit("tool", step)
+            emit(Event.TOOL, step)
             observation, step.tool_error = self.stage_edits(action.edits, state)
             if not step.tool_error:  # a failed edit may legitimately be retried
                 state.done.add(key)
@@ -279,19 +279,19 @@ class WorkspaceAgent(AgentLoop):
         if action.code is not None:
             step.code = action.code
             if self.sandbox is None:
-                step.note = "python unavailable"
+                step.note = StepNote.NO_PYTHON
                 return "Python execution is not available here. Use the tools instead."
             if state.repeat("code:" + normalize_code(action.code)):
-                step.note = "repeated"
+                step.note = StepNote.REPEATED
                 return NUDGE_REPEATED
-            emit("executing", step)
+            emit(Event.EXECUTING, step)
             step.result = run_code(self.sandbox, action.code)
             return format_execution(step.result, cfg.max_observation_chars)
         step.tool, step.tool_args = action.tool, action.args or {}
         if state.repeat(f"tool:{step.tool}:{sorted(step.tool_args.items())!r}"):
-            step.note = "repeated"
+            step.note = StepNote.REPEATED
             return NUDGE_REPEATED
-        emit("tool", step)
+        emit(Event.TOOL, step)
         observation, step.tool_error = self.execute_tool(step.tool, step.tool_args, state)
         step.observation = clip(observation, cfg.max_observation_chars * 3)
         return f"Result of {step.tool}:\n{step.observation}"

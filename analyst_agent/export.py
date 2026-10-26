@@ -10,6 +10,7 @@ from typing import Any
 
 from .agent import DataRun
 from .data import Dataset
+from .grounding import CitationStatus
 from .workspace_agent import WorkspaceRun
 
 
@@ -167,7 +168,7 @@ def workspace_to_markdown(runs: list[WorkspaceRun], root: str) -> str:
                   f"{run.duration_s:.1f}s · model: {run.model}</sub>", "", run.answer or f"_No answer ({run.status})._", ""]
         if run.citations and run.citations.citations:
             lines.append("**Sources**")
-            marks = {"verified": "✔", "unseen": "?", "invalid": "✘"}
+            marks = {CitationStatus.VERIFIED: "✔", CitationStatus.UNSEEN: "?", CitationStatus.INVALID: "✘"}
             lines += [f"- {marks.get(c.status, '')} `{c.label}` ({c.status})" for c in run.citations.citations]
             lines.append("")
         if run.changes:

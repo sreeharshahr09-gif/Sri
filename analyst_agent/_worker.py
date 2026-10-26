@@ -109,6 +109,9 @@ def _figure_summary(fig):
 
 
 class ArtifactCollector:
+    # Each item's "kind" is a value of sandbox.ArtifactKind (plotly, table, image, text, value); the parent
+    # rejects any other. This file cannot import it: it runs without the package.
+
     def __init__(self, limits):
         self.items = []
         self.seen_ids = set()

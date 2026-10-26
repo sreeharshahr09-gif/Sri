@@ -156,7 +156,8 @@ class ParsedAction:
     edits: list[dict] | None = None
 
 
-def _loads_lenient(text: str) -> dict:
+def loads_lenient(text: str) -> dict:
+    """A JSON object written by a model, tolerating trailing commas and Python-style dicts."""
     text = text.strip()
     try:
         value = json.loads(text)
@@ -182,7 +183,7 @@ def _normalize_call(obj: dict) -> tuple[str, dict]:
     else:
         raise ValueError('missing "tool" field')
     if isinstance(args, str):
-        args = _loads_lenient(args) if args.strip() else {}
+        args = loads_lenient(args) if args.strip() else {}
     if not isinstance(name, str) or not isinstance(args, dict):
         raise ValueError("tool name must be a string and arguments an object")
     return name.strip(), args
@@ -236,7 +237,7 @@ def parse_action(text: str) -> ParsedAction:
         if kind == "code":
             # An unlabelled fence holding {"tool": ...} is a dict literal, not analysis code.
             try:
-                obj = _loads_lenient(payload)
+                obj = loads_lenient(payload)
             except (ValueError, SyntaxError):
                 obj = None
             if isinstance(obj, dict) and ("tool" in obj or "name" in obj):
@@ -245,7 +246,7 @@ def parse_action(text: str) -> ParsedAction:
                 action.code = payload
                 return action
         try:
-            action.tool, action.args = _normalize_call(_loads_lenient(payload))
+            action.tool, action.args = _normalize_call(loads_lenient(payload))
         except (ValueError, SyntaxError) as exc:
             action.error = f"Could not parse the tool call ({exc}). Send one valid JSON object."
             return action

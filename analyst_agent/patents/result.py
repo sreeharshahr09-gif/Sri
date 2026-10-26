@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from ..agent import DataRun
+from ..enums import StrEnum
 from . import analytics as an
 from . import enrich
 from . import narrative as nar
@@ -34,6 +35,12 @@ class PipelineOptions:
     validation_size: int = 30  # patents in the validation sample
 
 
+class LandscapeStatus(StrEnum):
+    COMPLETE = "complete"
+    CANCELLED = "cancelled"  # stopped by the user or a request limit: the finished part is reported
+    ERROR = "error"  # a stage failed; the others still ran
+
+
 @dataclass
 class LandscapeResult:
     plan: AnalysisPlan
@@ -43,7 +50,7 @@ class LandscapeResult:
     warnings: list[str] = field(default_factory=list)
     started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat(timespec="seconds"))
     duration_s: float = 0.0
-    status: str = "complete"  # complete | cancelled | error (a stage failed; the others still ran)
+    status: LandscapeStatus = LandscapeStatus.COMPLETE
     error: str | None = None  # the first failed stage and why
     dataset_name: str = ""
     dataset_sha256: str = ""

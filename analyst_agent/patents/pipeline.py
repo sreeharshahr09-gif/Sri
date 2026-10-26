@@ -28,7 +28,7 @@ import pandas as pd
 from ..agent import DataAnalystAgent
 from ..config import AgentConfig, SandboxConfig
 from ..llm import is_openrouter
-from ..runs import EventHandler
+from ..runs import Event, EventHandler, RunStatus
 from ..sandbox import Sandbox
 from . import analytics as an
 from . import enrich
@@ -38,7 +38,7 @@ from .data import FlowStep, PatentCorpus, build_corpus
 from .followup import agent_client, analysis_dataset, landscape_profile, profile_budget
 from .plan import AnalysisPlan
 from .report_blocks import assemble_blocks
-from .result import LandscapeResult, PipelineOptions, analysed_index, analysed_topics
+from .result import LandscapeResult, LandscapeStatus, PipelineOptions, analysed_index, analysed_topics
 
 MIN_PATENTS_FOR_MAP = 8
 
@@ -65,12 +65,12 @@ def run_landscape(
     def checkpoint(label: str) -> None:
         if should_stop is not None and should_stop():
             raise Cancelled()
-        emit("phase", label)
+        emit(Event.PHASE, label)
 
     def progress(done: int, total: int) -> None:
         if should_stop is not None and should_stop():
             raise Cancelled()
-        emit("progress", (done, total))
+        emit(Event.PROGRESS, (done, total))
 
     checkpoint("Cleaning the export")
     corpus = build_corpus(raw, mapping, years=plan.years)  # without a corpus there is nothing to report
@@ -102,7 +102,7 @@ def run_landscape(
             checkpoint("Writing the report")
             _guarded(result, "Writing the report text", narrative_stage, result, llm, emit)
     except Cancelled:
-        result.status = "cancelled"
+        result.status = LandscapeStatus.CANCELLED
     cfg = getattr(llm, "config", None)
     result.model_name = (cfg.model + (" via OpenRouter" if is_openrouter(cfg.base_url) else "")) if cfg else ""
     if result.enriched is None:
@@ -120,7 +120,7 @@ def _guarded(result: LandscapeResult, name: str, stage: Callable, *args) -> None
         raise
     except Exception as exc:  # one failing stage must not lose the whole landscape
         message = f"{name} failed ({type(exc).__name__}: {exc}); the rest of the report was still produced."
-        result.status = "error"
+        result.status = LandscapeStatus.ERROR
         result.error = result.error or message
         result.warnings.append(message)
 
@@ -212,7 +212,7 @@ def questions_stage(result: LandscapeResult, llm, emit: EventHandler, checkpoint
             checkpoint(f"Answering the brief's questions ({i + 1} of {len(questions)})")
             # The agent's own events show its steps in the status bar; Stop reaches it between steps.
             run = agent.run(question, on_event=emit, should_stop=should_stop)
-            if run.status == "cancelled":
+            if run.status == RunStatus.CANCELLED:
                 raise Cancelled()
             result.question_runs.append((question, run))
     answered = sum(1 for _, run in result.question_runs if run.answer and run.executed)
@@ -236,7 +236,7 @@ def narrative_stage(result: LandscapeResult, llm, emit) -> None:
     sections = nar.plan_sections(result.plan.report_sections)
     by_kind, all_facts = result.facts_by_kind, result.all_facts
     nar.write_sections(sections, by_kind, all_facts, result.plan.brief, result.plan.answers, llm,
-                       on_progress=lambda done, total: emit("progress", (done, total)),
+                       on_progress=lambda done, total: emit(Event.PROGRESS, (done, total)),
                        answered_elsewhere=answered_questions(result))
     result.sections = sections
     if llm is not None:
@@ -257,7 +257,7 @@ def extraction_stage(result: LandscapeResult, llm, options: PipelineOptions, emi
         return
     res = enrich.extract_details(
         result.corpus.std, result.plan, llm, batch_size=options.batch_size, seed=options.seed,
-        on_progress=lambda done, total: emit("progress", (done, total)), should_stop=should_stop,
+        on_progress=lambda done, total: emit(Event.PROGRESS, (done, total)), should_stop=should_stop,
     )
     result.extraction = res
     result.methods["Patent details"] = res.info

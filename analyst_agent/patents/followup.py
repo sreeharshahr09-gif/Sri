@@ -12,7 +12,9 @@ import json
 import re
 from dataclasses import dataclass, field, replace
 
+from ..agent import DataRun
 from ..data import Dataset, describe_for_llm
+from ..enums import StrEnum
 from ..llm import LLMClient
 from . import narrative as nar
 from .llmjson import JSONReplyError, LLMError, ask_json
@@ -53,17 +55,24 @@ class Route:
     note: str = ""  # how the decision was made, when not by the model
 
 
+class FollowUpStatus(StrEnum):
+    DONE = "done"
+    PROPOSED = "proposed"  # a plan change, waiting for the user's confirmation
+    APPLIED = "applied"
+    DISCARDED = "discarded"
+
+
 @dataclass
 class FollowUp:
     """One follow-up and its outcome, appended to the report page."""
 
     question: str
     route: Route
-    run: object = None  # AgentRun for "analyse"
+    run: DataRun | None = None  # for "analyse"
     sections: list[nar.Section] = field(default_factory=list)  # rewritten sections
     new_plan: AnalysisPlan | None = None  # for "change_plan"
     diff: list[str] = field(default_factory=list)
-    status: str = "done"  # done | proposed | applied | discarded | error
+    status: FollowUpStatus = FollowUpStatus.DONE
     error: str = ""
 
 

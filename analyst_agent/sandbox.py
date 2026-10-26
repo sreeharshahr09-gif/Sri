@@ -14,6 +14,7 @@ security boundary against a determined attacker; run the app on a machine you tr
 from __future__ import annotations
 
 import ast
+import base64
 import importlib.util
 import json
 import os
@@ -31,6 +32,7 @@ from typing import Any
 import pandas as pd
 
 from .config import SandboxConfig
+from .enums import StrEnum
 
 WORKER_PATH = Path(__file__).with_name("_worker.py")
 
@@ -159,11 +161,30 @@ def _unique_names(names: list) -> list[str]:
     return out
 
 
+class ArtifactKind(StrEnum):
+    """What an output is. _worker.py writes these values (it imports nothing from this package)."""
+
+    PLOTLY = "plotly"  # payload: figure_json
+    TABLE = "table"  # payload: table_json (pandas "split" layout), rows, cols, truncated
+    IMAGE = "image"  # payload: png_b64
+    TEXT = "text"  # payload: text (Markdown)
+    VALUE = "value"  # payload: text (a number or an object's repr)
+
+
+def has_row_labels(df: pd.DataFrame) -> bool:
+    """Whether a table's index carries meaning (describe()'s count/mean/..., the values counted by
+    value_counts) rather than being a positional leftover (0, 1, 2, ... after sorting or filtering)."""
+    return not pd.api.types.is_integer_dtype(df.index)
+
+
 @dataclass
 class Artifact:
-    """A displayable output (figure, table, image, value or text) from one execution."""
+    """A displayable output (figure, table, image, value or text) from one execution.
 
-    kind: str
+    The UI, the patent report and the grounding audit all read outputs through these methods.
+    """
+
+    kind: ArtifactKind
     title: str | None
     summary: str
     payload: dict[str, Any] = field(default_factory=dict)
@@ -180,13 +201,38 @@ class Artifact:
         data = json.loads(self.payload["table_json"])
         return pd.DataFrame(data["data"], columns=_unique_names(data["columns"]), index=data.get("index"))
 
+    @property
+    def text(self) -> str:
+        """The text of a text or value output (the summary for other kinds)."""
+        return str(self.payload.get("text", self.summary))
+
+    @property
+    def is_metric(self) -> bool:
+        """A short one-line value, shown as a big number rather than as a block of text."""
+        return self.kind == ArtifactKind.VALUE and len(self.text) <= 40 and "\n" not in self.text
+
+    def image_bytes(self) -> bytes:
+        return base64.b64decode(self.payload["png_b64"])
+
+    def evidence(self) -> list[str]:
+        """Texts that the numbers in an answer may be traced to (see grounding.check_grounding)."""
+        texts = [self.summary]
+        if self.kind == ArtifactKind.TABLE:
+            texts.append(self.payload.get("table_json", ""))
+        elif self.kind in (ArtifactKind.VALUE, ArtifactKind.TEXT):
+            texts.append(self.payload.get("text", ""))
+        elif self.kind == ArtifactKind.PLOTLY:
+            # Drop opaque strings (base64 arrays, ids) whose digits would match spuriously.
+            texts.append(re.sub(r'"(?:bdata|uid|[a-z]*src)":\s*"[^"]*"', "", self.payload.get("figure_json", "")))
+        return texts
+
     def to_dict(self) -> dict[str, Any]:
         return {"kind": self.kind, "title": self.title, "summary": self.summary,
                 "payload": self.payload, "explicit": self.explicit}
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Artifact":
-        return cls(kind=data["kind"], title=data.get("title"), summary=data.get("summary", ""),
+        return cls(kind=ArtifactKind(data["kind"]), title=data.get("title"), summary=data.get("summary", ""),
                    payload=data.get("payload", {}), explicit=data.get("explicit", True))
 
 
@@ -329,7 +375,7 @@ class Sandbox:
         error = data.get("error") or {}
         artifacts = [
             Artifact(
-                kind=item["kind"],
+                kind=ArtifactKind(item["kind"]),
                 title=item.get("title"),
                 summary=item.get("summary", ""),
                 payload={k: v for k, v in item.items() if k not in ("kind", "title", "summary", "explicit")},

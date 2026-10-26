@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-import base64
 import logging
 import os
 from dataclasses import replace
 
-import pandas as pd
 import streamlit as st
 
 from analyst_agent import LLMClient, LLMConfig
 from analyst_agent.config import context_budget_chars
 from analyst_agent.llm import OPENROUTER_URL, is_openrouter
-from analyst_agent.sandbox import Artifact, ExecutionResult
+from analyst_agent.sandbox import Artifact, ArtifactKind, ExecutionResult, has_row_labels
 
 DEFAULT_LLM = LLMConfig()
 LOCAL = "Local model server (llama-server)"
@@ -213,16 +211,14 @@ def _check_connection(llm_cfg: LLMConfig) -> None:
 
 
 def render_artifact(art: Artifact, key: str) -> None:
-    if art.title and art.kind != "plotly":
+    if art.title and art.kind != ArtifactKind.PLOTLY:
         st.markdown(f"**{art.title}**")
     try:
-        if art.kind == "plotly":
+        if art.kind == ArtifactKind.PLOTLY:
             st.plotly_chart(art.to_plotly(), width="stretch", key=key)
-        elif art.kind == "table":
+        elif art.kind == ArtifactKind.TABLE:
             df = art.to_dataframe()
-            # Integer indexes are positional leftovers (e.g. after sorting); labelled ones such
-            # as describe()'s count/mean/... carry meaning and stay visible.
-            st.dataframe(df, width="stretch", hide_index=pd.api.types.is_integer_dtype(df.index))
+            st.dataframe(df, width="stretch", hide_index=not has_row_labels(df))
             note = f"{art.payload.get('rows', len(df)):,} rows × {art.payload.get('cols', df.shape[1])} columns"
             if art.payload.get("truncated"):
                 note += f" (first {len(df):,} rows shown)"
@@ -230,16 +226,14 @@ def render_artifact(art: Artifact, key: str) -> None:
             cols[0].caption(note)
             cols[1].download_button("CSV", df.to_csv(index=False).encode(), file_name=f"{art.title or 'table'}.csv",
                                     mime="text/csv", key=f"dl-{key}", width="stretch")
-        elif art.kind == "image":
-            st.image(base64.b64decode(art.payload["png_b64"]))
-        elif art.kind == "text":
-            st.markdown(art.payload.get("text", ""))
+        elif art.kind == ArtifactKind.IMAGE:
+            st.image(art.image_bytes())
+        elif art.kind == ArtifactKind.TEXT:
+            st.markdown(art.text)
+        elif art.is_metric:
+            st.metric(art.title or "Result", art.text)
         else:
-            text = art.payload.get("text", art.summary)
-            if len(text) <= 40 and "\n" not in text:
-                st.metric(art.title or "Result", text)
-            else:
-                st.code(text, language=None)
+            st.code(art.text, language=None)
     except Exception as exc:  # a broken artifact must not break the page
         st.warning(f"Could not display output ({art.kind}): {exc}")
 

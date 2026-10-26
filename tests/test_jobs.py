@@ -81,3 +81,18 @@ def test_counted_progress_gives_an_eta_and_ends_with_its_phase():
     assert (job.done_items, job.total_items) == (0, 0) and job.eta is None
     gates[3].set()
     wait(job)
+
+
+def test_outcome_of_results_with_and_without_a_status():
+    # A prepared plan has no status; reading one crashed the status bar when it finished on another page.
+    from dataclasses import dataclass
+
+    from ui.jobs import Job, outcome
+
+    @dataclass
+    class PlanReady:
+        plan: object = None
+
+    assert outcome(Job("q", "Patent landscape", run=PlanReady())) == "finished"
+    assert outcome(Job("q", "Data analysis", run=AgentRun(question="q", status="cancelled"))) == "stopped"
+    assert outcome(Job("q", "Data analysis", run=None)) == "finished"

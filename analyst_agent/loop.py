@@ -17,7 +17,7 @@ from typing import Any, Callable, Iterable
 from .config import AgentConfig, LLMConfig, context_budget_chars
 from .llm import ChatModel, Completion, LLMError
 from .parsing import strip_thinking
-from .runs import AgentRun, AgentStep, EventHandler
+from .runs import AgentRun, AgentStep, Event, EventHandler, RunStatus, StepNote
 from .sandbox import ExecutionResult, Sandbox
 
 # --------------------------------------------------------------------------- helpers
@@ -208,13 +208,13 @@ class AgentLoop:
         try:
             for index in range(cfg.max_steps + 1):
                 if should_stop is not None and should_stop():
-                    run.status = "cancelled"
+                    run.status = RunStatus.CANCELLED
                     run.error = "Stopped at your request."
                     break
                 force_final = index == cfg.max_steps
                 last_chance = index + 1 == cfg.max_steps
                 fit_context(messages, budget, self.elided_note)
-                emit("llm_call", index)
+                emit(Event.LLM_CALL, index)
                 completion = self.llm.chat(messages)
                 parsed = self._parse(completion.content)
                 step = _new_step(index, completion, parsed.thought)
@@ -222,32 +222,32 @@ class AgentLoop:
                 acting = self._is_action(parsed)
                 feedback = None if acting or force_final else self._premature_answer(run, question, state)
                 if feedback is not None:
-                    step.note = "premature answer"
+                    step.note = StepNote.PREMATURE
                     footer = self.force_final if last_chance else self.footer if self.footer_after_nudge else ""
                 elif force_final or not acting:
                     run.steps.append(step)
                     answer = parsed.final_answer or parsed.thought or strip_thinking(completion.content)
                     run.answer = answer.strip() or "(The model returned an empty answer.)"
-                    run.status = "step_limit" if force_final else "answered"
+                    run.status = RunStatus.STEP_LIMIT if force_final else RunStatus.ANSWERED
                     break
                 else:
                     feedback = self._act(step, parsed, state, emit)
                     footer = self.force_final if last_chance else self.footer
 
                 run.steps.append(step)
-                emit("step", step)
+                emit(Event.STEP, step)
                 messages.append({"role": "assistant", "content": strip_thinking(completion.content) or "(empty)"})
                 messages.append({"role": "user", "content": f"{feedback}\n\n{footer}".strip()})
         except LLMError as exc:
-            run.status = "llm_error"
+            run.status = RunStatus.LLM_ERROR
             run.error = str(exc)
         except Exception as exc:  # keep the partial trace instead of losing the whole run
-            run.status = "error"
+            run.status = RunStatus.ERROR
             run.error = f"{type(exc).__name__}: {exc}"
 
         self._finish(run, state)
         run.duration_s = time.perf_counter() - started
-        emit("done", run)
+        emit(Event.DONE, run)
         return run
 
 

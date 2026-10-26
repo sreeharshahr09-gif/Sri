@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .enums import StrEnum
 from .workspace import IGNORED_DIRS, Workspace, WorkspaceError
 
 try:
@@ -105,6 +106,14 @@ def editable_path(ws: Workspace, rel: str) -> tuple[Path, str]:
 # --------------------------------------------------------------------------- staged changes
 
 
+class ChangeStatus(StrEnum):
+    PENDING = "pending"  # proposed, waiting for the user
+    APPLIED = "applied"
+    REJECTED = "rejected"
+    UNDONE = "undone"
+    CONFLICT = "conflict"  # the file changed on disk after the proposal
+
+
 @dataclass
 class FileChange:
     path: str
@@ -115,7 +124,7 @@ class FileChange:
     encoding: str = "utf-8"
     bom: bool = False
     newline: str = "\n"
-    status: str = "pending"  # pending | applied | rejected | undone | conflict
+    status: ChangeStatus = ChangeStatus.PENDING
     notes: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     backup_path: str | None = None
@@ -149,6 +158,9 @@ class FileChange:
 
     @classmethod
     def from_dict(cls, data: dict) -> "FileChange":
+        data = dict(data)
+        if "status" in data:
+            data["status"] = ChangeStatus(data["status"])
         return cls(**data)
 
 
@@ -259,7 +271,7 @@ class ChangeSet:
             ) from None
 
         change.proposed = updated
-        change.status = "pending"
+        change.status = ChangeStatus.PENDING
         change.notes.append(f"replaced {count if replace_all else 1} occurrence(s) near line {_line_of(text, first_idx)}")
         change.warnings = _validate(key, updated)
         self.changes[key] = change
@@ -337,26 +349,26 @@ def _atomic_write(path: Path, data: bytes, mode_from: Path | None) -> None:
 def apply_change(ws: Workspace, change: FileChange, backups: BackupStore) -> None:
     """Write an approved change to disk (with backup). Raises EditError and sets status on failure."""
     path, key = editable_path(ws, change.path)
-    if change.status == "applied":
+    if change.status == ChangeStatus.APPLIED:
         raise EditError(f"'{key}' is already applied.")
     if change.kind == "create":
         if path.exists():
-            change.status, change.error = "conflict", f"'{key}' now exists on disk; the proposal is out of date."
+            change.status, change.error = ChangeStatus.CONFLICT, f"'{key}' now exists on disk; the proposal is out of date."
             raise EditError(change.error)
         backup = None
     else:
         if not path.exists():
-            change.status, change.error = "conflict", f"'{key}' no longer exists on disk."
+            change.status, change.error = ChangeStatus.CONFLICT, f"'{key}' no longer exists on disk."
             raise EditError(change.error)
         current = path.read_bytes()
         if _sha(current) != change.base_sha:
-            change.status = "conflict"
+            change.status = ChangeStatus.CONFLICT
             change.error = f"'{key}' changed on disk after this was proposed. Ask again to get a fresh proposal."
             raise EditError(change.error)
         backup = backups.save(key, current)
     data = change.encoded()
     _atomic_write(path, data, mode_from=path if path.exists() else None)
-    change.status, change.error = "applied", None
+    change.status, change.error = ChangeStatus.APPLIED, None
     change.backup_path = str(backup) if backup else None
     change.applied_sha = _sha(data)
     change.applied_at = _now()
@@ -368,7 +380,7 @@ def apply_change(ws: Workspace, change: FileChange, backups: BackupStore) -> Non
 def undo_change(ws: Workspace, change: FileChange, backups: BackupStore) -> None:
     """Restore the file as it was before `apply_change`. Refuses if it was modified since."""
     path, key = editable_path(ws, change.path)
-    if change.status != "applied":
+    if change.status != ChangeStatus.APPLIED:
         raise EditError(f"'{key}' has not been applied, so there is nothing to undo.")
     if not path.exists() or _sha(path.read_bytes()) != change.applied_sha:
         raise EditError(f"'{key}' was modified after the change was applied; undo would overwrite those edits.")
@@ -378,5 +390,5 @@ def undo_change(ws: Workspace, change: FileChange, backups: BackupStore) -> None
         if not change.backup_path or not Path(change.backup_path).exists():
             raise EditError(f"The backup for '{key}' is missing; cannot undo.")
         _atomic_write(path, Path(change.backup_path).read_bytes(), mode_from=path)
-    change.status = "undone"
+    change.status = ChangeStatus.UNDONE
     backups.log(action="undo", path=key, kind=change.kind, backup=change.backup_path)

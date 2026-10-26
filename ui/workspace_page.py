@@ -15,8 +15,10 @@ from pathlib import PurePosixPath
 import streamlit as st
 
 from analyst_agent import AgentConfig, LLMClient, LLMConfig, Sandbox, SandboxConfig, WorkspaceRun
-from analyst_agent.editing import BackupStore, EditError, apply_change, undo_change
+from analyst_agent.editing import BackupStore, ChangeStatus, EditError, apply_change, undo_change
 from analyst_agent.export import describe_tool_step, workspace_to_json, workspace_to_markdown
+from analyst_agent.grounding import CitationStatus
+from analyst_agent.runs import Event, RunStatus
 from analyst_agent.workspace import Workspace, WorkspaceError, is_local_url
 from analyst_agent.workspace_agent import WorkspaceAgent
 from ui import jobs
@@ -36,7 +38,8 @@ LANGUAGES = {
 }
 DEFAULT_SANDBOX = SandboxConfig()
 ICONS = {"read_file": "📄", "search": "🔍", "list_files": "🗂️", "propose_edits": "✏️"}
-STATUS_ICONS = {"pending": "🟡", "applied": "✅", "rejected": "⛔", "undone": "↩️", "conflict": "⚠️"}
+STATUS_ICONS = {ChangeStatus.PENDING: "🟡", ChangeStatus.APPLIED: "✅", ChangeStatus.REJECTED: "⛔",
+                ChangeStatus.UNDONE: "↩️", ChangeStatus.CONFLICT: "⚠️"}
 
 
 def init_state() -> None:
@@ -81,12 +84,12 @@ def _apply(run_idx: int, change_idx: int) -> None:
 
 def _apply_all(run_idx: int) -> None:
     for i, change in enumerate(st.session_state.ws_runs[run_idx].changes):
-        if change.status == "pending":
+        if change.status == ChangeStatus.PENDING:
             _apply(run_idx, i)
 
 
 def _reject(run_idx: int, change_idx: int) -> None:
-    st.session_state.ws_runs[run_idx].changes[change_idx].status = "rejected"
+    st.session_state.ws_runs[run_idx].changes[change_idx].status = ChangeStatus.REJECTED
 
 
 def _undo(run_idx: int, change_idx: int) -> None:
@@ -180,7 +183,8 @@ def render_sources(run: WorkspaceRun, ws: Workspace | None, run_idx: int) -> Non
         if run.answer and run.executed:
             st.caption("📎 The answer cites no specific file lines.")
         return
-    verified, unseen, invalid = (report.by_status(s) for s in ("verified", "unseen", "invalid"))
+    verified, unseen, invalid = (report.by_status(s) for s in (CitationStatus.VERIFIED, CitationStatus.UNSEEN,
+                                                                CitationStatus.INVALID))
     summary = f"📎 {len(verified)} of {len(report.citations)} cited sources were opened and checked."
     st.caption(summary)
     if unseen:
@@ -199,14 +203,14 @@ def render_sources(run: WorkspaceRun, ws: Workspace | None, run_idx: int) -> Non
                 st.caption(f"`{c.label}`: {exc}")
                 continue
             lo, hi = max(1, c.start - 2), min(len(doc.lines), c.end + 2)
-            st.markdown(f"**`{c.label}`**" + ("" if c.status == "verified" else " _(not opened by the assistant)_"))
+            st.markdown(f"**`{c.label}`**" + ("" if c.status == CitationStatus.VERIFIED else " _(not opened by the assistant)_"))
             st.code(_numbered(doc.lines, lo, hi), language=None)
 
 
 def render_changes(run: WorkspaceRun, run_idx: int) -> None:
     if not run.changes:
         return
-    pending = [c for c in run.changes if c.status == "pending"]
+    pending = [c for c in run.changes if c.status == ChangeStatus.PENDING]
     st.markdown(f"**✏️ Proposed changes ({len(run.changes)} file{'s' * (len(run.changes) != 1)})** — "
                 "nothing is written until you apply it.")
     if len(pending) > 1:
@@ -220,21 +224,21 @@ def render_changes(run: WorkspaceRun, run_idx: int) -> None:
         with st.container(border=True):
             cols = st.columns([6, 1, 1])
             cols[0].markdown(header)
-            if change.status in ("pending", "rejected", "undone", "conflict"):
+            if change.status != ChangeStatus.APPLIED:
                 cols[1].button("Apply", key=f"ws-apply-{run_idx}-{i}", type="primary", width="stretch",
                                on_click=_apply, args=(run_idx, i))
-            if change.status == "pending":
+            if change.status == ChangeStatus.PENDING:
                 cols[2].button("Reject", key=f"ws-reject-{run_idx}-{i}", width="stretch",
                                on_click=_reject, args=(run_idx, i))
-            if change.status == "applied":
+            if change.status == ChangeStatus.APPLIED:
                 cols[2].button("Undo", key=f"ws-undo-{run_idx}-{i}", width="stretch",
                                on_click=_undo, args=(run_idx, i))
             for w in change.warnings:
                 st.warning(f"Check before applying: {w}", icon="⚠️")
-            if change.status == "conflict" and change.error:
+            if change.status == ChangeStatus.CONFLICT and change.error:
                 st.error(change.error)
             diff = change.diff()
-            with st.expander("Diff", expanded=change.status == "pending"):
+            with st.expander("Diff", expanded=change.status == ChangeStatus.PENDING):
                 st.code(diff[:20000] + ("\n… (diff truncated)" if len(diff) > 20000 else ""), language="diff")
 
 
@@ -265,17 +269,17 @@ def render_step(step, run_idx: int) -> None:
 
 def render_run(run: WorkspaceRun, run_idx: int) -> None:
     ws: Workspace | None = st.session_state.ws
-    if run.status == "llm_error":
+    if run.status == RunStatus.LLM_ERROR:
         st.error(f"Model error: {run.error}")
-    elif run.status == "error":
+    elif run.status == RunStatus.ERROR:
         st.error(f"The assistant stopped unexpectedly: {run.error}")
-    elif run.status == "cancelled":
+    elif run.status == RunStatus.CANCELLED:
         st.info("Stopped at your request. What it did so far is under “How it worked”.", icon="⏹")
     if run.answer:
         st.markdown(run.answer)
     if run.answer and not run.executed:
         st.warning("This answer is not based on any file the assistant opened. Treat it as unverified.", icon="⚠️")
-    elif run.status == "step_limit":
+    elif run.status == RunStatus.STEP_LIMIT:
         st.warning("The step limit was reached; the answer may be incomplete.", icon="⏱️")
     render_sources(run, ws, run_idx)
     render_changes(run, run_idx)
@@ -317,13 +321,13 @@ def files_tab(ws: Workspace) -> None:
 
 def describe_event(kind: str, payload) -> tuple[str | None, tuple[str, str] | None]:
     """Progress text for an agent event (runs in the worker thread: no Streamlit calls)."""
-    if kind == "llm_call":
+    if kind == Event.LLM_CALL:
         return f"Thinking (step {payload + 1})…", None
-    if kind == "tool":
+    if kind == Event.TOOL:
         return f"{ICONS.get(payload.tool, '🔧')} {describe_tool_step(payload)}…", None
-    if kind == "executing":
+    if kind == Event.EXECUTING:
         return f"🐍 Running Python (step {payload.index + 1})…", ("code", payload.code)
-    if kind == "step":
+    if kind == Event.STEP:
         if payload.tool:
             return None, ("caption", f"{'❌' if payload.tool_error else '✅'} {describe_tool_step(payload)}")
         if payload.result is not None:

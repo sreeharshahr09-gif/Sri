@@ -115,6 +115,16 @@ class Completion:
     latency_s: float = 0.0
 
 
+@dataclass
+class _Retry:
+    """A response after which the request is sent again."""
+
+    error: Exception  # reported if no later attempt succeeds
+    rate_limited: bool = False  # a per-minute limit: waited out without using up a retry
+    wait: float | None = None  # seconds the service asked to wait (None: not said)
+    drop_reasoning: bool = False  # ask again without the reasoning switch the model refused
+
+
 class ChatModel(Protocol):
     """Anything that can turn a message list into a completion (real server or test fake)."""
 
@@ -138,6 +148,47 @@ class LLMClient:
         return headers
 
     def chat(self, messages: list[dict[str, str]]) -> Completion:
+        """Send the conversation and return the model's reply, retrying what is worth retrying.
+
+        Connection failures, server errors (5xx) and providers' transient errors use up the retries;
+        waiting out a per-minute rate limit and asking again without the reasoning switch do not.
+        """
+        cfg = self.config
+        payload = self._payload(messages)
+        last_error: Exception | None = None
+        attempt = waits = 0
+        while attempt <= cfg.max_retries:
+            if attempt:
+                time.sleep(min(2**attempt, 10))
+            attempt += 1
+            _pace(cfg)
+            start = time.perf_counter()
+            try:
+                resp = self._post(payload)
+            except requests.ConnectionError as exc:
+                last_error = exc
+                continue
+            outcome = self._outcome(resp, payload, start)
+            if isinstance(outcome, Completion):
+                return outcome
+            last_error = outcome.error
+            if outcome.drop_reasoning:
+                payload = {k: v for k, v in payload.items() if k != "reasoning"}
+                attempt -= 1  # the same request without the switch, not a retry
+            elif outcome.rate_limited and waits < MAX_RATE_LIMIT_WAITS:
+                waits += 1
+                attempt -= 1  # a per-minute limit: wait it out, without using up a retry
+                time.sleep(outcome.wait if outcome.wait is not None else 10.0 * waits)
+
+        if isinstance(last_error, requests.ConnectionError):
+            if is_openrouter(cfg.base_url):
+                raise LLMError("Cannot reach openrouter.ai. Check the internet connection.") from last_error
+            raise LLMError(
+                f"Cannot reach model server at {self._base}. Is llama-server running?"
+            ) from last_error
+        raise LLMError(str(last_error)) from last_error
+
+    def _payload(self, messages: list[dict[str, str]]) -> dict:
         cfg = self.config
         payload: dict = {
             "model": cfg.model,
@@ -153,104 +204,87 @@ class LLMClient:
                 payload["chat_template_kwargs"] = {"enable_thinking": False}
             elif cfg.model not in _reasoning_required:
                 payload["reasoning"] = {"enabled": False}
+        return payload
 
-        last_error: Exception | None = None
-        attempt = waits = 0
-        while attempt <= cfg.max_retries:
-            if attempt:
-                time.sleep(min(2**attempt, 10))
-            attempt += 1
-            _pace(cfg)
-            start = time.perf_counter()
-            try:
-                resp = self.session.post(
-                    f"{self._base}/v1/chat/completions",
-                    headers=self._headers(),
-                    json=payload,
-                    timeout=(cfg.connect_timeout, cfg.read_timeout),
-                )
-            except requests.Timeout as exc:
-                # A read timeout on a long generation will most likely recur; don't retry it.
-                raise LLMError(
-                    f"Model server timed out after {cfg.read_timeout:.0f}s. "
-                    "Increase the timeout or reduce max tokens."
-                ) from exc
-            except requests.ConnectionError as exc:
-                last_error = exc
-                continue
-
-            if resp.status_code == 429:
-                wait = _rate_limit_wait(resp)
-                if "per-day" in resp.text or (wait is not None and wait > MAX_WAIT_S):
-                    raise RequestLimitReached(_limit_message(resp, cfg))
-                if waits < MAX_RATE_LIMIT_WAITS:  # a per-minute limit: wait it out, without using up a retry
-                    waits += 1
-                    attempt -= 1
-                    time.sleep(wait if wait is not None else 10.0 * waits)
-                last_error = LLMError(f"HTTP 429 (too many requests): {resp.text[:500]}")
-                continue
-            if resp.status_code >= 500:
-                last_error = LLMError(f"HTTP {resp.status_code}: {resp.text[:500]}")
-                continue
-            if (resp.status_code == 400 and "reasoning" in payload and "reasoning" in resp.text.lower()
-                    and cfg.model not in _reasoning_required):
-                # A model whose reasoning cannot be switched off: ask again without the switch.
-                _reasoning_required.add(cfg.model)
-                payload = {k: v for k, v in payload.items() if k != "reasoning"}
-                attempt -= 1
-                continue
-            if resp.status_code == 400 and ("exceed_context_size" in resp.text or "context size" in resp.text
-                                            or "context length" in resp.text):
-                raise LLMError(_context_message(resp, cfg))
-            if resp.status_code in (401, 403) and is_openrouter(cfg.base_url):
-                raise LLMError(f"OpenRouter refused the API key (HTTP {resp.status_code}). Check the key under "
-                               f"🧠 Model server. Service reply: {resp.text[:300]}")
-            if resp.status_code != 200:
-                raise LLMError(f"HTTP {resp.status_code}: {resp.text[:500]}")
-
-            try:
-                data = resp.json()
-                if isinstance(data, dict) and data.get("error") and not data.get("choices"):
-                    # Services such as OpenRouter can report a provider's failure inside a 200 reply.
-                    err = data["error"] if isinstance(data["error"], dict) else {"message": str(data["error"])}
-                    last_error = LLMError(f"The model service reported an error: {err.get('message', err)}")
-                    if "per-day" in str(err.get("message", "")):
-                        raise RequestLimitReached(_limit_message(resp, cfg))
-                    if str(err.get("code")) in ("429", "502", "503", "504", "408"):
-                        continue
-                    raise last_error
-                choice = data["choices"][0]
-                content = choice["message"].get("content") or ""
-                if not content.strip():
-                    # Servers started with --jinja may move tool calls out of the text into a separate
-                    # field; turn them back into text the agent's parser understands.
-                    content = _tool_calls_as_text(choice["message"].get("tool_calls")) or content
-            except (ValueError, KeyError, IndexError, TypeError) as exc:
-                raise LLMError(f"Unexpected response from model server: {resp.text[:500]}") from exc
-
-            usage = data.get("usage") or {}
-            if not content.strip() and choice.get("finish_reason") == "length":
-                raise ReplyCutOff(
-                    f"The model used all {cfg.max_tokens:,} reply tokens without writing an answer; it was "
-                    "probably still thinking. "
-                    + ("Raise the max tokens per reply." if is_openrouter(cfg.base_url) else
-                       "Turn thinking off (llama-server --reasoning-budget 0) or raise the max tokens.")
-                )
-            return Completion(
-                content=content,
-                finish_reason=choice.get("finish_reason"),
-                prompt_tokens=usage.get("prompt_tokens"),
-                completion_tokens=usage.get("completion_tokens"),
-                latency_s=time.perf_counter() - start,
+    def _post(self, payload: dict) -> requests.Response:
+        cfg = self.config
+        try:
+            return self.session.post(
+                f"{self._base}/v1/chat/completions",
+                headers=self._headers(),
+                json=payload,
+                timeout=(cfg.connect_timeout, cfg.read_timeout),
             )
-
-        if isinstance(last_error, requests.ConnectionError):
-            if is_openrouter(cfg.base_url):
-                raise LLMError("Cannot reach openrouter.ai. Check the internet connection.") from last_error
+        except requests.Timeout as exc:
+            # A read timeout on a long generation will most likely recur; don't retry it.
             raise LLMError(
-                f"Cannot reach model server at {self._base}. Is llama-server running?"
-            ) from last_error
-        raise LLMError(str(last_error)) from last_error
+                f"Model server timed out after {cfg.read_timeout:.0f}s. "
+                "Increase the timeout or reduce max tokens."
+            ) from exc
+
+    def _outcome(self, resp: requests.Response, payload: dict, start: float) -> Completion | _Retry:
+        """What a response means: the completion, a reason to send the request again, or (raised) an error."""
+        cfg = self.config
+        if resp.status_code == 429:
+            wait = _rate_limit_wait(resp)
+            if "per-day" in resp.text or (wait is not None and wait > MAX_WAIT_S):
+                raise RequestLimitReached(_limit_message(resp, cfg))
+            return _Retry(LLMError(f"HTTP 429 (too many requests): {resp.text[:500]}"), rate_limited=True, wait=wait)
+        if resp.status_code >= 500:
+            return _Retry(LLMError(f"HTTP {resp.status_code}: {resp.text[:500]}"))
+        if (resp.status_code == 400 and "reasoning" in payload and "reasoning" in resp.text.lower()
+                and cfg.model not in _reasoning_required):
+            # A model whose reasoning cannot be switched off: ask again without the switch.
+            _reasoning_required.add(cfg.model)
+            return _Retry(LLMError(f"HTTP 400: {resp.text[:500]}"), drop_reasoning=True)
+        if resp.status_code == 400 and ("exceed_context_size" in resp.text or "context size" in resp.text
+                                        or "context length" in resp.text):
+            raise LLMError(_context_message(resp, cfg))
+        if resp.status_code in (401, 403) and is_openrouter(cfg.base_url):
+            raise LLMError(f"OpenRouter refused the API key (HTTP {resp.status_code}). Check the key under "
+                           f"🧠 Model server. Service reply: {resp.text[:300]}")
+        if resp.status_code != 200:
+            raise LLMError(f"HTTP {resp.status_code}: {resp.text[:500]}")
+        return self._completion(resp, start)
+
+    def _completion(self, resp: requests.Response, start: float) -> Completion | _Retry:
+        """The completion in a 200 reply, which may still carry a provider's error instead."""
+        cfg = self.config
+        try:
+            data = resp.json()
+            if isinstance(data, dict) and data.get("error") and not data.get("choices"):
+                # Services such as OpenRouter can report a provider's failure inside a 200 reply.
+                err = data["error"] if isinstance(data["error"], dict) else {"message": str(data["error"])}
+                error = LLMError(f"The model service reported an error: {err.get('message', err)}")
+                if "per-day" in str(err.get("message", "")):
+                    raise RequestLimitReached(_limit_message(resp, cfg))
+                if str(err.get("code")) in ("429", "502", "503", "504", "408"):
+                    return _Retry(error)
+                raise error
+            choice = data["choices"][0]
+            content = choice["message"].get("content") or ""
+            if not content.strip():
+                # Servers started with --jinja may move tool calls out of the text into a separate
+                # field; turn them back into text the agent's parser understands.
+                content = _tool_calls_as_text(choice["message"].get("tool_calls")) or content
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            raise LLMError(f"Unexpected response from model server: {resp.text[:500]}") from exc
+
+        usage = data.get("usage") or {}
+        if not content.strip() and choice.get("finish_reason") == "length":
+            raise ReplyCutOff(
+                f"The model used all {cfg.max_tokens:,} reply tokens without writing an answer; it was "
+                "probably still thinking. "
+                + ("Raise the max tokens per reply." if is_openrouter(cfg.base_url) else
+                   "Turn thinking off (llama-server --reasoning-budget 0) or raise the max tokens.")
+            )
+        return Completion(
+            content=content,
+            finish_reason=choice.get("finish_reason"),
+            prompt_tokens=usage.get("prompt_tokens"),
+            completion_tokens=usage.get("completion_tokens"),
+            latency_s=time.perf_counter() - start,
+        )
 
     def model_details(self) -> dict | None:
         """The service's entry for the configured model (id, context_length, ...): {} if the service does not

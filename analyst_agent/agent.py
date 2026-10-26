@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -22,8 +21,8 @@ from .prompts import (
     SYSTEM_PROMPT,
     wants_chart,
 )
-from .runs import AgentRun, AgentStep, EventHandler
-from .sandbox import ExecutionResult, Sandbox
+from .runs import AgentRun, AgentStep, Event, EventHandler, StepNote
+from .sandbox import ArtifactKind, ExecutionResult, Sandbox
 
 
 @dataclass
@@ -135,7 +134,8 @@ class DataAnalystAgent(AgentLoop):
             return NUDGE_NO_CODE
         if wants_chart(question) and "no_chart" not in state.nudged:
             has_chart = any(
-                a.kind in ("plotly", "image") for s in run.steps if s.succeeded for a in s.result.artifacts
+                a.kind in (ArtifactKind.PLOTLY, ArtifactKind.IMAGE)
+                for s in run.steps if s.succeeded for a in s.result.artifacts
             )
             if not has_chart:
                 state.nudged.add("no_chart")
@@ -144,13 +144,13 @@ class DataAnalystAgent(AgentLoop):
 
     def _act(self, step: AgentStep, parsed: ParsedReply, state: LoopState, emit: EventHandler) -> str:
         if parsed.truncated_code:
-            step.note = "truncated"
+            step.note = StepNote.TRUNCATED
             return NUDGE_TRUNCATED
         step.code = parsed.code
         if state.repeat("code:" + normalize_code(parsed.code)):
-            step.note = "repeated"
+            step.note = StepNote.REPEATED
             return NUDGE_REPEATED
-        emit("executing", step)
+        emit(Event.EXECUTING, step)
         step.result = run_code(self.sandbox, parsed.code)
         return self.format_observation(step.result)
 
@@ -161,17 +161,7 @@ class DataAnalystAgent(AgentLoop):
     def _evidence_texts(self, run: AgentRun) -> list[str]:
         texts = [self.profile]
         for step in run.steps:
-            if not step.succeeded:
-                continue
-            texts.append(step.result.stdout)
-            for art in step.result.artifacts:
-                texts.append(art.summary)
-                if art.kind == "table":
-                    texts.append(art.payload.get("table_json", ""))
-                elif art.kind in ("value", "text"):
-                    texts.append(art.payload.get("text", ""))
-                elif art.kind == "plotly":
-                    # Drop opaque strings (base64 arrays, ids) whose digits would match spuriously.
-                    figure = art.payload.get("figure_json", "")
-                    texts.append(re.sub(r'"(?:bdata|uid|[a-z]*src)":\s*"[^"]*"', "", figure))
+            if step.succeeded:
+                texts.append(step.result.stdout)
+                texts.extend(text for art in step.result.artifacts for text in art.evidence())
         return texts

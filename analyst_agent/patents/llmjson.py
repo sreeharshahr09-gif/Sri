@@ -7,7 +7,7 @@ import re
 from dataclasses import replace
 
 from ..llm import LLMClient, LLMError, ReplyCutOff
-from ..parsing import _loads_lenient, strip_thinking
+from ..parsing import loads_lenient, strip_thinking
 
 
 class JSONReplyError(ValueError):
@@ -39,7 +39,7 @@ def extract_json(text: str):
             except json.JSONDecodeError as exc:
                 raise JSONReplyError(str(exc)) from exc
         try:
-            return _loads_lenient(chunk)
+            return loads_lenient(chunk)
         except (ValueError, SyntaxError) as exc:
             raise JSONReplyError(str(exc)) from exc
 
