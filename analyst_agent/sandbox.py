@@ -35,11 +35,13 @@ from .config import SandboxConfig
 
 WORKER_PATH = Path(__file__).with_name("_worker.py")
 
+# `operator` is left out on purpose: attrgetter/methodcaller look attributes up by string, which would
+# sidestep the attribute checks below.
 ALLOWED_MODULES = frozenset(
     {
         "pandas", "numpy", "plotly", "scipy", "statsmodels", "sklearn", "matplotlib", "seaborn",
         "math", "statistics", "random", "datetime", "calendar", "time", "re", "string", "textwrap",
-        "collections", "itertools", "functools", "operator", "decimal", "fractions", "json",
+        "collections", "itertools", "functools", "decimal", "fractions", "json",
         "warnings", "typing", "dataclasses",
     }
 )
@@ -61,6 +63,8 @@ BLOCKED_ATTRIBUTES = frozenset(
         "read_fwf", "read_sas", "read_spss", "read_orc", "read_gbq", "savefig", "write_html",
         "write_image", "write_json", "save", "savez", "savez_compressed", "savetxt", "load",
         "loadtxt", "genfromtxt", "fromfile", "tofile", "memmap", "system", "popen",
+        # Attribute lookup by string, reachable through modules that import `operator` themselves.
+        "attrgetter", "methodcaller",
     }
 )
 # These write to disk only when given a path/buffer; without arguments they return text.

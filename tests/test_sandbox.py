@@ -30,6 +30,10 @@ from analyst_agent.sandbox import Sandbox, validate_code
         "from . import x",
         "from math import *",
         "global df",
+        "import operator",
+        "from operator import itemgetter",
+        "lookup = pd.core.common.operator.attrgetter('a')",
+        "call = pd.core.common.operator.methodcaller('a')",
     ],
 )
 def test_validator_rejects_dangerous_code(code):
@@ -161,6 +165,22 @@ def test_numpy_scalars_render_cleanly(sandbox, sales_df):
     sandbox.set_dataframe(sales_df)
     result = sandbox.run("result = {'mean': df['sales'].mean(), 'n': df['units'].sum()}")
     assert result.artifacts[0].payload["text"] == "{'mean': 150.08333333333334, 'n': 12}"
+
+
+def test_temporaries_shown_in_a_loop_are_all_kept(sales_df):
+    # Freed temporaries hand their id to the next object; none of these may be mistaken for a repeat.
+    with Sandbox(SandboxConfig(timeout_seconds=30, memory_limit_mb=0, max_artifacts=50)) as sb:
+        sb.set_dataframe(sales_df)
+        result = sb.run("for i in range(40):\n    show(pd.Series([i]), title=str(i))\n"
+                        "for i in range(5):\n    show([i, i + 1], title=f'list {i}')")
+    assert result.ok, result.traceback
+    assert [a.title for a in result.artifacts] == [str(i) for i in range(40)] + [f"list {i}" for i in range(5)]
+
+
+def test_the_same_object_is_shown_once(sandbox, sales_df):
+    sandbox.set_dataframe(sales_df)
+    result = sandbox.run("fig = px.bar(df, x='region', y='sales')\nshow(fig)\nshow(fig)")
+    assert [a.kind for a in result.artifacts] == ["plotly"]
 
 
 def test_groupby_multiindex_result_is_flattened(sandbox, sales_df):

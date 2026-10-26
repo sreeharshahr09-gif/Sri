@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import re
 import time
+import tokenize
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterable
@@ -133,8 +135,19 @@ class AgentRun:
 
 
 def _normalize_code(code: str) -> str:
-    lines = [ln.split("#", 1)[0].rstrip() for ln in code.strip().splitlines()]
-    return "\n".join(ln for ln in lines if ln)
+    """The code without comments and blank lines, to recognise a block the model sends again.
+
+    Comments are found with the tokenizer, so a `#` inside a string (df["Item #1"]) is kept.
+    """
+    lines = code.strip().splitlines()
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO("\n".join(lines)).readline):
+            if tok.type == tokenize.COMMENT:
+                row, col = tok.start
+                lines[row - 1] = lines[row - 1][:col]
+    except (tokenize.TokenError, SyntaxError):
+        pass  # incomplete code: the comments found so far are dropped, the rest is compared as written
+    return "\n".join(ln.rstrip() for ln in lines if ln.strip())
 
 
 def _clip(text: str, limit: int) -> str:

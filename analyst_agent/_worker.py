@@ -112,6 +112,9 @@ class ArtifactCollector:
     def __init__(self, limits):
         self.items = []
         self.seen_ids = set()
+        # Shown objects stay referenced for the whole run: CPython reuses the id of a freed temporary,
+        # so `show(pd.Series(...))` in a loop would otherwise be mistaken for an object already shown.
+        self._kept = []
         self.max_rows = int(limits.get("max_table_rows", 5000))
         self.max_items = int(limits.get("max_artifacts", 20))
         self.dropped = 0
@@ -129,6 +132,7 @@ class ArtifactCollector:
             self.dropped += 1
             return None
         self.seen_ids.add(id(obj))
+        self._kept.append(obj)
         try:
             item = self._serialize(obj, title)
         except Exception as exc:  # never let display failures mask analysis results

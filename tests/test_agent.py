@@ -80,6 +80,24 @@ def test_repeated_code_is_not_rerun(sandbox, dataset):
     assert "identical" in llm.calls[2][-1]["content"]
 
 
+def test_hash_inside_a_string_is_not_a_comment(sandbox, dataset):
+    # Column names such as "Item #1" are common; code that differs after a "#" in a string is new code.
+    first = "```python\nprint(df['region'].str.count('#1').sum())  # first\n```"
+    second = "```python\nprint(df['region'].str.count('#2').sum())\n```"
+    llm, agent = make_agent([first, second, "Final Answer: No region contains either tag."], sandbox, dataset)
+    run = agent.run("Do the regions contain #1 or #2?")
+    assert [s.note for s in run.steps[:2]] == [None, None]
+    assert all(s.result is not None and s.result.ok for s in run.steps[:2])
+
+
+def test_normalize_code_drops_only_real_comments():
+    from analyst_agent.agent import _normalize_code
+
+    assert _normalize_code("x = 1  # one\n\n# note\ny = '#2'\n") == "x = 1\ny = '#2'"
+    assert _normalize_code("s = 'a#b'") != _normalize_code("s = 'a#c'")
+    assert _normalize_code("print((1,  # unfinished") == "print((1,"  # incomplete code still compares
+
+
 def test_step_limit_forces_final_answer(sandbox, dataset):
     loop = "```python\nprint(df.shape)\n```"
     llm, agent = make_agent(
