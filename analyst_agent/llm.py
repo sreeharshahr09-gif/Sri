@@ -11,7 +11,7 @@ from typing import Protocol
 
 import requests
 
-from .config import LLMConfig
+from .config import LLMConfig, reply_budget
 
 
 class LLMError(RuntimeError):
@@ -48,8 +48,8 @@ def is_free_model(cfg: LLMConfig) -> bool:
 # pages and background jobs), to keep a free model under its per-minute limit.
 _pace_lock = threading.Lock()
 _last_start: dict[str, float] = {}
-# Models that refused to switch their reasoning off: not asked again.
-_reasoning_required: set[str] = set()
+# Models that refused the reasoning switch (on or off): it is not sent to them again in this process.
+_reasoning_switch_refused: set[str] = set()
 
 
 def _pace(cfg: LLMConfig) -> None:
@@ -194,16 +194,16 @@ class LLMClient:
             "model": cfg.model,
             "messages": messages,
             "temperature": cfg.temperature,
-            "max_tokens": cfg.max_tokens,
+            "max_tokens": reply_budget(cfg, cfg.max_tokens),  # with room to think first when thinking is on
             "stream": False,
         }
         if cfg.seed is not None:
             payload["seed"] = cfg.seed
-        if cfg.no_think:
+        if cfg.think or cfg.no_think:  # the user's "think" wins over a step's "no thinking"
             if not is_openrouter(cfg.base_url):
-                payload["chat_template_kwargs"] = {"enable_thinking": False}
-            elif cfg.model not in _reasoning_required:
-                payload["reasoning"] = {"enabled": False}
+                payload["chat_template_kwargs"] = {"enable_thinking": cfg.think}
+            elif cfg.model not in _reasoning_switch_refused:
+                payload["reasoning"] = {"enabled": cfg.think}
         return payload
 
     def _post(self, payload: dict) -> requests.Response:
@@ -233,9 +233,10 @@ class LLMClient:
         if resp.status_code >= 500:
             return _Retry(LLMError(f"HTTP {resp.status_code}: {resp.text[:500]}"))
         if (resp.status_code == 400 and "reasoning" in payload and "reasoning" in resp.text.lower()
-                and cfg.model not in _reasoning_required):
-            # A model whose reasoning cannot be switched off: ask again without the switch.
-            _reasoning_required.add(cfg.model)
+                and cfg.model not in _reasoning_switch_refused):
+            # A model whose reasoning cannot be switched (off for a reasoning model, on for one without): ask again
+            # without the switch.
+            _reasoning_switch_refused.add(cfg.model)
             return _Retry(LLMError(f"HTTP 400: {resp.text[:500]}"), drop_reasoning=True)
         if resp.status_code == 400 and ("exceed_context_size" in resp.text or "context size" in resp.text
                                         or "context length" in resp.text):
@@ -273,8 +274,8 @@ class LLMClient:
         usage = data.get("usage") or {}
         if not content.strip() and choice.get("finish_reason") == "length":
             raise ReplyCutOff(
-                f"The model used all {cfg.max_tokens:,} reply tokens without writing an answer; it was "
-                "probably still thinking. "
+                f"The model used all {reply_budget(cfg, cfg.max_tokens):,} reply tokens without writing an answer; "
+                "it was probably still thinking. "
                 + ("Raise the max tokens per reply." if is_openrouter(cfg.base_url) else
                    "Turn thinking off (llama-server --reasoning-budget 0) or raise the max tokens.")
             )

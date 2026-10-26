@@ -45,7 +45,8 @@ def extract_json(text: str):
 
 
 def structured_client(llm, max_tokens: int | None = None, **settings):
-    """The client for a structured task: no thinking, the given reply budget and other settings."""
+    """The client for a structured task: no thinking (unless the user turned it on for every step), the given reply
+    budget and other settings."""
     if not isinstance(llm, LLMClient):
         return llm  # a test double or another ChatModel: used as it is
     cfg = replace(llm.config, no_think=True, **settings)

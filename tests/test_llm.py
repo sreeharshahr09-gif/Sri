@@ -202,3 +202,20 @@ def test_request_longer_than_the_context_window_is_explained():
                                        r"16,384\)\. Start llama-server with a larger -c"):
         llm.chat([])
     assert len(session.posts) == 1  # not retried: it would fail the same way
+
+
+def test_thinking_on_everywhere_asks_for_it_with_room_to_think(monkeypatch):
+    from analyst_agent.config import THINKING_TOKENS, context_budget_chars, reply_budget
+
+    session = FakeSession([OK])
+    # The user's switch wins over a structured step's "no thinking".
+    LLMClient(LLMConfig(think=True, no_think=True, max_tokens=2048), session=session).chat([{"role": "user", "content": "x"}])
+    payload = session.posts[0][1]["json"]
+    assert payload["chat_template_kwargs"] == {"enable_thinking": True}
+    assert payload["max_tokens"] == 2048 + THINKING_TOKENS
+    assert reply_budget(LLMConfig(think=True, context_tokens=16384), 2048) == 8192  # at most half the window
+    assert reply_budget(LLMConfig(), 2048) == 2048  # thinking off: nothing added
+    monkeypatch.delenv("AGENT_MAX_CONTEXT_CHARS", raising=False)
+    assert context_budget_chars(LLMConfig(think=True)) < context_budget_chars(LLMConfig())  # the room is kept free
+    monkeypatch.setenv("LLM_THINK", "1")
+    assert LLMConfig().think and not LLMConfig(think=False).think

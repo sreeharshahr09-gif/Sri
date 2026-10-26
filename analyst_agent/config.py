@@ -43,6 +43,21 @@ class LLMConfig:
     # llama-server --jinja, vLLM and others pass to the chat template). Used for structured tasks,
     # where thinking only uses up the reply budget. Templates without the switch ignore it.
     no_think: bool = False
+    # The user's choice to let the model think before answering in every step, the structured ones included
+    # (it then wins over no_think). Slower and uses more tokens. LLM_THINK=1 turns it on by default.
+    think: bool = field(default_factory=lambda: _env("LLM_THINK", "").strip().lower() in ("1", "true", "yes", "on"))
+
+
+# Extra reply tokens every request gets to think in when thinking is on (LLMClient adds them).
+THINKING_TOKENS = 8_000
+
+
+def reply_budget(llm: LLMConfig, tokens: int) -> int:
+    """Reply tokens for an answer of about `tokens`, plus room to think first when thinking is on (up to half the
+    context window, so the prompt keeps the other half)."""
+    if not llm.think:
+        return tokens
+    return min(tokens + THINKING_TOKENS, max(tokens, llm.context_tokens // 2))
 
 
 @dataclass
@@ -88,4 +103,4 @@ def context_budget_chars(llm: LLMConfig | None = None) -> int:
         return explicit
     if llm is None:
         return DEFAULT_CONTEXT_CHARS
-    return max(20_000, (llm.context_tokens - llm.max_tokens - 1_500) * 3)
+    return max(20_000, (llm.context_tokens - reply_budget(llm, llm.max_tokens) - 1_500) * 3)

@@ -116,7 +116,8 @@ def run_landscape(
     except Cancelled:
         result.status = LandscapeStatus.CANCELLED
     cfg = getattr(llm, "config", None)
-    result.model_name = (cfg.model + (" via OpenRouter" if is_openrouter(cfg.base_url) else "")) if cfg else ""
+    result.model_name = (cfg.model + (" via OpenRouter" if is_openrouter(cfg.base_url) else "")
+                         + (" with thinking" if getattr(cfg, "think", False) else "")) if cfg else ""
     if result.enriched is None:
         result.enriched = enriched_table(result)
     result.blocks = assemble_blocks(result, options)

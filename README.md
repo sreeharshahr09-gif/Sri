@@ -261,6 +261,11 @@ Type a request in the box under the report; the outcome is added below it.
   reply tokens, the request is retried with more room and smaller batches, and the reason is
   recorded per patent. Starting llama-server with `--reasoning-budget 0` turns thinking off for
   every page. The data agent (brief-specific questions and follow-ups) also runs without thinking.
+  To let the model think in every step instead, turn on **Let the model think (all steps)** under
+  **🧠 Model server** (or `set "LLM_THINK=1"` in `my_settings.bat`): each request then asks for
+  thinking and gets 8,000 extra reply tokens for it (at most half the context window). Runs take
+  longer. Patents read with thinking are cached apart from those read without it, and the
+  methodology records the model as "… with thinking".
 - The analysis covers exactly what your export contains: the search strategy behind it defines
   the landscape. It is a technology landscape, not a legal (validity or FTO) opinion.
 
@@ -297,7 +302,9 @@ Things to know:
   read so far are cached, and running it again after the reset (midnight UTC) continues from
   them. Paid model ids (without `:free`) have no such limits and cost little for this work.
 - Thinking is switched off for the structured steps with OpenRouter's `reasoning` setting; a
-  model whose reasoning cannot be switched off is asked again without it.
+  model whose reasoning cannot be switched off is asked again without it. **Let the model think
+  (all steps)** turns it on everywhere instead; a model without thinking is then asked again
+  without the switch.
 - The report's methodology records the model as "… via OpenRouter". Patent answers are cached
   per model, so local and cloud runs never mix.
 - Check the extraction quality on your own patents with the validation sample before relying on
@@ -384,6 +391,7 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `LLM_MAX_TOKENS` | `2048` | Max tokens per model reply |
 | `LLM_TIMEOUT` | `180` | Seconds to wait for a reply |
 | `LLM_CONTEXT_TOKENS` | `32768` | Server context window; **Check connection** detects it from llama-server |
+| `LLM_THINK` | *(off)* | `1` lets the model think in every step (sidebar: **Let the model think**) |
 | `AGENT_MAX_STEPS` | `6` | Code executions allowed per question (data page) |
 | `AGENT_MAX_CONTEXT_CHARS` | *(derived)* | Overrides the conversation budget of both agents, which is otherwise derived from the context window |
 | `WORKSPACE_DIR` | *(empty)* | Default folder on the Workspace page |

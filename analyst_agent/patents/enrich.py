@@ -264,7 +264,9 @@ def extract_details(
 ) -> ExtractionResult:
     fields = build_fields(plan)
     system = system_prompt(plan, fields)
-    model_name = llm.config.model if isinstance(llm, LLMClient) else type(llm).__name__
+    # Answers read with thinking on are cached apart from those read without, as answers of another model are.
+    model_name = (llm.config.model + (" with thinking" if llm.config.think else "")
+                  if isinstance(llm, LLMClient) else type(llm).__name__)
     context = llm.config.context_tokens if isinstance(llm, LLMClient) else 16384
     size = batch_size or batch_size_for(context)
     cache = _Cache(CACHE_DIR / "extract" / f"{_signature(system, model_name)}.jsonl" if use_cache else None)

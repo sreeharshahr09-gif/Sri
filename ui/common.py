@@ -9,7 +9,7 @@ from dataclasses import replace
 import streamlit as st
 
 from analyst_agent import LLMClient, LLMConfig
-from analyst_agent.config import context_budget_chars
+from analyst_agent.config import THINKING_TOKENS, context_budget_chars
 from analyst_agent.llm import OPENROUTER_URL, is_openrouter
 from analyst_agent.sandbox import Artifact, ArtifactKind, ExecutionResult, has_row_labels
 
@@ -175,6 +175,16 @@ def model_settings() -> LLMConfig:
         temperature = st.slider("Temperature", 0.0, 1.0, DEFAULT_LLM.temperature, 0.05, key="llm_temperature",
                                 help="Low values give more consistent, reproducible analyses.")
         max_tokens = st.number_input("Max tokens per reply", 256, 16384, DEFAULT_LLM.max_tokens, 256, key="llm_max_tokens")
+        think = st.toggle(
+            "Let the model think (all steps)", value=DEFAULT_LLM.think, key="llm_think",
+            help="On: the model thinks before answering in every step, including reading the patents and writing the "
+                 f"report, with {THINKING_TOKENS:,} extra reply tokens to think in. Slower and uses more tokens. "
+                 "Off: the patent steps skip thinking; the Data analysis and Workspace pages use the model's own "
+                 "default. Models without thinking are not affected.",
+        )
+        if think:
+            st.caption("🧠 Thinking is on for every step, so runs take longer. Patents read with thinking are cached "
+                       "apart from those read without it: an earlier run's patents are read again.")
         read_timeout = st.number_input("Request timeout (s)", 10, 1800, int(DEFAULT_LLM.read_timeout), 10, key="llm_timeout")
         # The value lives only in session state so "Check connection" can update it.
         st.session_state.setdefault("llm_context", DEFAULT_LLM.context_tokens)
@@ -194,6 +204,7 @@ def model_settings() -> LLMConfig:
             read_timeout=float(read_timeout),
             seed=int(seed_text) if seed_text.strip().lstrip("-").isdigit() else None,
             context_tokens=int(context_tokens),
+            think=bool(think),
         )
         st.button("Check connection", width="stretch", on_click=_check_connection, args=(llm_cfg,))
         result = st.session_state.get("llm_check")

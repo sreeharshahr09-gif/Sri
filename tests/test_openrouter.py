@@ -27,7 +27,7 @@ def fresh_state(monkeypatch):
     sleeps = []
     monkeypatch.setattr("analyst_agent.llm.time.sleep", sleeps.append)
     monkeypatch.setattr(llm_mod, "_last_start", {})
-    monkeypatch.setattr(llm_mod, "_reasoning_required", set())
+    monkeypatch.setattr(llm_mod, "_reasoning_switch_refused", set())
     return sleeps
 
 
@@ -176,3 +176,32 @@ def test_pipeline_reports_why_it_stopped(plan):  # noqa: F811
     )
     assert result.status == "cancelled" and "daily limit" in result.stop_reason
     assert (result.enriched["Extraction"] == "not run (request limit reached)").sum() == len(result.enriched) - 12
+
+
+def test_thinking_on_is_requested_and_dropped_for_a_model_without_it():
+    refusal = FakeResponse(400, text='{"error": {"message": "reasoning is not supported for this model"}}')
+    client, session = cloud([refusal, OK, OK], think=True, no_think=True)
+    client.chat([])
+    client.chat([])
+    assert session.posts[0][1]["json"]["reasoning"] == {"enabled": True}
+    assert "reasoning" not in session.posts[1][1]["json"] and "reasoning" not in session.posts[2][1]["json"]
+
+
+class ClientModel(LLMClient):
+    """An LLMClient, so its settings (model, thinking) count, that answers like the patent test model."""
+
+    def chat(self, messages):
+        return FakeModel().chat(messages)
+
+
+def test_patents_read_with_thinking_are_cached_apart(plan, std):  # noqa: F811
+    def read(think):
+        return enrich.extract_details(std, plan, ClientModel(LLMConfig(base_url=URL, model=FREE, think=think),
+                                                             session=FakeSession([])))
+
+    first = read(think=False)
+    assert first.stats["extracted"] == len(std)
+    assert read(think=True).stats["from cache"] == 0  # not mixed with answers read without thinking
+    assert read(think=True).stats["from cache"] == len(std)  # but cached for the next run with thinking
+    assert read(think=False).stats["from cache"] == len(std)  # and the earlier cache is untouched
+    assert "with thinking" in read(think=True).info

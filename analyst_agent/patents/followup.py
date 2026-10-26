@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass, field, replace
 
 from ..agent import DataRun
+from ..config import reply_budget
 from ..data import Dataset, describe_for_llm
 from ..enums import StrEnum
 from ..llm import LLMClient
@@ -195,7 +196,8 @@ def rewrite(result, llm, wanted: list[str], instruction: str) -> list[nar.Sectio
 
 
 def agent_client(llm):
-    """The data agent's client: no thinking (it reasons step by step in its own loop) and room for code."""
+    """The data agent's client: no thinking (it reasons step by step in its own loop) unless the user turned
+    thinking on for every step, and room for code."""
     if not isinstance(llm, LLMClient):
         return llm
     cfg = llm.config
@@ -220,7 +222,7 @@ def profile_budget(llm) -> int | None:
     cfg = getattr(llm, "config", None)
     if cfg is None:
         return None
-    return max(6_000, (cfg.context_tokens - cfg.max_tokens - 5_000) * 3)
+    return max(6_000, (cfg.context_tokens - reply_budget(cfg, cfg.max_tokens) - 5_000) * 3)
 
 
 def landscape_profile(result, dataset: Dataset, sample_rows: int = 2, max_chars: int | None = None) -> str:
