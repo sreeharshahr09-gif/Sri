@@ -1,72 +1,46 @@
-"""The landscape pipeline: export + plan -> enriched patents and a report (as blocks)."""
+"""The landscape pipeline: export + plan -> enriched patents and a report.
+
+run_landscape cleans the export, then runs these stages in order. Each reads what earlier stages wrote on
+the LandscapeResult (all of them also add to `methods` and `warnings`):
+
+  stage                reads                                  writes
+  patent map           corpus                                 semantic; cluster and map columns of corpus.std
+  reading the patents  corpus, plan                           extraction
+  analytics            corpus, extraction, plan               analysis_frame, exhibits, incomplete/early years
+  white-space check    exhibits, plan                         methods["White-space check"]
+  facts                exhibits, semantic, analysis_frame     facts_by_kind, all_facts
+  brief's questions    corpus, extraction, all_facts, plan    enriched, question_runs; the answers join the facts
+  report text          facts, plan, question_runs             sections
+
+A stage that fails is noted (status "error", the reason in the report's notes) and the later stages run on
+what there is. Stop ends the run at the next stage, patent batch or agent step. report_blocks lays the
+result out as the report.
+"""
 
 from __future__ import annotations
 
-import re
 import time
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Callable
 
 import numpy as np
 import pandas as pd
 
+from ..agent import DataAnalystAgent
+from ..config import AgentConfig, SandboxConfig
 from ..llm import is_openrouter
 from ..runs import EventHandler
+from ..sandbox import Sandbox
 from . import analytics as an
 from . import enrich
 from . import narrative as nar
-from . import report as rb
 from . import semantic as sem
 from .data import FlowStep, PatentCorpus, build_corpus
-from .html_report import report_html
+from .followup import agent_client, analysis_dataset, landscape_profile, profile_budget
 from .plan import AnalysisPlan
-
-
-
-@dataclass
-class PipelineOptions:
-    sample_limit: int = 0  # analyse at most this many patents (0 = all), for a quick trial run
-    seed: int = 42
-    embedding_model: str = sem.DEFAULT_MODEL  # "tfidf" skips the neural model
-    semantic_map: bool = True
-    extract_details: bool = True  # the model reads every patent and fills the study's columns
-    batch_size: int = 0  # patents per extraction request (0 = from the context window)
-    write_report: bool = True  # the model writes each section's text from the computed facts
-    answer_questions: bool = True  # the data agent answers the plan's brief-specific questions
-    validation_size: int = 30  # patents in the validation sample
-
+from .report_blocks import assemble_blocks
+from .result import LandscapeResult, PipelineOptions, analysed_index, analysed_topics
 
 MIN_PATENTS_FOR_MAP = 8
-
-
-@dataclass
-class LandscapeResult:
-    plan: AnalysisPlan
-    corpus: PatentCorpus
-    blocks: list[rb.Block] = field(default_factory=list)
-    enriched: pd.DataFrame | None = None
-    warnings: list[str] = field(default_factory=list)
-    started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat(timespec="seconds"))
-    duration_s: float = 0.0
-    status: str = "complete"  # complete | cancelled | error
-    error: str | None = None
-    dataset_name: str = ""
-    dataset_sha256: str = ""
-    semantic: sem.SemanticResult | None = None
-    extraction: enrich.ExtractionResult | None = None
-    analysis_frame: pd.DataFrame | None = None  # the patents the analytics are computed on
-    exhibits: list[an.Exhibit] = field(default_factory=list)
-    sections: list[nar.Section] = field(default_factory=list)
-    facts_by_kind: dict[str, str] = field(default_factory=dict)  # what the text was written from
-    question_runs: list = field(default_factory=list)  # (question, AgentRun) for the brief-specific questions
-    all_facts: str = ""
-    model_name: str = ""
-    stop_reason: str = ""  # why the run stopped early, if not at the user's request
-    incomplete_years: list = field(default_factory=list)  # years cut short by the publication lag
-    early_years: list = field(default_factory=list)  # first years cut short: the export starts at a later date
-    window_note: str = ""  # explains early_years
-    methods: dict[str, str] = field(default_factory=dict)  # method -> description, for the methodology
 
 
 class Cancelled(Exception):
@@ -99,7 +73,7 @@ def run_landscape(
         emit("progress", (done, total))
 
     checkpoint("Cleaning the export")
-    corpus = build_corpus(raw, mapping, years=plan.years)
+    corpus = build_corpus(raw, mapping, years=plan.years)  # without a corpus there is nothing to report
     if options.sample_limit and len(corpus) > options.sample_limit:
         keep = corpus.std.sample(options.sample_limit, random_state=options.seed).index.sort_values()
         removed = len(corpus) - len(keep)
@@ -111,28 +85,44 @@ def run_landscape(
 
     try:
         if options.semantic_map:
-            semantic_stage(result, llm, options, checkpoint, progress)
+            _guarded(result, "The patent map", semantic_stage, result, llm, options, checkpoint, progress)
         if options.extract_details:
             checkpoint("Reading every patent")
-            extraction_stage(result, llm, options, emit, should_stop)
+            _guarded(result, "Reading the patents", extraction_stage, result, llm, options, emit, should_stop)
         checkpoint("Computing the landscape analytics")
-        analytics_stage(result)
+        _guarded(result, "The landscape analytics", analytics_stage, result)
         if llm is not None and options.write_report:
-            white_space_stage(result, llm)
-        collect_facts(result)
+            _guarded(result, "The white-space check", white_space_stage, result, llm)
+        _guarded(result, "Collecting the facts", collect_facts, result)
         if options.answer_questions and result.plan.analysis_questions:
-            questions_stage(result, llm, emit, checkpoint)
+            _guarded(result, "Answering the brief's questions", questions_stage, result, llm, emit, checkpoint,
+                     should_stop)
+            add_answers_to_facts(result)  # the report text is written from them too
         if options.write_report:
             checkpoint("Writing the report")
-            narrative_stage(result, llm, emit)
+            _guarded(result, "Writing the report text", narrative_stage, result, llm, emit)
     except Cancelled:
         result.status = "cancelled"
     cfg = getattr(llm, "config", None)
     result.model_name = (cfg.model + (" via OpenRouter" if is_openrouter(cfg.base_url) else "")) if cfg else ""
-    result.enriched = enriched_table(result)
+    if result.enriched is None:
+        result.enriched = enriched_table(result)
     result.blocks = assemble_blocks(result, options)
     result.duration_s = time.perf_counter() - started
     return result
+
+
+def _guarded(result: LandscapeResult, name: str, stage: Callable, *args) -> None:
+    """Run one stage. If it fails, note why and carry on: the stages before it still reach the report."""
+    try:
+        stage(*args)
+    except Cancelled:
+        raise
+    except Exception as exc:  # one failing stage must not lose the whole landscape
+        message = f"{name} failed ({type(exc).__name__}: {exc}); the rest of the report was still produced."
+        result.status = "error"
+        result.error = result.error or message
+        result.warnings.append(message)
 
 
 def analytics_stage(result: LandscapeResult) -> None:
@@ -148,8 +138,7 @@ def analytics_stage(result: LandscapeResult) -> None:
     result.window_note = an.early_years_text(ctx)
     if result.window_note:
         result.warnings.append(result.window_note)
-    result.exhibits, notes = an.run_analytics(result.analysis_frame, result.plan, corpus.year_basis,
-                                              ref_year=export_date(corpus))
+    result.exhibits, notes = an.run_analytics(result.analysis_frame, result.plan, corpus.year_basis, ctx=ctx)
     result.warnings.extend(notes)
 
 
@@ -205,39 +194,42 @@ def answered_questions(result: LandscapeResult) -> list[str]:
     return [q for q, run in result.question_runs if run.answer and not run.error]
 
 
-def questions_stage(result: LandscapeResult, llm, emit, checkpoint) -> None:
+def questions_stage(result: LandscapeResult, llm, emit: EventHandler, checkpoint: Callable[[str], None],
+                    should_stop: Callable[[], bool] | None = None) -> None:
     """The data agent answers each brief-specific question with code run on the enriched patent table."""
     if llm is None:
         result.warnings.append("No model connected: the brief-specific questions were not answered.")
         return
-    from ..agent import DataAnalystAgent
-    from ..config import AgentConfig, SandboxConfig
-    from ..sandbox import Sandbox
-    from .followup import agent_client, analysis_dataset, landscape_profile, profile_budget
-
     result.enriched = enriched_table(result)
     dataset = analysis_dataset(result)
     questions = result.plan.analysis_questions[:MAX_QUESTIONS]
-    answers = []
     client = agent_client(llm)
+    config = AgentConfig()
     with Sandbox(SandboxConfig()) as sandbox:
-        agent = DataAnalystAgent(client, sandbox, dataset, config=AgentConfig(),
+        agent = DataAnalystAgent(client, sandbox, dataset, config=config,
                                  profile=landscape_profile(result, dataset, max_chars=profile_budget(client)))
         for i, question in enumerate(questions):
             checkpoint(f"Answering the brief's questions ({i + 1} of {len(questions)})")
-            run = agent.run(question)
+            # The agent's own events show its steps in the status bar; Stop reaches it between steps.
+            run = agent.run(question, on_event=emit, should_stop=should_stop)
+            if run.status == "cancelled":
+                raise Cancelled()
             result.question_runs.append((question, run))
-            if run.answer:
-                answers.append(f"[Brief question] {question} Answer: {run.answer[:700]}")
+    answered = sum(1 for _, run in result.question_runs if run.answer and run.executed)
+    result.methods["Brief-specific questions"] = (
+        f"{answered} of {len(questions)} answered by the data agent with code run on the enriched patent table "
+        f"(Python sandbox, up to {config.max_steps} steps each); numbers in the answers are traced to the "
+        "code output.")
+
+
+def add_answers_to_facts(result: LandscapeResult) -> None:
+    """The answers to the brief's questions become facts that the report text is written from."""
+    answers = [f"[Brief question] {question} Answer: {run.answer[:700]}"
+               for question, run in result.question_runs if run.answer]
     if answers:
         text = "\n".join(answers)
         result.facts_by_kind["custom"] = result.facts_by_kind.get("custom", "") + text + "\n"
         result.all_facts += " " + text
-    answered = sum(1 for _, run in result.question_runs if run.answer and run.executed)
-    result.methods["Brief-specific questions"] = (
-        f"{answered} of {len(questions)} answered by the data agent with code run on the enriched patent table "
-        f"(Python sandbox, up to {AgentConfig().max_steps} steps each); numbers in the answers are traced to the "
-        "code output.")
 
 
 def narrative_stage(result: LandscapeResult, llm, emit) -> None:
@@ -255,102 +247,8 @@ def narrative_stage(result: LandscapeResult, llm, emit) -> None:
                                          "them and are flagged in the text.")
 
 
-def brief_specific_blocks(result: LandscapeResult) -> list[rb.Block]:
-    parts: list[rb.Block] = []
-    for ex in (e for e in result.exhibits if e.section == "custom"):
-        parts.append(rb.heading(ex.title, level=3))
-        parts.extend(ex.blocks)
-    for question, run in result.question_runs:
-        parts.append(rb.heading(question, level=3))
-        parts.extend(agent_run_blocks(run))
-    if not parts:
-        return []
-    return [rb.heading("🎯 Brief-specific analyses"),
-            rb.caption("Your extra columns, and your plan's own questions answered by the data agent with Python "
-                       "code run on the enriched patent table. The code behind each answer is shown.")] + parts
-
-
-def agent_run_blocks(run) -> list[rb.Block]:
-    """An AgentRun as report blocks: answer, number check, charts and tables, code."""
-    blocks: list[rb.Block] = []
-    if run.status in ("llm_error", "error"):
-        blocks.append(rb.note(f"Not answered: {run.error or 'the analysis stopped'}"))
-    if run.answer:
-        blocks.append(rb.markdown(run.answer))
-        if not run.executed:
-            blocks.append(rb.note("This answer is not backed by any executed code; treat it as unverified."))
-        elif run.status == "step_limit":
-            blocks.append(rb.note("The step limit was reached before the agent finished; the answer may be "
-                                  "incomplete."))
-    g = run.grounding
-    if g and g.checked and run.executed:
-        everything = ("The number in the answer traces back to the code output." if len(g.checked) == 1 else
-                      f"All {len(g.checked)} numbers in the answer trace back to the code output.")
-        blocks.append(rb.caption(everything if g.fully_traced else
-                                 f"{g.traced_count} of {len(g.checked)} numbers trace back to the code output; "
-                                 f"not traced: {', '.join(g.untraced[:8])}."))
-    for art in run.report_artifacts():
-        block = artifact_block(art)
-        if block is not None:
-            blocks.append(block)
-    code = "\n\n".join(run.successful_code)
-    if code:
-        blocks.append(rb.code(code))
-    return blocks
-
-
-def artifact_block(art) -> rb.Block | None:
-    import base64
-
-    try:
-        if art.kind == "plotly":
-            return rb.chart(art.to_plotly())
-        if art.kind == "table":
-            df = art.to_dataframe()
-            if not pd.api.types.is_integer_dtype(df.index):  # labelled index (e.g. value_counts): keep it
-                df = df.reset_index()
-            return rb.table(df, title=art.title or "")
-        if art.kind == "image":
-            return rb.image(base64.b64decode(art.payload["png_b64"]), title=art.title or "")
-        text = str(art.payload.get("text", art.summary))
-        if art.kind == "text":
-            return rb.markdown(text)
-        return rb.metrics([(art.title or "Result", text)]) if len(text) <= 40 else rb.markdown(f"`{text}`")
-    except (AttributeError, KeyError, TypeError, ValueError):  # a broken output must not break the report
-        return None
-
-
 def result_model(llm) -> str:
     return getattr(getattr(llm, "config", None), "model", "") or type(llm).__name__
-
-
-def assemble_blocks(result: LandscapeResult, options: PipelineOptions | None = None) -> list[rb.Block]:
-    options = options or PipelineOptions()
-    blocks = title_blocks(result)
-    sections = result.sections or nar.plan_sections(result.plan.report_sections)
-    for sec in sections:
-        parts = nar.section_blocks(sec)
-        if "summary" in sec.kinds:
-            plan = result.plan
-            scope = " ".join(x for x in [plan.objective, plan.in_scope] if x)
-            if scope:
-                parts.append(rb.markdown(f"**Scope of this study:** {scope}"))
-        if "clusters" in sec.kinds and result.semantic is not None:
-            parts.extend(semantic_blocks(result.corpus, result.semantic, analysed_topics(result),
-                                         analysed_index(result), per_patent=result.extraction is not None))
-        for ex in (e for e in result.exhibits if e.section in sec.kinds):
-            parts.append(rb.heading(ex.title, level=3))
-            parts.extend(ex.blocks)
-        if parts:
-            blocks.append(rb.heading(sec.heading))
-            blocks.extend(parts)
-    blocks.extend(brief_specific_blocks(result))
-    blocks.extend(nar.methodology_blocks(result))
-    if result.warnings:
-        blocks.append(rb.markdown("**Notes from this run**\n\n" + "\n".join(f"- {w}" for w in result.warnings)))
-    blocks.extend(table_blocks(result, options))
-    blocks.append(html_download(result, blocks))
-    return blocks
 
 
 def extraction_stage(result: LandscapeResult, llm, options: PipelineOptions, emit, should_stop) -> None:
@@ -413,133 +311,6 @@ def attach_semantic(corpus: PatentCorpus, res: sem.SemanticResult) -> None:
     std["cluster_outlier"] = res.outlier
 
 
-def title_blocks(result: LandscapeResult) -> list[rb.Block]:
-    corpus, plan = result.corpus, result.plan
-    std = result.analysis_frame if result.analysis_frame is not None else corpus.std
-    years = std["year"].dropna()
-    span = f"{int(years.min())}–{int(years.max())}" if len(years) else "n/a"
-    return [
-        rb.heading(f"Patent landscape: {plan.title}", level=1),
-        rb.metrics([
-            ("Patents analysed", f"{len(std):,}"),
-            ("Years", span),
-            ("Assignees", f"{std['assignee'].nunique():,}"),
-            ("Patent offices", f"{std['country'].nunique():,}"),
-        ]),
-    ]
-
-
-def _short(text: str, limit: int = 90) -> str:
-    text = " ".join(str(text or "").split())
-    return text if len(text) <= limit else text[: limit - 1] + "…"
-
-
-OFF_TOPIC = "Off-topic (left out)"
-
-
-def analysed_index(result: LandscapeResult) -> pd.Index:
-    """The patents the report's analytics use: the corpus without those judged off-topic."""
-    return result.analysis_frame.index if result.analysis_frame is not None else result.corpus.std.index
-
-
-def analysed_topics(result: LandscapeResult) -> pd.DataFrame | None:
-    """The topic clusters with their patents counted in the analysed set, as everywhere else in the report
-    ('all_patents': the count over the whole export, off-topic patents included), largest first."""
-    res = result.semantic
-    if res is None or res.topics is None or res.topics.empty or "cluster_id" not in result.corpus.std:
-        return None
-    std = result.corpus.std
-    counts = std.loc[std.index.isin(analysed_index(result)), "cluster_id"].value_counts()
-    topics = res.topics.copy()
-    topics["all_patents"] = topics["patents"]
-    topics["patents"] = topics["id"].map(counts).fillna(0).astype(int)
-    frame = result.analysis_frame
-    if result.extraction is not None and frame is not None and "tech_group" in frame:
-        # Every patent's group was read from the patent itself: the cluster takes its patents' most frequent
-        # group, not the namer's guess from keywords (which put "Carcass ply architecture" under "Novel
-        # architecture" for the user).
-        groups = frame.loc[frame["tech_group"] != an.UNCLASSIFIED].assign(cid=std.loc[frame.index, "cluster_id"])
-        majority = groups.groupby("cid")["tech_group"].agg(lambda g: g.value_counts().index[0])
-        topics["tech_group"] = topics["id"].map(majority).fillna(topics.get("tech_group", ""))
-    return topics.sort_values(["patents", "all_patents"], ascending=False, kind="stable")
-
-
-def semantic_blocks(corpus: PatentCorpus, res: sem.SemanticResult, topics: pd.DataFrame | None = None,
-                    analysed: pd.Index | None = None, per_patent: bool = False) -> list[rb.Block]:
-    """The map shows every patent (off-topic ones in grey); the table and treemap count the analysed set. With
-    `per_patent` (every patent's relevance judged), the cluster-level relevance guess is left out."""
-    import plotly.express as px
-
-    std = corpus.std
-    topics = res.topics.assign(all_patents=res.topics["patents"]) if topics is None else topics
-    analysed = std.index if analysed is None else analysed
-    off = ~std.index.isin(analysed)
-    n, n_off = int((~off).sum()), int(off.sum())
-    names = {cid: f"{cid} · {_short(label, 48)}" for cid, label in zip(topics["id"], topics["label"])}
-    order = [names[cid] for cid in sorted(topics["id"])] + ([OFF_TOPIC] if n_off else [])
-    frame = pd.DataFrame({
-        "x": std["map_x"], "y": std["map_y"], "Topic": std["cluster_id"].map(names).where(~off, OFF_TOPIC),
-        "Title": std["title"].map(_short), "Assignee": std["assignee"].map(lambda a: _short(a, 40)),
-        "Year": std["year"].astype("Int64").astype(str).replace("<NA>", "n/a"), "ID": std["id"],
-    })
-    palette = px.colors.qualitative.Dark24 + px.colors.qualitative.Light24
-    fig = px.scatter(
-        frame, x="x", y="y", color="Topic", category_orders={"Topic": order},
-        hover_data={"x": False, "y": False, "Title": True, "Assignee": True, "Year": True, "ID": True},
-        color_discrete_sequence=palette, color_discrete_map={OFF_TOPIC: "#c4c4c4"}, render_mode="webgl", height=640,
-    )
-    fig.update_traces(marker={"size": 6, "opacity": 0.75})
-    # A numbered tag at each cluster's centre; the legend gives the number's name.
-    centres = frame.assign(cid=std["cluster_id"].values).groupby("cid")[["x", "y"]].median()
-    for cid, row in centres.iterrows():
-        fig.add_annotation(x=row["x"], y=row["y"], yshift=16, text=f"<b>{cid}</b>", showarrow=False,
-                           font={"size": 11}, bgcolor="rgba(255,255,255,0.85)", bordercolor="#888", borderwidth=1,
-                           borderpad=1)
-    fig.update_layout(
-        xaxis={"visible": False}, yaxis={"visible": False}, legend_title_text="Topic cluster",
-        margin={"l": 10, "r": 10, "t": 40, "b": 10},
-        title=f"Patent map: {n + n_off:,} patents, {len(topics)} topic clusters"
-              + (f" ({n_off:,} off-topic, in grey)" if n_off else ""),
-    )
-    blocks = [
-        rb.heading("Patent map and topic clusters", level=3),
-        rb.chart(fig, title="Patent map", caption=(
-            "Each dot is one patent; patents with similar text sit close together. Colours are topic clusters, "
-            "numbered as in the table below"
-            + ("; grey dots are patents judged off-topic, which the analytics leave out. " if n_off else ". ")
-            + 
-            f"Text embedding: {res.info['embedding']} Map: {res.info['map']}. Clusters: {res.info['clustering']}."
-        )),
-    ]
-    has_groups = "tech_group" in topics and topics["tech_group"].astype(bool).any()
-    table = pd.DataFrame({
-        "#": topics["id"],
-        "Topic cluster": topics["label"],
-        "Patents": topics["patents"],
-        "Share": (topics["patents"] / max(n, 1) * 100).round(1).astype(str) + " %",
-        "Off-topic (left out)": (topics["all_patents"] - topics["patents"]) if n_off else "",
-        "Technology group": topics.get("tech_group", ""),
-        "Relevance": "" if per_patent else topics.get("relevance", ""),
-        "Key terms": topics["keywords"].map(lambda k: ", ".join(k[:6])),
-        "What these patents do": topics.get("description", ""),
-    })
-    table = table[[c for c in table.columns if table[c].astype(str).str.strip().astype(bool).any()]]
-    caption = res.info["naming"] + (f" Patents and share: the {n:,} analysed patents, as in the rest of the "
-                                    "report; the clusters were found on all patents in the export." if n_off else "")
-    blocks.append(rb.table(table, title="Topic clusters", caption=caption))
-    if has_groups:
-        tree = topics[topics["patents"] > 0].assign(tech_group=lambda t: t["tech_group"].replace("", "Unassigned"))
-        fig2 = px.treemap(tree, path=[px.Constant("All patents"), "tech_group", "label"], values="patents",
-                          color="tech_group", color_discrete_sequence=px.colors.qualitative.Set2, height=520)
-        fig2.update_traces(root_color="#f4f4f4", textinfo="label+value+percent root")
-        fig2.update_layout(margin={"l": 5, "r": 5, "t": 40, "b": 5}, title="Topic clusters by technology group")
-        blocks.append(rb.chart(fig2, title="Topic hierarchy", caption=(
-            "Box size is the number of patents. Each cluster sits under the most frequent technology group of its "
-            "patents." if per_patent else
-            "Box size is the number of patents. Groups come from your plan; the model assigned each cluster to one.")))
-    return blocks
-
-
 def enriched_table(result: LandscapeResult) -> pd.DataFrame:
     """The patent table for the CSV: identifiers, the study's columns, clusters, then the original export."""
     std = result.corpus.std
@@ -568,77 +339,3 @@ def enriched_table(result: LandscapeResult) -> pd.DataFrame:
             continue
         out[name if name not in out.columns else f"{name} (export)"] = raw[col]
     return out.reset_index(drop=True)
-
-
-BULKY_TEXT_CHARS = 10_000
-KEY_COLUMNS = ["Patent ID", "Title", "Year", "Assignee (normalised)", "Topic", "Segment", "Technology group",
-               "Complexity", "Performance target", "Design lever", "Relevance"]
-
-
-def _slug(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")[:50] or "patent_landscape"
-
-
-def table_blocks(result: LandscapeResult, options: PipelineOptions | None = None) -> list[rb.Block]:
-    options = options or PipelineOptions()
-    table = result.enriched
-    blocks = [rb.heading("Patent table and downloads")]
-    res = result.extraction
-    if res is not None:
-        rel = res.table["Relevance"].value_counts()
-        read = res.stats["extracted"] + res.stats["from cache"]
-        blocks.append(rb.metrics([
-            ("Read by the model", f"{read:,} of {res.stats['patents']:,}"),
-            ("High relevance", f"{int(rel.get('High', 0)):,}"),
-            ("Partial", f"{int(rel.get('Partial', 0)):,}"),
-            ("Low (off-topic)", f"{int(rel.get('Low', 0)):,}"),
-        ]))
-    problem_col = next((f.column for f in res.fields if f.key == "problem"), None) if res is not None else None
-    key = [c for c in KEY_COLUMNS[:6] + ([problem_col] if problem_col else []) + KEY_COLUMNS[6:] if c in table]
-    caption = (f"Key columns shown; the CSV below has all {len(table.columns)} columns, including Component, "
-               "Mechanism, Core claim, Key parameters, Trade-offs, Confidence, the topic clusters and every column "
-               "of your export." if res is not None else "Patent details were not extracted in this run.")
-    blocks.append(rb.table(table[key], title="Every patent with the study's columns", caption=caption))
-    slug = _slug(result.plan.title)
-    # Full-text columns such as a description (up to 32,767 characters per cell) would make the file
-    # several times larger without helping the analysis; they stay in the user's own export.
-    bulky = [c for c in table.columns
-             if table[c].dtype == object or pd.api.types.is_string_dtype(table[c])
-             if table[c].astype(str).str.len().mean() > BULKY_TEXT_CHARS]
-    csv_table = table.drop(columns=bulky)
-    note = (f" Left out to keep the file small: {', '.join(bulky)} (over {BULKY_TEXT_CHARS:,} characters per "
-            "patent on average); they stay in your export, matched by Patent ID." if bulky else "")
-    blocks.append(rb.download(
-        "Download the enriched patent table (CSV)", csv_table.to_csv(index=False).encode("utf-8-sig"),
-        f"{slug}_patents.csv",
-        caption=f"{len(csv_table):,} patents × {len(csv_table.columns)} columns. Opens directly in Excel.{note}",
-    ))
-    if res is not None:
-        checked = [f.column for f in res.fields if f.key in ("topic", "segment", "problem", "tech_group", "complexity",
-                                                              "design_lever", "core_claim", "relevance", "confidence")]
-        sample = nar.validation_sample(table.assign(Abstract=result.corpus.std["abstract"].values), checked,
-                                       n=options.validation_size, seed=options.seed)
-        if not sample.empty:
-            blocks.append(rb.download(
-                "Download a validation sample (CSV)", sample.to_csv(index=False).encode("utf-8-sig"),
-                f"{slug}_validation_sample.csv",
-                caption=f"{len(sample)} random patents with the model's answers and empty Correct? / Comment columns. "
-                        "Have an expert mark them to measure the extraction accuracy, and quote it with the "
-                        "findings.",
-            ))
-    return blocks
-
-
-def html_download(result: LandscapeResult, blocks: list[rb.Block]) -> rb.Block:
-    frame = result.analysis_frame if result.analysis_frame is not None else result.corpus.std
-    years = frame["year"].dropna()
-    subtitle = (f"{len(frame):,} patents" + (f" · {int(years.min())}–{int(years.max())}" if len(years) else "")
-                + f" · {result.dataset_name or 'uploaded export'} · generated "
-                + datetime.fromisoformat(result.started_at).strftime("%d %b %Y")
-                + (f" with {result.model_name}" if result.model_name else ""))
-    if result.status == "cancelled":
-        subtitle += " · stopped before the end: partial results"
-    page = report_html(blocks, f"Patent landscape: {result.plan.title}", subtitle)
-    return rb.download("Download the full report (HTML)", page, f"{_slug(result.plan.title)}_report.html",
-                       mime="text/html", caption="One file with every chart (interactive), table and text; opens in "
-                                                 "any browser, also offline. Print it to PDF from the browser if needed.")

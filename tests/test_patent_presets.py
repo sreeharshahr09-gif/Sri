@@ -211,3 +211,19 @@ def test_html_shows_images_and_code():
 
     page = report_html([rb.heading("T", 1), rb.image(b"\x89PNG fake", title="Chart"), rb.code("print(1 < 2)")], "T").decode()
     assert 'src="data:image/png;base64,' in page and "print(1 &lt; 2)" in page
+
+
+def test_stop_reaches_the_data_agent_inside_a_question(tmp_path, monkeypatch):
+    monkeypatch.setattr(enrich, "CACHE_DIR", tmp_path)
+    plan = preset_plan("Durability")
+    plan.analysis_questions = plan.analysis_questions[:2]
+    raw = make_export(30, seed=2)
+    model = FakeLLM(plan)
+    events = []
+    res = run_landscape(raw, detect_columns(list(raw.columns)), plan, llm=model,
+                        options=PipelineOptions(semantic_map=False, write_report=False),
+                        on_event=lambda kind, payload: events.append(kind),
+                        should_stop=lambda: model.calls["agent"] >= 1)  # Stop once the agent is at work
+    assert res.status == "cancelled" and res.question_runs == []
+    assert model.calls["agent"] == 1  # it stopped after its first step, not after finishing the question
+    assert "llm_call" in events and "executing" in events  # the agent's steps reach the status bar

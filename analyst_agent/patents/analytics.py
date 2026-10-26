@@ -883,10 +883,14 @@ EXHIBITS = [trend, geography, segments, problem_solution, players, competitors, 
             roadmap, white_space, extra_columns]
 
 
-def run_analytics(frame: pd.DataFrame, plan: AnalysisPlan, year_basis: str,
-                  ref_year: float | None = None) -> tuple[list[Exhibit], list[str]]:
-    """All exhibits that the data supports; returns (exhibits, notes on skipped ones)."""
-    ctx = make_context(frame, plan, year_basis, ref_year)
+def run_analytics(frame: pd.DataFrame, plan: AnalysisPlan, year_basis: str, ref_year: float | None = None,
+                  ctx: Context | None = None) -> tuple[list[Exhibit], list[str]]:
+    """All exhibits that the data supports; returns (exhibits, notes on skipped ones).
+
+    `ctx` is the context from make_context(frame, plan, year_basis, ref_year), if the caller has it already.
+    """
+    if ctx is None:
+        ctx = make_context(frame, plan, year_basis, ref_year)
     exhibits, notes = [], []
     for fn in EXHIBITS:
         try:

@@ -441,6 +441,8 @@ def render_result(result: LandscapeResult, idx: int) -> None:
         st.warning(f"The analysis stopped early; what was finished is shown. {result.stop_reason}", icon="⏹")
     elif result.status == "cancelled":
         st.info("The analysis was stopped at your request; what was finished is shown.", icon="⏹")
+    elif result.status == "error":
+        st.warning(f"{result.error} Everything else the analysis produced is shown.", icon="⚠️")
     for w in result.warnings:
         st.caption(f"ℹ️ {w}")
     download_row(result.blocks, key=f"pl-{idx}")

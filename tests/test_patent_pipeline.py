@@ -248,3 +248,22 @@ def test_clusters_take_their_patents_group_and_white_space_is_checked():
     if any(b.kind == "table" for b in white.blocks):
         assert model.calls.get("white_space") == 1 and result.methods["White-space check"].startswith("The model")
         assert white.facts.startswith("White space (statistical leads, each checked by the model")
+
+
+def test_a_failing_stage_is_noted_and_the_rest_is_still_reported(monkeypatch):
+    from analyst_agent.patents import pipeline
+
+    def broken(result, llm):
+        raise ValueError("unexpected export layout")
+
+    monkeypatch.setattr(pipeline, "white_space_stage", broken)
+    plan = AnalysisPlan(title="Uneven wear")
+    result, _ = _run(n=60, plan=plan, llm=FakeLLM(plan))
+    assert result.status == "error"
+    assert "white-space check failed" in result.error and "unexpected export layout" in result.error
+    assert result.error in result.warnings
+    assert result.exhibits and any(sec.text for sec in result.sections)  # the stages after it still ran
+    titles = [b.title for b in result.blocks]
+    assert "Methodology and limitations" in titles
+    page = next(b for b in result.blocks if b.kind == "download" and b.file_name.endswith(".html")).data.decode()
+    assert "part of the analysis failed" in page
