@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+from .enums import StrEnum
+
 
 def _env(name: str, default: str) -> str:
     return os.environ.get(name, default)
@@ -22,6 +24,23 @@ def _env_float(name: str, default: float) -> float:
         return float(os.environ[name])
     except (KeyError, ValueError):
         return default
+
+
+class Thinking(StrEnum):
+    """How much the model thinks before answering: the user's choice under Model server (LLM_THINK)."""
+
+    OFF = "off"  # structured steps without thinking; the Data analysis and Workspace pages leave it to the model
+    ANALYSIS = "analysis"  # planning, judging, writing and answering think; reading the patents does not
+    ALL = "all"  # every step thinks, reading the patents included
+
+
+def _thinking_from_env() -> Thinking:
+    value = _env("LLM_THINK", "").strip().lower()
+    if value in ("all", "1", "true", "yes", "on"):  # "1" and the like: the earlier on/off switch meant every step
+        return Thinking.ALL
+    if value in ("analysis", "writing"):
+        return Thinking.ANALYSIS
+    return Thinking.OFF
 
 
 @dataclass
@@ -43,9 +62,22 @@ class LLMConfig:
     # llama-server --jinja, vLLM and others pass to the chat template). Used for structured tasks,
     # where thinking only uses up the reply budget. Templates without the switch ignore it.
     no_think: bool = False
-    # The user's choice to let the model think before answering in every step, the structured ones included
-    # (it then wins over no_think). Slower and uses more tokens. LLM_THINK=1 turns it on by default.
-    think: bool = field(default_factory=lambda: _env("LLM_THINK", "").strip().lower() in ("1", "true", "yes", "on"))
+    # How much the model thinks: the user's choice (LLM_THINK=off|analysis|all).
+    thinking: Thinking = field(default_factory=_thinking_from_env)
+    # Whether this client asks for thinking (it then wins over no_think). Each step sets it with thinks_in();
+    # left out, it follows `thinking`: the Data analysis and Workspace pages think unless thinking is off.
+    think: bool | None = None
+
+    def __post_init__(self) -> None:
+        self.thinking = Thinking(self.thinking)
+        if self.think is None:
+            self.think = self.thinking != Thinking.OFF
+
+
+def thinks_in(llm: LLMConfig, reading: bool = False) -> bool:
+    """Whether a step thinks under the user's choice. `reading` is the bulk reading of the patents, which thinks only
+    with "all steps"; every other step thinks unless thinking is off."""
+    return llm.thinking == Thinking.ALL or (llm.thinking == Thinking.ANALYSIS and not reading)
 
 
 # Extra reply tokens every request gets to think in when thinking is on (LLMClient adds them).

@@ -17,6 +17,7 @@ from typing import Callable
 
 import pandas as pd
 
+from ..config import thinks_in
 from ..llm import LLMClient, LLMError, RequestLimitReached
 from .llmjson import ReplyCutOff, chat_text, json_objects, structured_client
 from .plan import AnalysisPlan
@@ -264,8 +265,8 @@ def extract_details(
 ) -> ExtractionResult:
     fields = build_fields(plan)
     system = system_prompt(plan, fields)
-    # Answers read with thinking on are cached apart from those read without, as answers of another model are.
-    model_name = (llm.config.model + (" with thinking" if llm.config.think else "")
+    # Answers read with thinking are cached apart from those read without, as answers of another model are.
+    model_name = (llm.config.model + (" with thinking" if thinks_in(llm.config, reading=True) else "")
                   if isinstance(llm, LLMClient) else type(llm).__name__)
     context = llm.config.context_tokens if isinstance(llm, LLMClient) else 16384
     size = batch_size or batch_size_for(context)
@@ -293,7 +294,8 @@ def extract_details(
         client = llm
         if isinstance(llm, LLMClient):
             cfg = llm.config
-            client = structured_client(llm, 600 * len(batch) + 1500, read_timeout=max(cfg.read_timeout, 600),
+            client = structured_client(llm, 600 * len(batch) + 1500, reading=True,
+                                       read_timeout=max(cfg.read_timeout, 600),
                                        temperature=min(cfg.temperature, 0.2), seed=seed)
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         objs: list[dict] = []

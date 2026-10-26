@@ -5,7 +5,7 @@ import time
 import pytest
 
 from analyst_agent import llm as llm_mod
-from analyst_agent.config import LLMConfig
+from analyst_agent.config import LLMConfig, Thinking
 from analyst_agent.llm import (
     LLMClient,
     LLMError,
@@ -195,13 +195,38 @@ class ClientModel(LLMClient):
 
 
 def test_patents_read_with_thinking_are_cached_apart(plan, std):  # noqa: F811
-    def read(think):
-        return enrich.extract_details(std, plan, ClientModel(LLMConfig(base_url=URL, model=FREE, think=think),
+    def read(thinking):
+        return enrich.extract_details(std, plan, ClientModel(LLMConfig(base_url=URL, model=FREE, thinking=thinking),
                                                              session=FakeSession([])))
 
-    first = read(think=False)
-    assert first.stats["extracted"] == len(std)
-    assert read(think=True).stats["from cache"] == 0  # not mixed with answers read without thinking
-    assert read(think=True).stats["from cache"] == len(std)  # but cached for the next run with thinking
-    assert read(think=False).stats["from cache"] == len(std)  # and the earlier cache is untouched
-    assert "with thinking" in read(think=True).info
+    assert read(Thinking.OFF).stats["extracted"] == len(std)
+    assert read(Thinking.ANALYSIS).stats["from cache"] == len(std)  # reading does not think: the same cache
+    assert read(Thinking.ALL).stats["from cache"] == 0  # read with thinking: not mixed with answers read without
+    assert read(Thinking.ALL).stats["from cache"] == len(std)  # but cached for the next run with thinking
+    assert read(Thinking.OFF).stats["from cache"] == len(std)  # and the earlier cache is untouched
+    assert "with thinking" in read(Thinking.ALL).info and "with thinking" not in read(Thinking.ANALYSIS).info
+
+
+@pytest.mark.parametrize("mode, reading, analysis, pages", [
+    (Thinking.OFF, False, False, None),  # pages: no switch sent, the model decides
+    (Thinking.ANALYSIS, False, True, True),
+    (Thinking.ALL, True, True, True),
+])
+def test_each_kind_of_step_thinks_as_the_choice_says(mode, reading, analysis, pages):
+    from analyst_agent.config import THINKING_TOKENS
+    from analyst_agent.patents.followup import agent_client
+    from analyst_agent.patents.llmjson import structured_client
+
+    session = FakeSession([OK] * 4)
+    base = LLMClient(LLMConfig(base_url=URL, model="x/y", api_key="k", thinking=mode), session=session)
+    structured_client(base, 1000, reading=True).chat([])  # reading the patents
+    structured_client(base, 1000).chat([])  # plan, cluster names, white space, report text
+    agent_client(base).chat([])  # the brief's questions and follow-ups
+    base.chat([])  # the Data analysis and Workspace pages
+    sent = [post[1]["json"] for post in session.posts]
+    extra = lambda thinks: THINKING_TOKENS if thinks else 0  # noqa: E731
+    assert sent[0]["reasoning"] == {"enabled": reading} and sent[0]["max_tokens"] == 1000 + extra(reading)
+    assert sent[1]["reasoning"] == {"enabled": analysis} and sent[1]["max_tokens"] == 1000 + extra(analysis)
+    assert sent[2]["reasoning"] == {"enabled": analysis} and sent[2]["max_tokens"] == 3000 + extra(analysis)
+    assert sent[3].get("reasoning") == (None if pages is None else {"enabled": pages})
+    assert sent[3]["max_tokens"] == 2048 + extra(bool(pages))

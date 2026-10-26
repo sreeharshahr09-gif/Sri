@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 
 from ..agent import DataAnalystAgent
-from ..config import AgentConfig, SandboxConfig
+from ..config import AgentConfig, SandboxConfig, Thinking, thinks_in
 from ..llm import is_openrouter
 from ..runs import Event, EventHandler, RunStatus
 from ..sandbox import Sandbox
@@ -42,6 +42,8 @@ from .report_blocks import assemble_blocks, preview_blocks
 from .result import LandscapeResult, LandscapeStatus, PipelineOptions, analysed_index, analysed_topics
 
 MIN_PATENTS_FOR_MAP = 8
+# How the methodology names the model, by the user's thinking choice.
+THINKING_NOTES = {Thinking.ANALYSIS: " with thinking (patents read without)", Thinking.ALL: " with thinking"}
 
 
 class Cancelled(Exception):
@@ -117,7 +119,7 @@ def run_landscape(
         result.status = LandscapeStatus.CANCELLED
     cfg = getattr(llm, "config", None)
     result.model_name = (cfg.model + (" via OpenRouter" if is_openrouter(cfg.base_url) else "")
-                         + (" with thinking" if getattr(cfg, "think", False) else "")) if cfg else ""
+                         + THINKING_NOTES.get(getattr(cfg, "thinking", Thinking.OFF), "")) if cfg else ""
     if result.enriched is None:
         result.enriched = enriched_table(result)
     result.blocks = assemble_blocks(result, options)
@@ -271,7 +273,11 @@ def narrative_stage(result: LandscapeResult, llm, emit, on_section: Callable[[],
 
 
 def result_model(llm) -> str:
-    return getattr(getattr(llm, "config", None), "model", "") or type(llm).__name__
+    """The model that wrote the report text, as the methodology names it."""
+    cfg = getattr(llm, "config", None)
+    if cfg is None:
+        return type(llm).__name__
+    return (cfg.model or type(llm).__name__) + (" with thinking" if thinks_in(cfg) else "")
 
 
 def extraction_stage(result: LandscapeResult, llm, options: PipelineOptions, emit, should_stop) -> None:

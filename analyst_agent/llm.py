@@ -221,6 +221,10 @@ class LLMClient:
                 f"Model server timed out after {cfg.read_timeout:.0f}s. "
                 "Increase the timeout or reduce max tokens."
             ) from exc
+        except (requests.exceptions.MissingSchema, requests.exceptions.InvalidSchema,
+                requests.exceptions.InvalidURL) as exc:
+            raise LLMError(f"The model server address {cfg.base_url!r} is not a valid URL. Check Server URL under "
+                           "🧠 Model server.") from exc
 
     def _outcome(self, resp: requests.Response, payload: dict, start: float) -> Completion | _Retry:
         """What a response means: the completion, a reason to send the request again, or (raised) an error."""

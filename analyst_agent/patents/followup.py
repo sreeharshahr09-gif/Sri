@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass, field, replace
 
 from ..agent import DataRun
-from ..config import reply_budget
+from ..config import reply_budget, thinks_in
 from ..data import Dataset, describe_for_llm
 from ..enums import StrEnum
 from ..llm import LLMClient
@@ -196,12 +196,13 @@ def rewrite(result, llm, wanted: list[str], instruction: str) -> list[nar.Sectio
 
 
 def agent_client(llm):
-    """The data agent's client: no thinking (it reasons step by step in its own loop) unless the user turned
-    thinking on for every step, and room for code."""
+    """The data agent's client: thinking as the user's choice allows (it reasons step by step in its own loop either
+    way), and room for code."""
     if not isinstance(llm, LLMClient):
         return llm
     cfg = llm.config
-    return type(llm)(replace(cfg, no_think=True, max_tokens=max(cfg.max_tokens, 3000)), session=llm.session)
+    return type(llm)(replace(cfg, no_think=True, think=thinks_in(cfg), max_tokens=max(cfg.max_tokens, 3000)),
+                     session=llm.session)
 
 
 def analysis_dataset(result) -> Dataset:

@@ -6,6 +6,7 @@ import json
 import re
 from dataclasses import replace
 
+from ..config import thinks_in
 from ..llm import LLMClient, LLMError, ReplyCutOff
 from ..parsing import loads_lenient, strip_thinking
 
@@ -44,12 +45,13 @@ def extract_json(text: str):
             raise JSONReplyError(str(exc)) from exc
 
 
-def structured_client(llm, max_tokens: int | None = None, **settings):
-    """The client for a structured task: no thinking (unless the user turned it on for every step), the given reply
-    budget and other settings."""
+def structured_client(llm, max_tokens: int | None = None, reading: bool = False, **settings):
+    """The client for a structured task: thinking as the user's choice allows for this kind of step (`reading`: the
+    bulk reading of patents), the given reply budget and other settings."""
     if not isinstance(llm, LLMClient):
         return llm  # a test double or another ChatModel: used as it is
     cfg = replace(llm.config, no_think=True, **settings)
+    cfg = replace(cfg, think=thinks_in(cfg, reading=reading))
     if max_tokens:
         cfg = replace(cfg, max_tokens=max_tokens)
     return type(llm)(cfg, session=llm.session)

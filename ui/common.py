@@ -9,7 +9,7 @@ from dataclasses import replace
 import streamlit as st
 
 from analyst_agent import LLMClient, LLMConfig
-from analyst_agent.config import THINKING_TOKENS, context_budget_chars
+from analyst_agent.config import THINKING_TOKENS, Thinking, context_budget_chars
 from analyst_agent.llm import OPENROUTER_URL, is_openrouter
 from analyst_agent.sandbox import Artifact, ArtifactKind, ExecutionResult, has_row_labels
 
@@ -19,6 +19,15 @@ CLOUD = "OpenRouter (cloud API)"
 CLOUD_MODEL = os.environ.get("OPENROUTER_MODEL") or "nvidia/nemotron-3.5-super-vl:free"
 # Cloud models offer up to a million tokens; this app never needs more than this per request.
 CLOUD_CONTEXT_CAP = 131_072
+THINKING_LABELS = {Thinking.OFF: "Off: fastest (default)", Thinking.ANALYSIS: "Writing and analysis",
+                   Thinking.ALL: "All steps: slowest"}
+THINKING_NOTES = {
+    Thinking.ANALYSIS: "🧠 The model thinks when it plans, names clusters, judges white space, writes the report and "
+                       "answers questions, and on the Data analysis and Workspace pages. Reading the patents stays "
+                       "fast and uses the same cache as before.",
+    Thinking.ALL: "🧠 The model thinks in every step, reading the patents included, so runs take much longer. "
+                  "Patents read with thinking are cached apart: an earlier run's patents are read again.",
+}
 
 
 # Widgets whose values should survive page switches. Streamlit discards the state of widgets that
@@ -150,6 +159,11 @@ def model_settings() -> LLMConfig:
                   else DEFAULT_LLM.model)
     ss.setdefault("llm_api_key", os.environ.get("OPENROUTER_API_KEY")
                   or (DEFAULT_LLM.api_key if is_openrouter(DEFAULT_LLM.base_url) else ""))
+    # A text box still loading when another setting changes can come back empty (seen when a setting was changed
+    # right after this panel was opened). An empty server address or model is never meant: keep the last one.
+    for key in ("llm_base_url", "llm_model"):
+        if not str(ss.get(key) or "").strip() and ss.get(f"{key}_last"):
+            ss[key] = ss[f"{key}_last"]
     if "llm_autodetected" not in ss:
         # Once per browser session: pick up whatever model the server has loaded right now.
         ss.llm_autodetected = True
@@ -175,16 +189,18 @@ def model_settings() -> LLMConfig:
         temperature = st.slider("Temperature", 0.0, 1.0, DEFAULT_LLM.temperature, 0.05, key="llm_temperature",
                                 help="Low values give more consistent, reproducible analyses.")
         max_tokens = st.number_input("Max tokens per reply", 256, 16384, DEFAULT_LLM.max_tokens, 256, key="llm_max_tokens")
-        think = st.toggle(
-            "Let the model think (all steps)", value=DEFAULT_LLM.think, key="llm_think",
-            help="On: the model thinks before answering in every step, including reading the patents and writing the "
-                 f"report, with {THINKING_TOKENS:,} extra reply tokens to think in. Slower and uses more tokens. "
-                 "Off: the patent steps skip thinking; the Data analysis and Workspace pages use the model's own "
-                 "default. Models without thinking are not affected.",
-        )
-        if think:
-            st.caption("🧠 Thinking is on for every step, so runs take longer. Patents read with thinking are cached "
-                       "apart from those read without it: an earlier run's patents are read again.")
+        thinking = Thinking(st.selectbox(
+            "Model thinking", list(Thinking), index=list(Thinking).index(DEFAULT_LLM.thinking), key="llm_thinking",
+            format_func=lambda mode: THINKING_LABELS[Thinking(mode)],
+            help="Off: the patent steps run without thinking; the Data analysis and Workspace pages leave it to the "
+                 "model. Writing and analysis: the model thinks when it plans, names clusters, judges white space, "
+                 "writes the report and answers questions, and on the Data analysis and Workspace pages; reading "
+                 "the patents (most of a run's requests) stays fast. All steps: reading the patents thinks too. "
+                 f"A step that thinks gets {THINKING_TOKENS:,} extra reply tokens for it. Models without thinking "
+                 "are not affected.",
+        ))
+        if thinking in THINKING_NOTES:
+            st.caption(THINKING_NOTES[thinking])
         read_timeout = st.number_input("Request timeout (s)", 10, 1800, int(DEFAULT_LLM.read_timeout), 10, key="llm_timeout")
         # The value lives only in session state so "Check connection" can update it.
         st.session_state.setdefault("llm_context", DEFAULT_LLM.context_tokens)
@@ -204,8 +220,12 @@ def model_settings() -> LLMConfig:
             read_timeout=float(read_timeout),
             seed=int(seed_text) if seed_text.strip().lstrip("-").isdigit() else None,
             context_tokens=int(context_tokens),
-            think=bool(think),
+            thinking=thinking,
+            think=thinking != Thinking.OFF,
         )
+        for key, value in (("llm_base_url", base_url), ("llm_model", model)):
+            if value.strip():
+                ss[f"{key}_last"] = value
         st.button("Check connection", width="stretch", on_click=_check_connection, args=(llm_cfg,))
         result = st.session_state.get("llm_check")
         if result:

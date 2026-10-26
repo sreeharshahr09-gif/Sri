@@ -217,5 +217,17 @@ def test_thinking_on_everywhere_asks_for_it_with_room_to_think(monkeypatch):
     assert reply_budget(LLMConfig(), 2048) == 2048  # thinking off: nothing added
     monkeypatch.delenv("AGENT_MAX_CONTEXT_CHARS", raising=False)
     assert context_budget_chars(LLMConfig(think=True)) < context_budget_chars(LLMConfig())  # the room is kept free
-    monkeypatch.setenv("LLM_THINK", "1")
-    assert LLMConfig().think and not LLMConfig(think=False).think
+    from analyst_agent.config import Thinking
+
+    monkeypatch.setenv("LLM_THINK", "1")  # the earlier on/off switch: every step
+    assert LLMConfig().thinking == Thinking.ALL and LLMConfig().think and not LLMConfig(think=False).think
+    monkeypatch.setenv("LLM_THINK", "analysis")
+    assert LLMConfig().thinking == Thinking.ANALYSIS and LLMConfig().think
+    monkeypatch.delenv("LLM_THINK")
+    assert LLMConfig().thinking == Thinking.OFF and not LLMConfig().think
+
+
+def test_a_missing_server_address_gives_a_clear_error():
+    for url in ("", "localhost:8080/v1"):
+        with pytest.raises(LLMError, match="not a valid URL"):
+            LLMClient(LLMConfig(base_url=url)).chat([{"role": "user", "content": "x"}])
