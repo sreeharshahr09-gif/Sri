@@ -52,6 +52,8 @@ The app has three pages:
   - Lets you pick the Excel sheet.
   - Cleans up empty or duplicate headers and drops fully empty rows.
 - **Conversation memory.** Follow-up questions see earlier answers and the code that produced them.
+- **Long analyses fit the model.** When a conversation outgrows the model's context window, the oldest
+  outputs are shortened (the latest stays whole), on this page as on the Workspace page.
 
 ## Background runs and status bar
 
@@ -165,7 +167,8 @@ machine, or with a cloud model through OpenRouter (see *Cloud models*).
    and press **▶ Save & run analysis**. A
    trial run on 50–100 patents is a good first check. The job runs in the background with a
    progress bar and time estimate; you can switch pages or stop it.
-4. **Read the report** on one long page, and download the results.
+4. **Read the report** on one long page, and download the results. If one step of the analysis
+   fails, the report says which and why, and shows everything the other steps produced.
 5. **Ask for more** in the box under the report (see *Follow-ups*).
 
 ### What the analysis does
@@ -377,7 +380,7 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `LLM_TIMEOUT` | `180` | Seconds to wait for a reply |
 | `LLM_CONTEXT_TOKENS` | `32768` | Server context window; **Check connection** detects it from llama-server |
 | `AGENT_MAX_STEPS` | `6` | Code executions allowed per question (data page) |
-| `AGENT_MAX_CONTEXT_CHARS` | *(derived)* | Overrides the conversation budget, which is otherwise derived from the context window |
+| `AGENT_MAX_CONTEXT_CHARS` | *(derived)* | Overrides the conversation budget of both agents, which is otherwise derived from the context window |
 | `WORKSPACE_DIR` | *(empty)* | Default folder on the Workspace page |
 | `AGENT_BACKUP_DIR` | `~/.research_agent/backups` | Where backups and the change journal are kept |
 | `SANDBOX_TIMEOUT` | `60` | Seconds per code execution |
@@ -401,13 +404,17 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `analyst_agent/patents/enrich.py` | The model reads every patent: batching, validation, retries, cache |
 | `analyst_agent/patents/analytics.py` | Trends, players, heatmaps, complexity, white space, crown jewels |
 | `analyst_agent/patents/narrative.py` | Report sections, number-checked text, methodology, validation sample |
+| `analyst_agent/patents/result.py` | What a landscape run is given (options) and produces (the result), and its analysed-set views |
+| `analyst_agent/patents/pipeline.py` | Runs the stages in order (the stage contract is at the top of the file), answers the brief's questions, builds the enriched table |
+| `analyst_agent/patents/report_blocks.py` | Lays the result out as the report: map, tables, brief-specific answers, downloads |
 | `analyst_agent/patents/html_report.py` | The report as one offline HTML file |
 | `analyst_agent/patents/followup.py` | Follow-ups: routing, plan changes, rewrites, data-agent context |
-| `analyst_agent/patents/pipeline.py` | Runs the stages, answers the brief's questions, assembles the report and the enriched table |
 | `analyst_agent/workspace.py` | Read-only, root-bounded file access and text extraction |
-| `analyst_agent/workspace_agent.py` | Tool-using loop for the workspace assistant, plus citation checks |
+| `analyst_agent/loop.py` | The agent loop both agents share: step limit, nudges, repeats, context trimming, Stop, errors |
+| `analyst_agent/runs.py` | What a run records (steps, status) and the events it reports while it works |
+| `analyst_agent/agent.py` | The data analyst on top of the loop: prompts, error hints, conversation memory, number check |
+| `analyst_agent/workspace_agent.py` | The workspace assistant on top of the loop: tools, proposed edits, citation checks |
 | `analyst_agent/editing.py` | Staged changes, diffs, apply with backup, undo, journal |
-| `analyst_agent/agent.py` | The reasoning loop, observation formatting, conversation memory |
 | `analyst_agent/prompts.py` | System prompt (protocol and analysis standards) and nudges |
 | `analyst_agent/parsing.py` | Pulls code and final answers out of free-form replies (fences, `<think>`, truncation) |
 | `analyst_agent/sandbox.py` | Code policy (AST) and the subprocess runner |
@@ -416,6 +423,7 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `analyst_agent/grounding.py` | Numeric grounding audit of answers |
 | `analyst_agent/llm.py` | OpenAI-compatible client (llama-server, OpenRouter, ...): retries, rate limits, clear errors |
 | `analyst_agent/export.py` | Notebook, JSON and Markdown exports |
+| `analyst_agent/enums.py` | Base for the statuses and event kinds the core and the UI share |
 
 The `analyst_agent` package doesn't depend on Streamlit, so you can use it from scripts or other UIs:
 
@@ -454,7 +462,10 @@ network access.
 ```bash
 pip install -r requirements-dev.txt
 pytest
+ruff check .
 ```
 
-The tests cover parsing, the sandbox policy and limits, data loading, the agent loop (with a
-scripted LLM), grounding, the LLM client and the exports.
+The tests cover parsing, the sandbox policy and limits, data loading, both agents (with a scripted
+LLM), grounding, the LLM client, edits and undo, background jobs, the exports, and every stage of the
+patent landscape. `requirements.txt` caps each package below its next major version; raise a cap after
+the tests pass on the new version.
