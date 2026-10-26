@@ -6,12 +6,13 @@ import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Callable
 
 import numpy as np
 import pandas as pd
 
 from ..llm import is_openrouter
+from ..runs import EventHandler
 from . import analytics as an
 from . import enrich
 from . import narrative as nar
@@ -21,7 +22,6 @@ from .data import FlowStep, PatentCorpus, build_corpus
 from .html_report import report_html
 from .plan import AnalysisPlan
 
-EventHandler = Callable[[str, Any], None]
 
 
 @dataclass

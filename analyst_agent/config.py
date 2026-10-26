@@ -67,13 +67,18 @@ class AgentConfig:
     # Prior conversation turns included as context for follow-up questions.
     history_turns: int = 4
     sample_rows: int = 5
-    # Total conversation size (characters) before the oldest tool outputs are shortened.
-    # ~4 characters per token: 90k characters fits comfortably in a 32k-token context.
-    max_context_chars: int = field(default_factory=lambda: _env_int("AGENT_MAX_CONTEXT_CHARS", 90_000))
+    # Total conversation size (characters) before the oldest tool outputs are shortened. None: from
+    # context_budget_chars(), which follows AGENT_MAX_CONTEXT_CHARS or the model's context window.
+    max_context_chars: int | None = None
 
 
-def context_budget_chars(llm: LLMConfig) -> int:
-    """Characters of conversation the agent may keep before trimming old tool output.
+# Used when nothing tells the context window (a test double, a client without settings): ~4 characters
+# per token, 90k characters fit comfortably in a 32k-token context.
+DEFAULT_CONTEXT_CHARS = 90_000
+
+
+def context_budget_chars(llm: LLMConfig | None = None) -> int:
+    """Characters of conversation the agents may keep before trimming old tool output.
 
     AGENT_MAX_CONTEXT_CHARS overrides it; otherwise it is derived from the model's context window,
     leaving room for the reply, at a conservative ~3 characters per token.
@@ -81,4 +86,6 @@ def context_budget_chars(llm: LLMConfig) -> int:
     explicit = _env_int("AGENT_MAX_CONTEXT_CHARS", 0)
     if explicit > 0:
         return explicit
+    if llm is None:
+        return DEFAULT_CONTEXT_CHARS
     return max(20_000, (llm.context_tokens - llm.max_tokens - 1_500) * 3)

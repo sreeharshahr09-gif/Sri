@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from analyst_agent.agent import AgentRun
+from analyst_agent.runs import AgentRun
 from analyst_agent.config import AgentConfig, SandboxConfig
 from analyst_agent.parsing import parse_action
 from analyst_agent.sandbox import Sandbox

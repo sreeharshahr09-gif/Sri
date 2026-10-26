@@ -133,8 +133,9 @@ def collect(job_key: str) -> AgentRun | None:
         return job.run
     run = job.run
     if run is None:  # the worker itself failed; keep the question visible with the error
-        run = AgentRun(question=job.question, status="error", error=job.error or "Unknown error",
-                       duration_s=job.elapsed, mode=job.mode or "data")
+        mode = job.mode or "data"
+        run = AgentRun.for_mode(mode)(question=job.question, status="error", error=job.error or "Unknown error",
+                                      duration_s=job.elapsed, mode=mode)
     st.session_state.setdefault(runs_key, []).append(run)
     st.session_state[job_key] = None
     return run

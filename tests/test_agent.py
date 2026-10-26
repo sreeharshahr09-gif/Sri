@@ -1,9 +1,11 @@
 import json
 
-from analyst_agent.agent import AgentRun, DataAnalystAgent
+from analyst_agent.agent import DataAnalystAgent, DataRun
 from analyst_agent.config import AgentConfig
 from analyst_agent.export import to_json, to_markdown, to_notebook
 from analyst_agent.llm import LLMError
+from analyst_agent.loop import normalize_code
+from analyst_agent.runs import AgentRun
 
 from .conftest import ScriptedLLM
 
@@ -91,11 +93,9 @@ def test_hash_inside_a_string_is_not_a_comment(sandbox, dataset):
 
 
 def test_normalize_code_drops_only_real_comments():
-    from analyst_agent.agent import _normalize_code
-
-    assert _normalize_code("x = 1  # one\n\n# note\ny = '#2'\n") == "x = 1\ny = '#2'"
-    assert _normalize_code("s = 'a#b'") != _normalize_code("s = 'a#c'")
-    assert _normalize_code("print((1,  # unfinished") == "print((1,"  # incomplete code still compares
+    assert normalize_code("x = 1  # one\n\n# note\ny = '#2'\n") == "x = 1\ny = '#2'"
+    assert normalize_code("s = 'a#b'") != normalize_code("s = 'a#c'")
+    assert normalize_code("print((1,  # unfinished") == "print((1,"  # incomplete code still compares
 
 
 def test_step_limit_forces_final_answer(sandbox, dataset):
@@ -288,3 +288,42 @@ def test_stop_request_ends_the_run_between_steps(sandbox, dataset):
     run = agent.run("q", should_stop=should_stop)
     assert run.status == "cancelled" and run.error == "Stopped at your request."
     assert len(run.steps) == 1 and run.steps[0].succeeded and run.answer == ""
+
+
+def test_long_analyses_trim_old_output_to_fit_the_context(sandbox, dataset):
+    # The data agent shares the workspace agent's context trimming: old observations shrink, the latest stays.
+    big = "```python\nprint('x' * 5000, {n})\n```"
+    llm, agent = make_agent([big.format(n=1), big.format(n=2), big.format(n=3), "Final Answer: done"], sandbox,
+                            dataset, max_context_chars=len(agent_prompt(dataset)) + 8000)
+    agent.run("q")
+    last_call = llm.calls[-1]
+    first_observation = last_call[3]["content"]
+    assert "older output removed" in first_observation and len(first_observation) < 600
+    assert "x" * 1000 in last_call[-1]["content"]  # the latest result is intact
+    assert sum(len(m["content"]) for m in last_call) < sum(len(m["content"]) for m in llm.calls[-2]) + 6000
+
+
+def agent_prompt(dataset):
+    from analyst_agent.sandbox import Sandbox
+
+    with Sandbox() as sb:
+        return DataAnalystAgent(llm=None, sandbox=sb, dataset=dataset).system_prompt()
+
+
+def test_saved_runs_come_back_as_the_type_that_recorded_them(sandbox, dataset):
+    _, agent = make_agent(["```python\nprint(len(df))\n```", "Final Answer: 6 rows."], sandbox, dataset)
+    restored = AgentRun.from_dict(json.loads(json.dumps(agent.run("q").to_dict())))
+    assert isinstance(restored, DataRun) and restored.grounding.checked == []
+    assert AgentRun.for_mode("data") is DataRun and AgentRun.for_mode("unknown") is AgentRun
+    # Transcripts written before the run types were split carry every field; unknown keys are skipped.
+    old = dict(restored.to_dict(), citations=None, changes=[])
+    assert isinstance(AgentRun.from_dict(old), DataRun)
+
+
+def test_context_budget_without_model_settings_uses_the_default(monkeypatch):
+    from analyst_agent.config import DEFAULT_CONTEXT_CHARS, context_budget_chars
+
+    monkeypatch.delenv("AGENT_MAX_CONTEXT_CHARS", raising=False)
+    assert context_budget_chars() == DEFAULT_CONTEXT_CHARS
+    monkeypatch.setenv("AGENT_MAX_CONTEXT_CHARS", "50000")
+    assert context_budget_chars() == 50_000

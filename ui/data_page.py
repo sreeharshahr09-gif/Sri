@@ -10,8 +10,8 @@ import streamlit as st
 
 from analyst_agent import (
     AgentConfig,
-    AgentRun,
     DataAnalystAgent,
+    DataRun,
     LLMClient,
     LLMConfig,
     Sandbox,
@@ -46,7 +46,7 @@ DEFAULT_SANDBOX = SandboxConfig()
 
 def init_state() -> None:
     defaults = {
-        "runs": [],  # list[AgentRun]: the conversation
+        "runs": [],  # list[DataRun]: the conversation
         "dataset": None,  # Dataset
         "dataset_key": None,
         "profile": None,
@@ -126,7 +126,7 @@ def sidebar() -> tuple[LLMConfig, AgentConfig, SandboxConfig]:
 
 def sidebar_session(dataset: Dataset, llm_cfg: LLMConfig, agent_cfg: AgentConfig,
                     sandbox_cfg: SandboxConfig) -> None:
-    runs: list[AgentRun] = st.session_state.runs
+    runs: list[DataRun] = st.session_state.runs
     st.sidebar.header("🗂️ Session")
     if st.sidebar.button("New conversation", width="stretch", disabled=not runs or jobs.is_running("data_job")):
         st.session_state.runs = []
@@ -211,7 +211,7 @@ def render_step(step, run_idx: int) -> None:
         render_execution(step.result, key=f"trace-{run_idx}-{step.index}")
 
 
-def render_run(run: AgentRun, run_idx: int) -> None:
+def render_run(run: DataRun, run_idx: int) -> None:
     if run.status == "llm_error":
         st.error(f"Model error: {run.error}")
     elif run.status == "error":
@@ -344,7 +344,7 @@ def page() -> None:
         render_data_tab(dataset, st.session_state.profile)
 
     with chat_tab:
-        runs: list[AgentRun] = st.session_state.runs
+        runs: list[DataRun] = st.session_state.runs
         for idx, run in enumerate(runs):
             with st.chat_message("user"):
                 st.markdown(run.question)

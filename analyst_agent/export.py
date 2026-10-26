@@ -8,8 +8,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from .agent import AgentRun
+from .agent import DataRun
 from .data import Dataset
+from .workspace_agent import WorkspaceRun
 
 
 def _package_versions() -> dict[str, str]:
@@ -28,7 +29,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def to_json(runs: list[AgentRun], dataset: Dataset, settings: dict[str, Any] | None = None,
+def to_json(runs: list[DataRun], dataset: Dataset, settings: dict[str, Any] | None = None,
             system_prompt: str | None = None) -> str:
     """Complete, machine-readable record of the session (all steps, code, outputs)."""
     record = {
@@ -58,7 +59,7 @@ def _code_cell(code: str) -> dict:
             "outputs": [], "source": code.splitlines(keepends=True)}
 
 
-def to_notebook(runs: list[AgentRun], dataset: Dataset, seed: int = 0) -> str:
+def to_notebook(runs: list[DataRun], dataset: Dataset, seed: int = 0) -> str:
     """A runnable notebook that replays every successful step against the same file.
 
     Each analysis cell starts from a fresh copy of the data with the same random seed,
@@ -118,7 +119,7 @@ def to_notebook(runs: list[AgentRun], dataset: Dataset, seed: int = 0) -> str:
     return json.dumps(notebook, indent=1)
 
 
-def to_markdown(runs: list[AgentRun], dataset: Dataset) -> str:
+def to_markdown(runs: list[DataRun], dataset: Dataset) -> str:
     lines = [
         f"# Analysis report: {dataset.name}",
         "",
@@ -159,7 +160,7 @@ def describe_tool_step(step) -> str:
     return f"called {step.tool}"
 
 
-def workspace_to_markdown(runs: list[AgentRun], root: str) -> str:
+def workspace_to_markdown(runs: list[WorkspaceRun], root: str) -> str:
     lines = [f"# Workspace session: {root}", "", f"- Exported: {_now()}", ""]
     for n, run in enumerate(runs, 1):
         lines += [f"## {n}. {run.question}", f"<sub>mode: {run.mode} · status: {run.status} · "
@@ -184,7 +185,7 @@ def workspace_to_markdown(runs: list[AgentRun], root: str) -> str:
     return "\n".join(lines)
 
 
-def workspace_to_json(runs: list[AgentRun], root: str, settings: dict[str, Any] | None = None,
+def workspace_to_json(runs: list[WorkspaceRun], root: str, settings: dict[str, Any] | None = None,
                       system_prompt: str | None = None) -> str:
     record = {
         "exported_at": _now(),

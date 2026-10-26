@@ -1,7 +1,7 @@
 import threading
 import time
 
-from analyst_agent.agent import AgentRun
+from analyst_agent.runs import AgentRun
 from ui.jobs import start_job
 
 

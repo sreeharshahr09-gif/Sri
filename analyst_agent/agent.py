@@ -1,21 +1,17 @@
-"""The analysis loop: plan → write code → execute → observe → repeat → answer."""
+"""The data analyst: plan → write code → execute → observe → repeat → answer, on one dataset."""
 
 from __future__ import annotations
 
-import io
 import re
-import time
-import tokenize
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Callable, Iterable
+from dataclasses import dataclass
+from typing import Any, Iterable
 
 from .config import AgentConfig
 from .data import Dataset, describe_for_llm
-from .editing import FileChange
-from .grounding import CitationReport, GroundingReport, check_grounding
-from .llm import ChatModel, LLMError
-from .parsing import parse_reply, strip_thinking
+from .grounding import GroundingReport, check_grounding
+from .llm import ChatModel
+from .loop import AgentLoop, LoopState, clip, format_execution, normalize_code, recent_answered, run_code
+from .parsing import ParsedReply, parse_reply
 from .prompts import (
     FORCE_FINAL,
     NUDGE_NO_CHART,
@@ -26,180 +22,38 @@ from .prompts import (
     SYSTEM_PROMPT,
     wants_chart,
 )
-from .sandbox import Artifact, ExecutionResult, Sandbox
-
-EventHandler = Callable[[str, Any], None]
-
-
-@dataclass
-class AgentStep:
-    index: int
-    reply: str
-    thought: str = ""
-    code: str | None = None
-    result: ExecutionResult | None = None
-    note: str | None = None  # "repeated", "truncated", ...
-    llm_latency_s: float = 0.0
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
-    # Workspace agent tool calls (list_files, search, read_file, ...).
-    tool: str | None = None
-    tool_args: dict | None = None
-    observation: str | None = None
-    tool_error: bool = False
-
-    @property
-    def succeeded(self) -> bool:
-        if self.tool is not None:
-            return not self.tool_error
-        return self.result is not None and self.result.ok
-
-    def to_dict(self) -> dict[str, Any]:
-        data = dict(self.__dict__)
-        data["result"] = self.result.to_dict() if self.result else None
-        return data
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "AgentStep":
-        data = dict(data)
-        result = data.pop("result", None)
-        return cls(result=ExecutionResult.from_dict(result) if result else None, **data)
+from .runs import AgentRun, AgentStep, EventHandler
+from .sandbox import ExecutionResult, Sandbox
 
 
 @dataclass
-class AgentRun:
-    question: str
-    answer: str = ""
-    status: str = "running"  # answered | step_limit | llm_error | error | cancelled
-    error: str | None = None
-    steps: list[AgentStep] = field(default_factory=list)
-    started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat(timespec="seconds"))
-    duration_s: float = 0.0
-    model: str = ""
-    temperature: float | None = None
+class DataRun(AgentRun, modes=("data",)):
+    """A data-analysis run: which dataset it ran on, and whether the answer's numbers trace to the output."""
+
     dataset_sha256: str = ""
     grounding: GroundingReport | None = None
-    citations: CitationReport | None = None
-    mode: str = "data"  # "data" analysis, or workspace "answer" / "teach" / "edit"
-    changes: list[FileChange] = field(default_factory=list)  # proposed file changes (edit mode)
-
-    @property
-    def executed(self) -> bool:
-        """True if at least one code block ran successfully."""
-        return any(s.succeeded for s in self.steps)
-
-    @property
-    def successful_code(self) -> list[str]:
-        return [s.code for s in self.steps if s.succeeded and s.code]
-
-    def report_artifacts(self) -> list[Artifact]:
-        """Outputs meant for the user: everything passed to show() by successful steps.
-
-        Falls back to the auto-displayed output of the last successful step when the
-        model never called show(), so a correct result is never hidden.
-        """
-        ran = [s for s in self.steps if s.succeeded and s.result is not None]
-        explicit = [a for s in ran for a in s.result.artifacts if a.explicit]
-        if explicit:
-            return explicit
-        for step in reversed(ran):
-            if step.result.artifacts:
-                return list(step.result.artifacts)
-        return []
-
-    @property
-    def total_tokens(self) -> int:
-        return sum((s.prompt_tokens or 0) + (s.completion_tokens or 0) for s in self.steps)
 
     def to_dict(self) -> dict[str, Any]:
-        data = {k: v for k, v in self.__dict__.items() if k not in ("steps", "grounding", "citations", "changes")}
-        data["changes"] = [c.to_dict() for c in self.changes]
-        data["steps"] = [s.to_dict() for s in self.steps]
+        data = super().to_dict()
         data["grounding"] = self.grounding.to_dict() if self.grounding else None
-        data["citations"] = self.citations.to_dict() if self.citations else None
         return data
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "AgentRun":
-        data = dict(data)
-        steps = [AgentStep.from_dict(s) for s in data.pop("steps", [])]
-        grounding = data.pop("grounding", None)
-        citations = data.pop("citations", None)
-        data["changes"] = [FileChange.from_dict(c) for c in data.pop("changes", [])]
-        return cls(
-            steps=steps,
-            grounding=GroundingReport.from_dict(grounding) if grounding else None,
-            citations=CitationReport.from_dict(citations) if citations else None,
-            **data,
-        )
-
-
-def _normalize_code(code: str) -> str:
-    """The code without comments and blank lines, to recognise a block the model sends again.
-
-    Comments are found with the tokenizer, so a `#` inside a string (df["Item #1"]) is kept.
-    """
-    lines = code.strip().splitlines()
-    try:
-        for tok in tokenize.generate_tokens(io.StringIO("\n".join(lines)).readline):
-            if tok.type == tokenize.COMMENT:
-                row, col = tok.start
-                lines[row - 1] = lines[row - 1][:col]
-    except (tokenize.TokenError, SyntaxError):
-        pass  # incomplete code: the comments found so far are dropped, the rest is compared as written
-    return "\n".join(ln.rstrip() for ln in lines if ln.strip())
-
-
-def _clip(text: str, limit: int) -> str:
-    if len(text) <= limit:
-        return text
-    head = int(limit * 0.6)
-    tail = limit - head
-    return f"{text[:head]}\n... [{len(text) - limit:,} characters omitted] ...\n{text[-tail:]}"
-
-
-def format_execution(result: ExecutionResult, limit: int, hint: str = "") -> str:
-    """Text the model sees after a code block runs: status, output, outputs shown, errors."""
-    parts: list[str] = []
-    if result.rejected:
-        parts.append(f"Status: REJECTED, the code did not run.\n{result.error_message}")
-        parts.append("Rewrite the code to comply with the sandbox rules.")
-        return "\n\n".join(parts)
-
-    if result.ok:
-        parts.append(f"Status: success ({result.duration_s:.1f}s)")
-    else:
-        parts.append(f"Status: ERROR ({result.error_type}): {result.error_message}")
-
-    if result.stdout.strip():
-        note = " (truncated)" if result.stdout_truncated else ""
-        parts.append(f"stdout{note}:\n{_clip(result.stdout.rstrip(), int(limit * 0.5))}")
-
-    if result.artifacts:
-        lines = []
-        for i, art in enumerate(result.artifacts, 1):
-            label = "shown to user" if art.explicit else "last expression"
-            title = f" '{art.title}'" if art.title else ""
-            lines.append(f"[{i}] ({label}){title} {art.summary}")
-        parts.append("Outputs:\n" + _clip("\n".join(lines), int(limit * 0.4)))
-    elif result.ok and not result.stdout.strip():
-        parts.append("The code produced no output. Use print() or show() to see results.")
-
-    if result.warnings:
-        parts.append("Warnings:\n" + "\n".join(f"- {w[:300]}" for w in result.warnings))
-
-    if not result.ok:
-        if result.traceback:
-            parts.append("Traceback:\n" + _clip(result.traceback, 2500))
-        parts.append(hint)
-    return _clip("\n\n".join(p for p in parts if p), limit)
+    def _restore(cls, values: dict[str, Any]) -> dict[str, Any]:
+        if values.get("grounding"):
+            values["grounding"] = GroundingReport.from_dict(values["grounding"])
+        return values
 
 
 def build_system_prompt(n_rows: int, modules: Iterable[str], profile: str) -> str:
     return SYSTEM_PROMPT.format(n_rows=n_rows, modules=", ".join(modules), profile=profile)
 
 
-class DataAnalystAgent:
+class DataAnalystAgent(AgentLoop):
+    footer = OBSERVATION_FOOTER
+    force_final = FORCE_FINAL
+    elided_note = "\n[... older output removed to save context; run the code again if you need it]"
+
     def __init__(
         self,
         llm: ChatModel,
@@ -208,10 +62,9 @@ class DataAnalystAgent:
         config: AgentConfig | None = None,
         profile: str | None = None,
     ):
-        self.llm = llm
+        super().__init__(llm, config or AgentConfig())
         self.sandbox = sandbox
         self.dataset = dataset
-        self.config = config or AgentConfig()
         self.profile = profile or describe_for_llm(dataset, sample_rows=self.config.sample_rows)
         self.sandbox.set_dataframe(dataset.df, key=f"{dataset.sha256}:{dataset.sheet}")
 
@@ -226,40 +79,22 @@ class DataAnalystAgent:
         Earlier turns are deliberately not replayed as assistant messages: a history made of
         bare "Final Answer:" replies teaches the model to answer without running code.
         """
-        turns = [h for h in history if h.answer][-self.config.history_turns :] if self.config.history_turns else []
+        turns = recent_answered(history, self.config.history_turns)
         if not turns:
             return question
         lines = ["Earlier in this conversation (context only):"]
         for n, past in enumerate(turns, 1):
             tag = "" if past.executed else " [not verified by code]"
-            lines.append(f"Q{n}: {past.question}\nA{n}{tag}: {_clip(past.answer, 1500)}")
+            lines.append(f"Q{n}: {past.question}\nA{n}{tag}: {clip(past.answer, 1500)}")
         previous = next((h for h in reversed(turns) if h.successful_code), None)
         if previous is not None:
-            code = _clip("\n\n".join(previous.successful_code[-2:]), 3000)
+            code = clip("\n\n".join(previous.successful_code[-2:]), 3000)
             lines.append(
                 "Code behind the most recent verified answer (variables do not persist; reuse or "
                 f"adapt it if relevant):\n```python\n{code}\n```"
             )
         lines.append(f"Current question: {question}")
         return "\n\n".join(lines)
-
-    def _premature_answer(self, run: AgentRun, question: str, nudged: set[str]) -> str | None:
-        """Feedback when the model tries to answer before producing the evidence, else None.
-
-        Each kind of nudge is sent at most once, so genuinely code-free questions
-        ("what can you do?") still get answered.
-        """
-        if not run.executed and "no_code" not in nudged:
-            nudged.add("no_code")
-            return NUDGE_NO_CODE
-        if wants_chart(question) and "no_chart" not in nudged:
-            has_chart = any(
-                a.kind in ("plotly", "image") for s in run.steps if s.succeeded for a in s.result.artifacts
-            )
-            if not has_chart:
-                nudged.add("no_chart")
-                return NUDGE_NO_CHART
-        return None
 
     def format_observation(self, result: ExecutionResult) -> str:
         hint = "" if result.ok or result.rejected else self._error_hint(result)
@@ -278,108 +113,50 @@ class DataAnalystAgent:
             return "Hint: reduce the work: aggregate first, sample rows, or avoid row-wise loops/apply."
         return ""
 
-    # ------------------------------------------------------------------ loop
+    # ------------------------------------------------------------------ loop hooks
 
-    def run(
-        self,
-        question: str,
-        history: Iterable[AgentRun] = (),
-        on_event: EventHandler | None = None,
-        should_stop: Callable[[], bool] | None = None,
-    ) -> AgentRun:
-        history = list(history)
-        emit = on_event or (lambda *_: None)
-        cfg = self.config
-        started = time.perf_counter()
-        run = AgentRun(
-            question=question,
-            model=getattr(getattr(self.llm, "config", None), "model", type(self.llm).__name__),
-            temperature=getattr(getattr(self.llm, "config", None), "temperature", None),
-            dataset_sha256=self.dataset.sha256,
-        )
-        messages = [
-            {"role": "system", "content": self.system_prompt()},
-            {"role": "user", "content": self._question_message(question, history)},
-        ]
-        executed: dict[str, int] = {}
-        nudged: set[str] = set()
+    def _new_run(self, question: str) -> DataRun:
+        return DataRun(question=question, dataset_sha256=self.dataset.sha256)
 
-        try:
-            for index in range(cfg.max_steps + 1):
-                if should_stop is not None and should_stop():
-                    run.status = "cancelled"
-                    run.error = "Stopped at your request."
-                    break
-                force_final = index == cfg.max_steps
-                emit("llm_call", index)
-                completion = self.llm.chat(messages)
-                parsed = parse_reply(completion.content)
-                step = AgentStep(
-                    index=index,
-                    reply=completion.content,
-                    thought=parsed.thought,
-                    llm_latency_s=completion.latency_s,
-                    prompt_tokens=completion.prompt_tokens,
-                    completion_tokens=completion.completion_tokens,
-                )
-                is_answer = not (parsed.code or parsed.truncated_code)
-                if is_answer and not force_final:
-                    feedback = self._premature_answer(run, question, nudged)
-                    if feedback is not None:
-                        step.note = "premature answer"
-                        run.steps.append(step)
-                        emit("step", step)
-                        footer = FORCE_FINAL if index + 1 == cfg.max_steps else ""
-                        messages.append({"role": "assistant", "content": strip_thinking(completion.content) or "(empty)"})
-                        messages.append({"role": "user", "content": f"{feedback}\n\n{footer}".strip()})
-                        continue
-                if force_final or is_answer:
-                    run.steps.append(step)
-                    answer = parsed.final_answer
-                    if not answer:
-                        # Forced final but the model wrote code anyway: keep its prose only.
-                        answer = parsed.thought or strip_thinking(completion.content)
-                    run.answer = answer.strip() or "(The model returned an empty answer.)"
-                    run.status = "step_limit" if force_final else "answered"
-                    break
+    def _parse(self, reply: str) -> ParsedReply:
+        return parse_reply(reply)
 
-                if parsed.truncated_code:
-                    step.note = "truncated"
-                    feedback = NUDGE_TRUNCATED
-                else:
-                    step.code = parsed.code
-                    key = _normalize_code(parsed.code)
-                    if key in executed:
-                        step.note = "repeated"
-                        feedback = NUDGE_REPEATED
-                    else:
-                        executed[key] = index
-                        emit("executing", step)
-                        try:
-                            step.result = self.sandbox.run(parsed.code)
-                        except Exception as exc:  # infrastructure failure, not the model's code
-                            step.result = ExecutionResult(
-                                ok=False, error_type="SandboxError", error_message=f"{type(exc).__name__}: {exc}"
-                            )
-                        feedback = self.format_observation(step.result)
+    def _is_action(self, parsed: ParsedReply) -> bool:
+        return bool(parsed.code or parsed.truncated_code)
 
-                footer = FORCE_FINAL if index + 1 == cfg.max_steps else OBSERVATION_FOOTER
-                run.steps.append(step)
-                emit("step", step)
-                messages.append({"role": "assistant", "content": strip_thinking(completion.content) or "(empty)"})
-                messages.append({"role": "user", "content": f"{feedback}\n\n{footer}"})
-        except LLMError as exc:
-            run.status = "llm_error"
-            run.error = str(exc)
-        except Exception as exc:  # keep the partial trace instead of losing the whole run
-            run.status = "error"
-            run.error = f"{type(exc).__name__}: {exc}"
+    def _premature_answer(self, run: AgentRun, question: str, state: LoopState) -> str | None:
+        """Feedback when the model tries to answer before producing the evidence, else None.
 
+        Each kind of nudge is sent at most once, so genuinely code-free questions
+        ("what can you do?") still get answered.
+        """
+        if not run.executed and "no_code" not in state.nudged:
+            state.nudged.add("no_code")
+            return NUDGE_NO_CODE
+        if wants_chart(question) and "no_chart" not in state.nudged:
+            has_chart = any(
+                a.kind in ("plotly", "image") for s in run.steps if s.succeeded for a in s.result.artifacts
+            )
+            if not has_chart:
+                state.nudged.add("no_chart")
+                return NUDGE_NO_CHART
+        return None
+
+    def _act(self, step: AgentStep, parsed: ParsedReply, state: LoopState, emit: EventHandler) -> str:
+        if parsed.truncated_code:
+            step.note = "truncated"
+            return NUDGE_TRUNCATED
+        step.code = parsed.code
+        if state.repeat("code:" + normalize_code(parsed.code)):
+            step.note = "repeated"
+            return NUDGE_REPEATED
+        emit("executing", step)
+        step.result = run_code(self.sandbox, parsed.code)
+        return self.format_observation(step.result)
+
+    def _finish(self, run: DataRun, state: LoopState) -> None:
         if run.answer:
-            run.grounding = check_grounding(run.answer, self._evidence_texts(run), question=question)
-        run.duration_s = time.perf_counter() - started
-        emit("done", run)
-        return run
+            run.grounding = check_grounding(run.answer, self._evidence_texts(run), question=run.question)
 
     def _evidence_texts(self, run: AgentRun) -> list[str]:
         texts = [self.profile]

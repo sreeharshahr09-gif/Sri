@@ -14,8 +14,7 @@ from pathlib import PurePosixPath
 
 import streamlit as st
 
-from analyst_agent import AgentConfig, AgentRun, LLMClient, LLMConfig, Sandbox, SandboxConfig
-from analyst_agent.config import context_budget_chars
+from analyst_agent import AgentConfig, LLMClient, LLMConfig, Sandbox, SandboxConfig, WorkspaceRun
 from analyst_agent.editing import BackupStore, EditError, apply_change, undo_change
 from analyst_agent.export import describe_tool_step, workspace_to_json, workspace_to_markdown
 from analyst_agent.workspace import Workspace, WorkspaceError, is_local_url
@@ -150,10 +149,9 @@ def sidebar(llm_cfg: LLMConfig) -> tuple[AgentConfig, bool]:
         allow_python = st.checkbox("Allow Python analysis", key=remember("ws_python", True),
                                    help="Lets the assistant run sandboxed code that reads (never writes) "
                                         "files in the folder, e.g. to analyse a data file.")
-    cfg = replace(AgentConfig(), max_steps=int(max_steps), history_turns=int(history_turns),
-                  max_context_chars=context_budget_chars(llm_cfg))
+    cfg = replace(AgentConfig(), max_steps=int(max_steps), history_turns=int(history_turns))
 
-    runs: list[AgentRun] = st.session_state.ws_runs
+    runs: list[WorkspaceRun] = st.session_state.ws_runs
     if ws is not None and runs:
         st.sidebar.header("🗂️ Session")
         if st.sidebar.button("New conversation", width="stretch", key="ws_new", disabled=busy):
@@ -176,7 +174,7 @@ def _numbered(lines: list[str], start: int, end: int) -> str:
     return "\n".join(f"{i:>{width}}| {lines[i - 1]}" for i in range(start, end + 1))
 
 
-def render_sources(run: AgentRun, ws: Workspace | None, run_idx: int) -> None:
+def render_sources(run: WorkspaceRun, ws: Workspace | None, run_idx: int) -> None:
     report = run.citations
     if not report or not report.citations:
         if run.answer and run.executed:
@@ -205,7 +203,7 @@ def render_sources(run: AgentRun, ws: Workspace | None, run_idx: int) -> None:
             st.code(_numbered(doc.lines, lo, hi), language=None)
 
 
-def render_changes(run: AgentRun, run_idx: int) -> None:
+def render_changes(run: WorkspaceRun, run_idx: int) -> None:
     if not run.changes:
         return
     pending = [c for c in run.changes if c.status == "pending"]
@@ -265,7 +263,7 @@ def render_step(step, run_idx: int) -> None:
         render_execution(step.result, key=f"ws-trace-{run_idx}-{step.index}")
 
 
-def render_run(run: AgentRun, run_idx: int) -> None:
+def render_run(run: WorkspaceRun, run_idx: int) -> None:
     ws: Workspace | None = st.session_state.ws
     if run.status == "llm_error":
         st.error(f"Model error: {run.error}")
@@ -392,7 +390,7 @@ def page() -> None:
     with files_tab_:
         files_tab(ws)
     with ask_tab:
-        runs: list[AgentRun] = st.session_state.ws_runs
+        runs: list[WorkspaceRun] = st.session_state.ws_runs
         for idx, run in enumerate(runs):
             with st.chat_message("user"):
                 tag = {"teach": "  \n_🎓 teach mode_", "edit": "  \n_✏️ edit mode_"}.get(run.mode, "")
