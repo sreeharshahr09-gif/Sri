@@ -563,6 +563,9 @@ def page() -> None:
             render_result(out, idx)
         elif isinstance(out, FollowUp):
             render_followup(out, idx, busy, llm_cfg)
-    if jobs.active(JOB) is not None:
+    job = jobs.active(JOB)
+    if job is not None:
         jobs.job_panel(JOB)
+        if job.preview:  # what a running landscape has finished so far
+            render_blocks(job.preview, key=f"pl-preview-{job.preview_version}")
     followup_step(busy, llm_cfg)

@@ -23,7 +23,30 @@ from .result import LandscapeResult, LandscapeStatus, PipelineOptions, analysed_
 
 
 def assemble_blocks(result: LandscapeResult, options: PipelineOptions | None = None) -> list[rb.Block]:
-    options = options or PipelineOptions()
+    """The final report: its body, then the patent table and the downloads."""
+    blocks = report_body(result)
+    blocks.extend(table_blocks(result, options))
+    blocks.append(html_download(result, blocks))
+    return blocks
+
+
+PREVIEW_NOTE = ("Preliminary results: the analysis is still running. What is shown below is finished; the rest "
+                "fills in as each step completes, and the downloads come with the final report.")
+NOT_YET_SCREENED = (" Until the model has read every patent, the counts and the map still include patents it may "
+                    "judge off-topic, and the clusters' technology groups are provisional.")
+
+
+def preview_blocks(result: LandscapeResult) -> list[rb.Block]:
+    """What is finished so far, laid out as the final report will be, for display while the run goes on.
+
+    Without the patent table and downloads: they need the whole run.
+    """
+    note = PREVIEW_NOTE + (NOT_YET_SCREENED if result.analysis_frame is None else "")
+    return [rb.note(note)] + report_body(result)
+
+
+def report_body(result: LandscapeResult) -> list[rb.Block]:
+    """The report without its downloads: title, sections, brief-specific answers, methodology and notes."""
     blocks = title_blocks(result)
     sections = result.sections or nar.plan_sections(result.plan.report_sections)
     for sec in sections:
@@ -46,8 +69,6 @@ def assemble_blocks(result: LandscapeResult, options: PipelineOptions | None = N
     blocks.extend(nar.methodology_blocks(result))
     if result.warnings:
         blocks.append(rb.markdown("**Notes from this run**\n\n" + "\n".join(f"- {w}" for w in result.warnings)))
-    blocks.extend(table_blocks(result, options))
-    blocks.append(html_download(result, blocks))
     return blocks
 
 

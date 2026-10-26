@@ -26,6 +26,7 @@ class Event(StrEnum):
     DONE = "done"  # payload: the finished AgentRun
     PHASE = "phase"  # payload: the label of a pipeline phase that starts
     PROGRESS = "progress"  # payload: (done, total) items of the current phase
+    PREVIEW = "preview"  # payload: the report blocks of what is finished so far (patent landscape)
 
 
 # on_event(kind, payload): progress reports from an agent or pipeline to whoever displays it.

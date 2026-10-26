@@ -51,6 +51,9 @@ class Job:
     done_items: int = 0
     total_items: int = 0
     phase_started: float = 0.0
+    # What is finished so far (report blocks), shown while a long run goes on; the version counts updates.
+    preview: list | None = None
+    preview_version: int = 0
     started: float = field(default_factory=time.time)
     finished: float | None = None
     cancel: threading.Event = field(default_factory=threading.Event)
@@ -83,6 +86,10 @@ def start_job(question: str, page: str, work: Callable, describe: Describe, mode
     job = Job(question=question, page=page, mode=mode, max_steps=max_steps)
 
     def on_event(kind: str, payload: Any) -> None:
+        if kind == Event.PREVIEW:
+            job.preview = payload
+            job.preview_version += 1
+            return
         if kind == Event.LLM_CALL:
             job.step = int(payload) + 1
         elif kind == Event.PROGRESS:  # payload: (done, total)
@@ -163,6 +170,12 @@ def job_panel(job_key: str) -> None:
     if not job.running:
         collect(job_key)
         st.rerun()  # full rerun so history, exports and inputs refresh
+    seen_key = f"{job_key}_preview_seen"
+    if job.preview_version != st.session_state.get(seen_key, 0):
+        # New finished results: a full rerun lets the page show them (charts are drawn outside this fragment,
+        # so they are not redrawn every second).
+        st.session_state[seen_key] = job.preview_version
+        st.rerun()
     with st.chat_message("user"):
         tag = {"teach": "  \n_🎓 teach mode_", "edit": "  \n_✏️ edit mode_"}.get(job.mode or "", "")
         st.markdown(job.question + tag)

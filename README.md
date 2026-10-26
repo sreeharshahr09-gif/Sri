@@ -167,6 +167,11 @@ machine, or with a cloud model through OpenRouter (see *Cloud models*).
    and press **▶ Save & run analysis**. A
    trial run on 50–100 patents is a good first check. The job runs in the background with a
    progress bar and time estimate; you can switch pages or stop it.
+   **Results appear as soon as each step finishes**, under the progress bar: the counts within
+   seconds, then the patent map, then (once the model has read the patents) all charts and tables,
+   each answer to the brief's questions and each report section as it is written. A note marks
+   them preliminary until the run ends: until every patent is read, the map still includes patents
+   the model may judge off-topic. The downloads come with the final report.
 4. **Read the report** on one long page, and download the results. If one step of the analysis
    fails, the report says which and why, and shows everything the other steps produced.
 5. **Ask for more** in the box under the report (see *Follow-ups*).

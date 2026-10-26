@@ -14,7 +14,8 @@ the LandscapeResult (all of them also add to `methods` and `warnings`):
 
 A stage that fails is noted (status "error", the reason in the report's notes) and the later stages run on
 what there is. Stop ends the run at the next stage, patent batch or agent step. report_blocks lays the
-result out as the report.
+result out as the report. While the run goes on, a preview of what is finished (Event.PREVIEW) follows each
+step, each answered question and each written section.
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ from . import semantic as sem
 from .data import FlowStep, PatentCorpus, build_corpus
 from .followup import agent_client, analysis_dataset, landscape_profile, profile_budget
 from .plan import AnalysisPlan
-from .report_blocks import assemble_blocks
+from .report_blocks import assemble_blocks, preview_blocks
 from .result import LandscapeResult, LandscapeStatus, PipelineOptions, analysed_index, analysed_topics
 
 MIN_PATENTS_FOR_MAP = 8
@@ -83,24 +84,35 @@ def run_landscape(
     result.warnings.extend(corpus.notes)
     result.methods["Year basis"] = corpus.year_basis
 
+    def preview() -> None:
+        """Hand over what is finished so far, so the page can show it while the run goes on."""
+        try:
+            emit(Event.PREVIEW, preview_blocks(result))
+        except Exception:  # a preview is a courtesy: it must never stop the analysis
+            pass
+
+    preview()
     try:
         if options.semantic_map:
             _guarded(result, "The patent map", semantic_stage, result, llm, options, checkpoint, progress)
+            preview()
         if options.extract_details:
             checkpoint("Reading every patent")
             _guarded(result, "Reading the patents", extraction_stage, result, llm, options, emit, should_stop)
         checkpoint("Computing the landscape analytics")
         _guarded(result, "The landscape analytics", analytics_stage, result)
+        preview()
         if llm is not None and options.write_report:
             _guarded(result, "The white-space check", white_space_stage, result, llm)
+            preview()
         _guarded(result, "Collecting the facts", collect_facts, result)
         if options.answer_questions and result.plan.analysis_questions:
             _guarded(result, "Answering the brief's questions", questions_stage, result, llm, emit, checkpoint,
-                     should_stop)
+                     should_stop, preview)
             add_answers_to_facts(result)  # the report text is written from them too
         if options.write_report:
             checkpoint("Writing the report")
-            _guarded(result, "Writing the report text", narrative_stage, result, llm, emit)
+            _guarded(result, "Writing the report text", narrative_stage, result, llm, emit, preview)
     except Cancelled:
         result.status = LandscapeStatus.CANCELLED
     cfg = getattr(llm, "config", None)
@@ -195,8 +207,9 @@ def answered_questions(result: LandscapeResult) -> list[str]:
 
 
 def questions_stage(result: LandscapeResult, llm, emit: EventHandler, checkpoint: Callable[[str], None],
-                    should_stop: Callable[[], bool] | None = None) -> None:
-    """The data agent answers each brief-specific question with code run on the enriched patent table."""
+                    should_stop: Callable[[], bool] | None = None, on_answer: Callable[[], None] | None = None) -> None:
+    """The data agent answers each brief-specific question with code run on the enriched patent table.
+    `on_answer` is called after each answer (for the preview)."""
     if llm is None:
         result.warnings.append("No model connected: the brief-specific questions were not answered.")
         return
@@ -215,6 +228,8 @@ def questions_stage(result: LandscapeResult, llm, emit: EventHandler, checkpoint
             if run.status == RunStatus.CANCELLED:
                 raise Cancelled()
             result.question_runs.append((question, run))
+            if on_answer is not None:
+                on_answer()
     answered = sum(1 for _, run in result.question_runs if run.answer and run.executed)
     result.methods["Brief-specific questions"] = (
         f"{answered} of {len(questions)} answered by the data agent with code run on the enriched patent table "
@@ -232,13 +247,20 @@ def add_answers_to_facts(result: LandscapeResult) -> None:
         result.all_facts += " " + text
 
 
-def narrative_stage(result: LandscapeResult, llm, emit) -> None:
+def narrative_stage(result: LandscapeResult, llm, emit, on_section: Callable[[], None] | None = None) -> None:
+    """The model writes each report section. The sections are filled in place, so `on_section` (called after each
+    one, for the preview) and a failure part-way both see the sections written so far."""
     sections = nar.plan_sections(result.plan.report_sections)
-    by_kind, all_facts = result.facts_by_kind, result.all_facts
-    nar.write_sections(sections, by_kind, all_facts, result.plan.brief, result.plan.answers, llm,
-                       on_progress=lambda done, total: emit(Event.PROGRESS, (done, total)),
-                       answered_elsewhere=answered_questions(result))
     result.sections = sections
+    by_kind, all_facts = result.facts_by_kind, result.all_facts
+
+    def progress(done: int, total: int) -> None:
+        emit(Event.PROGRESS, (done, total))
+        if done and on_section is not None:
+            on_section()
+
+    nar.write_sections(sections, by_kind, all_facts, result.plan.brief, result.plan.answers, llm,
+                       on_progress=progress, answered_elsewhere=answered_questions(result))
     if llm is not None:
         written = sum(1 for sec in sections if sec.text)
         flagged = sum(len(sec.flagged) for sec in sections)

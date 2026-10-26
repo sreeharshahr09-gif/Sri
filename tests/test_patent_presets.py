@@ -227,3 +227,16 @@ def test_stop_reaches_the_data_agent_inside_a_question(tmp_path, monkeypatch):
     assert res.status == "cancelled" and res.question_runs == []
     assert model.calls["agent"] == 1  # it stopped after its first step, not after finishing the question
     assert "llm_call" in events and "executing" in events  # the agent's steps reach the status bar
+
+
+def test_each_answer_is_previewed_as_soon_as_it_is_ready(tmp_path, monkeypatch):
+    monkeypatch.setattr(enrich, "CACHE_DIR", tmp_path)
+    plan = preset_plan("Durability")
+    plan.analysis_questions = plan.analysis_questions[:2]
+    raw = make_export(30, seed=2)
+    previews = []
+    run_landscape(raw, detect_columns(list(raw.columns)), plan, llm=FakeLLM(plan),
+                  options=PipelineOptions(semantic_map=False, write_report=False),
+                  on_event=lambda kind, payload: previews.append(payload) if kind == "preview" else None)
+    shown = [[q for q in plan.analysis_questions if any(b.title == q for b in blocks)] for blocks in previews]
+    assert shown[-2:] == [plan.analysis_questions[:1], plan.analysis_questions]

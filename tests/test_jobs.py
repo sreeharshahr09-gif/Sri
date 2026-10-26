@@ -96,3 +96,19 @@ def test_outcome_of_results_with_and_without_a_status():
     assert outcome(Job("q", "Patent landscape", run=PlanReady())) == "finished"
     assert outcome(Job("q", "Data analysis", run=AgentRun(question="q", status="cancelled"))) == "stopped"
     assert outcome(Job("q", "Data analysis", run=None)) == "finished"
+
+
+def test_previews_are_kept_on_the_job_without_progress_lines():
+    release = threading.Event()
+
+    def work(on_event, should_stop):
+        on_event("preview", ["first"])
+        on_event("preview", ["second"])
+        release.wait(5)
+        return AgentRun(question="q", status="answered")
+
+    job = start_job("q", "Patent landscape", work, describe)
+    time.sleep(0.1)
+    assert job.preview == ["second"] and job.preview_version == 2 and job.lines == []
+    release.set()
+    wait(job)

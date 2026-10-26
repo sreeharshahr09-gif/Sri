@@ -267,3 +267,37 @@ def test_a_failing_stage_is_noted_and_the_rest_is_still_reported(monkeypatch):
     assert "Methodology and limitations" in titles
     page = next(b for b in result.blocks if b.kind == "download" and b.file_name.endswith(".html")).data.decode()
     assert "part of the analysis failed" in page
+
+
+def test_finished_parts_are_previewed_while_the_run_goes_on():
+    plan = AnalysisPlan(title="Uneven wear")
+    result, events = _run(n=60, plan=plan, llm=FakeLLM(plan))
+    previews = [p for k, p in events if k == "preview"]
+    sections = len(result.sections)
+    assert len(previews) == 4 + sections  # cleaning, map, analytics, white space, then each written section
+    for blocks in previews:
+        assert blocks[0].kind == "note" and blocks[0].text.startswith("Preliminary results")
+        assert not any(b.kind == "download" for b in blocks)  # downloads come with the final report
+    titles = [[b.title for b in blocks] for blocks in previews]
+    assert "Patent map and topic clusters" not in titles[0]  # after cleaning: counts only
+    assert "Patent map and topic clusters" in titles[1]
+    assert "off-topic" in previews[1][0].text  # not yet screened by the model: said so
+    assert "off-topic" not in previews[2][0].text  # after reading and the analytics: final
+    written = [sum(1 for b in blocks if b.kind == "caption" and b.text.startswith("Text written by the model"))
+               for blocks in previews[4:]]
+    assert written == list(range(1, sections + 1))  # sections fill in one by one
+    assert any(b.kind == "download" for b in result.blocks)
+
+
+def test_a_failing_preview_never_stops_the_run(monkeypatch):
+    from analyst_agent.patents import pipeline
+
+    def broken(result):
+        raise RuntimeError("preview bug")
+
+    monkeypatch.setattr(pipeline, "preview_blocks", broken)
+    plan = AnalysisPlan(title="Uneven wear")
+    result, events = _run(n=40, plan=plan, llm=FakeLLM(plan), options=PipelineOptions(embedding_model="tfidf",
+                                                                                      semantic_map=False))
+    assert result.status == "complete" and not any(k == "preview" for k, _ in events)
+    assert any(b.kind == "download" for b in result.blocks)
