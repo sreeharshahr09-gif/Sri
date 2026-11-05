@@ -17,7 +17,7 @@ import pandas as pd
 # Canonical fields and the column names databases use for them (compared after normalising:
 # lower case, punctuation removed). Order matters: earlier synonyms are preferred.
 ROLE_SYNONYMS: dict[str, list[str]] = {
-    "id": ["record number", "publication number", "display key", "patent number", "publication no", "pub number",
+    "id": ["record number", "representative publication", "publication number", "display key", "patent number", "publication no", "pub number",
            "document number", "doc number", "lens id", "patent id", "publication id", "pn", "number"],
     "title": ["title", "title english", "invention title", "dwpi title", "title en", "original title"],
     "abstract": ["abstract", "abstract english", "dwpi abstract", "abstract en", "original abstract"],
@@ -33,7 +33,7 @@ ROLE_SYNONYMS: dict[str, list[str]] = {
             "cpc current"],
     "ipc": ["ipc", "ipc classification", "ipc classifications", "ipc codes", "international patent classification",
             "ipcr"],
-    "family": ["family id", "docdb family id", "inpadoc family id", "simple family id", "patent family id",
+    "family": ["family key", "family id", "docdb family id", "inpadoc family id", "simple family id", "patent family id",
                "family number", "simple family", "inpadoc family", "family"],
     "country": ["country", "jurisdiction", "publication country", "authority", "country code"],
     "problem": ["problem being solved ai sum", "problem being solved", "technical problem", "problem"],
@@ -43,6 +43,8 @@ ROLE_SYNONYMS: dict[str, list[str]] = {
     "cited_by": ["cited by count", "forward citations", "times cited", "cited by", "citing patents count",
                  "count of citing patents"],
     "legal_status": ["legal status", "status", "patent status"],
+    "pdf_link": ["pdf link", "pdf url", "pdf", "original document", "full text link", "document link", "patent link",
+                 "google patents link", "link", "url"],
 }
 REQUIRED_ANY = ("title", "abstract")
 ROLE_LABELS = {
@@ -51,7 +53,7 @@ ROLE_LABELS = {
     "pub_date": "Publication date", "cpc": "CPC codes", "ipc": "IPC codes", "family": "Family ID",
     "country": "Country / jurisdiction", "problem": "Problem (summary)", "method": "Method / solution (summary)",
     "advantage": "Advantage (summary)", "inventors": "Inventors", "cited_by": "Forward citations",
-    "legal_status": "Legal status",
+    "legal_status": "Legal status", "pdf_link": "PDF / patent link",
 }
 
 
@@ -431,6 +433,8 @@ def build_corpus(
                  "inventors", "legal_status"):
         std[role] = col(role).map(_clean_text)
     std["alive"] = std["legal_status"].map(alive_status) if (std["legal_status"] != "").any() else ""
+    links = col("pdf_link").map(_clean_text)
+    std["pdf_link"] = links.where(links.str.match(r"https?://", case=False), "")  # "PDF Link" alone is no address
     # Long enough for claim breadth (its length) to separate patents; the model sees an excerpt.
     std["first_claim"] = std["claims"].map(lambda c: first_claim(c, limit=6000))
     std["cited_by"] = pd.to_numeric(col("cited_by"), errors="coerce")
@@ -476,6 +480,12 @@ def build_corpus(
     std, raw = std[keep], raw[keep]
 
     # 2. Duplicates: one record per patent family when the export has family IDs.
+    named = std["family"][std["family"] != ""]
+    if len(named) >= 0.5 * len(std) and named.nunique() < max(2, 0.1 * len(named)):
+        notes.append(f"The family column ({mapping.get('family')}) holds only {named.nunique()} different "
+                     "value(s), so it is no family ID and was not used to remove duplicates. Map the family ID "
+                     "column in the plan step if the export has one.")
+        std["family"] = ""
     if (std["family"] != "").mean() >= 0.5:
         key = std["family"].where(std["family"] != "", std["id"])
         basis = "patent family ID"

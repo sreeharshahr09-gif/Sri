@@ -9,6 +9,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import re
 import warnings
 from dataclasses import dataclass, field
 from pathlib import PurePath
@@ -73,6 +74,9 @@ def load_dataset(raw: bytes, filename: str, sheet: str | None = None) -> Dataset
         elif ext in (".xlsx", ".xlsm", ".xls"):
             df = pd.read_excel(io.BytesIO(raw), sheet_name=sheet if sheet is not None else 0)
             fmt = "excel"
+            if ext != ".xls":
+                df, link_note = excel_hyperlinks(raw, sheet, df)
+                notes.append(link_note)
         elif ext == ".parquet":
             df = pd.read_parquet(io.BytesIO(raw))
             fmt = "parquet"
@@ -107,6 +111,52 @@ def load_dataset(raw: bytes, filename: str, sheet: str | None = None) -> Dataset
         sheet=sheet,
         notes=[n for n in notes if n],
     )
+
+
+_LINK_COLUMN = re.compile(r"link|url|pdf|hyperlink|document", re.IGNORECASE)
+_HYPERLINK_FORMULA = re.compile(r'^=\s*HYPERLINK\(\s*"([^"]+)"', re.IGNORECASE)
+
+
+def excel_hyperlinks(raw: bytes, sheet: str | None, df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
+    """Link columns whose cells show a text ("PDF Link") with the address in a hyperlink or a HYPERLINK formula:
+    pandas reads only the text, so the addresses take its place. Only for columns named like a link whose values
+    are not addresses already; the header row is found by name and the rows are matched by their text."""
+    wanted = [c for c in df.columns if _LINK_COLUMN.search(str(c)) and df[c].dropna().nunique() <= 5  # a label
+              and not df[c].dropna().astype(str).str.match(r"https?://", case=False).any()]
+    if not wanted or df.empty:
+        return df, ""
+    try:
+        import openpyxl
+
+        book = openpyxl.load_workbook(io.BytesIO(raw), data_only=False)  # hyperlinks need the full sheet
+        ws = book[sheet] if sheet in book.sheetnames else book.worksheets[0]
+    except Exception:  # an unusual workbook: keep what pandas read
+        return df, ""
+    names = {str(c): c for c in wanted}
+    header_row, columns = None, {}
+    for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 20)):
+        found = {names[str(cell.value)]: cell.column for cell in row if str(cell.value) in names}
+        if found:
+            header_row, columns = row[0].row, found
+            break
+    if header_row is None:
+        return df, ""
+    out, changed = df.copy(), []
+    for col, index in columns.items():
+        urls = []
+        for i in range(len(df)):
+            cell = ws.cell(row=header_row + 1 + i, column=index)
+            target = cell.hyperlink.target if cell.hyperlink is not None and cell.hyperlink.target else None
+            if target is None and isinstance(cell.value, str):
+                m = _HYPERLINK_FORMULA.match(cell.value)
+                target = m.group(1) if m else None
+            urls.append(target)
+        found = sum(u is not None for u in urls)
+        if found and found >= 0.5 * df[col].notna().sum():
+            out[col] = [u if u is not None else v for u, v in zip(urls, df[col])]
+            changed.append(f"{col} ({found:,})")
+    note = (f"Read the link addresses behind the cell text of: {', '.join(changed)}." if changed else "")
+    return out, note
 
 
 def _read_delimited(raw: bytes, default_sep: str | None, **read_kwargs) -> tuple[pd.DataFrame, str]:

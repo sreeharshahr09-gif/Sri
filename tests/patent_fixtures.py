@@ -223,6 +223,13 @@ def narrative_reply(system: str, user: str, invent: bool = False) -> str:
     return "\n".join(lines + [closing])
 
 
+def notable_reply(user: str) -> str:
+    """Notes on the notable patents: one line each on why it matters and what to check."""
+    refs = re.findall(r"^N(\d+) \| (\S+)", user, re.MULTILINE)
+    return json.dumps([{"ref": f"N{i}", "why": f"{pid} pairs a design lever with a performance target.",
+                        "check": "Check the claimed range in the independent claim."} for i, pid in refs])
+
+
 def agent_reply(messages: list[dict]) -> str:
     """The data agent's turn: count patents per technology group with a chart, then answer from the output."""
     last = messages[-1]["content"]

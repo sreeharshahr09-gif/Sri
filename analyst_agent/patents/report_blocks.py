@@ -69,6 +69,7 @@ def report_body(result: LandscapeResult) -> list[rb.Block]:
         if parts:
             blocks.append(rb.heading(sec.heading))
             blocks.extend(parts)
+    blocks.extend(notable_blocks(result))
     blocks.extend(brief_specific_blocks(result))
     blocks.extend(check_blocks(result))
     blocks.extend(nar.methodology_blocks(result))
@@ -190,6 +191,54 @@ def brief_specific_blocks(result: LandscapeResult) -> list[rb.Block]:
     return [rb.heading("🎯 Brief-specific analyses"),
             rb.caption("Your extra columns, and your plan's own questions answered by the data agent with Python "
                        "code run on the enriched patent table. The code behind each answer is shown.")] + parts
+
+
+def notable_blocks(result: LandscapeResult) -> list[rb.Block]:
+    """The notable patents as cards: figures, what they claim, why they matter, what to check, the scores."""
+    if not result.notable:
+        return []
+    return [rb.heading("🏅 Notable patents"),
+            rb.cards(card_items(result.notable), caption=f"The {len(result.notable)} patents with the highest "
+                                                          f"interest. {CARDS_NOTE}")]
+
+
+CARDS_NOTE = ("Interest is the mean of value and novelty (0–100). Value: the crown-jewel score (citations when "
+              "exported, relevance, claim breadth, recency) and whether the patent is alive. Novelty: how rare its "
+              "combination of categories is in this set and how few patents are close to it in meaning. Figures come "
+              "from the patent PDF; why it matters and what to check are the model's reading of the patent's own "
+              "fields.")
+
+
+def card_items(cards) -> list[dict]:
+    """Notable-patent cards as the dicts report.cards() renders."""
+    items = []
+    for n in cards:
+        meta = ", ".join(x for x in [n.assignee, n.office, str(n.year or "")] if x)
+        if n.segment:
+            meta += f". Segment: {n.segment}"
+        drawings = "; ".join(f"{f.label}: {f.description}" for f in n.figures if f.description)
+        items.append({
+            "id": n.id, "link": n.link, "title": n.title, "meta": meta, "badges": n.badges, "summary": n.summary,
+            "why": n.why, "check": n.check, "note": n.figure_note, "drawings": drawings,
+            "figures": [(f.png, f.label) for f in n.figures],
+            "scores": f"Interest {n.interest:.1f} · value {n.value:.0f} · novelty {n.novelty:.0f}"
+                      + (f" · {'; '.join(n.reasons)}" if n.reasons else ""),
+        })
+    return items
+
+
+def gallery_blocks(gallery) -> list[rb.Block]:
+    """The top patents of the chosen technology groups, as a section of its own (and its HTML download)."""
+    groups = ", ".join(gallery.groups)
+    blocks = [rb.heading(f"🖼️ Top patents: {groups}")]
+    if not gallery.cards:
+        return blocks + [rb.note("No analysed patent belongs to these technology groups.")]
+    blocks.append(rb.cards(card_items(gallery.cards), caption=f"The {len(gallery.cards)} patents of these groups "
+                                                              f"with the highest interest. {CARDS_NOTE} {gallery.note}"))
+    page = report_html(blocks, f"Top patents: {groups}", f"Patent landscape: {gallery.study}")
+    blocks.append(rb.download("Download these cards (HTML)", page, f"{_slug('top patents ' + groups)}.html",
+                              mime="text/html", caption="One file with the figures; opens in any browser."))
+    return blocks
 
 
 def check_blocks(result: LandscapeResult) -> list[rb.Block]:

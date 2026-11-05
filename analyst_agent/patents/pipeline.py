@@ -33,6 +33,7 @@ from ..runs import Event, EventHandler, RunStatus
 from ..sandbox import Sandbox
 from . import analytics as an
 from . import enrich
+from . import notable as nb
 from . import narrative as nar
 from . import semantic as sem
 from .data import FlowStep, PatentCorpus, build_corpus
@@ -107,6 +108,10 @@ def run_landscape(
         if llm is not None and options.write_report:
             _guarded(result, "The white-space check", white_space_stage, result, llm)
             preview()
+        if options.notable_count > 0:
+            checkpoint("Picking the notable patents")
+            _guarded(result, "The notable patents", notable_stage, result, llm, options, checkpoint, progress)
+            preview()
         _guarded(result, "Collecting the facts", collect_facts, result)
         if options.answer_questions and result.plan.analysis_questions:
             _guarded(result, "Answering the brief's questions", questions_stage, result, llm, emit, checkpoint,
@@ -162,6 +167,73 @@ def analytics_stage(result: LandscapeResult) -> None:
     result.warnings.extend(notes)
 
 
+def notable_stage(result: LandscapeResult, llm, options: PipelineOptions, checkpoint, progress) -> None:
+    """The analysed set's most valuable and novel patents as cards: scores, the model's notes, their figures."""
+    frame = result.analysis_frame
+    if frame is None or frame.empty:
+        return
+    embeddings = result.semantic.embeddings if result.semantic is not None else None
+    cards = nb.pick(frame, result.corpus.std, embeddings, n=options.notable_count)
+    note = nb.write_notes(cards, result.plan.title, llm if options.write_report else None)
+    result.notable = cards
+    if options.fetch_figures and cards:
+        checkpoint("Fetching the notable patents' PDFs for their figures")
+    result.methods["Notable patents"] = notable_method(cards, frame, embeddings is not None, note, options, llm,
+                                                       result.plan.problem_label, checkpoint, progress, result)
+
+
+def notable_method(cards, frame, embedded: bool, note: str, options: PipelineOptions, llm, problem_label: str,
+                   checkpoint, progress, result) -> str:
+    """Fetches the cards' figures (when asked) and describes the method for the methodology."""
+    if options.fetch_figures and cards:
+        fetched, described = nb.illustrate(cards, result.corpus.std, llm, options.vision_model,
+                                           options.figures_per_patent, progress)
+        shown = sum(bool(c.figures) for c in cards)
+        how = (f"chosen and described by the vision model {options.vision_model} among the drawings the page analysis "
+               f"found ({described} of {len(cards)}; for the rest the page analysis decided alone)"
+               if options.vision_model else
+               "chosen without a vision model: the front-page drawing, then drawing sheets that show something else")
+        pdfs = (f" PDFs: {fetched} of {len(cards)} fetched (cache, the export's link, else a lookup by publication "
+                f"number); figures for {shown}, {how}.")
+    else:
+        for card in cards:
+            card.figure_note = "Figures not fetched (turn it on under Advanced settings)"
+        pdfs = " Figures were not fetched in this run."
+    return (f"The {len(cards)} patents with the highest interest = mean of value (crown-jewel score"
+            + (" × 0.8 + 20 if alive" if "alive" in frame else "") + ") and novelty (percentile of how rare the "
+            f"patent's {problem_label.lower()} × technology-group combination is"
+            + (", and of its mean cosine distance to its 5 nearest neighbours in the text embedding" if embedded
+               else "") + "). " + note + pdfs)
+
+
+def group_gallery(result: LandscapeResult, groups: list[str], llm=None, options: PipelineOptions | None = None,
+                  on_event: EventHandler | None = None, should_stop: Callable[[], bool] | None = None) -> nb.Gallery:
+    """The top patents (by interest, scored against the whole analysed set) of the chosen technology groups, with
+    the model's notes and their figures."""
+    options = options or PipelineOptions()
+    emit = on_event or (lambda *_: None)
+    frame = result.analysis_frame if result.analysis_frame is not None else an.build_frame(result.corpus.std, None, [])
+    within = frame.index[frame["tech_group"].isin(groups)]
+    embeddings = result.semantic.embeddings if result.semantic is not None else None
+    cards = nb.pick(frame, result.corpus.std, embeddings, n=options.notable_count, within=within)
+    emit(Event.PHASE, "Writing notes on the patents")
+    note = nb.write_notes(cards, result.plan.title, llm)
+
+    def progress(done: int, total: int) -> None:
+        if should_stop is not None and should_stop():
+            raise Cancelled()
+        emit(Event.PROGRESS, (done, total))
+
+    if options.fetch_figures and cards:
+        emit(Event.PHASE, "Fetching the PDFs for the figures")
+    try:
+        method = notable_method(cards, frame, embeddings is not None, note, options, llm,
+                                result.plan.problem_label, lambda label: emit(Event.PHASE, label), progress, result)
+    except Cancelled:
+        method = "Stopped while fetching the figures; the patents shown first have theirs."
+    return nb.Gallery(list(groups), cards, method, result.plan.title)
+
+
 def white_space_stage(result: LandscapeResult, llm) -> None:
     ex = next((e for e in result.exhibits if e.key == "white_space"), None)
     if ex is not None:
@@ -203,6 +275,10 @@ def collect_facts(result: LandscapeResult) -> None:
     ordered = sorted(result.exhibits, key=lambda e: FACT_PRIORITY.index(e.key) if e.key in FACT_PRIORITY else 99)
     result.all_facts = an.summary_facts(frame, ordered[:1]) + (f" [Topic clusters] {clusters}" if clusters else "") \
         + " " + " ".join(f"[{ex.title}] {ex.facts}" for ex in ordered[1:])
+    notable = nb.facts(result.notable)
+    if notable:
+        by_kind["players"] = by_kind.get("players", "") + f"[Notable patents] {notable}\n"
+        result.all_facts += f" [Notable patents] {notable}"
     result.facts_by_kind = by_kind
 
 

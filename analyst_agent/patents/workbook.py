@@ -94,6 +94,13 @@ def report_workbook(blocks: list[rb.Block], title: str) -> bytes | None:
         name = block.title or sub or section
         if block.kind == "table" and block.table is not None and not block.table.empty:
             sheets.append((section, name, "table", block.table))
+        elif block.kind == "cards" and block.items:
+            sheets.append((section, name, "table", pd.DataFrame([{
+                "Patent ID": i.get("id", ""), "Title": i.get("title", ""), "Details": i.get("meta", ""),
+                "Badges": ", ".join(i.get("badges", [])), "Summary": i.get("summary", ""), "Why it matters": i.get("why", ""),
+                "Check": i.get("check", ""), "Drawings": i.get("drawings", ""), "Scores": i.get("scores", ""),
+                "Figures": "; ".join(label for _, label in i.get("figures", [])) or i.get("note", ""),
+                "Link": i.get("link", "")} for i in block.items])))
         elif block.kind == "plotly" and block.figure is not None:
             data = figure_table(block.figure)
             if data is not None and not data.empty:

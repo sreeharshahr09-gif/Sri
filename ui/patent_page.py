@@ -7,6 +7,7 @@ sections below it.
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass, replace
 
 import pandas as pd
@@ -16,7 +17,7 @@ from analyst_agent import LLMClient, LLMConfig
 from analyst_agent.agent import DataAnalystAgent
 from analyst_agent.config import AgentConfig, SandboxConfig
 from analyst_agent.data import SUPPORTED_EXTENSIONS, DataLoadError, list_sheets, load_dataset
-from analyst_agent.llm import is_free_model
+from analyst_agent.llm import is_free_model, is_openrouter
 from analyst_agent.patents import enrich, semantic
 from analyst_agent.patents import narrative as nar
 from analyst_agent.patents import report as rb
@@ -32,7 +33,9 @@ from analyst_agent.patents.followup import (
     rewrite,
     route,
 )
-from analyst_agent.patents.pipeline import LandscapeResult, PipelineOptions, run_landscape
+from analyst_agent.patents.notable import Gallery
+from analyst_agent.patents.pipeline import LandscapeResult, PipelineOptions, group_gallery, run_landscape
+from analyst_agent.patents.report_blocks import gallery_blocks
 from analyst_agent.patents.result import LandscapeStatus
 from analyst_agent.patents.plan import (
     MAX_ANALYSIS_QUESTIONS,
@@ -46,13 +49,14 @@ from analyst_agent.patents.presets import preset_names, preset_plan
 from analyst_agent.runs import Event
 from analyst_agent.sandbox import Sandbox
 from ui import jobs
-from ui.common import remember
+from ui.common import CLOUD_MODEL, remember
 from ui.data_page import describe_event as describe_agent_event
 from ui.data_page import render_run
 
 JOB = "pl_job"
 MAPPED_ROLES = ["id", "title", "abstract", "claims", "assignee", "priority_date", "filing_date", "pub_date",
-                "cpc", "ipc", "family", "country", "problem", "method", "advantage", "cited_by", "legal_status"]
+                "cpc", "ipc", "family", "country", "problem", "method", "advantage", "cited_by", "legal_status",
+                "pdf_link"]
 STANDARD_COLUMNS = ("Topic, Segment, Problem, Technology group, Complexity, Component, Performance target, "
                     "Design lever, Mechanism, Core claim, Key parameters, Trade-offs, Relevance, Confidence")
 
@@ -329,6 +333,21 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
                      "already read with the shorter text are read again (each version is cached).")
             st.checkbox("Build the patent map and topic clusters", key=remember("pl_semantic", True))
             st.checkbox("Answer the brief-specific questions (data agent)", key=remember("pl_questions", True))
+            n1, n2 = st.columns([1, 2])
+            n1.number_input("Notable patents with figures (0 = none)", 0, 30, key=remember("pl_notable", 10),
+                            help="The patents with the highest interest (value and novelty), as cards with their "
+                                 "figures and a note on why each matters.")
+            n2.checkbox("Fetch their PDFs for the figures (internet)", key=remember("pl_fetch_pdfs", True),
+                        help="From the export's PDF link (also the address behind a 'PDF Link' cell in Excel), else "
+                             "from Google Patents by publication number. PDFs are cached; for links that need a "
+                             "login, put the PDF into the cache folder as <publication number>.pdf.")
+            st.text_input(
+                "Vision model for the figures (empty = page analysis only)",
+                key=remember("pl_vision_model", CLOUD_MODEL if is_openrouter(llm_cfg.base_url) else ""),
+                help="A model that can see images picks the most representative drawings among those the page "
+                     "analysis finds and describes them in one line; one request per patent. It uses the model "
+                     "server's address and key (set LLM_VISION_BASE_URL and LLM_VISION_API_KEY for another server). "
+                     "If it fails, the page analysis decides alone.")
             st.text_input(
                 "Text embedding model", key=remember("pl_embed_model", semantic.DEFAULT_MODEL),
                 help="PatentSBERTa needs `pip install sentence-transformers` and downloads once (about 0.5 GB); "
@@ -384,7 +403,9 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
 
 def free_model_note(n: int, size: int, plan: AnalysisPlan) -> None:
     """Requests a run needs against a free OpenRouter model's daily limit."""
-    needed = -(-n // size) + 15 + len(plan.report_sections) + 4 * len(plan.analysis_questions)
+    needed = -(-n // size) + 16 + len(plan.report_sections) + 4 * len(plan.analysis_questions)
+    if st.session_state.get("pl_fetch_pdfs", True) and str(st.session_state.get("pl_vision_model") or "").strip():
+        needed += int(st.session_state.get("pl_notable", 10) or 0)  # the vision model: one request per patent
     daily = st.session_state.get("llm_daily_limit")
     limit = f"{daily:,} a day on your account" if daily else "50 a day, or 1,000 once the account has bought $10 of credits"
     text = (f"Free OpenRouter model: this run ({n:,} patents) needs about {needed:,} requests; the limit is {limit} "
@@ -405,6 +426,9 @@ def start_run(plan: AnalysisPlan, mapping: dict, sample: int, llm_cfg: LLMConfig
         sample_limit=sample, semantic_map=bool(st.session_state.get("pl_semantic", True)),
         extract_details=bool(st.session_state.get("pl_extract", True)),
         answer_questions=bool(st.session_state.get("pl_questions", True)),
+        notable_count=int(st.session_state.get("pl_notable", 10) or 0),
+        fetch_figures=bool(st.session_state.get("pl_fetch_pdfs", True)),
+        vision_model=str(st.session_state.get("pl_vision_model") or "").strip(),
         embedding_model=(st.session_state.get("pl_embed_model") or semantic.DEFAULT_MODEL).strip(),
     )
 
@@ -451,8 +475,44 @@ def render_blocks(blocks: list[rb.Block], key: str) -> None:
         elif block.kind == "download" and block.data is not None:
             st.download_button(block.title, block.data, file_name=block.file_name, mime=block.mime, type="primary",
                                icon=":material/download:", key=f"{key}-dl-{i}", on_click="ignore")
+        elif block.kind == "cards":
+            render_cards(block.items)
         if block.caption:
             st.caption(block.caption)
+
+
+def _md(text: str) -> str:
+    """Patent text as Markdown: "$" would start a formula, and asterisks or brackets would format."""
+    return re.sub(r"([$*_\[\]`])", r"\\\1", str(text or ""))
+
+
+def render_cards(items: list[dict]) -> None:
+    """Notable-patent cards: the figures on the left, the patent on the right."""
+    for item in items:
+        with st.container(border=True):
+            left, right = st.columns([1, 3], gap="medium")
+            if item.get("figures"):
+                for png, label in item["figures"]:
+                    left.image(png, caption=label, width="stretch")
+            else:
+                left.caption(item.get("note") or "No drawing")
+            number = _md(item.get("id", ""))
+            link = item.get("link", "")
+            head = f"[{number}]({link})" if re.match(r"https?://", link) else f"**{number}**"
+            badges = " ".join(f":{'violet' if b == 'Core' else 'orange' if b.startswith('Top') else 'gray'}-badge[{b}]"
+                              for b in item.get("badges", []))
+            right.markdown(f"{head} {badges}")
+            right.markdown(f"**{_md(item.get('title', '')).upper()}**")
+            right.caption(_md(item.get("meta", "")))
+            right.markdown(_md(item.get("summary", "")))
+            if item.get("why"):
+                right.warning(_md(item["why"]), icon=None)
+            if item.get("check"):
+                right.markdown(f":orange[Check: {_md(item['check'])}]")
+            if item.get("drawings"):
+                right.caption(f"**Drawings:** {_md(item['drawings'])}")
+            if item.get("scores"):
+                right.caption(_md(item["scores"]))
 
 
 def _whole_number(v) -> str:
@@ -493,6 +553,53 @@ def render_result(result: LandscapeResult, idx: int) -> None:
         st.caption(f"ℹ️ {w}")
     download_row(result.blocks, key=f"pl-{idx}")
     render_blocks(result.blocks, key=f"pl-{idx}")
+
+
+# --------------------------------------------------------------------------- top patents by technology group
+
+
+@dataclass
+class GalleryShown:
+    """The top patents of chosen technology groups, laid out once (an output on the page)."""
+
+    gallery: Gallery
+    blocks: list
+
+
+def gallery_step(busy: bool, llm_cfg: LLMConfig) -> None:
+    results = [o for o in st.session_state.pl_outputs if isinstance(o, LandscapeResult)]
+    frame = results[-1].analysis_frame if results else None
+    if frame is None or frame.empty or "tech_group" not in frame:
+        return
+    base = results[-1]
+    counts = frame["tech_group"].value_counts()
+    order = [b.name for b in base.plan.tech_buckets if b.name in counts.index]
+    order += [g for g in counts.index if g not in order]
+    st.divider()
+    st.subheader("🖼️ Top patents by technology group")
+    st.caption("Choose one or more technology groups: their patents with the highest interest (value and novelty, "
+               "scored against the whole analysed set) appear as cards with figures from their PDFs, below the "
+               "report. Fetching and figures follow the Advanced settings of the plan.")
+    c1, c2, c3 = st.columns([5, 1, 1.4], vertical_alignment="bottom")
+    groups = c1.multiselect("Technology groups", order, format_func=lambda g: f"{g} ({counts[g]})",
+                            key="pl_gallery_groups")
+    n = c2.number_input("Patents", 1, 30, 10, key="pl_gallery_n")
+    if c3.button("🖼️ Show patents", type="primary", disabled=busy or not groups, width="stretch"):
+        start_gallery(base, list(groups), int(n), llm_cfg)
+
+
+def start_gallery(base: LandscapeResult, groups: list[str], n: int, llm_cfg: LLMConfig) -> None:
+    options = PipelineOptions(notable_count=n, fetch_figures=bool(st.session_state.get("pl_fetch_pdfs", True)),
+                              vision_model=str(st.session_state.get("pl_vision_model") or "").strip())
+
+    def work(on_event, should_stop):
+        gallery = group_gallery(base, groups, llm=LLMClient(llm_cfg), options=options, on_event=on_event,
+                                should_stop=should_stop)
+        return GalleryShown(gallery, gallery_blocks(gallery))
+
+    st.session_state[JOB] = jobs.start_job(f"Top patents: {', '.join(groups)}", "Patent landscape", work,
+                                           describe_event)
+    st.rerun()
 
 
 # --------------------------------------------------------------------------- follow-ups
@@ -608,9 +715,12 @@ def page() -> None:
             render_result(out, idx)
         elif isinstance(out, FollowUp):
             render_followup(out, idx, busy, llm_cfg)
+        elif isinstance(out, GalleryShown):
+            render_blocks(out.blocks, key=f"pl-gallery-{idx}")
     job = jobs.active(JOB)
     if job is not None:
         jobs.job_panel(JOB)
         if job.preview:  # what a running landscape has finished so far
             render_blocks(job.preview, key=f"pl-preview-{job.preview_version}")
+    gallery_step(busy, llm_cfg)
     followup_step(busy, llm_cfg)

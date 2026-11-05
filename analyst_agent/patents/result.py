@@ -33,6 +33,10 @@ class PipelineOptions:
     write_report: bool = True  # the model writes each section's text from the computed facts
     answer_questions: bool = True  # the data agent answers the plan's brief-specific questions
     validation_size: int = 30  # patents in the validation sample
+    notable_count: int = 10  # notable patents shown as cards (0 = none)
+    fetch_figures: bool = False  # download their PDFs for figures (internet; the app turns it on)
+    figures_per_patent: int = 2
+    vision_model: str = ""  # a vision model that picks and describes the figures (empty: the page analysis alone)
 
 
 class LandscapeStatus(StrEnum):
@@ -58,6 +62,7 @@ class LandscapeResult:
     extraction: enrich.ExtractionResult | None = None
     analysis_frame: pd.DataFrame | None = None  # the patents the analytics are computed on
     check_frame: pd.DataFrame | None = None  # patents set aside for a manual check (the plan's check_partial)
+    notable: list = field(default_factory=list)  # notable.Notable cards, highest interest first
     exhibits: list[an.Exhibit] = field(default_factory=list)
     sections: list[nar.Section] = field(default_factory=list)
     facts_by_kind: dict[str, str] = field(default_factory=dict)  # what the text was written from

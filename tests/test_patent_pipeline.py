@@ -15,6 +15,7 @@ from .patent_fixtures import (
     make_export,
     name_clusters_reply,
     narrative_reply,
+    notable_reply,
     white_space_reply,
 )
 from .test_patent_plan import MODEL_PLAN
@@ -41,6 +42,9 @@ class FakeLLM:
         if "You name topic clusters" in system:
             self.calls["names"] += 1
             return Completion(content=name_clusters_reply(user, self.groups), latency_s=0.0)
+        if system.startswith("You write short notes on notable patents"):
+            self.calls["notes"] = self.calls.get("notes", 0) + 1
+            return Completion(content=notable_reply(user), latency_s=0.0)
         if system.startswith("You write"):
             self.calls["write"] += 1
             self.prompts.append((system, user))
@@ -73,7 +77,7 @@ def test_full_run_builds_map_and_topic_table():
     phases = [p for k, p in events if k == "phase"]
     assert phases == ["Cleaning the export", "Embedding patent texts", "Building the 2-D map",
                       "Finding topic clusters", "Naming the clusters", "Reading every patent",
-                      "Computing the landscape analytics", "Writing the report"]
+                      "Computing the landscape analytics", "Picking the notable patents", "Writing the report"]
     std = result.corpus.std
     for col in ("map_x", "map_y", "cluster_id", "cluster_label", "cluster_tech_group", "cluster_outlier"):
         assert col in std and std[col].notna().all(), col
@@ -98,7 +102,7 @@ def test_full_run_builds_map_and_topic_table():
     assert len(fig.layout.annotations) == len(topic_table)  # one numbered tag per cluster
     assert all(t.name.split(" · ")[0].isdigit() or t.name == "Off-topic (left out)" for t in fig.data)
     assert set(result.methods) == {"Year basis", "Text embedding", "Patent map", "Topic clusters", "Cluster keywords",
-                                   "Cluster names", "Patent details", "Report text"}
+                                   "Cluster names", "Patent details", "Report text", "Notable patents"}
     assert result.methods["Cluster names"].startswith("Cluster names written by the model for")
 
 
@@ -147,7 +151,8 @@ def test_tiny_sets_skip_the_map_with_a_note():
 
 def test_map_can_be_switched_off():
     result, events = _run(options=PipelineOptions(semantic_map=False, extract_details=False, write_report=False))
-    assert [p for k, p in events if k == "phase"] == ["Cleaning the export", "Computing the landscape analytics"]
+    assert [p for k, p in events if k == "phase"] == ["Cleaning the export", "Computing the landscape analytics",
+                                                      "Picking the notable patents"]
     assert result.semantic is None
 
 
@@ -274,7 +279,7 @@ def test_finished_parts_are_previewed_while_the_run_goes_on():
     result, events = _run(n=60, plan=plan, llm=FakeLLM(plan))
     previews = [p for k, p in events if k == "preview"]
     sections = len(result.sections)
-    assert len(previews) == 4 + sections  # cleaning, map, analytics, white space, then each written section
+    assert len(previews) == 5 + sections  # cleaning, map, analytics, white space, notable patents, each section
     for blocks in previews:
         assert blocks[0].kind == "note" and blocks[0].text.startswith("Preliminary results")
         assert not any(b.kind == "download" for b in blocks)  # downloads come with the final report
@@ -284,8 +289,9 @@ def test_finished_parts_are_previewed_while_the_run_goes_on():
     assert "off-topic" in previews[1][0].text  # not yet screened by the model: said so
     assert "off-topic" not in previews[2][0].text  # after reading and the analytics: final
     written = [sum(1 for b in blocks if b.kind == "caption" and b.text.startswith("Text written by the model"))
-               for blocks in previews[4:]]
+               for blocks in previews[5:]]
     assert written == list(range(1, sections + 1))  # sections fill in one by one
+    assert any(b.kind == "cards" for b in previews[4]) and not any(b.kind == "cards" for b in previews[3])
     assert any(b.kind == "download" for b in result.blocks)
 
 

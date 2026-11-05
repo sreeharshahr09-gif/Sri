@@ -9,6 +9,7 @@ openpyxl>=3.1,<4    # .xlsx
 scipy>=1.10,<2      # statistical tests inside the sandbox
 scikit-learn>=1.3,<2  # patent landscape: TF-IDF, HDBSCAN clustering
 umap-learn>=0.5,<0.6  # patent landscape: UMAP patent map
+pypdfium2>=4.30,<6   # patent landscape: figures from the notable patents' PDFs
 # Optional, for PatentSBERTa embeddings on the Patent landscape page (downloads the model once):
 # sentence-transformers
 # Optional, enabled in the sandbox automatically when installed:

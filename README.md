@@ -166,8 +166,10 @@ machine, or with a cloud model through OpenRouter (see *Cloud models*).
 
 1. **Upload the export** (Excel or CSV) from Derwent, PatSnap, Orbit, Lens, Espacenet or any
    other database. Columns are recognised automatically (number, title, abstract, claims,
-   assignee, priority/filing/publication dates, CPC/IPC, family ID, citations, and AI summaries
-   such as "Problem being solved"); you can correct the mapping.
+   assignee, priority/filing/publication dates, CPC/IPC, family ID, citations, legal status, PDF link,
+   and AI summaries such as "Problem being solved"); you can correct the mapping. A "family" column
+   that holds the same value in every row (e.g. *Family_ID_Source* = "extended") is not used to remove
+   duplicates, and the run notes say so.
 2. **Choose a standard objective, paste your brief, or both.**
    - **Standard objective** (optional): Lightweighting, Low rolling resistance, Durability,
      Uneven wear, Smart / connected tyres, NVH, Wet / dry traction, Dynamic growth, High
@@ -269,6 +271,39 @@ gets **Alive (from legal status)** (Yes / No / Unknown; pending applications cou
 focus set counts alive patents per assignee and the data agent can use it. The methodology lists
 which export column was used for each field and what a missing one limits, your answers to the
 brief's questions, and the patents the model read with low confidence.
+
+### Notable patents and their figures
+
+The report has a **🏅 Notable patents** section: the 10 patents with the highest *interest*, shown as cards
+(number, badges, title, assignee, office, year; what it claims; a highlighted line on why it matters; what to
+check; the figures; the scores).
+
+- **Interest** = mean of **value** and **novelty** (0–100), both computed, not guessed. Value is the
+  crown-jewel score (forward citations when exported, relevance, claim breadth, recency) and whether the patent
+  is alive. Novelty is how rare its problem × technology-group combination is in this set and how far it sits
+  from its 5 nearest neighbours in meaning (text embedding). Badges: *Core* / *Adjacent* (relevance), *Top value*,
+  *Top novelty*, *Alive* / *Dead*.
+- **Why it matters / Check:** one request to the model for all cards, written only from each patent's own
+  fields; a line with a number the patent does not state is replaced by a plain one.
+- **Figures (1–2 per patent):** the PDF comes from the export's link column (*PDF link*, *URL*, ...; in an Excel
+  export also the address behind a cell that only shows "PDF Link"), else from Google Patents by publication
+  number. PDFs are cached in `PATENT_CACHE_DIR/pdf`; for links that need a login, save the PDF there as
+  `<publication number>.pdf` (e.g. `CN107848341A.pdf`). Every page is rendered and analysed as an image, so
+  text-and-image PDFs and image-only scans (typical for CN, JP, KR and older EP publications) are handled alike:
+  the abstract drawing on the front page comes first, then drawing sheets that show something else; tables
+  and text are not taken for drawings.
+- **Vision model (optional):** under **Advanced settings**, *Vision model for the figures* (on OpenRouter it is
+  filled with `nvidia/nemotron-3.5-super-vl:free`). It sees the drawings the page analysis found (or the
+  first and last pages when it found none), picks the 1–2 most representative for the claim and describes each
+  in a line (*Drawings:* on the card). One request per patent; if it fails, the page analysis decides alone. It
+  uses the model server's address and key; set `LLM_VISION_BASE_URL` and `LLM_VISION_API_KEY` to use another
+  server (e.g. a local text model with an OpenRouter vision model).
+- **🖼️ Top patents by technology group**, under the report: choose one or more technology groups and press
+  **Show patents**: their top patents (scored against the whole analysed set) appear as cards with figures,
+  with an HTML download of the cards.
+- Turn the section off with *Notable patents with figures = 0*, or keep the cards without the downloads by
+  unticking *Fetch their PDFs* (the app then makes no internet requests for it). Needs `pypdfium2` (in
+  `requirements.txt`).
 
 ### Study template: under-belt rubber layer (TYRE-LAYER-LANDSCAPE-01)
 
@@ -481,7 +516,9 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `SANDBOX_TIMEOUT` | `60` | Seconds per code execution |
 | `SANDBOX_MEMORY_MB` | `4096` | Memory cap per execution (Linux/macOS) |
 | `PATENT_EMBEDDING_MODEL` | `AI-Growth-Lab/PatentSBERTa` | Embedding model for the patent map (`tfidf` to skip it) |
-| `PATENT_CACHE_DIR` | `~/.research_agent/patent_cache` | Cached embeddings and per-patent answers |
+| `PATENT_CACHE_DIR` | `~/.research_agent/patent_cache` | Cached embeddings, per-patent answers and patent PDFs (`pdf/`) |
+| `PATENT_PDF_LOOKUP` | `https://patents.google.com/patent/{number}/en` | Where a PDF is looked up by publication number when the export has no link; empty switches the lookup off |
+| `LLM_VISION_BASE_URL` / `LLM_VISION_API_KEY` | *(the model server's)* | Server and key for the vision model that picks and describes the figures |
 
 ## Architecture
 
@@ -505,6 +542,8 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `analyst_agent/patents/report_blocks.py` | Lays the result out as the report: map, tables, brief-specific answers, downloads |
 | `analyst_agent/patents/html_report.py` | The report as one offline HTML file |
 | `analyst_agent/patents/workbook.py` | The report's tables and chart data as one Excel workbook |
+| `analyst_agent/patents/notable.py` | Notable patents: value, novelty, the cards, the model's notes, top patents by group |
+| `analyst_agent/patents/figures.py` | Patent PDFs (link, Excel hyperlink, lookup, cache) and their representative figures |
 | `analyst_agent/patents/followup.py` | Follow-ups: routing, plan changes, rewrites, data-agent context |
 | `analyst_agent/workspace.py` | Read-only, root-bounded file access and text extraction |
 | `analyst_agent/loop.py` | The agent loop both agents share: step limit, nudges, repeats, context trimming, Stop, errors |

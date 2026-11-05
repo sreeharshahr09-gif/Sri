@@ -10,7 +10,7 @@ import pandas as pd
 
 @dataclass
 class Block:
-    kind: str  # "heading" | "markdown" | "table" | "plotly" | "metrics" | "note" | "caption" | "download" | "image" | "code"
+    kind: str  # "heading" | "markdown" | "table" | "plotly" | "metrics" | "note" | "caption" | "download" | "image" | "code" | "cards"
     title: str = ""
     text: str = ""
     table: pd.DataFrame | None = None
@@ -21,6 +21,7 @@ class Block:
     data: bytes | None = None  # download: the file's content
     file_name: str = ""
     mime: str = ""
+    items: list[dict] = field(default_factory=list)  # cards: one dict per card (see cards())
 
 
 def heading(title: str, level: int = 2) -> Block:
@@ -61,3 +62,9 @@ def image(png: bytes, title: str = "", caption: str = "") -> Block:
 
 def code(text: str, title: str = "Code") -> Block:
     return Block("code", title=title, text=text)
+
+
+def cards(items: list[dict], title: str = "", caption: str = "") -> Block:
+    """Patent cards. Each item: id, link, title, meta, badges (list), summary, why, check, scores, note, and figures
+    (a list of (png bytes, label))."""
+    return Block("cards", title=title, items=items, caption=caption)

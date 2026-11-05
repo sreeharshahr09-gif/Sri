@@ -30,7 +30,20 @@ table.data th, table.data td { border-bottom: 1px solid var(--line); padding: 6p
        padding: 12px 18px; margin: 18px 0 8px; } nav.toc a { color: var(--ink); } .meta { color: var(--muted); }
 details.code { margin: 8px 0 18px; } details.code summary { cursor: pointer; color: var(--muted); }
 details.code pre { background: var(--soft); padding: 10px 12px; border-radius: 6px; overflow-x: auto; font-size: 12.5px; }
-@media print { .tablewrap { max-height: none; overflow: visible; } h2 { break-before: page; } }
+.cards { display: flex; flex-direction: column; gap: 0; margin: 8px 0 18px; }
+.card { display: grid; grid-template-columns: 240px 1fr; gap: 18px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.card-figs figure { margin: 0 0 10px; } .card-figs img { width: 100%; border: 1px solid var(--line); background: #fff; }
+.card-figs figcaption { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.nofig { height: 150px; border: 1px dashed var(--line); border-radius: 6px; color: var(--muted); font-size: 12px;
+         display: flex; align-items: center; justify-content: center; text-align: center; padding: 8px; }
+.card-head { font-weight: 600; } .card-head a { color: var(--accent); }
+.badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; margin-left: 6px; border-radius: 4px;
+         border: 1px solid var(--line); color: var(--muted); } .badge.core { background: #4c1d95; color: #fff; border-color: #4c1d95; }
+.card-title { font-weight: 700; text-transform: uppercase; margin: 4px 0 2px; } .card-meta { color: var(--muted); font-size: 13px; }
+.card p { margin: 6px 0; } .why { background: #fff7ed; border-left: 4px solid var(--accent); padding: 8px 12px; margin: 8px 0; }
+.check { color: #a16207; font-size: 13px; } .scores { color: var(--muted); font-size: 13px; }
+@media (max-width: 640px) { .card { grid-template-columns: 1fr; } }
+@media print { .tablewrap { max-height: none; overflow: visible; } h2 { break-before: page; } .card { break-inside: avoid; } }
 """
 
 
@@ -134,6 +147,39 @@ def _slug(text: str, used: set[str]) -> str:
     return slug
 
 
+def _cards(items: list[dict]) -> str:
+    import base64
+
+    out = []
+    for item in items:
+        figs = "".join(
+            f'<figure><img alt="{html.escape(label)}" src="data:image/png;base64,{base64.b64encode(png).decode("ascii")}">'
+            f"<figcaption>{html.escape(label)}</figcaption></figure>" for png, label in item.get("figures", []))
+        if not figs:
+            figs = f'<div class="nofig">{html.escape(item.get("note") or "No drawing")}</div>'
+        number = html.escape(item.get("id", ""))
+        link = item.get("link", "")
+        if re.match(r"https?://", link):
+            number = f'<a href="{html.escape(link)}">{number}</a>'
+        badges = "".join(f'<span class="badge{" core" if b == "Core" else ""}">{html.escape(b)}</span>'
+                         for b in item.get("badges", []))
+        parts = [f'<div class="card-head">{number}{badges}</div>',
+                 f'<div class="card-title">{html.escape(item.get("title", ""))}</div>',
+                 f'<div class="card-meta">{html.escape(item.get("meta", ""))}</div>',
+                 f"<p>{_inline(item.get('summary', ''))}</p>"]
+        if item.get("why"):
+            parts.append(f'<div class="why">{_inline(item["why"])}</div>')
+        if item.get("check"):
+            parts.append(f'<div class="check">Check: {_inline(item["check"])}</div>')
+        if item.get("drawings"):
+            parts.append(f'<div class="scores"><strong>Drawings:</strong> {_inline(item["drawings"])}</div>')
+        if item.get("scores"):
+            parts.append(f'<div class="scores">{_inline(item["scores"])}</div>')
+        out.append(f'<div class="card"><div class="card-figs">{figs}</div><div class="card-body">{"".join(parts)}'
+                   "</div></div>")
+    return f'<div class="cards">{"".join(out)}</div>'
+
+
 def _table(df) -> str:
     shown = df.head(500).copy()
     for i in range(shown.shape[1]):  # nullable integers print a missing value as "<NA>": leave the cell empty
@@ -189,6 +235,8 @@ def report_html(blocks: list[rb.Block], title: str, subtitle: str = "", extra_cs
             src = base64.b64encode(block.data).decode("ascii")
             parts.append(f'<img alt="{html.escape(block.title or "chart")}" src="data:image/png;base64,{src}" '
                          'style="max-width:100%">')
+        elif block.kind == "cards":
+            parts.append(_cards(block.items))
         elif block.kind == "code":
             parts.append(f'<details class="code"><summary>{html.escape(block.title or "Code")}</summary>'
                          f"<pre><code>{html.escape(block.text)}</code></pre></details>")
