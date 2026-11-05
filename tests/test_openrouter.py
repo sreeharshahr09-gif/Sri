@@ -227,6 +227,6 @@ def test_each_kind_of_step_thinks_as_the_choice_says(mode, reading, analysis, pa
     extra = lambda thinks: THINKING_TOKENS if thinks else 0  # noqa: E731
     assert sent[0]["reasoning"] == {"enabled": reading} and sent[0]["max_tokens"] == 1000 + extra(reading)
     assert sent[1]["reasoning"] == {"enabled": analysis} and sent[1]["max_tokens"] == 1000 + extra(analysis)
-    assert sent[2]["reasoning"] == {"enabled": analysis} and sent[2]["max_tokens"] == 3000 + extra(analysis)
+    assert sent[2]["reasoning"] == {"enabled": analysis} and sent[2]["max_tokens"] == 6000 + extra(analysis)
     assert sent[3].get("reasoning") == (None if pages is None else {"enabled": pages})
     assert sent[3]["max_tokens"] == 2048 + extra(bool(pages))

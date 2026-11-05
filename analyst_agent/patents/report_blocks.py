@@ -20,13 +20,17 @@ from . import semantic as sem
 from .data import PatentCorpus
 from .html_report import report_html
 from .result import LandscapeResult, LandscapeStatus, PipelineOptions, analysed_index, analysed_topics
+from .workbook import report_workbook
 
 
 def assemble_blocks(result: LandscapeResult, options: PipelineOptions | None = None) -> list[rb.Block]:
     """The final report: its body, then the patent table and the downloads."""
-    blocks = report_body(result)
-    blocks.extend(table_blocks(result, options))
+    body = report_body(result)
+    blocks = body + table_blocks(result, options)
     blocks.append(html_download(result, blocks))
+    workbook = workbook_download(result, body)
+    if workbook is not None:
+        blocks.append(workbook)
     return blocks
 
 
@@ -66,6 +70,7 @@ def report_body(result: LandscapeResult) -> list[rb.Block]:
             blocks.append(rb.heading(sec.heading))
             blocks.extend(parts)
     blocks.extend(brief_specific_blocks(result))
+    blocks.extend(check_blocks(result))
     blocks.extend(nar.methodology_blocks(result))
     if result.warnings:
         blocks.append(rb.markdown("**Notes from this run**\n\n" + "\n".join(f"- {w}" for w in result.warnings)))
@@ -187,6 +192,32 @@ def brief_specific_blocks(result: LandscapeResult) -> list[rb.Block]:
                        "code run on the enriched patent table. The code behind each answer is shown.")] + parts
 
 
+def check_blocks(result: LandscapeResult) -> list[rb.Block]:
+    """The patents set aside for a manual check (the plan's check_partial): listed, not counted."""
+    frame = result.check_frame
+    if frame is None or frame.empty:
+        return []
+    fields = result.extraction.fields if result.extraction is not None else []
+    shown = {"Patent ID": frame["id"], "Year": frame["year"].astype("Int64"), "Assignee": frame["assignee"]}
+    if "alive" in frame:
+        shown["Alive"] = frame["alive"]
+    for f in fields:
+        if f.key in frame and (f.key == "problem" or (f.key.startswith("x_") and f.choices)):
+            shown[f.column] = frame[f.key]
+    if "confidence" in frame:
+        shown["Confidence"] = frame["confidence"]
+    shown["Title"] = frame["title"].map(lambda t: _short(t, 110))
+    if "core_claim" in frame:
+        shown["Core claim"] = frame["core_claim"].map(lambda t: _short(t, 200))
+    table = pd.DataFrame(shown).sort_values(["Year", "Patent ID"], na_position="last").reset_index(drop=True)
+    rule = f" Rule: {result.plan.relevance_rule}" if result.plan.relevance_rule else ""
+    return [rb.heading("🔍 Records to check (not counted)"),
+            rb.table(table, title=f"{len(table):,} patents need a manual decision",
+                     caption="Rated Partial against the study's scope, so set aside: none of them is counted in the "
+                             "charts, tables or text above. Confirm or reject each by hand; the CSV has all their "
+                             "columns." + rule)]
+
+
 def agent_run_blocks(run: DataRun) -> list[rb.Block]:
     """An AgentRun as report blocks: answer, number check, charts and tables, code."""
     blocks: list[rb.Block] = []
@@ -254,7 +285,7 @@ def table_blocks(result: LandscapeResult, options: PipelineOptions | None = None
         blocks.append(rb.metrics([
             ("Read by the model", f"{read:,} of {res.stats['patents']:,}"),
             ("High relevance", f"{int(rel.get('High', 0)):,}"),
-            ("Partial", f"{int(rel.get('Partial', 0)):,}"),
+            ("Partial (set aside to check)" if result.plan.check_partial else "Partial", f"{int(rel.get('Partial', 0)):,}"),
             ("Low (off-topic)", f"{int(rel.get('Low', 0)):,}"),
         ]))
     problem_col = next((f.column for f in res.fields if f.key == "problem"), None) if res is not None else None
@@ -291,6 +322,16 @@ def table_blocks(result: LandscapeResult, options: PipelineOptions | None = None
                         "findings.",
             ))
     return blocks
+
+
+def workbook_download(result: LandscapeResult, body: list[rb.Block]) -> rb.Block | None:
+    data = report_workbook(body, f"Patent landscape: {result.plan.title}")
+    if data is None:
+        return None
+    return rb.download("Download the report's tables (Excel)", data, f"{_slug(result.plan.title)}_tables.xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                       caption="One sheet per table and per chart (the numbers behind it), with a contents sheet "
+                               "first. The patent-level data is in the CSV.")
 
 
 def html_download(result: LandscapeResult, blocks: list[rb.Block]) -> rb.Block:

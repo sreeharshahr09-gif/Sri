@@ -233,7 +233,7 @@ def test_real_client_settings_for_extraction(plan, std):
     assert res.stats["batch size"] == 6 and res.stats["extracted"] == 10
     cfg = seen[0]
     assert cfg.temperature == 0.2 and cfg.seed == 7 and cfg.read_timeout == 600
-    assert cfg.max_tokens == 600 * 6 + 1500 and seen[1].max_tokens == 600 * 4 + 1500
+    assert cfg.max_tokens == 1000 * 6 + 2000 and seen[1].max_tokens == 1000 * 4 + 2000  # room in 16k tokens
     assert res.info.startswith("qwen-test, 6 patents per request")
 
 

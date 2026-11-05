@@ -172,7 +172,15 @@ def test_downloads(result):
     downloads = {b.file_name: b for b in result.blocks if b.kind == "download"}
     assert set(downloads) == {"uneven_wear_in_tbr_and_pcr_tires_patents.csv",
                               "uneven_wear_in_tbr_and_pcr_tires_validation_sample.csv",
-                              "uneven_wear_in_tbr_and_pcr_tires_report.html"}
+                              "uneven_wear_in_tbr_and_pcr_tires_report.html",
+                              "uneven_wear_in_tbr_and_pcr_tires_tables.xlsx"}
+    book = pd.read_excel(io.BytesIO(downloads["uneven_wear_in_tbr_and_pcr_tires_tables.xlsx"].data), sheet_name=None)
+    contents = pd.read_excel(io.BytesIO(downloads["uneven_wear_in_tbr_and_pcr_tires_tables.xlsx"].data), skiprows=2)
+    assert list(book)[0] == "Contents" and list(contents["Sheet"]) == list(book)[1:]
+    assert {"table", "chart data"} <= set(contents["Content"])  # the report's tables and its charts' numbers
+    assert not any("patent map" in t.lower() for t in contents["Title"])  # a map of dots has no table behind it
+    trend = next(s for s, t in zip(contents["Sheet"], contents["Title"]) if t.startswith("Patents per year"))
+    assert "All patents" in book[trend].columns
     sample = pd.read_csv(io.BytesIO(downloads["uneven_wear_in_tbr_and_pcr_tires_validation_sample.csv"].data),
                          encoding="utf-8-sig", keep_default_na=False)
     assert len(sample) == 30

@@ -19,12 +19,12 @@ from ..enums import StrEnum
 from ..llm import LLMClient
 from . import narrative as nar
 from .llmjson import JSONReplyError, LLMError, ask_json
-from .plan import AnalysisPlan, Category, clean_plan
+from .plan import AnalysisPlan, Category, clean_plan, focus_names
 
 ACTIONS = ("analyse", "change_plan", "rewrite")
 PLAN_KEYS = ["title", "objective", "segments", "years", "problem_label", "problems", "tech_buckets",
              "complexity_levels", "in_scope", "competitors", "regions", "extra_fields", "report_sections",
-             "analysis_questions"]
+             "analysis_questions", "focus"]
 
 ROUTER_SYSTEM = """\
 You route a follow-up request about a finished patent landscape report. Decide what the user wants:
@@ -43,7 +43,8 @@ Reply with ONLY one JSON object:
 Plan keys: title, objective, segments (list), years ([first, last], or null for no limit), problem_label, \
 problems / tech_buckets / complexity_levels / extra_fields (lists of {"name", "description"}), in_scope, \
 competitors (list), regions (list), report_sections (list), analysis_questions (list of questions answered \
-from the data in the report). Keep everything the user did not ask to change.\
+from the data in the report), focus (list of the problem categories to put first). Keep everything the user did \
+not ask to change.\
 """
 
 
@@ -96,7 +97,7 @@ def route(llm, text: str, plan: AnalysisPlan, headings: list[str]) -> Route:
     user = (f"Current plan:\n{json.dumps(_compact_plan(plan), ensure_ascii=False)}\n\n"
             f"Report sections: {json.dumps(headings, ensure_ascii=False)}\n\nRequest: {text.strip()}")
     try:
-        data = ask_json(llm, ROUTER_SYSTEM, user, retries=1, max_tokens=2500) if llm is not None else None
+        data = ask_json(llm, ROUTER_SYSTEM, user, retries=1, max_tokens=6000) if llm is not None else None
     except (LLMError, JSONReplyError) as exc:
         data = None
         note = f"decided by rules: the model could not ({exc})"
@@ -134,7 +135,7 @@ def describe_changes(old: AnalysisPlan, new: AnalysisPlan) -> list[str]:
         label = {"years": "Years", "problems": old.problem_label or "Problems", "tech_buckets": "Technology groups",
                  "complexity_levels": "Complexity levels", "extra_fields": "Extra columns",
                  "report_sections": "Report sections", "in_scope": "Scope", "problem_label": "Problem dimension",
-                 "analysis_questions": "Brief-specific questions"
+                 "analysis_questions": "Brief-specific questions", "focus": "Focus"
                  }.get(key, key.replace("_", " ").capitalize())
         if key == "years":
             fmt = lambda y: f"{y[0]}–{y[1]}" if y else "no limit"  # noqa: E731
@@ -187,7 +188,8 @@ def rewrite(result, llm, wanted: list[str], instruction: str) -> list[nar.Sectio
         fresh.text, fresh.flagged, fresh.note = "", [], ""
         answered = [q for q, run in getattr(result, "question_runs", []) if run.answer and not run.error]
         nar.write_sections([fresh], result.facts_by_kind, result.all_facts, result.plan.brief, result.plan.answers,
-                           llm, instruction=instruction, answered_elsewhere=answered)
+                           llm, instruction=instruction, answered_elsewhere=answered,
+                           summary_format=result.plan.summary_format)
         out.append(fresh)
     return out
 
@@ -201,7 +203,7 @@ def agent_client(llm):
     if not isinstance(llm, LLMClient):
         return llm
     cfg = llm.config
-    return type(llm)(replace(cfg, no_think=True, think=thinks_in(cfg), max_tokens=max(cfg.max_tokens, 3000)),
+    return type(llm)(replace(cfg, no_think=True, think=thinks_in(cfg), max_tokens=max(cfg.max_tokens, 6000)),
                      session=llm.session)
 
 
@@ -248,10 +250,22 @@ def _landscape_profile(result, dataset: Dataset, sample_rows: int, fact_chars: i
         cats = {f.column: f.choices for f in result.extraction.fields if f.choices}
         lines.append("Columns filled by the model for every patent (values separated by '; ' where several apply): "
                      + "; ".join(f"'{col}' ∈ {{{', '.join(ch)}}}" for col, ch in cats.items()) + ".")
-        off_topic = len(result.enriched) - len(dataset.df)
+        check = getattr(result, "check_frame", None)
+        checked = 0 if check is None else len(check)
+        off_topic = len(result.enriched) - len(dataset.df) - checked
         lines.append(f"The table holds the {len(dataset.df):,} patents the report analyses"
                      + (f"; the {off_topic:,} patents judged off-topic (Relevance: Low) are left out, as in the report"
-                        if off_topic > 0 else "") + ". 'Year' is the " + result.corpus.year_basis + " year.")
+                        if off_topic > 0 else "")
+                     + (f"; the {checked:,} patents rated Relevance: Partial are set aside for a manual check and are "
+                        "not in it either" if checked else "") + ". 'Year' is the " + result.corpus.year_basis + " year.")
+    if "Alive (from legal status)" in dataset.df:
+        lines.append("'Alive (from legal status)' is Yes / No / Unknown, derived from the export's legal status "
+                     "(pending applications count as alive); the original column is kept too.")
+    focus = focus_names(plan)
+    if focus:
+        lines.append(f"The study's focus {plan.problem_label.lower()} categories: {', '.join(focus)}.")
+    if plan.analysis_rules:
+        lines.append("Rules for every chart and answer in this study (follow them):\n" + plan.analysis_rules.strip())
     incomplete = getattr(result, "incomplete_years", None) or []
     if incomplete:
         lines.append(f"Years {', '.join(map(str, incomplete))} are incomplete because patents publish about 18 months "

@@ -35,6 +35,7 @@ from analyst_agent.patents.followup import (
 from analyst_agent.patents.pipeline import LandscapeResult, PipelineOptions, run_landscape
 from analyst_agent.patents.result import LandscapeStatus
 from analyst_agent.patents.plan import (
+    MAX_ANALYSIS_QUESTIONS,
     AnalysisPlan,
     categories_from_text,
     categories_to_text,
@@ -51,7 +52,7 @@ from ui.data_page import render_run
 
 JOB = "pl_job"
 MAPPED_ROLES = ["id", "title", "abstract", "claims", "assignee", "priority_date", "filing_date", "pub_date",
-                "cpc", "ipc", "family", "country", "problem", "method", "advantage", "cited_by"]
+                "cpc", "ipc", "family", "country", "problem", "method", "advantage", "cited_by", "legal_status"]
 STANDARD_COLUMNS = ("Topic, Segment, Problem, Technology group, Complexity, Component, Performance target, "
                     "Design lever, Mechanism, Core claim, Key parameters, Trade-offs, Relevance, Confidence")
 
@@ -229,6 +230,11 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
                 st.markdown("**Classification codes:** " + "; ".join(plan.classification_codes))
             st.caption("A starting point for the search in your patent database; check the codes there. The export "
                        "you upload decides what the landscape covers.")
+    names = {c.name.lower() for c in plan.problems}
+    unknown = [f for f in plan.focus if f.strip().lower() not in names]
+    if unknown:
+        st.warning(f"Focus categories that are not among the {(plan.problem_label or 'problem').lower()} categories "
+                   f"are ignored: {', '.join(unknown)}. Write them exactly as in the list below.", icon="⚠️")
     if len(plan.problems) < 3:
         label = (plan.problem_label or "problem").lower()
         st.warning(f"Only {len(plan.problems)} {label} categor{'y' if len(plan.problems) == 1 else 'ies'}: patents "
@@ -256,13 +262,43 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
         competitors = d.text_input("Competitors to watch", ", ".join(plan.competitors))
         regions = e.text_input("Regions / patent offices to focus on (empty = all)", ", ".join(plan.regions))
         extra = st.text_area(f"Extra columns for the CSV, beyond the standard ones ({STANDARD_COLUMNS})",
-                             categories_to_text(plan.extra_fields), height=100)
+                             categories_to_text(plan.extra_fields), height=100,
+                             help="One per line, `Name: what to extract`. End the description with `One of: A | B "
+                                  "| C` for fixed values (checked, counted and mapped against the problem dimension; "
+                                  "`B = meaning` explains a value), or `Any of: ...` when several can apply.")
         sections = st.text_area("Report sections (one per line)", "\n".join(plan.report_sections), height=130)
         questions = st.text_area(
             "Brief-specific questions, answered from the data in the report (one per line)",
             "\n".join(plan.analysis_questions), height=110,
             help="The data agent answers each with Python code on the enriched patent table, with charts and the "
-                 "code shown. Up to 6. Leave empty to skip.")
+                 f"code shown. Up to {MAX_ANALYSIS_QUESTIONS}. Leave empty to skip.")
+        with st.expander("🎯 Focus, screening and report rules", expanded=plan.source == "preset" and bool(
+                plan.focus or plan.relevance_rule or plan.summary_format)):
+            label = (problem_label or plan.problem_label or "problem").lower()
+            f1, f2, f3 = st.columns([3, 1, 1])
+            focus = f1.text_input(f"Focus {label} categories (comma-separated; empty = none)", ", ".join(plan.focus),
+                                  help="The executive summary leads with the patents addressing these, and only "
+                                       "they are assessed for white space.")
+            max_problems = f2.number_input(f"Most {label}s per patent (0 = any)", 0, 10, int(plan.max_problems),
+                                           help="The main one first: e.g. 3 = a primary and up to two secondary.")
+            support = f3.number_input("White space: least patents nearby (0 = off)", 0, 1000,
+                                      int(plan.white_space_support),
+                                      help="A gap counts only when the other cells of its row and column hold at "
+                                           "least this many patents together; otherwise it is reported as "
+                                           "insufficient data.")
+            relevance_rule = st.text_area(
+                "How to rate relevance (High / Partial / Low; empty = standard)", plan.relevance_rule, height=90,
+                help="E.g. eligibility rules on the extra columns. Standard: High = directly addresses the scope, "
+                     "Partial = related but secondary, Low = not about it (left out).")
+            check_partial = st.checkbox("Set Partial patents aside for a manual check (listed, not counted)",
+                                        plan.check_partial)
+            summary_format = st.text_area(
+                "Executive summary: structure and rules (empty = standard)", plan.summary_format, height=150,
+                help="Replaces the standard 5–8 findings + R&D directions. The rule that every number must come "
+                     "from the computed facts stays.")
+            analysis_rules = st.text_area(
+                "Rules for every chart and answer of the data agent (empty = none)", plan.analysis_rules, height=120,
+                help="E.g. count families, show n in every chart title, keep Not stated as a category.")
 
         answers = {}
         if plan.questions:
@@ -286,6 +322,11 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
         with st.expander("Advanced settings"):
             st.checkbox("Read every patent with the model (fills the study's columns for the CSV)",
                         key=remember("pl_extract", True))
+            long_text = st.checkbox(
+                "Give the model more of each patent's text (whole first claim up to 4,000 characters, abstract up to "
+                "2,500)", plan.long_text,
+                help="Better claimed parameters and complexity levels, at about twice the tokens per patent. Patents "
+                     "already read with the shorter text are read again (each version is cached).")
             st.checkbox("Build the patent map and topic clusters", key=remember("pl_semantic", True))
             st.checkbox("Answer the brief-specific questions (data agent)", key=remember("pl_questions", True))
             st.text_input(
@@ -308,8 +349,12 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
             in_scope=in_scope.strip(), competitors=list_from_text(competitors), regions=list_from_text(regions),
             extra_fields=categories_from_text(extra),
             report_sections=[s.strip() for s in sections.splitlines() if s.strip()] or plan.report_sections,
-            analysis_questions=[q.strip().lstrip("-•* ").strip() for q in questions.splitlines() if q.strip()][:6],
+            analysis_questions=[q.strip().lstrip("-•* ").strip() for q in questions.splitlines()
+                                if q.strip()][:MAX_ANALYSIS_QUESTIONS],
             answers={q: a for q, a in answers.items() if a.strip()},
+            focus=list_from_text(focus), max_problems=int(max_problems), white_space_support=int(support),
+            relevance_rule=relevance_rule.strip(), check_partial=bool(check_partial),
+            summary_format=summary_format.strip(), analysis_rules=analysis_rules.strip(), long_text=bool(long_text),
         )
         st.session_state.pl_plan = plan
         st.session_state.pl_mapping = mapping
@@ -327,7 +372,7 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
         st.caption(f"With this plan, **{n:,} patents** will be analysed (of {flow[0].remaining:,} in the export; "
                    f"year basis: {basis}).")
         if st.session_state.get("pl_extract", True) and n:
-            size = enrich.batch_size_for(llm_cfg.context_tokens)
+            size = enrich.batch_size_for(llm_cfg.context_tokens, plan.long_text)
             st.caption(f"The model reads them in about {-(-n // size):,} requests of {size} patents (context window "
                        f"{llm_cfg.context_tokens:,} tokens). Answers are cached, so a stopped run continues where it "
                        "left off. For a first look, try a trial run of 50–100 patents.")

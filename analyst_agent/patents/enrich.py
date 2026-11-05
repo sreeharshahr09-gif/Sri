@@ -36,6 +36,31 @@ class FieldSpec:
     choices: list[str] | None = None  # allowed values, validated
     multi: bool = False  # several choices allowed, joined with "; "
     limit: int = 160  # characters kept
+    notes: dict[str, str] | None = None  # what each choice means, for the prompt
+    max_choices: int = 0  # with `multi`: keep at most this many, in the order given (0 = all)
+
+
+# An extra column whose description ends "One of: A | B = what B means | C" takes exactly one of those values;
+# "Any of: ..." takes one or more.
+_CHOICE_LIST = re.compile(r"(?is)^(?P<lead>.*?)[\s.;,]*\b(?P<kind>one|any) of\s*:\s*(?P<values>[^|]+(?:\|[^|]+)+)$")
+
+
+def extra_choices(description: str) -> tuple[str, list[str], dict[str, str], bool] | None:
+    """(instruction, choices, what each means, several allowed) when the description lists fixed values."""
+    m = _CHOICE_LIST.match((description or "").strip())
+    if not m:
+        return None
+    choices, notes = [], {}
+    for item in m.group("values").split("|"):
+        name, _, meaning = item.partition("=")
+        name, meaning = " ".join(name.split()), " ".join(meaning.split()).rstrip(".")
+        if name and name.lower() not in {c.lower() for c in choices}:
+            choices.append(name)
+            if meaning:
+                notes[name] = meaning
+    if len(choices) < 2:
+        return None
+    return m.group("lead").strip().rstrip(".") or "", choices, notes, m.group("kind").lower() == "any"
 
 
 def build_fields(plan: AnalysisPlan) -> list[FieldSpec]:
@@ -47,8 +72,10 @@ def build_fields(plan: AnalysisPlan) -> list[FieldSpec]:
                   "truck & bus, off-road), not a tyre component",
                   choices=segments + ["Not specified"] if segments else None, multi=True),
         FieldSpec("problem", plan.problem_label or "Problem",
-                  f"the {(plan.problem_label or 'problem').lower()} the patent addresses",
-                  choices=problems + ["Other", "Not specified"] if problems else None, multi=True),
+                  f"the {(plan.problem_label or 'problem').lower()} the patent addresses"
+                  + (f", the main one first; at most {plan.max_problems}" if plan.max_problems else ""),
+                  choices=problems + ["Other", "Not specified"] if problems else None, multi=True,
+                  max_choices=plan.max_problems),
         FieldSpec("tech_group", "Technology group", "the technology group of the solution",
                   choices=[b.name for b in plan.tech_buckets] or None),
         FieldSpec("complexity", "Complexity", "how complex the solution is to implement",
@@ -65,20 +92,30 @@ def build_fields(plan: AnalysisPlan) -> list[FieldSpec]:
                   limit=240),
         FieldSpec("trade_offs", "Trade-offs", "what it balances or sacrifices, e.g. \"wet grip vs rolling "
                                                "resistance\"; \"not stated\" if the text does not say"),
-        FieldSpec("relevance", "Relevance", "relevance to the study scope: High = directly addresses it, "
-                                             "Partial = related but secondary, Low = not about it",
+        FieldSpec("relevance", "Relevance", f"relevance to the study scope, by this rule: {plan.relevance_rule.rstrip('. ')}"
+                  if plan.relevance_rule else "relevance to the study scope: High = directly addresses it, "
+                                              "Partial = related but secondary, Low = not about it",
                   choices=["High", "Partial", "Low"]),
         FieldSpec("confidence", "Confidence", "how sure you are, given how much the text says",
                   choices=["High", "Medium", "Low"]),
     ]
     taken = {f.column.lower() for f in fields}
+    extras = []
     for extra in plan.extra_fields:
         if extra.name.lower() in taken:
             continue
         taken.add(extra.name.lower())
         key = re.sub(r"[^a-z0-9]+", "_", extra.name.lower()).strip("_") or f"extra_{len(fields)}"
-        fields.append(FieldSpec(f"x_{key}", extra.name, extra.description or extra.name))
-    return fields
+        fixed = extra_choices(extra.description)
+        if fixed:
+            text, choices, notes, multi = fixed
+            extras.append(FieldSpec(f"x_{key}", extra.name, text or extra.name, choices=choices, multi=multi,
+                                    notes=notes or None))
+        else:
+            extras.append(FieldSpec(f"x_{key}", extra.name, extra.description or extra.name))
+    if plan.relevance_rule:  # the rule may refer to the extra columns: the model fills those first
+        return fields[:-2] + extras + fields[-2:]
+    return fields + extras
 
 
 def system_prompt(plan: AnalysisPlan, fields: list[FieldSpec]) -> str:
@@ -99,7 +136,7 @@ def system_prompt(plan: AnalysisPlan, fields: list[FieldSpec]) -> str:
     for f in fields:
         text = f'- "{f.key}": {f.instruction}'
         if f.choices:
-            desc = descriptions.get(f.key, {})
+            desc = descriptions.get(f.key) or f.notes or {}
             options = "; ".join(f"{c} ({desc[c]})" if desc.get(c) else c for c in f.choices)
             text += (". One or more of: " if f.multi else ". Exactly one of: ") + options
             if f.multi:
@@ -115,8 +152,14 @@ def system_prompt(plan: AnalysisPlan, fields: list[FieldSpec]) -> str:
     return "\n".join(lines)
 
 
-def patent_prompt(row: pd.Series) -> str:
+# Characters of each part the model reads: (title, abstract, problem/method/advantages, first claim, claim opening).
+STANDARD_TEXT = (300, 1000, 300, 1100, 300)
+LONG_TEXT = (300, 2500, 600, 4000, 1000)  # the plan's long_text: whole first claims, as a rule
+
+
+def patent_prompt(row: pd.Series, long: bool = False) -> str:
     """The text of one patent as the model sees it (also the cache key's source)."""
+    title_n, abstract_n, summary_n, claim_n, head_n = LONG_TEXT if long else STANDARD_TEXT
 
     def part(label: str, value, limit: int, head: int = 0) -> str | None:
         text = " ".join(str(value or "").split())
@@ -132,9 +175,10 @@ def patent_prompt(row: pd.Series) -> str:
 
     year = "" if pd.isna(row.get("year")) else str(int(row["year"]))
     head = " | ".join(x for x in [str(row.get("id") or ""), year, str(row.get("assignee") or "")] if x)
-    parts = [head, part("Title", row.get("title"), 300), part("Abstract", row.get("abstract"), 1000),
-             part("Problem", row.get("problem"), 300), part("Method", row.get("method"), 300),
-             part("Advantages", row.get("advantage"), 300), part("First claim", row.get("first_claim"), 1100, head=300)]
+    parts = [head, part("Title", row.get("title"), title_n), part("Abstract", row.get("abstract"), abstract_n),
+             part("Problem", row.get("problem"), summary_n), part("Method", row.get("method"), summary_n),
+             part("Advantages", row.get("advantage"), summary_n),
+             part("First claim", row.get("first_claim"), claim_n, head=head_n)]
     return "\n".join(p for p in parts if p)
 
 
@@ -152,8 +196,9 @@ def match_choice(value: str, choices: list[str]) -> str | None:
     v = _norm(value)
     if not v:
         return None
-    if v in _UNSTATED:
-        return "Not specified" if "Not specified" in choices else None
+    if v in _UNSTATED:  # the choice that says so ("Not specified", "Not stated", "UNCLEAR"), if there is one
+        return next((c for c in choices if _norm(c) in _UNSTATED), None) or next(
+            (c for c in choices if _norm(c) == "unclear"), None)
     for c in choices:
         if _norm(c) == v:
             return c
@@ -171,7 +216,7 @@ def clean_value(spec: FieldSpec, value) -> tuple[str, bool]:
     text = " ".join(str(value if value is not None else "").split())
     if not spec.choices:
         return (text[: spec.limit] or NOT_STATED), False
-    fallback = "Not specified" if "Not specified" in spec.choices else ""
+    fallback = next((c for c in spec.choices if _norm(c) in _UNSTATED), "")  # e.g. "Not specified"
     if spec.multi:
         picked, corrected = [], False
         for part in re.split(r"[;|,]", text):
@@ -185,8 +230,10 @@ def clean_value(spec: FieldSpec, value) -> tuple[str, bool]:
                 corrected = True
                 hits = ["Other"] if "Other" in spec.choices else []
             picked += [h for h in hits if h not in picked]
-        if len(picked) > 1 and "Not specified" in picked:
-            picked.remove("Not specified")
+        if len(picked) > 1 and fallback in picked:
+            picked.remove(fallback)
+        if spec.max_choices and len(picked) > spec.max_choices:
+            picked = picked[: spec.max_choices]
         return ("; ".join(picked) or fallback), corrected or not picked
     hit = match_choice(text, spec.choices)
     return (hit or fallback), hit is None
@@ -210,10 +257,10 @@ class ExtractionResult:
     stop_reason: str = ""  # why it stopped, if not at the user's request (e.g. the service's daily limit)
 
 
-def batch_size_for(context_tokens: int) -> int:
-    """Patents per request: about 1,600 tokens each (prompt + reply, with room for a model that thinks first)
-    after the instructions and the reply's reserve."""
-    return max(1, min(MAX_BATCH, (int(context_tokens or 16384) - 3000) // 1600))
+def batch_size_for(context_tokens: int, long: bool = False) -> int:
+    """Patents per request: about 1,600 tokens each (prompt + reply, with room for a model that thinks first;
+    2,800 with the long text) after the instructions and the reply's reserve."""
+    return max(1, min(MAX_BATCH, (int(context_tokens or 16384) - 3000) // (2800 if long else 1600)))
 
 
 def _signature(system: str, model: str) -> str:
@@ -269,11 +316,11 @@ def extract_details(
     model_name = (llm.config.model + (" with thinking" if thinks_in(llm.config, reading=True) else "")
                   if isinstance(llm, LLMClient) else type(llm).__name__)
     context = llm.config.context_tokens if isinstance(llm, LLMClient) else 16384
-    size = batch_size or batch_size_for(context)
+    size = batch_size or batch_size_for(context, plan.long_text)
     cache = _Cache(CACHE_DIR / "extract" / f"{_signature(system, model_name)}.jsonl" if use_cache else None)
     started = time.perf_counter()
 
-    prompts = {idx: patent_prompt(row) for idx, row in std.iterrows()}
+    prompts = {idx: patent_prompt(row, plan.long_text) for idx, row in std.iterrows()}
     values: dict = {}
     status: dict = {}
     corrected = 0
@@ -294,7 +341,10 @@ def extract_details(
         client = llm
         if isinstance(llm, LLMClient):
             cfg = llm.config
-            client = structured_client(llm, 600 * len(batch) + 1500, reading=True,
+            # Generous, within what the context window leaves after the prompt (about 3 characters a token).
+            room = cfg.context_tokens - (len(system) + len(user)) // 3 - 256
+            client = structured_client(llm, max(600 * len(batch) + 1500, min(1000 * len(batch) + 2000, room)),
+                                       reading=True,
                                        read_timeout=max(cfg.read_timeout, 600),
                                        temperature=min(cfg.temperature, 0.2), seed=seed)
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -382,7 +432,8 @@ def extract_details(
     table["Extraction"] = pd.Series(status)
     stats["values corrected"] = int(corrected)
     stats["seconds"] = round(time.perf_counter() - started, 1)
-    info = (f"{model_name}, {size} patents per request, temperature ≤ 0.2, seed {seed}; categories checked against "
+    info = (f"{model_name}, {size} patents per request" + (", long patent text" if plan.long_text else "")
+            + f", temperature ≤ 0.2, seed {seed}; categories checked against "
             f"the plan ({stats['values corrected']} values corrected); "
             f"{stats['extracted']} extracted now, {stats['from cache']} from the cache, {stats['failed']} failed")
     return ExtractionResult(table=table, fields=fields, stats=stats, info=info, stopped=stopped,

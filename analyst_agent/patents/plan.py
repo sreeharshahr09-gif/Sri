@@ -26,6 +26,7 @@ DEFAULT_COMPLEXITY = [
     Category("Intermediate", "material or construction changes"),
     Category("Complex", "electronic, IoT or active systems"),
 ]
+MAX_ANALYSIS_QUESTIONS = 12  # brief-specific questions the data agent answers in one run
 DEFAULT_SECTIONS = [
     "📊 Executive Summary",
     "📈 Data Visualizations",
@@ -58,6 +59,15 @@ class AnalysisPlan:
     answers: dict[str, str] = field(default_factory=dict)
     brief: str = ""
     source: str = "fallback"  # "model" when the model produced it, "preset" for a standard objective
+    # Focus and screening rules (all optional; the defaults keep the standard report).
+    focus: list[str] = field(default_factory=list)  # problem categories the summary and white space put first
+    max_problems: int = 0  # at most this many problem categories per patent, the main one first (0 = any)
+    relevance_rule: str = ""  # how to rate High / Partial / Low; empty = the standard definitions
+    check_partial: bool = False  # Partial patents are set aside for a manual check, not counted
+    white_space_support: int = 0  # a gap needs this many patents in its row and column together (0 = no rule)
+    summary_format: str = ""  # the executive summary's structure; empty = the standard one
+    analysis_rules: str = ""  # conventions for every chart and answer of the data agent
+    long_text: bool = False  # the model reads more of each patent (whole first claim, longer abstract)
 
     def to_dict(self) -> dict:
         data = asdict(self)
@@ -71,6 +81,17 @@ class AnalysisPlan:
             data[key] = [Category(**c) if isinstance(c, dict) else Category(str(c)) for c in data.get(key, [])]
         data["years"] = tuple(data["years"]) if data.get("years") else None
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
+# Rule fields a model-made or changed plan keeps from the plan it starts from, unless it sets them itself.
+RULE_FIELDS = ("max_problems", "relevance_rule", "check_partial", "white_space_support", "summary_format",
+               "analysis_rules", "long_text")
+
+
+def focus_names(plan: AnalysisPlan) -> list[str]:
+    """The plan's focus categories that are among its problem categories, in the plan's order."""
+    wanted = {f.strip().lower() for f in plan.focus if f.strip()}
+    return [c.name for c in plan.problems if c.name.lower() in wanted]
 
 
 # --------------------------------------------------------------------------- editable text form
@@ -127,7 +148,8 @@ ONLY one JSON object, no other text, with exactly these keys:
 "extra_fields": list of {"name", "description"}: up to 6 additional facts worth extracting from every patent for this topic, beyond these standard ones: topic, segment, problem, technology group, complexity, component, performance target, design lever, mechanism, core claim, key parameters, trade-offs. Use short column names.
 "report_sections": list of the report headings the brief asks for, in order and exactly as written (keep emojis)
 "questions": list of the questions the brief says to ask the user before running the analysis
-"analysis_questions": list of the specific analyses the brief asks for that can be answered from the patent table (counts, comparisons, trends or values per category, assignee or year), each written as one clear question; up to 6; [] if none
+"analysis_questions": list of the specific analyses the brief asks for that can be answered from the patent table (counts, comparisons, trends or values per category, assignee or year), each written as one clear question; up to 10; [] if none
+"focus": list of the problem categories the brief names as its focus or priority, written exactly as in "problems"; [] if none
 "not_possible": list of things the brief asks for that cannot be done here, each with a short reason. This tool works offline on the patent export the user uploaded: it cannot search the web or online databases (the uploaded export replaces that search) and it cannot analyse images.
 
 Use only information from the brief and the sample titles, plus sensible defaults where a key is missing. \
@@ -151,7 +173,7 @@ def parse_brief(llm, brief: str, sample_titles: list[str] | None = None,
         user += (f"\n\nTitles of {len(titles)} randomly chosen patents in the uploaded export:\n"
                  + "\n".join(f"- {t}" for t in titles))
     try:
-        data = ask_json(llm, PLAN_SYSTEM, user, retries=1, max_tokens=3000)
+        data = ask_json(llm, PLAN_SYSTEM, user, retries=1, max_tokens=8000)  # a whole plan, long ones included
     except (LLMError, JSONReplyError) as exc:
         fallback.not_possible.append(f"The model could not prepare the plan ({exc}); it was set up by rules instead. "
                                      "Please review it.")
@@ -161,7 +183,7 @@ def parse_brief(llm, brief: str, sample_titles: list[str] | None = None,
     plan = clean_plan(data, brief, fallback)
     if base is not None:  # what the model left out stays as in the standard plan
         for key in ("segments", "problems", "tech_buckets", "complexity_levels", "extra_fields", "analysis_questions",
-                    "keywords", "classification_codes"):
+                    "keywords", "classification_codes", "focus"):
             if not getattr(plan, key):
                 setattr(plan, key, list(getattr(base, key)))
     return plan
@@ -186,16 +208,16 @@ def _categories(value, limit: int) -> list[Category]:
         else:
             name, desc = str(item).strip(), ""
         if name and name.lower() not in {c.name.lower() for c in items}:
-            items.append(Category(name[:80], desc[:300]))
+            items.append(Category(name[:80], desc[:600]))  # room for a "One of: A | B | ..." list
     return items[:limit]
 
 
-def _strings(value, limit: int) -> list[str]:
+def _strings(value, limit: int, chars: int = 200) -> list[str]:
     out: list[str] = []
     for item in value if isinstance(value, list) else ([value] if isinstance(value, str) and value else []):
         text = str(item).strip()
         if text and text.lower() not in {o.lower() for o in out}:
-            out.append(text[:200])
+            out.append(text[:chars])
     return out[:limit]
 
 
@@ -221,22 +243,39 @@ def clean_plan(data: dict, brief: str, fallback: AnalysisPlan | None = None) -> 
         problems=_categories(data.get("problems"), 15),
         tech_buckets=_categories(data.get("tech_buckets"), 10) or list(DEFAULT_BUCKETS),
         complexity_levels=_categories(data.get("complexity_levels"), 6) or list(DEFAULT_COMPLEXITY),
-        in_scope=str(data.get("in_scope") or "").strip()[:600],
-        keywords=_strings(data.get("keywords"), 30),
-        classification_codes=_strings(data.get("classification_codes"), 20),
+        in_scope=str(data.get("in_scope") or "").strip()[:1500],
+        keywords=_strings(data["keywords"], 30) if "keywords" in data else list(fb.keywords),
+        classification_codes=(_strings(data["classification_codes"], 20) if "classification_codes" in data
+                              else list(fb.classification_codes)),
         competitors=_strings(data.get("competitors"), 20),
         regions=_strings(data.get("regions"), 10),
         extra_fields=_categories(data.get("extra_fields"), 6),
-        report_sections=_strings(data.get("report_sections"), 12) or list(DEFAULT_SECTIONS),
+        report_sections=_strings(data.get("report_sections"), 12) or list(fb.report_sections or DEFAULT_SECTIONS),
         questions=_strings(data.get("questions"), 8),
-        analysis_questions=_strings(data.get("analysis_questions"), 6),
+        analysis_questions=_strings(data.get("analysis_questions"), MAX_ANALYSIS_QUESTIONS, chars=600),
         not_possible=_strings(data.get("not_possible"), 8),
         brief=brief,
         source="model",
+        focus=_strings(data["focus"], 10) if "focus" in data else list(fb.focus),
     )
     if not plan.in_scope:
         plan.in_scope = fb.in_scope
+    for key in RULE_FIELDS:  # rules the model is not asked for: as in the plan it starts from
+        setattr(plan, key, data[key] if key in data else getattr(fb, key))
+    plan.max_problems = _whole(plan.max_problems)
+    plan.white_space_support = _whole(plan.white_space_support)
+    plan.check_partial, plan.long_text = bool(plan.check_partial), bool(plan.long_text)
+    plan.relevance_rule, plan.summary_format, plan.analysis_rules = (
+        str(plan.relevance_rule or "").strip(), str(plan.summary_format or "").strip(),
+        str(plan.analysis_rules or "").strip())
     return plan
+
+
+def _whole(value) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 _SEGMENT_TERMS = {

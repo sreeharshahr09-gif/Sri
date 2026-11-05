@@ -171,7 +171,8 @@ machine, or with a cloud model through OpenRouter (see *Cloud models*).
 2. **Choose a standard objective, paste your brief, or both.**
    - **Standard objective** (optional): Lightweighting, Low rolling resistance, Durability,
      Uneven wear, Smart / connected tyres, NVH, Wet / dry traction, Dynamic growth, High
-     performance or Sustainable materials. **📋 Use this objective's plan** fills a complete
+     performance, Sustainable materials, or the study template **Under-belt layer (belt–carcass
+     interlayer)** (see below). **📋 Use this objective's plan** fills a complete
      plan at once, without the model: problem categories, technology groups, complexity
      levels, scope, extra CSV columns (e.g. *Weight saving claimed*, *Material replaced -> by*),
      the objective's own questions and suggested search terms for your database.
@@ -192,6 +193,18 @@ machine, or with a cloud model through OpenRouter (see *Cloud models*).
    each answer to the brief's questions and each report section as it is written. A note marks
    them preliminary until the run ends: until every patent is read, the map still includes patents
    the model may judge off-topic. The downloads come with the final report.
+   Under **🎯 Focus, screening and report rules** (all optional, empty = the standard report):
+   *focus* categories the executive summary leads with and the white space is limited to; at most
+   *N* problem categories per patent (main one first); your own *relevance rule* (e.g. eligibility
+   on the extra columns) and whether *Partial* patents are **set aside for a manual check**
+   (listed under *Records to check*, counted nowhere else); a *white-space support* rule (a gap
+   counts only when the other cells of its row and column hold enough patents, otherwise
+   "insufficient data"); the *executive summary's structure*; and *rules for every chart and
+   answer* of the data agent (e.g. count families, show n). An extra column whose description
+   ends `One of: A | B = meaning | C` takes fixed values: they are checked, counted with *Not
+   stated* kept, and mapped against the problem dimension (e.g. *Coverage × Objective*).
+   **Advanced settings** can give the model more of each patent's text (whole first claim up to
+   4,000 characters, abstract up to 2,500) for better claimed parameters and complexity levels.
 4. **Read the report** on one long page, and download the results. If one step of the analysis
    fails, the report says which and why, and shows everything the other steps produced.
 5. **Ask for more** in the box under the report (see *Follow-ups*).
@@ -203,7 +216,7 @@ machine, or with a cloud model through OpenRouter (see *Cloud models*).
 | Cleaning | Family de-duplication (or by publication number), the plan's period, year basis priority > filing > publication, assignee names normalised (spellings, legal forms, subsidiaries) |
 | Patent map | Embeddings from **PatentSBERTa** (or TF-IDF + LSA without it), 2-D **UMAP** map, topic clusters by **HDBSCAN** on a 5-D UMAP projection, cluster keywords by c-TF-IDF, cluster names and technology group by the model (seed 42) |
 | Reading every patent | The model reads title, abstract, the export's summaries and the first claim of every patent, in batches sized to its context window, and fills the study's columns (below). Answers are validated against the plan's categories and cached on disk |
-| Off-topic screening | Patents rated *Relevance: Low* against the plan's scope leave the analytics (they stay in the CSV) |
+| Off-topic screening | Patents rated *Relevance: Low* against the plan's scope (or its own relevance rule) leave the analytics (they stay in the CSV); with *set aside for a manual check*, *Partial* ones are listed under *Records to check* and counted nowhere else |
 | Analytics | Computed, not written by the model: filing trend with the publication-lag zone and CAGR on complete years (an export limited to recent publications, e.g. from 2015 on, is detected: its first priority years are marked incomplete and left out of growth and trend comparisons); technology roadmap and emerging/declining clusters; top assignees, HHI, assignee × technology; offices; segments; problem × solution heatmaps; complexity ranking; white space; competitor watch and crown jewels; process and manufacturing insights |
 | Brief-specific analyses | Charts for your extra columns (values with a unit as box plots by technology group, short labels as stacked bars), and each of the plan's questions answered by the data agent with Python code on the enriched table; the answers also feed the report text |
 | White-space check | The model judges each under-explored combination as plausible, unlikely or unsure, with a reason; only plausible and unsure ones are offered as leads |
@@ -247,8 +260,44 @@ column of your original export** except full-text columns of over 10,000 charact
 
 Downloads, at the top and the end of the report: the **enriched CSV**, a **validation sample**
 (30 random patents with the model's answers and empty *Correct?*/*Comment* columns, so an
-expert can measure the extraction accuracy) and the **full report as one HTML file** (charts
-stay interactive, works offline, prints to PDF).
+expert can measure the extraction accuracy), the **full report as one HTML file** (charts
+stay interactive, works offline, prints to PDF) and **the report's tables as one Excel workbook**
+(one sheet per table and per chart, holding the numbers behind it, with a contents sheet).
+
+With a *Legal status* column in the export (Alive, Dead, Granted, Lapsed, Pending, ...), the CSV
+gets **Alive (from legal status)** (Yes / No / Unknown; pending applications count as alive), the
+focus set counts alive patents per assignee and the data agent can use it. The methodology lists
+which export column was used for each field and what a missing one limits, your answers to the
+brief's questions, and the patents the model read with low confidence.
+
+### Study template: under-belt rubber layer (TYRE-LAYER-LANDSCAPE-01)
+
+A landscape of a rubber layer between the belt package and the carcass (whole-width or
+segmented) for a TBR predevelopment team, built from the study template of that name:
+
+- **Columns:** *Placement* (BELT-CARCASS, INTER-BELT, BELT-TREAD, CARCASS-LINER, UNCLEAR),
+  *Coverage* (WHOLE_WIDTH, SEGMENTED, CENTRE_ONLY, EDGE_ONLY, UNCLEAR), the objectives (primary +
+  up to two secondary, counts use all), *Primary objective*, *Thickness profile*, *Segment
+  details*; seven technology groups; four complexity levels judged from the independent claims
+  (Basic, Parametrised, Multi-parameter, System-level); segments TBR / PCR / LT / OTR.
+- **Eligibility:** belt–carcass and whole-width or segmented = analysed; unclear, centre-only, or
+  edge-only for a non-durability aim = *Records to check* (not counted); the rest = out.
+- **Focus** on footprint shape, uniform contact pressure and tyre uniformity correction: the
+  executive summary follows the template's order (focus findings → landscape context → white
+  space → caveats) and its prohibitions; white space only for the focus objectives with at
+  least 5 patents nearby, otherwise "insufficient data".
+- **12 data questions** cover the template's charts and questions: coverage over time, top
+  assignees alive/dead, new entrants, objectives per coverage, segment layouts, parameter-window
+  table, complexity over time, an alive shortlist, expiry and pre-2005 records, tyre category
+  (re-derived from CPC codes, sizes and terms when over 30 % is not stated), objective shares
+  over time, publication authorities. The *Coverage × Objective* and *Technology group ×
+  Objective* maps are computed directly.
+- Before the run it asks which database queries produced the export (shown in the method section).
+
+Differences from the template: one export file is analysed (merge a *related* set or a
+screening log into it beforehand, or analyse it as a separate study); the data period is not a
+filter (a question lists pre-2005 records instead); the methodology sits at the end of the
+report, after the check table.
 
 ### Follow-ups
 
@@ -292,6 +341,13 @@ Type a request in the box under the report; the outcome is added below it.
 
   A step that thinks gets 8,000 extra reply tokens for it (at most half the context window). The
   methodology names the model "… with thinking" for the steps that thought.
+- Reply budgets are generous and follow the context window, so a large local or cloud model is not
+  held back: up to 8,000 tokens for a plan (long study templates included), 6,000 for each report
+  section, the data agent and follow-ups, about 1,000 per patent when reading. Each report section
+  is written from up to 12,000 characters of the brief and 40,000 of computed facts when the context
+  window has room (5,000 and 9,000 in an 8k window). The data agent gets up to 10 steps per
+  brief-specific question, sees up to 12,000 characters of each output, and up to 2,000 characters
+  of each answer feed the report text.
 - The analysis covers exactly what your export contains: the search strategy behind it defines
   the landscape. It is a technology landscape, not a legal (validity or FTO) opinion.
 
@@ -439,7 +495,7 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `ui/patent_page.py` | Patent landscape page: upload, brief, plan, report, downloads, follow-ups |
 | `analyst_agent/patents/data.py` | Export columns, cleaning, de-duplication, assignee names, record flow |
 | `analyst_agent/patents/plan.py` | Brief to analysis plan (model, with a rule-based fallback) |
-| `analyst_agent/patents/presets.py` | Standard objectives (lightweighting, rolling resistance, ...) with complete plans |
+| `analyst_agent/patents/presets.py` | Standard objectives (lightweighting, rolling resistance, ...) and the under-belt layer study template, with complete plans |
 | `analyst_agent/patents/semantic.py` | Embeddings, UMAP map, HDBSCAN clusters, c-TF-IDF keywords, cluster names |
 | `analyst_agent/patents/enrich.py` | The model reads every patent: batching, validation, retries, cache |
 | `analyst_agent/patents/analytics.py` | Trends, players, heatmaps, complexity, white space, crown jewels |
@@ -448,6 +504,7 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `analyst_agent/patents/pipeline.py` | Runs the stages in order (the stage contract is at the top of the file), answers the brief's questions, builds the enriched table |
 | `analyst_agent/patents/report_blocks.py` | Lays the result out as the report: map, tables, brief-specific answers, downloads |
 | `analyst_agent/patents/html_report.py` | The report as one offline HTML file |
+| `analyst_agent/patents/workbook.py` | The report's tables and chart data as one Excel workbook |
 | `analyst_agent/patents/followup.py` | Follow-ups: routing, plan changes, rewrites, data-agent context |
 | `analyst_agent/workspace.py` | Read-only, root-bounded file access and text extraction |
 | `analyst_agent/loop.py` | The agent loop both agents share: step limit, nudges, repeats, context trimming, Stop, errors |

@@ -37,7 +37,7 @@ from . import narrative as nar
 from . import semantic as sem
 from .data import FlowStep, PatentCorpus, build_corpus
 from .followup import agent_client, analysis_dataset, landscape_profile, profile_budget
-from .plan import AnalysisPlan
+from .plan import MAX_ANALYSIS_QUESTIONS, AnalysisPlan
 from .report_blocks import assemble_blocks, preview_blocks
 from .result import LandscapeResult, LandscapeStatus, PipelineOptions, analysed_index, analysed_topics
 
@@ -143,10 +143,15 @@ def _guarded(result: LandscapeResult, name: str, stage: Callable, *args) -> None
 def analytics_stage(result: LandscapeResult) -> None:
     corpus, ext = result.corpus, result.extraction
     frame = an.build_frame(corpus.std, ext.table if ext else None, ext.fields if ext else [])
-    keep = an.in_scope(frame)
-    if (~keep).any():
-        corpus.flow.append(FlowStep("Removed: judged off-topic by the model (Relevance: Low)", int(keep.sum()),
-                                    int((~keep).sum())))
+    keep, check = an.screen(frame, result.plan)
+    off_topic = ~keep & ~check
+    if off_topic.any():
+        corpus.flow.append(FlowStep("Removed: judged off-topic by the model (Relevance: Low)",
+                                    int((keep | check).sum()), int(off_topic.sum())))
+    if check.any():
+        corpus.flow.append(FlowStep("Set aside for a manual check (Relevance: Partial), not counted",
+                                    int(keep.sum()), int(check.sum())))
+    result.check_frame = frame[check]
     result.analysis_frame = frame[keep]
     ctx = an.make_context(result.analysis_frame, result.plan, corpus.year_basis, ref_year=export_date(corpus))
     result.incomplete_years, result.early_years = ctx.incomplete_years, ctx.early_years
@@ -165,7 +170,7 @@ def white_space_stage(result: LandscapeResult, llm) -> None:
             result.methods["White-space check"] = note
 
 
-FACT_PRIORITY = ["trend", "players", "problem_solution", "white_space", "roadmap", "complexity", "competitors",
+FACT_PRIORITY = ["focus", "trend", "players", "problem_solution", "white_space", "roadmap", "complexity", "competitors",
                  "process", "segments", "geography"]
 
 
@@ -201,7 +206,7 @@ def collect_facts(result: LandscapeResult) -> None:
     result.facts_by_kind = by_kind
 
 
-MAX_QUESTIONS = 6
+MAX_QUESTIONS = MAX_ANALYSIS_QUESTIONS
 
 
 def answered_questions(result: LandscapeResult) -> list[str]:
@@ -220,7 +225,8 @@ def questions_stage(result: LandscapeResult, llm, emit: EventHandler, checkpoint
     dataset = analysis_dataset(result)
     questions = result.plan.analysis_questions[:MAX_QUESTIONS]
     client = agent_client(llm)
-    config = AgentConfig()
+    # Room for questions with several parts (a chart and a table), and for long tables in the output.
+    config = AgentConfig(max_steps=max(AgentConfig().max_steps, 10), max_observation_chars=12_000)
     with Sandbox(SandboxConfig()) as sandbox:
         agent = DataAnalystAgent(client, sandbox, dataset, config=config,
                                  profile=landscape_profile(result, dataset, max_chars=profile_budget(client)))
@@ -242,7 +248,7 @@ def questions_stage(result: LandscapeResult, llm, emit: EventHandler, checkpoint
 
 def add_answers_to_facts(result: LandscapeResult) -> None:
     """The answers to the brief's questions become facts that the report text is written from."""
-    answers = [f"[Brief question] {question} Answer: {run.answer[:700]}"
+    answers = [f"[Brief question] {question} Answer: {run.answer[:2000]}"
                for question, run in result.question_runs if run.answer]
     if answers:
         text = "\n".join(answers)
@@ -263,7 +269,8 @@ def narrative_stage(result: LandscapeResult, llm, emit, on_section: Callable[[],
             on_section()
 
     nar.write_sections(sections, by_kind, all_facts, result.plan.brief, result.plan.answers, llm,
-                       on_progress=progress, answered_elsewhere=answered_questions(result))
+                       on_progress=progress, answered_elsewhere=answered_questions(result),
+                       summary_format=result.plan.summary_format)
     if llm is not None:
         written = sum(1 for sec in sections if sec.text)
         flagged = sum(len(sec.flagged) for sec in sections)
@@ -350,6 +357,8 @@ def enriched_table(result: LandscapeResult) -> pd.DataFrame:
     out["Assignee (normalised)"] = std["assignee"]
     out["Co-assignees"] = std["co_assignees"]
     out["Office"] = std["country"]
+    if "alive" in std and std["alive"].astype(str).ne("").any():
+        out["Alive (from legal status)"] = std["alive"]
     if result.extraction is not None:
         for col in result.extraction.table.columns:
             name = col if col not in out.columns else f"{col} (model)"

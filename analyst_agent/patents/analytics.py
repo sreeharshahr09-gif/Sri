@@ -16,9 +16,11 @@ import pandas as pd
 
 from . import report as rb
 from .data import normalize_assignee
-from .plan import AnalysisPlan
+from .plan import AnalysisPlan, focus_names
 
 UNCLASSIFIED = "Unclassified"
+INSUFFICIENT = "insufficient data"
+NOT_STATED_LABEL = "Not stated"
 NOT_SPECIFIED = {"Not specified", "not stated", ""}
 _PALETTE = ["#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854", "#ffd92f", "#e5c494", "#b3b3b3",
             "#1b9e77", "#d95f02"]
@@ -68,6 +70,8 @@ def build_frame(std: pd.DataFrame, details: pd.DataFrame | None, fields) -> pd.D
         "cited_by": pd.to_numeric(std.get("cited_by"), errors="coerce") if "cited_by" in std else np.nan,
         "published": std.get("published", np.nan),
     }, index=std.index)
+    if "alive" in std and std["alive"].astype(str).ne("").any():
+        frame["alive"] = std["alive"]  # Yes / No / Unknown, from the export's legal status
     if details is not None:
         for f in fields:
             frame[f.key] = details[f.column]
@@ -86,6 +90,16 @@ def in_scope(frame: pd.DataFrame) -> pd.Series:
     if "relevance" not in frame:
         return pd.Series(True, index=frame.index)
     return frame["relevance"].fillna("") != "Low"
+
+
+def screen(frame: pd.DataFrame, plan: AnalysisPlan) -> tuple[pd.Series, pd.Series]:
+    """(patents analysed, patents set aside for a manual check). Off-topic patents (Relevance: Low) are in
+    neither; with the plan's `check_partial`, Partial patents are set aside instead of counted."""
+    keep = in_scope(frame)
+    if not plan.check_partial or "relevance" not in frame:
+        return keep, pd.Series(False, index=frame.index)
+    check = frame["relevance"].fillna("") == "Partial"
+    return keep & ~check, check
 
 
 def fractional_year(day: date) -> float:
@@ -624,38 +638,68 @@ def white_space(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
                    "definition, so the other combinations are not flagged as gaps. Plan categories that answer a "
                    "different question (e.g. which component, against which kind of solution) make this analysis "
                    "meaningful." if linked else "")
-    for p in grid.index if not linked else []:
+    focus = focus_names(ctx.plan)
+    considered = [p for p in grid.index if not focus or p in focus]
+    least = ctx.plan.white_space_support
+
+    def thin(support: int) -> str:
+        """The gap text when the cells around a combination hold too few patents to judge it (the plan's rule)."""
+        return f"{INSUFFICIENT}: {support} patents in its row and column together (the rule needs {least})"
+
+    for p in considered if not linked else []:
         for g in grid.columns:
             expected = row_tot[p] * col_tot[g] / n if n else 0
             observed = int(grid.loc[p, g])
-            if expected >= 1.5 and observed <= 0.5 * expected:
+            if observed > 0.5 * expected or row_tot[p] == 0:
+                continue
+            support = int(row_tot[p] + col_tot[g] - 2 * observed)  # the other cells of its row and column
+            if least and support < least:
+                rows.append({ctx.problem_label: p, "Technology group": g, "Patents": observed,
+                             "Expected": round(expected, 1), "Gap": thin(support)})
+            elif expected >= 1.5:
                 rows.append({ctx.problem_label: p, "Technology group": g, "Patents": observed,
                              "Expected": round(expected, 1), "Gap": "few patents for this combination"})
-    for p in grid.index:
+    for p in considered:
         if row_tot[p] == 0:
             rows.append({ctx.problem_label: p, "Technology group": "any", "Patents": 0, "Expected": np.nan,
-                         "Gap": "no patents at all in this set"})
+                         "Gap": f"{INSUFFICIENT}: no patents in this set" if least else "no patents at all in this set"})
     if "complexity" in a and ctx.levels:
         top_level = ctx.levels[-1]
         cplx = prob[prob["complexity"] == top_level]["problem"].value_counts()
-        for p in grid.index:
+        level_total = int((prob["complexity"] == top_level).sum())
+        for p in considered:
             if row_tot[p] >= 3 and cplx.get(p, 0) == 0:
+                support = int(row_tot[p] + level_total)
+                gap = thin(support) if least and support < least else f"no {top_level.lower()} solution patented yet"
                 rows.append({ctx.problem_label: p, "Technology group": f"{top_level} solutions", "Patents": 0,
-                             "Expected": np.nan, "Gap": f"no {top_level.lower()} solution patented yet"})
+                             "Expected": np.nan, "Gap": gap})
+    scope = (f" Only the focus {label} categories ({', '.join(focus)}) are assessed." if focus else "")
+    rule = (f" A combination counts as white space only when the other cells of its row and column hold at least "
+            f"{least} patents together; otherwise it is marked “{INSUFFICIENT}”, never an opening." if least else "")
     if not rows:
         text = linked_note or (f"No clear white space: every {label} × technology group combination has about as "
-                               "many patents as its row and column totals predict.")
+                               "many patents as its row and column totals predict." + scope)
         return Exhibit("white_space", "gaps", "White space", [rb.note(text)],
-                       linked_note or "No clear white-space combinations.")
-    table = pd.DataFrame(rows).sort_values(["Patents", "Expected"], ascending=[True, False], na_position="last")
+                       linked_note or "No clear white-space combinations." + scope)
+    table = pd.DataFrame(rows)
+    table = (table.assign(_thin=table["Gap"].str.startswith(INSUFFICIENT))
+             .sort_values(["_thin", "Patents", "Expected"], ascending=[True, True, False], na_position="last")
+             .drop(columns="_thin"))
     caption = linked_note or (
         "Expected = (row total × column total) / all, i.e. the count if solutions were spread evenly across the "
         f"{label} categories. Cells with at most half the expected count are flagged. Few patents can mean an opening, or a "
-        "combination that does not make technical sense: check before acting.")
-    facts = "White space: " + "; ".join(
+        "combination that does not make technical sense: check before acting." + scope + rule)
+    leads = table[~table["Gap"].str.startswith(INSUFFICIENT)]
+    thin_rows = table[table["Gap"].str.startswith(INSUFFICIENT)]
+    facts = ("White space: " + ("; ".join(
         f"{r[ctx.problem_label]} × {r['Technology group']}: {r['Patents']} patents"
         + (f" (expected {r['Expected']})" if not pd.isna(r["Expected"]) else "") + f", {r['Gap']}"
-        for _, r in table.head(8).iterrows()) + "." + (f" {linked_note}" if linked_note else "")
+        for _, r in leads.head(8).iterrows()) or "no combination meets the rule") + "."
+        + (f" {linked_note}" if linked_note else ""))
+    if len(thin_rows):
+        facts += (" Insufficient data (not white space, too few patents nearby to judge): "
+                  + "; ".join(f"{r[ctx.problem_label]} × {r['Technology group']}" for _, r in thin_rows.head(8).iterrows())
+                  + "." + scope)
     return Exhibit("white_space", "gaps", "White space", [rb.table(table, title="Under-explored combinations",
                                                                      caption=caption)], facts)
 
@@ -805,6 +849,11 @@ def extra_columns(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
         return None
     blocks, facts = [], []
     for spec in specs:
+        if spec.choices:  # fixed values: counted per value, and against the problem dimension
+            part_blocks, part_facts = _choice_column(a, ctx, spec)
+            blocks += [rb.heading(spec.column, level=4)] + part_blocks
+            facts.append(part_facts)
+            continue
         values = a[spec.key].fillna("").astype(str).str.strip()
         stated = values[~values.str.lower().isin(_UNSTATED_VALUES)]
         n, k = len(values), len(stated)
@@ -879,8 +928,176 @@ def extra_columns(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
     return Exhibit("extra_columns", "custom", "Your extra columns", blocks, " ".join(facts))
 
 
-EXHIBITS = [trend, geography, segments, problem_solution, players, competitors, complexity, process_insights,
-            roadmap, white_space, extra_columns]
+def _values(a: pd.DataFrame, col: str, multi: bool) -> pd.DataFrame:
+    """One row per patent and value ('_row': the patent's index); empty or unstated values become "Not stated"."""
+    values = a[col].fillna("").astype(str).str.strip()
+    if multi:
+        values = values.str.split(r"\s*;\s*")
+    out = pd.DataFrame({"_row": a.index, "value": values.values}).explode("value")
+    out["value"] = out["value"].fillna("").astype(str).str.strip()
+    out.loc[out["value"].str.lower().isin(_UNSTATED_VALUES), "value"] = NOT_STATED_LABEL
+    return out.drop_duplicates()
+
+
+def _ordered(values: pd.Series, first: list[str]) -> list[str]:
+    """The values present, those in `first` in its order, then the rest by frequency, "Not stated" last."""
+    present = values.value_counts()
+    order = [v for v in first if v in present.index and v != NOT_STATED_LABEL]
+    order += [v for v in present.index if v not in order and v != NOT_STATED_LABEL]
+    return order + ([NOT_STATED_LABEL] if NOT_STATED_LABEL in present.index else [])
+
+
+def _choice_column(a: pd.DataFrame, ctx: Context, spec) -> tuple[list[rb.Block], str]:
+    """A fixed-value extra column: patents per value and, unless it repeats the problem categories, a map of its
+    values against the problem dimension (e.g. coverage × objective)."""
+    import plotly.express as px
+
+    vals = _values(a, spec.key, spec.multi)
+    order = _ordered(vals["value"], spec.choices)
+    counts = vals["value"].value_counts().reindex(order)
+    n = len(a)
+    facts = (f"{spec.column} (n = {n}): " + ", ".join(f"{v} {int(c)} ({_pct(c, n)})" for v, c in counts.items()) + ".")
+    problems = [c.name for c in ctx.plan.problems]
+    same_dimension = sum(c in problems for c in spec.choices) >= 0.5 * len(spec.choices)
+    caption = ("A patent can have several values. " if spec.multi else "") + (
+        f"Values as read by the model from each patent; “{NOT_STATED_LABEL}” is kept as its own category."
+        + (" " + "; ".join(f"{k}: {v}" for k, v in spec.notes.items()) + "." if spec.notes else ""))
+    if "problem" not in a or not problems or same_dimension:
+        frame = counts.rename_axis(spec.column).rename("Patents").reset_index()
+        fig = px.bar(frame, x="Patents", y=spec.column, orientation="h", text="Patents",
+                     category_orders={spec.column: order})
+        _layout(fig, f"{spec.column}: patents per value (n = {n})", height=max(300, 32 * len(order) + 140))
+        return [rb.chart(fig, caption=caption)], facts
+    prob = _explode(a.assign(problem=a["problem"].fillna("")), "problem")
+    pairs = prob[["_row", "problem"]].merge(vals, on="_row")
+    cols = [p for p in problems + ["Other"] if p in set(pairs["problem"])]
+    grid = pd.crosstab(pairs["value"], pairs["problem"]).reindex(index=order, columns=cols, fill_value=0)
+    if grid.empty or not cols:
+        return [rb.note(f"No patent has both a {spec.column.lower()} and a {ctx.problem_label.lower()}.")], facts
+    fig = _heatmap(grid, list(grid.columns), list(grid.index), "YlOrRd")
+    _layout(fig, f"{spec.column} × {ctx.problem_label} (n = {n} patents)", height=max(340, 36 * len(grid) + 170))
+    fig.update_xaxes(title_text=ctx.problem_label, tickangle=-30)
+    fig.update_yaxes(title_text=spec.column)
+    cells = grid.stack().sort_values(ascending=False)
+    facts += (f" {spec.column} × {ctx.problem_label}, densest: "
+              + "; ".join(f"{v} × {p} {int(c)}" for (v, p), c in cells[cells > 0].head(8).items()) + ".")
+    shares = []
+    for value in [v for v in order if v != NOT_STATED_LABEL][:4]:
+        row = grid.loc[value]
+        if row.sum():
+            shares.append(f"{value}: " + ", ".join(f"{p} {int(c)}" for p, c in row.sort_values(ascending=False)
+                                                   .head(3).items() if c))
+    if shares:
+        facts += f" Main {ctx.problem_label.lower()}s per {spec.column.lower()}: " + "; ".join(shares) + "."
+    total_col = f"Patents with this {spec.column.lower()}"
+    table = grid.assign(**{total_col: vals["value"].value_counts().reindex(grid.index).fillna(0).astype(int)})
+    table = table.rename_axis(index=spec.column, columns=None).reset_index()
+    return [rb.chart(fig, caption=caption + f" Columns: the {ctx.problem_label.lower()}s each patent addresses (a "
+                                            "patent with several counts in each)."),
+            rb.table(table, title=f"{spec.column} × {ctx.problem_label}: patents")], facts
+
+
+def focus_set(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
+    """The patents whose problem includes a focus category: size, players (with alive counts when the export has
+    a legal status), the split by every fixed-value column, and the most relevant patents with their claimed
+    parameters. The executive summary leads with these."""
+    from .enrich import build_fields
+
+    names = focus_names(ctx.plan)
+    if not names or "problem" not in a:
+        return None
+    label = ctx.problem_label.lower()
+    in_focus = a["problem"].fillna("").str.split(r"\s*;\s*").map(lambda vals: any(v in names for v in vals))
+    f = a[in_focus]
+    n, total = len(f), len(a)
+    title = "Focus set: " + ", ".join(names)
+    head = (f"Focus set (patents whose {label} includes {' or '.join(names)}): {n} of {total} analysed patents "
+            f"({_pct(n, total)}).")
+    if not n:
+        return Exhibit("focus", "summary", title, [rb.note(head + " No patent in this set addresses the focus.")], head)
+    facts = [head]
+    per = {name: int(f["problem"].str.split(r"\s*;\s*").map(lambda vals, name=name: name in vals).sum())
+           for name in names}
+    facts.append("Focus patents per category (a patent can address several): "
+                 + ", ".join(f"{k} {v}" for k, v in per.items()) + ".")
+    has_alive = "alive" in f
+    if has_alive:
+        alive = f["alive"].value_counts()
+        facts.append(f"Legal status of the focus patents: {int(alive.get('Yes', 0))} alive, {int(alive.get('No', 0))} "
+                     f"dead, {int(alive.get('Unknown', 0))} unknown.")
+    named = f[f["assignee"].fillna("").ne("")]
+    top = named["assignee"].value_counts().head(10)
+    players = pd.DataFrame({"Assignee": top.index, "Patents": top.values})
+    if has_alive:
+        players["Alive"] = [int(((named["assignee"] == x) & (named["alive"] == "Yes")).sum()) for x in top.index]
+    facts.append("Leading assignees in the focus set: " + "; ".join(
+        f"{r.Assignee} {r.Patents}" + (f" ({r.Alive} alive)" if has_alive else "") for r in players.head(6).itertuples())
+        + ".")
+    splits = []
+    dims = [(spec.column, spec.key, spec.choices, spec.multi) for spec in build_fields(ctx.plan)
+            if spec.key.startswith("x_") and spec.choices and spec.key in f]
+    dims += [("Technology group", "tech_group", ctx.groups, False)]
+    if "complexity" in f:
+        dims.append(("Complexity", "complexity", ctx.levels, False))
+    if "segment" in f:
+        dims.append(("Segment", "segment", ctx.plan.segments, True))
+    for column, key, first, multi in dims:
+        vals = _values(f, key, multi)
+        counts = vals["value"].value_counts().reindex(_ordered(vals["value"], first))
+        splits += [{"Dimension": column, "Value": v, "Patents": int(c), "Share of focus set": _pct(c, n)}
+                   for v, c in counts.items()]
+        facts.append(f"{column} in the focus set: " + ", ".join(f"{v} {int(c)} ({_pct(c, n)})" for v, c in counts.items())
+                     + ".")
+    if "segment" in a:
+        unstated = int(_values(a, "segment", True).groupby("_row")["value"].apply(
+            lambda v: set(v) <= {NOT_STATED_LABEL, "Not specified"}).sum())
+        facts.append(f"Segment not stated: {unstated} of {total} analysed patents ({_pct(unstated, total)}).")
+    rank = pd.DataFrame(index=f.index)
+    rank["relevance"] = f["relevance"].map({"High": 0, "Partial": 1}).fillna(2) if "relevance" in f else 0
+    rank["alive"] = f["alive"].map({"Yes": 0, "Unknown": 1}).fillna(2) if has_alive else 0
+    level = {lv: i for i, lv in enumerate(ctx.levels)}
+    rank["level"] = -f["complexity"].map(level).fillna(-1) if "complexity" in f else 0
+    rank["year"] = -f["year"].fillna(0)
+    best = f.loc[rank.sort_values(["relevance", "alive", "level", "year"]).index].head(15)
+    extra_cols = [(column, key) for column, key, _, _ in dims if key.startswith("x_")]
+    rows = []
+    for r in best.itertuples():
+        row = {"Patent ID": r.id, "Year": "" if pd.isna(r.year) else int(r.year), "Assignee": r.assignee}
+        if has_alive:
+            row["Alive"] = r.alive
+        for column, key in extra_cols:
+            row[column] = getattr(r, key, "")
+        row["Complexity"] = getattr(r, "complexity", "")
+        row["Key parameters"] = _short(getattr(r, "key_parameters", ""), 160)
+        row["Core claim"] = _short(getattr(r, "core_claim", "") or r.first_claim, 200)
+        rows.append(row)
+    best_df = pd.DataFrame(rows)
+    best_df = best_df.loc[:, [c for c in best_df.columns if best_df[c].astype(str).str.strip().ne("").any()]]
+    ranked = "alive first, then " if has_alive else ""
+    facts.append(f"Most relevant focus patents (high relevance, {ranked}most complex claims, newest first): " + "; ".join(
+        f"{r['Patent ID']} ({r['Assignee']}, {r['Year']}" + (f", alive {r['Alive']}" if has_alive else "")
+        + "".join(f", {r[c]}" for c, _ in extra_cols[:2] if r.get(c)) + ")" for r in rows[:6]) + ".")
+    windows = [f"{r['Patent ID']}: {r['Key parameters']}" for r in rows
+               if str(r.get("Key parameters", "")).strip().lower() not in _UNSTATED_VALUES][:6]
+    if windows:
+        facts.append("Claimed parameter windows in these patents (verbatim): " + "; ".join(windows) + ".")
+    blocks = [
+        rb.metrics([("Focus patents", f"{n:,}"), ("Share of analysed set", _pct(n, total))]
+                   + ([("Alive", f"{int((f['alive'] == 'Yes').sum()):,}")] if has_alive else [])),
+        rb.table(players, title="Leading assignees in the focus set",
+                 caption=("Alive: from the export's legal status (pending applications count as alive)."
+                          if has_alive else "Map a legal-status column to count alive patents.")),
+        rb.table(pd.DataFrame(splits), title="How the focus set divides",
+                 caption=f"Each dimension counts the {n} focus patents; “{NOT_STATED_LABEL}” is kept as a category."),
+        rb.table(best_df, title="Most relevant focus patents",
+                 caption=f"Up to 15 patents: high relevance, {ranked}most complex claims, newest first. Key "
+                         "parameters are the claimed windows as read by the model; check them in the claims."),
+    ]
+    return Exhibit("focus", "summary", title, blocks, " ".join(facts))
+
+
+EXHIBITS = [focus_set, trend, geography, segments, problem_solution, players, competitors, complexity,
+            process_insights, roadmap, white_space, extra_columns]
 
 
 def run_analytics(frame: pd.DataFrame, plan: AnalysisPlan, year_basis: str, ref_year: float | None = None,

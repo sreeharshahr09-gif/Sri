@@ -277,7 +277,7 @@ def name_topics(llm, topics: pd.DataFrame, plan: AnalysisPlan, batch: int = 10) 
             for title in row.sample_titles[:3]:
                 lines.append(f"  - {str(title)[:140]}")
         try:
-            items = ask_json_list(llm, NAMING_SYSTEM, "\n".join(lines), retries=1, max_tokens=3000)
+            items = ask_json_list(llm, NAMING_SYSTEM, "\n".join(lines), retries=1, max_tokens=6000)
         except (LLMError, JSONReplyError) as exc:
             failures.append(str(exc))
             continue

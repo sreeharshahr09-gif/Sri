@@ -57,6 +57,7 @@ class LandscapeResult:
     semantic: sem.SemanticResult | None = None
     extraction: enrich.ExtractionResult | None = None
     analysis_frame: pd.DataFrame | None = None  # the patents the analytics are computed on
+    check_frame: pd.DataFrame | None = None  # patents set aside for a manual check (the plan's check_partial)
     exhibits: list[an.Exhibit] = field(default_factory=list)
     sections: list[nar.Section] = field(default_factory=list)
     facts_by_kind: dict[str, str] = field(default_factory=dict)  # what the text was written from

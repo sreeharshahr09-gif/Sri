@@ -430,6 +430,7 @@ def build_corpus(
     for role in ("title", "abstract", "claims", "problem", "method", "advantage", "cpc", "ipc", "family",
                  "inventors", "legal_status"):
         std[role] = col(role).map(_clean_text)
+    std["alive"] = std["legal_status"].map(alive_status) if (std["legal_status"] != "").any() else ""
     # Long enough for claim breadth (its length) to separate patents; the model sees an excerpt.
     std["first_claim"] = std["claims"].map(lambda c: first_claim(c, limit=6000))
     std["cited_by"] = pd.to_numeric(col("cited_by"), errors="coerce")
@@ -504,6 +505,20 @@ def build_corpus(
     assignee_map = assignee_map[assignee_map["assignee_raw"] != ""]
     return PatentCorpus(std=std.copy(), raw=raw.copy(), mapping=dict(mapping), flow=flow,
                         assignee_map=assignee_map.reset_index(drop=True), year_basis=year_basis, notes=notes)
+
+
+_DEAD = re.compile(r"dead|expir|laps|withdr|abandon|revok|ceas|refus|reject|inactive|terminat|discontinu|"
+                   r"not in force|no longer|invalid|void", re.IGNORECASE)
+_ALIVE = re.compile(r"alive|active|in force|grant|pend|live|valid|exam|filed|published|opposition", re.IGNORECASE)
+
+
+def alive_status(status: str) -> str:
+    """'Yes', 'No' or 'Unknown' from a legal-status text ('Alive', 'Dead', 'Granted', 'Lapsed', 'Pending', ...).
+    Pending applications count as alive, as databases such as PatSeer count them."""
+    text = str(status or "")
+    if _DEAD.search(text):
+        return "No"
+    return "Yes" if _ALIVE.search(text) else "Unknown"
 
 
 def _record(keep: pd.Series, flow: list[FlowStep], label: str) -> None:

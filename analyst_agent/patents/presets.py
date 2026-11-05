@@ -450,6 +450,172 @@ PRESETS: dict[str, dict] = {
     },
 }
 
+# The study template TYRE-LAYER-LANDSCAPE-01 for an R&D team: a construction layer (placement and coverage) with
+# eligibility rules, a focus, a white-space rule and a fixed summary order. Copy it for another layer or component:
+# change the scope, the objectives, the groups and the Placement / Coverage values; keep the rules.
+_OBJECTIVES = ["Footprint shape", "Uniform contact pressure", "Tyre uniformity correction", "Uneven wear",
+               "Crown/belt profile & radial growth", "Belt durability", "Heat/rolling resistance", "Ride/NVH",
+               "Manufacturing", "Other"]
+_UNDER_BELT_FOCUS = ["Footprint shape", "Uniform contact pressure", "Tyre uniformity correction"]
+
+UNDER_BELT_LAYER = {
+    "title": "Under-belt rubber layer (belt package–carcass interlayer)",
+    "objective": ("Map patents on a rubber layer between the belt package and the carcass, whole-width or segmented, "
+                  "and how it is used to control footprint shape, contact-pressure uniformity and tyre uniformity "
+                  "(RFV, LFV, conicity, runout), for design direction and freedom-to-operate screening in TBR."),
+    "problem_label": "Objective",
+    "problems": _cats([
+        ("Footprint shape", "contact patch shape and length/width, footprint ratio"),
+        ("Uniform contact pressure", "even ground contact pressure across the tread width"),
+        ("Tyre uniformity correction", "RFV, LFV, conicity or runout corrected by the layer (segmented layers in "
+                                       "particular)"),
+        ("Uneven wear", "irregular wear such as shoulder or centre wear"),
+        ("Crown/belt profile & radial growth", "crown and belt profile, carcass line, radial growth in use"),
+        ("Belt durability", "belt-edge separation and belt package durability"),
+        ("Heat/rolling resistance", "heat build-up and rolling resistance"),
+        ("Ride/NVH", "ride comfort, noise and vibration"),
+        ("Manufacturing", "building, shaping or curing of the layer; productivity"),
+    ]),
+    "tech_buckets": _cats([
+        ("Whole-width uniform layer", "continuous layer of constant thickness"),
+        ("Whole-width profiled layer", "continuous layer whose thickness varies across the width (e.g. thicker at "
+                                       "the shoulders or the centre)"),
+        ("Segmented layer", "separate pieces across the width or around the circumference"),
+        ("Multi-compound / graded layer", "two or more rubbers or layers with different modulus, hardness or tanδ"),
+        ("Layer + belt package co-design", "layer claimed together with the belt construction (zero-degree or "
+                                           "circumferential layer, belt widths or angles)"),
+        ("Layer + profile co-design", "layer claimed as the means to set the carcass line against the belt line, "
+                                      "or the tread radius"),
+        ("Material-led layer", "the invention lies mainly in the layer compound, with standard geometry"),
+    ]),
+    "complexity_levels": _cats([
+        ("Basic", "level 1, judged from the independent claims: presence and location of the layer only, no numeric "
+                  "window. When the claims leave the level unclear, take the lower level and set confidence Low"),
+        ("Parametrised", "level 2: one parameter window (thickness, width against the belt, segment gap, modulus, "
+                         "hardness or tanδ)"),
+        ("Multi-parameter", "level 3: two or more coupled windows (e.g. thickness distribution + width ratio, or "
+                            "geometry + material property) linked to an objective"),
+        ("System-level", "level 4: layer defined with other components through cross-component relations, "
+                         "multi-compound or graded layers, or claims defined by performance outputs (footprint "
+                         "ratio, contact pressure ratio, uniformity values)"),
+    ]),
+    "segments": ["TBR", "PCR", "LT", "OTR"],
+    "in_scope": ("A rubber or elastomer layer placed radially between the belt package (innermost belt, crown "
+                 "reinforcement) and the body ply or carcass, whole-width (continuous across the belt package "
+                 "width) or segmented (two or more pieces across the width, or divided laterally or "
+                 "circumferentially). Also called cushion (rubber), under-belt cushion or pad, belt under cushion, "
+                 "pad rubber, buffer rubber or layer, squeegee, gum strip, intermediate rubber layer, interlayer, "
+                 "decoupling layer. Not in scope: rubber between belt layers (inter-belt rubber); rubber between "
+                 "belt and tread (undertread, tread base, tread cushion); rubber between carcass and inner liner "
+                 "(tie gum); conventional belt-edge cushions or shoulder pads whose only purpose is belt-edge "
+                 "durability; retread cushion gum, cavity sound absorbers, sealants, run-flat sidewall inserts, bead "
+                 "fillers."),
+    "relevance_rule": ("High = eligible: Placement BELT-CARCASS and Coverage WHOLE_WIDTH or SEGMENTED. Partial = to "
+                       "check by hand: Placement or Coverage UNCLEAR, Coverage CENTRE_ONLY, or EDGE_ONLY with an "
+                       "objective other than belt durability. Low = out: EDGE_ONLY for belt durability only, Placement "
+                       "INTER-BELT, BELT-TREAD or CARCASS-LINER, or no such layer."),
+    "check_partial": True,
+    "max_problems": 3,  # the primary objective and up to two secondary ones
+    "focus": _UNDER_BELT_FOCUS,
+    "white_space_support": 5,
+    "long_text": True,  # claimed windows and complexity come from the independent claims: read them whole
+    "extra_fields": _cats([
+        ("Placement", "Where the layer sits radially. One of: BELT-CARCASS = between the belt package and the "
+                      "carcass or body ply | INTER-BELT = between belt layers | BELT-TREAD = between belt and tread "
+                      "(undertread, tread base, cushion) | CARCASS-LINER = between carcass and inner liner (tie gum) | "
+                      "UNCLEAR = not stated"),
+        ("Coverage", "Extent of the layer across the belt width. One of: WHOLE_WIDTH = continuous across the belt "
+                     "package width and crossing the equator (entire, whole or full width, from one belt end to the "
+                     "other, at least a belt width); the thickness may vary | SEGMENTED = two or more separate pieces "
+                     "across the width (e.g. centre and shoulder pieces, pieces with gaps), or divided laterally or "
+                     "circumferentially | CENTRE_ONLY = a single piece in the crown centre | EDGE_ONLY = pieces only "
+                     "at the belt edges | UNCLEAR = extent not stated"),
+        ("Primary objective", "The main objective of the layer. One of: " + " | ".join(_OBJECTIVES)),
+        ("Thickness profile", "Thickness of the layer across the width. One of: Uniform | Varies across width | "
+                              "Not stated"),
+        ("Segment details", "For a segmented layer: number of segments, positions, gaps, circumferential division, "
+                            "verbatim where possible; 'not stated' otherwise"),
+    ]),
+    "analysis_questions": [
+        ("How many families are analysed, and how do they split between Coverage WHOLE_WIDTH and SEGMENTED over "
+         "time? Chart: families per 3-year bucket of 'Year' (priority year), stacked by Coverage, other values kept "
+         "as their own category."),
+        ("Who are the top 15 assignees, and how many of their families are alive? Chart: families per 'Assignee "
+         "(normalised)' stacked by 'Alive (from legal status)'; table with families, alive families and families "
+         "with TBR in 'Segment' per assignee."),
+        ("Which assignees are new entrants (first family in this set in the last 5 complete priority years), and "
+         "with how many families? Also a heatmap of the top 10 assignees by 3-year priority-year bucket."),
+        ("Which objectives drive WHOLE_WIDTH and which drive SEGMENTED layers? Table of Coverage × 'Objective' (split "
+         "on '; ') and Coverage × 'Primary objective'. How many SEGMENTED families have Tyre uniformity correction "
+         "as primary objective, and how many name it at all?"),
+        ("Which segment layouts are claimed? Table of the SEGMENTED families: Patent ID, assignee, Year, alive, "
+         "'Segment details', 'Thickness profile'. Group the layouts (number of pieces, centre and shoulder pieces, "
+         "gaps, circumferential division) and count them, overall and among alive families."),
+        ("Which parameter windows are claimed? Table of each family whose 'Key parameters' states a value: Patent "
+         "ID, assignee, Coverage, alive and the window verbatim (no unit conversion). Type each window by keywords "
+         "(layer thickness, centre vs shoulder thickness, width vs belt width, segment width or gap, modulus, "
+         "hardness, tanδ, other). Chart: families per type, WHOLE_WIDTH vs SEGMENTED. Where do windows overlap?"),
+        ("Which technology groups and complexity levels serve the footprint and contact-pressure objectives? Counts "
+         "for families whose 'Objective' includes Footprint shape or Uniform contact pressure; chart of all families "
+         "per 3-year priority-year bucket by Complexity, from Basic to System-level."),
+        ("Which alive families matter most for a TBR under-belt layer? Shortlist of up to 15 for footprint, pressure "
+         "uniformity or uniformity correction (prefer TBR, these objectives, higher complexity, newer): Patent ID, "
+         "assignee, Year, Coverage, Complexity, 'Key parameters', and one line on why it matters from 'Core claim'."),
+        ("Which families expire within 3 years? Use an expiry or expected-expiration date column of the export (if "
+         "there is none, say so). Also list the families with a priority or publication date before 2005."),
+        ("What share of families has 'Segment' Not specified? If above 30 %, re-derive the tyre category from the "
+         "export's CPC codes (heavy-duty or construction-vehicle indexing), tyre sizes in the text (e.g. "
+         "295/80R22.5, 11R22.5, 315/80R22.5) and terms (truck, bus, heavy load, construction vehicle, passenger "
+         "car), and report the share before and after. Chart: families by tyre category × Coverage."),
+        ("How does the share of each objective change over time? Per 5-year priority-year bucket, the share of "
+         "families naming each objective in 'Objective' (split on '; '), with n per bucket, as a chart."),
+        ("How do families divide by publication authority ('Office')? Overall and for the top 5 assignees, as a "
+         "table and a chart."),
+    ],
+    "analysis_rules": (
+        "- Count patent families: one row is one family. Put n (families counted) in every chart title and table "
+        "caption, and label both axes.\n"
+        "- Keep Not stated, Not specified and UNCLEAR as their own categories; never drop them.\n"
+        "- 'Objective' holds the primary and secondary objectives separated by '; ': split before counting; a "
+        "family counts under each.\n"
+        "- Priority-year buckets of 3 years unless the question says otherwise; the last 18 months of priority years "
+        "are incomplete (publication lag): say so, never read them as a decline.\n"
+        "- Alive means 'Alive (from legal status)' = Yes; without that column, say alive counts are not possible.\n"
+        "- Quote claimed values verbatim; convert units only when unambiguous.\n"
+        "- Mark any finding that rests on fewer than 10 families as small n.\n"
+        "- Name patents by their Patent ID."),
+    "summary_format": (
+        "1. **Focus findings** (5 to 7 bullets) on the focus set, the patents whose objectives include Footprint "
+        "shape, Uniform contact pressure or Tyre uniformity correction: its size and share; the leading assignees "
+        "with their alive counts; the whole-width vs segmented split; the key claimed parameter windows; the most "
+        "relevant alive patents by Patent ID.\n"
+        "2. **Landscape context** (at most 3 bullets): overall size, trend and players.\n"
+        "3. **White space** (at most 3 bullets): only combinations the facts list as white space for the focus "
+        "objectives; write \"insufficient data\" where the facts say so; never present a zero cell as an "
+        "opportunity.\n"
+        "4. **Caveats** (at most 3 lines).\n"
+        "Rules: lead with the answer to the topic question, not with whichever category is most numerous. Patents "
+        "set aside to check and off-topic patents do not shape the findings. Make no segment-level statement (e.g. "
+        "\"X dominates TBR\") when more than 30 % of the patents name no segment. Cite publication numbers."),
+    "brief_notes": (
+        "Role: patent landscape analyst with tyre construction expertise, writing for the tyre designers and R&D "
+        "managers of a TBR predevelopment team (design direction, freedom-to-operate screening). Direct, technical "
+        "language, no promotional wording; every finding traces to publication numbers; landscape analysis, not a "
+        "legal opinion.\nCounting: patent families; n on every chart; Not stated / UNCLEAR kept as categories; "
+        "findings on fewer than 10 records flagged as small n; the last 18 months of priority years are incomplete."),
+    "questions": ["Search queries: which database queries produced this export? (They are listed in the method "
+                  "section; say whether one query targeted a sub-topic, which may then be over-represented.)"],
+    "report_sections": ["📊 Executive summary", "📈 Filing trends and geography", "🏢 Assignees and legal status",
+                        "🧠 Technology groups, complexity and topic clusters", "🔮 White-space assessment"],
+    "keywords": ["cushion rubber", "under-belt cushion", "belt under cushion", "pad rubber", "buffer rubber",
+                 "buffer layer", "squeegee", "gum strip", "intermediate rubber layer", "interlayer",
+                 "decoupling rubber", "between the carcass reinforcement and the crown reinforcement"],
+    "classification_codes": ["B60C 9/18 (belts, breakers, crown-reinforcing or cushioning layers)",
+                             "B60C 9/20 (belts built up from superimposed layers)", "B60C 9/02 (carcass)",
+                             "B60C 2200/06 (heavy-duty vehicle tyres)"],
+}
+PRESETS["Under-belt layer (belt–carcass interlayer)"] = UNDER_BELT_LAYER
+
 
 def preset_names() -> list[str]:
     return list(PRESETS)
@@ -470,7 +636,12 @@ def preset_plan(name: str) -> AnalysisPlan:
         complexity_levels=list(spec["complexity_levels"]), in_scope=spec["in_scope"],
         extra_fields=list(spec["extra_fields"]), analysis_questions=list(spec["analysis_questions"]),
         keywords=list(spec["keywords"]), classification_codes=list(spec["classification_codes"]),
-        report_sections=list(DEFAULT_SECTIONS), source="preset",
+        report_sections=list(spec.get("report_sections", DEFAULT_SECTIONS)), source="preset",
+        questions=list(spec.get("questions", [])), focus=list(spec.get("focus", [])),
+        max_problems=spec.get("max_problems", 0), relevance_rule=spec.get("relevance_rule", ""),
+        check_partial=spec.get("check_partial", False), white_space_support=spec.get("white_space_support", 0),
+        summary_format=spec.get("summary_format", ""), analysis_rules=spec.get("analysis_rules", ""),
+        long_text=spec.get("long_text", False),
     )
     plan.brief = preset_brief(name, plan)
     return plan
@@ -478,11 +649,33 @@ def preset_plan(name: str) -> AnalysisPlan:
 
 def preset_brief(name: str, plan: AnalysisPlan) -> str:
     """The plan as a brief, so the report text has a brief to follow."""
+    notes = PRESETS.get(name, {}).get("brief_notes", "")
     lines = [f"Patent landscape: {plan.title} (standard objective: {name}).", "", f"Objective: {plan.objective}",
              f"Scope: {plan.in_scope}", f"Segments: {', '.join(plan.segments)}", "",
              f"{plan.problem_label} categories:"]
+    if notes:
+        lines[1:1] = ["", notes]
     lines += [f"- {c.name}: {c.description}" for c in plan.problems]
+    if plan.focus:
+        lines.append(f"Focus {plan.problem_label.lower()}s: {', '.join(plan.focus)}")
     lines += ["", "Technology groups:"] + [f"- {c.name}: {c.description}" for c in plan.tech_buckets]
-    lines += ["", "Specific questions to answer:"] + [f"- {q}" for q in plan.analysis_questions]
-    lines += ["", "OUTPUT FORMAT"] + [f"- {s}" for s in plan.report_sections]
-    return "\n".join(lines)
+    # The relevance rule reaches the model that reads the patents and the summary's structure the summary's writer,
+    # both directly: the brief, cut at 5,000 characters for the report text, leaves them out.
+    if plan.check_partial:
+        lines += ["", "Patents rated Partial are set aside for a manual check and not counted."]
+    questions = [f"- {q}" for q in plan.analysis_questions]
+    tail = ["", "OUTPUT FORMAT"] + [f"- {s}" for s in plan.report_sections]
+    if len("\n".join(lines + questions + tail)) > BRIEF_CHARS:  # the report text reads the first 5,000 characters
+        questions = [f"- {_first_sentence(q)}" for q in plan.analysis_questions]
+    return "\n".join(lines + ["", "Specific questions to answer:"] + questions + tail)
+
+
+BRIEF_CHARS = 5000  # what narrative.write_sections passes on of a brief
+
+
+def _first_sentence(text: str) -> str:
+    """A question up to its first question mark or full stop (the data agent gets the whole question)."""
+    for i, char in enumerate(text):
+        if char in "?." and (i + 1 == len(text) or text[i + 1] == " ") and i > 20:
+            return text[: i + 1]
+    return text

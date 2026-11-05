@@ -12,9 +12,11 @@ from datetime import datetime
 
 import pandas as pd
 
+from ..config import reply_budget
 from ..llm import LLMClient, LLMError
 from ..parsing import strip_thinking
 from . import report as rb
+from .analytics import INSUFFICIENT
 from .llmjson import JSONReplyError, ask_json_list, chat_text, structured_client
 
 CANONICAL = ["summary", "visuals", "players", "clusters", "process", "gaps"]
@@ -31,7 +33,27 @@ DEFAULT_HEADINGS = {
     "clusters": "Technology clusters and solutions", "process": "Process and manufacturing",
     "gaps": "Research gaps and future trends",
 }
-MAX_FACTS = 9000
+MAX_FACTS = 9000  # facts per section when the context window is unknown or small
+MAX_FACTS_LARGE = 40_000
+BRIEF_CHARS = 5000  # the brief, when the context window is unknown or small
+BRIEF_CHARS_LARGE = 12_000
+SECTION_REPLY_TOKENS = 6000
+
+
+def section_reply_tokens(cfg) -> int:
+    """A section's reply budget: generous, but at most a third of a small context window."""
+    return max(cfg.max_tokens, min(SECTION_REPLY_TOKENS, cfg.context_tokens // 3))
+
+
+def text_budget(llm) -> tuple[int, int]:
+    """(brief, facts) characters a section's prompt may hold: generous where the context window has room (about 3
+    characters a token, after the reply and the instructions), the small defaults otherwise."""
+    cfg = getattr(llm, "config", None)
+    if not isinstance(llm, LLMClient) or cfg is None:
+        return BRIEF_CHARS, MAX_FACTS
+    room = (cfg.context_tokens - reply_budget(cfg, section_reply_tokens(cfg)) - 2000) * 3
+    brief = min(BRIEF_CHARS_LARGE, max(BRIEF_CHARS, room // 4))
+    return brief, min(MAX_FACTS_LARGE, max(MAX_FACTS, room - brief))
 
 
 @dataclass
@@ -137,6 +159,18 @@ significant. Never recommend a combination marked rare for technical reasons.
 phrase), then "**Recommended R&D directions:**" with 2 or 3 bullet points grounded in the gaps and trends. \
 At most 320 words. No heading, no preamble.\
 """
+SUMMARY_FORMAT = SUMMARY_SYSTEM[SUMMARY_SYSTEM.index("- Write in Markdown: 5 to 8"):]
+
+
+def summary_system(summary_format: str = "") -> str:
+    """The executive summary's instructions; a plan's own structure replaces the standard format line."""
+    if not summary_format.strip():
+        return SUMMARY_SYSTEM
+    return SUMMARY_SYSTEM.replace(SUMMARY_FORMAT, (
+        "- Write in Markdown and follow this structure and these rules from the study plan exactly; they come "
+        "before any other wish in the brief. Where a part needs facts that are not given, write one short line "
+        "saying so instead of filling it:\n" + summary_format.strip()
+        + "\n- Start each bullet with a short bold phrase. At most 600 words. No heading, no preamble."))
 
 
 def _clean_text(text: str, heading: str) -> str:
@@ -209,17 +243,18 @@ def fit_facts(text: str, limit: int = MAX_FACTS) -> str:
     return " ".join(out)[:limit]
 
 
-def section_facts(sec: Section, facts_by_kind: dict[str, str], all_facts: str) -> str:
+def section_facts(sec: Section, facts_by_kind: dict[str, str], all_facts: str, limit: int = MAX_FACTS) -> str:
     facts = all_facts if "summary" in sec.kinds or not sec.kinds else "\n".join(facts_by_kind.get(k, "") for k in sec.kinds)
-    return fit_facts(facts)
+    return fit_facts(facts, limit)
 
 
 def write_sections(sections: list[Section], facts_by_kind: dict[str, str], all_facts: str, brief: str,
                    answers: dict[str, str], llm, on_progress=None, instruction: str = "",
-                   answered_elsewhere: list[str] | None = None) -> None:
+                   answered_elsewhere: list[str] | None = None, summary_format: str = "") -> None:
     """Fills `text`/`flagged` of every section with model text; on failure, a note instead.
     `instruction`: the user's revision request when a section is rewritten. `answered_elsewhere`: the brief's
-    questions the report answers in its own section, which the other sections must not call missing."""
+    questions the report answers in its own section, which the other sections must not call missing.
+    `summary_format`: the plan's structure for the executive summary (empty: the standard one)."""
     if llm is None:
         for sec in sections:
             sec.note = "No model connected: this section has charts and tables only."
@@ -227,9 +262,10 @@ def write_sections(sections: list[Section], facts_by_kind: dict[str, str], all_f
     client = llm
     if isinstance(llm, LLMClient):
         cfg = llm.config
-        client = structured_client(llm, max(cfg.max_tokens, 3000), read_timeout=max(cfg.read_timeout, 600),
-                                   temperature=min(cfg.temperature, 0.3))
-    context = f"Study brief:\n{brief.strip()[:5000]}"
+        client = structured_client(llm, section_reply_tokens(cfg),
+                                   read_timeout=max(cfg.read_timeout, 600), temperature=min(cfg.temperature, 0.3))
+    brief_chars, fact_chars = text_budget(llm)
+    context = f"Study brief:\n{brief.strip()[:brief_chars]}"
     if answers:
         context += "\n\nThe user's answers to the brief's questions:\n" + "\n".join(f"- {q} {a}" for q, a in answers.items())
     if answered_elsewhere:
@@ -240,7 +276,7 @@ def write_sections(sections: list[Section], facts_by_kind: dict[str, str], all_f
         if on_progress:
             on_progress(i, len(sections))
         is_summary = "summary" in sec.kinds
-        facts = section_facts(sec, facts_by_kind, all_facts)
+        facts = section_facts(sec, facts_by_kind, all_facts, fact_chars)
         if not facts:
             continue
         ask = f"Section to write: {sec.heading}"
@@ -248,7 +284,7 @@ def write_sections(sections: list[Section], facts_by_kind: dict[str, str], all_f
             ask += (f"\nRevision requested by the user: {instruction.strip()}\n(The rules above still apply; if "
                     "the request conflicts with them, follow the rules.)")
         messages = [
-            {"role": "system", "content": SUMMARY_SYSTEM if is_summary else SECTION_SYSTEM},
+            {"role": "system", "content": summary_system(summary_format) if is_summary else SECTION_SYSTEM},
             {"role": "user", "content": f"{context}\n\n{ask}\n\nFacts:\n{facts}"},
         ]
         try:
@@ -315,7 +351,11 @@ def check_white_space(exhibit, plan, llm) -> str:
     block = next((b for b in exhibit.blocks if b.kind == "table" and b.table is not None), None)
     if block is None or block.table.empty:
         return ""
-    table = block.table.reset_index(drop=True)
+    full = block.table.reset_index(drop=True)
+    thin = full["Gap"].astype(str).str.startswith(INSUFFICIENT)
+    table = full[~thin].reset_index(drop=True)  # too few patents nearby: not a lead, so not judged
+    if table.empty:
+        return ""
     label = plan.problem_label or "Problem"
     lines = [f"Objective: {plan.objective}", f"{label} categories:"]
     lines += [f"- {c.name}: {c.description}" for c in plan.problems]
@@ -327,7 +367,7 @@ def check_white_space(exhibit, plan, llm) -> str:
         counted = "" if pd.isna(r["Expected"]) else f", about {r['Expected']} expected"
         lines.append(f"{i + 1}. {where}: {r['Gap']} ({r['Patents']} patents{counted})")
     try:
-        items = ask_json_list(llm, WHITE_SPACE_SYSTEM, "\n".join(lines), retries=1, max_tokens=2000)
+        items = ask_json_list(llm, WHITE_SPACE_SYSTEM, "\n".join(lines), retries=1, max_tokens=4000)
     except (LLMError, JSONReplyError) as exc:
         return f"Not done: the model could not judge the combinations ({str(exc)[:120]})."
     verdicts = {}
@@ -344,7 +384,9 @@ def check_white_space(exhibit, plan, llm) -> str:
     table[CHECK_COLUMN] = [f"{verdicts[i][0]}: {verdicts[i][1]}".rstrip(": ") if i in verdicts else "not judged"
                            for i in table.index]
     rank = [_VERDICT_ORDER.get(verdicts.get(i, ("unsure",))[0], 1) for i in table.index]
-    block.table = table.assign(_rank=rank).sort_values("_rank", kind="stable").drop(columns="_rank")
+    rest = full[thin].assign(**{CHECK_COLUMN: "not judged: insufficient data"})
+    block.table = pd.concat([table.assign(_rank=rank).sort_values("_rank", kind="stable").drop(columns="_rank"),
+                             rest], ignore_index=True)
     block.caption += (" Technical check: the model's view of whether each combination is a real R&D option; "
                       "an expert should confirm it.")
 
@@ -357,6 +399,10 @@ def check_white_space(exhibit, plan, llm) -> str:
     exhibit.facts = (f"White space (statistical leads, each checked by the model for technical sense). Plausible "
                      f"leads: {listing('plausible')}. Unsure: {listing('unsure')}. Rare for technical reasons, not "
                      f"leads: {listing('unlikely')}.")
+    if thin.any():
+        exhibit.facts += (" Insufficient data (too few patents nearby to judge; not white space, never an opening): "
+                          + "; ".join(r[label] if r["Technology group"] == "any" else f"{r[label]} × {r['Technology group']}"
+                                      for _, r in full[thin].head(8).iterrows()) + ".")
     counts = {k: sum(v[0] == k for v in verdicts.values()) for k in _VERDICT_ORDER}
     return (f"The model judged the {len(table)} under-explored combinations: {counts['plausible']} plausible, "
             f"{counts['unsure']} unsure, {counts['unlikely']} unlikely; only plausible and unsure ones are leads.")
@@ -405,9 +451,13 @@ def methodology_blocks(result) -> list[rb.Block]:
         "Removed": pd.array([f.removed if i else None for i, f in enumerate(flow)], dtype="Int64"),
         "Remaining": [f.remaining for f in flow],
     }), title="How the patent set was built", caption=f"Year basis: {corpus.year_basis}."))
+    blocks.append(mapping_block(corpus))
+    if plan.answers:
+        blocks.append(rb.table(pd.DataFrame({"Question": list(plan.answers), "Answer": list(plan.answers.values())}),
+                               title="Your answers to the brief's questions"))
     methods = pd.DataFrame({"Method": list(result.methods), "Detail": list(result.methods.values())})
     blocks.append(rb.table(methods, title="Methods used in this run"))
-    definitions = list(DEFINITIONS)
+    definitions = [(name, rule_definition(name, text, plan)) for name, text in DEFINITIONS]
     if getattr(result, "window_note", ""):
         definitions.insert(2, ("Publication window", result.window_note))
     blocks.append(rb.table(pd.DataFrame(definitions, columns=["Measure", "Definition"]), title="Definitions"))
@@ -422,11 +472,70 @@ def methodology_blocks(result) -> list[rb.Block]:
             blocks.append(rb.table(merged, title="Assignee names merged",
                                    caption="Spellings, legal forms and subsidiaries mapped to one name; the CSV "
                                            "keeps the original names too."))
+    low = low_confidence_block(result)
+    if low is not None:
+        blocks.append(low)
     lines = [f"- {x}" for x in LIMITATIONS]
     if plan.not_possible:
         lines += [f"- Not done here: {x}" for x in plan.not_possible]
     blocks.append(rb.markdown("**Limitations**\n\n" + "\n".join(lines)))
     return blocks
+
+
+def rule_definition(name: str, text: str, plan) -> str:
+    """A definition with the plan's own rules added (focus, minimum support, patents set aside to check)."""
+    if name == "White space":
+        from .plan import focus_names
+
+        focus = focus_names(plan)
+        if focus:
+            text += f" Only the focus categories are assessed: {', '.join(focus)}."
+        if plan.white_space_support:
+            text += (f" A combination counts only when the other cells of its row and column hold at least "
+                     f"{plan.white_space_support} patents together; otherwise it is marked “insufficient data”.")
+    if name == "Off-topic screening" and plan.check_partial:
+        text += (" Patents rated Partial are set aside for a manual check: listed in “Records to check”, not counted "
+                 "anywhere else.")
+    if name == "Off-topic screening" and plan.relevance_rule:
+        text += f" Relevance rule of this study: {plan.relevance_rule}"
+    return text
+
+
+def mapping_block(corpus) -> rb.Block:
+    """Which export column was used for each field, and what a missing one limits."""
+    from .data import ROLE_LABELS
+
+    mapping = corpus.mapping or {}
+    table = pd.DataFrame({"Field": [ROLE_LABELS.get(r, r) for r in ROLE_LABELS],
+                          "Export column": [mapping.get(r) or "not found" for r in ROLE_LABELS]})
+    limits = []
+    if not mapping.get("claims"):
+        limits.append("No claims column: complexity, core claim and claimed parameters rest on the title and abstract "
+                      "only.")
+    if not mapping.get("legal_status"):
+        limits.append("No legal-status column: alive / dead counts are not possible.")
+    if not mapping.get("family"):
+        limits.append("No family ID: counts are publications, not families.")
+    return rb.table(table, title="Columns used from the export",
+                    caption=" ".join(["Detected by column name; you can change the mapping in the plan step."] + limits))
+
+
+def low_confidence_block(result) -> rb.Block | None:
+    """The patents the model read with low confidence: findings that rest only on them need a check."""
+    ext = getattr(result, "extraction", None)
+    if ext is None or "Confidence" not in ext.table:
+        return None
+    low = ext.table[ext.table["Confidence"] == "Low"]
+    if low.empty:
+        return None
+    std = result.corpus.std.loc[low.index]
+    keep = [c for c in ext.table.columns if c in ("Relevance", "Technology group", "Complexity")
+            or c in {f.column for f in ext.fields if f.key == "problem" or (f.key.startswith("x_") and f.choices)}]
+    table = pd.concat([pd.DataFrame({"Patent ID": std["id"], "Title": std["title"].map(lambda t: str(t)[:120])}),
+                       low[keep]], axis=1)
+    return rb.table(table.reset_index(drop=True), title=f"Read with low confidence ({len(low):,} patents)",
+                    caption="The model was unsure about these patents (little text, or an unclear claim). Check them "
+                            "before relying on a finding that rests on them alone.")
 
 
 def validation_sample(enriched: pd.DataFrame, columns: list[str], n: int = 30, seed: int = 42) -> pd.DataFrame:

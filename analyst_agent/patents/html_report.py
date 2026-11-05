@@ -5,6 +5,8 @@ from __future__ import annotations
 import html
 import re
 
+import pandas as pd
+
 from . import report as rb
 
 CSS = """
@@ -133,7 +135,11 @@ def _slug(text: str, used: set[str]) -> str:
 
 
 def _table(df) -> str:
-    shown = df.head(500)
+    shown = df.head(500).copy()
+    for i in range(shown.shape[1]):  # nullable integers print a missing value as "<NA>": leave the cell empty
+        values = shown.iloc[:, i]
+        if pd.api.types.is_extension_array_dtype(values) and values.isna().any():
+            shown.isetitem(i, values.astype(object).where(values.notna(), ""))
     body = shown.to_html(index=False, classes="data", border=0, na_rep="", escape=True, float_format=lambda v: f"{v:,.2f}")
     more = f'<div class="caption">First 500 of {len(df):,} rows; the CSV has all.</div>' if len(df) > 500 else ""
     return f'<div class="tablewrap">{body}</div>{more}'

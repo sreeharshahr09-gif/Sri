@@ -20,14 +20,15 @@ from .test_patent_pipeline import FakeLLM
 EXPECTED = ["Lightweighting", "Low rolling resistance", "Durability", "Uneven wear", "Smart / connected tyres",
             "NVH (noise, vibration, harshness)", "Wet / dry traction", "Dynamic growth", "High performance",
             "Sustainable materials"]
+UNDER_BELT = "Under-belt layer (belt–carcass interlayer)"  # a study template with its own rules
 
 
 # --------------------------------------------------------------------------- the objectives
 
 
 def test_every_objective_is_a_complete_plan():
-    assert preset_names() == EXPECTED
-    for name in preset_names():
+    assert preset_names() == EXPECTED + [UNDER_BELT]
+    for name in EXPECTED:
         plan = preset_plan(name)
         assert plan.source == "preset" and plan.title and plan.objective and plan.in_scope, name
         assert 6 <= len(plan.problems) <= 8 and all(c.description for c in plan.problems), name
