@@ -23,6 +23,7 @@ from analyst_agent.workspace import Workspace, WorkspaceError, is_local_url
 from analyst_agent.workspace_agent import WorkspaceAgent
 from ui import jobs
 from ui.common import remember, render_artifact, render_execution
+from ui.compare_files import render_compare_files
 
 STARTER_QUESTIONS = [
     "Give me an overview of this folder: what is in it and how is it organised?",
@@ -390,9 +391,11 @@ def page() -> None:
         (st.success if kind == "success" else st.error)(message)
     st.session_state.ws_flash = []
 
-    ask_tab, files_tab_ = st.tabs(["💬 Ask", "🗂️ Files"])
+    ask_tab, files_tab_, compare_tab = st.tabs(["💬 Ask", "🗂️ Files", "📊 Compare files"])
     with files_tab_:
         files_tab(ws)
+    with compare_tab:
+        render_compare_files(ws, llm_cfg)
     with ask_tab:
         runs: list[WorkspaceRun] = st.session_state.ws_runs
         for idx, run in enumerate(runs):

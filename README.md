@@ -136,6 +136,26 @@ Set `WORKSPACE_DIR` to pre-fill the folder path.
    - Every apply and undo is recorded in `journal.jsonl`, shown in the sidebar as **Change history**.
 5. **Undo** restores the backup. It refuses if you've edited the file since the change was applied.
 
+### Compare files
+
+The **📊 Compare files** tab on the Workspace page compares test workbooks and tables in the open
+folder. It only reads them.
+
+- **Drum / FLAT TRAC R&D** (the default template): choose the test workbooks and write your
+  requirements. The template finds the Fy, Fx, Mx, Mz and stiffness worksheets, matches the loads
+  the workbooks share, checks the data and builds the graphs, with calculated takeaways (such as
+  cornering stiffness near zero slip). The model then writes an R&D interpretation, which you can
+  follow up with questions, and the whole study downloads as one HTML report. The computed results
+  and graphs stay available if the model cannot answer; the HTML report needs the written
+  interpretation. This template lets the model think, with a large reply budget and a long timeout.
+- **General comparison**: choose two to six Excel, CSV or TSV files and describe what to compare.
+  The assistant inspects the worksheets, picks comparable tables and measurements, and draws
+  graphs from calculations on the selected cells; the written summary is the model's
+  interpretation. The differences download as CSV.
+
+The model receives worksheet names, small table previews and the calculated results, not whole
+files; with a cloud model, that evidence leaves the PC.
+
 ## Patent landscape
 
 A professional patent landscape from your own database export, on any topic (uneven wear,
@@ -414,7 +434,8 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `app.py` | Streamlit entry point: page navigation, shared model settings, status bar |
 | `ui/jobs.py` | Background jobs: questions that survive page switches, the status bar, Stop |
 | `ui/data_page.py` | Data analysis page: upload, chat, live progress, trace, data tab, exports |
-| `ui/workspace_page.py` | Workspace page: open a folder, chat, sources, file browser |
+| `ui/workspace_page.py` | Workspace page: open a folder, chat, sources, file browser, Compare files tab |
+| `ui/compare_files.py` | Compare files tab: drum / FLAT TRAC template and general comparison |
 | `ui/patent_page.py` | Patent landscape page: upload, brief, plan, report, downloads, follow-ups |
 | `analyst_agent/patents/data.py` | Export columns, cleaning, de-duplication, assignee names, record flow |
 | `analyst_agent/patents/plan.py` | Brief to analysis plan (model, with a rule-based fallback) |
@@ -434,6 +455,11 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `analyst_agent/agent.py` | The data analyst on top of the loop: prompts, error hints, conversation memory, number check |
 | `analyst_agent/workspace_agent.py` | The workspace assistant on top of the loop: tools, proposed edits, citation checks |
 | `analyst_agent/editing.py` | Staged changes, diffs, apply with backup, undo, journal |
+| `analyst_agent/compare.py` | Reading workbook tables (sheets, header rows, column ranges) and numeric comparison |
+| `analyst_agent/auto_compare.py` | General comparison: the model picks tables and measurements; graphs from checked calculations |
+| `analyst_agent/compare_assistant.py` | Questions about a comparison, answered from its evidence |
+| `analyst_agent/drum_template.py` | Drum / FLAT TRAC study: Fy, Fx, Mx, Mz and stiffness at matched loads, interpretation, follow-ups |
+| `analyst_agent/drum_report.py` | The drum study as one offline HTML report |
 | `analyst_agent/prompts.py` | System prompt (protocol and analysis standards) and nudges |
 | `analyst_agent/parsing.py` | Pulls code and final answers out of free-form replies (fences, `<think>`, truncation) |
 | `analyst_agent/sandbox.py` | Code policy (AST) and the subprocess runner |

@@ -135,11 +135,11 @@ def collect(job_key: str) -> Any:
     job = active(job_key)
     if job is None or job.running:
         return None
-    runs_key, _ = JOB_PAGES[job_key]
-    if job_key in JOB_SINKS:
+    if job_key in JOB_SINKS:  # a job whose page stores the result itself (it may have no entry in JOB_PAGES)
         JOB_SINKS[job_key](job)
         st.session_state[job_key] = None
         return job.run
+    runs_key, _ = JOB_PAGES[job_key]
     run = job.run
     if run is None:  # the worker itself failed; keep the question visible with the error
         mode = job.mode or "data"

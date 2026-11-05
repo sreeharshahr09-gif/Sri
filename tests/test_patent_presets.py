@@ -240,3 +240,18 @@ def test_each_answer_is_previewed_as_soon_as_it_is_ready(tmp_path, monkeypatch):
                   on_event=lambda kind, payload: previews.append(payload) if kind == "preview" else None)
     shown = [[q for q in plan.analysis_questions if any(b.title == q for b in blocks)] for blocks in previews]
     assert shown[-2:] == [plan.analysis_questions[:1], plan.analysis_questions]
+
+
+def test_html_renders_markdown_tables_chart_wrappers_and_extra_styles():
+    import plotly.graph_objects as go
+
+    from analyst_agent.patents import report as rb
+
+    text = "## Results\n\n| Tyre | Peak |Fy| |\n|---|--:|\n| A | 1.2 |\n\n|a|b \\| c|\n|--|--|\n|1|2|"
+    page = report_html([rb.heading("T", 1), rb.markdown(text), rb.chart(go.Figure(), "Chart")], "T",
+                       extra_css=".x{color:red}").decode()
+    assert "<h4>Results</h4>" in page  # headings still move down two levels by default
+    assert '<th scope="col">Peak |Fy|</th>' in page and "<td>1.2</td>" in page  # a pipe inside a cell stays
+    assert '<th scope="col">b | c</th>' in page and "<td>2</td>" in page  # compact rows and escaped pipes
+    assert 'class="chartwrap"' in page and ".x{color:red}" in page
+    assert "<h2>Results</h2>" in report_html([rb.markdown(text)], "T", markdown_heading_offset=0).decode()

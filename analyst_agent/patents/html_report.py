@@ -40,8 +40,30 @@ def _inline(text: str) -> str:
     return re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r'<a href="\2">\1</a>', text)
 
 
-def markdown_to_html(text: str) -> str:
-    """The Markdown the report uses: headings, bullet and numbered lists, paragraphs, bold, italics, code."""
+_TABLE_SEPARATOR = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$")
+
+
+def _table_cells(line: str) -> list[str]:
+    """The cells of a Markdown table row. When the row has pipes with spaces around them, only those split cells, so
+    a pipe inside a cell ("Peak |Fy|") stays; a compact row ("|a|b|") splits on every pipe. "\\|" is a literal pipe."""
+    inner = line.strip().replace("\\|", "\x00")
+    inner = inner[1:] if inner.startswith("|") else inner
+    inner = inner[:-1] if inner.endswith("|") else inner
+    parts = re.split(r"(?<=\s)\|(?=\s)", inner) if re.search(r"\s\|\s", inner) else inner.split("|")
+    return [part.strip().replace("\x00", "|") for part in parts]
+
+
+def _markdown_table(header: list[str], rows: list[list[str]]) -> str:
+    head = "".join(f'<th scope="col">{_inline(cell)}</th>' for cell in header)
+    body = "".join("<tr>" + "".join(f"<td>{_inline(cell)}</td>" for cell in row + [""] * (len(header) - len(row)))
+                   + "</tr>" for row in rows)
+    return (f'<div class="tablewrap markdown-table"><table class="data"><thead><tr>{head}</tr></thead>'
+            f"<tbody>{body}</tbody></table></div>")
+
+
+def markdown_to_html(text: str, heading_offset: int = 2) -> str:
+    """The Markdown the report uses: headings, bullet and numbered lists, tables, paragraphs, bold, italics, code.
+    Headings move down `heading_offset` levels (by default "#" becomes <h3>, under the report's own headings)."""
     out: list[str] = []
     para: list[str] = []
     stack: list[str] = []  # open lists: "ul" / "ol"
@@ -55,8 +77,21 @@ def markdown_to_html(text: str) -> str:
         while stack:
             out.append(f"</{stack.pop()}>")
 
-    for raw in (text or "").splitlines():
-        line = raw.rstrip()
+    lines = (text or "").splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip()
+        i += 1
+        if "|" in line and i < len(lines) and _TABLE_SEPARATOR.match(lines[i]):  # a table: header, then |---|
+            flush_para()
+            close_lists()
+            header, rows = _table_cells(line), []
+            i += 1
+            while i < len(lines) and "|" in lines[i] and lines[i].strip():
+                rows.append(_table_cells(lines[i]))
+                i += 1
+            out.append(_markdown_table(header, rows))
+            continue
         m_head = re.match(r"^(#{1,6})\s+(.*)", line)
         m_item = re.match(r"^(\s*)([-*•]|\d+[.)])\s+(.*)", line)
         if not line.strip():
@@ -65,7 +100,7 @@ def markdown_to_html(text: str) -> str:
         elif m_head:
             flush_para()
             close_lists()
-            level = min(len(m_head.group(1)) + 2, 6)
+            level = max(1, min(len(m_head.group(1)) + heading_offset, 6))
             out.append(f"<h{level}>{_inline(m_head.group(2))}</h{level}>")
         elif m_item:
             flush_para()
@@ -104,7 +139,10 @@ def _table(df) -> str:
     return f'<div class="tablewrap">{body}</div>{more}'
 
 
-def report_html(blocks: list[rb.Block], title: str, subtitle: str = "") -> bytes:
+def report_html(blocks: list[rb.Block], title: str, subtitle: str = "", extra_css: str = "",
+                markdown_heading_offset: int = 2) -> bytes:
+    """The blocks as one offline HTML page. `extra_css` is added after the standard styles; Markdown headings move
+    down `markdown_heading_offset` levels."""
     used: set[str] = set()
     toc, parts = [], []
     plotly_loaded = False
@@ -122,7 +160,7 @@ def report_html(blocks: list[rb.Block], title: str, subtitle: str = "") -> bytes
         if block.title and block.kind not in ("plotly", "download", "code"):
             parts.append(f'<div class="block-title">{html.escape(block.title)}</div>')
         if block.kind == "markdown":
-            parts.append(markdown_to_html(block.text))
+            parts.append(markdown_to_html(block.text, markdown_heading_offset))
         elif block.kind == "note":
             parts.append(f'<div class="note">{_inline(block.text)}</div>')
         elif block.kind == "caption":
@@ -134,8 +172,10 @@ def report_html(blocks: list[rb.Block], title: str, subtitle: str = "") -> bytes
         elif block.kind == "table" and block.table is not None:
             parts.append(_table(block.table))
         elif block.kind == "plotly" and block.figure is not None:
-            parts.append(block.figure.to_html(full_html=False, include_plotlyjs=not plotly_loaded,
-                                              config={"displaylogo": False, "responsive": True}))
+            parts.append('<div class="chartwrap">'
+                         + block.figure.to_html(full_html=False, include_plotlyjs=not plotly_loaded,
+                                                config={"displaylogo": False, "responsive": True})
+                         + "</div>")
             plotly_loaded = True
         elif block.kind == "image" and block.data:
             import base64
@@ -156,5 +196,5 @@ def report_html(blocks: list[rb.Block], title: str, subtitle: str = "") -> bytes
     body = body.replace("<!--TOC-->", toc_html, 1) if "<!--TOC-->" in body else toc_html + body
     page = (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width, initial-scale=1">'
-            f"<title>{html.escape(title)}</title><style>{CSS}</style></head><body><main>{body}</main></body></html>")
+            f"<title>{html.escape(title)}</title><style>{CSS}{extra_css}</style></head><body><main>{body}</main></body></html>")
     return page.encode("utf-8")
