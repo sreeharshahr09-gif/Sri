@@ -390,8 +390,14 @@ Type a request in the box under the report; the outcome is added below it.
   replaced by a note saying so; everything else is kept (checked with a model that returns broken or no answers
   for half, most or all of its replies, and with exports of 1 to 2,500 patents). A daily request limit stops the
   run early with the finished part reported.
-- With a 16k context the model reads 6 patents per request; a larger context does not make
-  requests bigger. Structured requests (plan, cluster names, reading patents, report text) ask the
+- With a 16k context a local model server reads 6 patents per request, one request at a time; a larger
+  context does not make requests bigger, and the local set-up is otherwise unchanged.
+- **OpenRouter runs faster:** patents go 10 to a request (8 with the longer patent text), and several requests
+  are sent at once: *Requests at once (OpenRouter)* under **Advanced settings**, 4 by default (1 to 8); the brief's
+  questions are answered up to 3 at a time, each in its own sandbox. Free models stay within their limit: requests
+  still start at least 3.5 seconds apart, so the gain comes from overlapping each request's wait. For 2,000 patents
+  that is about 200 reading requests instead of 340, in waves of 4 instead of one after another. Results are the
+  same as one at a time; saved readings and answers are reused as before. Structured requests (plan, cluster names, reading patents, report text) ask the
   server to skip the model's "thinking" (`chat_template_kwargs: enable_thinking=false`, honoured by
   llama-server `--jinja` with Qwen3-style templates). If a model thinks anyway and runs out of
   reply tokens, the request is retried with more room and smaller batches, and the reason is

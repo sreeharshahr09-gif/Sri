@@ -218,6 +218,31 @@ def _switch_provider() -> None:
     saved[previous] = {k: ss.get(k) for k in ("llm_base_url", "llm_model", "llm_context")}
     ss.update(saved.get(ss.llm_provider) or _provider_defaults(ss.llm_provider))
     ss.llm_check = detect_server(_state_config())
+    _keep(*SETTINGS)
+
+
+# The model settings, kept apart from the widgets: a click while the very first page load is still running can send
+# the panel's blank defaults back (empty server address and model, "local", a 2,048-token context). What the user
+# or the server detection chose is put back before the panel is drawn, on every page load.
+SETTINGS = ("llm_provider", "llm_base_url", "llm_model", "llm_api_key", "llm_temperature", "llm_max_tokens",
+            "llm_thinking", "llm_timeout", "llm_context", "llm_seed")
+
+
+def _keep(*keys: str) -> None:
+    """Record these settings as chosen (widget callbacks, detection, provider switch)."""
+    ss = st.session_state
+    kept = ss.setdefault("llm_kept", {})
+    for key in keys:
+        if key in ss:
+            kept[key] = ss[key]
+
+
+def _restore_kept() -> None:
+    ss = st.session_state
+    kept = ss.setdefault("llm_kept", {k: ss[k] for k in SETTINGS if k in ss})
+    for key, value in kept.items():
+        if value is not None:
+            ss[key] = value
 
 
 def model_settings() -> LLMConfig:
@@ -229,6 +254,11 @@ def model_settings() -> LLMConfig:
                   else DEFAULT_LLM.model)
     ss.setdefault("llm_api_key", os.environ.get("OPENROUTER_API_KEY")
                   or (DEFAULT_LLM.api_key if is_openrouter(DEFAULT_LLM.base_url) else ""))
+    for key, value in (("llm_temperature", DEFAULT_LLM.temperature), ("llm_max_tokens", DEFAULT_LLM.max_tokens),
+                       ("llm_thinking", DEFAULT_LLM.thinking), ("llm_timeout", int(DEFAULT_LLM.read_timeout)),
+                       ("llm_context", DEFAULT_LLM.context_tokens), ("llm_seed", "")):
+        ss.setdefault(key, value)
+    _restore_kept()
     # A text box still loading when another setting changes can come back empty (seen when a setting was changed
     # right after this panel was opened). An empty server address or model is never meant: keep the last one.
     for key in ("llm_base_url", "llm_model"):
@@ -238,6 +268,7 @@ def model_settings() -> LLMConfig:
         # Once per browser session: pick up whatever model the server has loaded right now.
         ss.llm_autodetected = True
         detect_server(_state_config())
+        _keep("llm_model", "llm_context")
     cloud = ss.llm_provider == CLOUD
     notice = st.sidebar.empty()  # always there, so the expander below keeps its place (and stays open)
     if cloud:
@@ -248,19 +279,21 @@ def model_settings() -> LLMConfig:
             st.caption("⚠️ Everything the app sends to the model goes to OpenRouter and the model's provider: patent "
                        "texts, your brief and plan, data you analyse, workspace files you ask about. Free models "
                        "usually log prompts (NVIDIA's: do not send confidential information).")
-            st.text_input("OpenRouter API key", type="password", key="llm_api_key",
+            st.text_input("OpenRouter API key", type="password", key="llm_api_key", on_change=_keep,
+                          args=("llm_api_key",),
                           help="From openrouter.ai → Keys. Kept for this browser session only. To avoid retyping "
                                "it, put  set \"OPENROUTER_API_KEY=sk-or-...\"  in my_settings.bat.")
-        base_url = st.text_input("Server URL", key="llm_base_url")
+        base_url = st.text_input("Server URL", key="llm_base_url", on_change=_keep, args=("llm_base_url",))
         # Filled from the server: the model that is actually loaded is the one that answers.
-        model = st.text_input("Model", key="llm_model",
+        model = st.text_input("Model", key="llm_model", on_change=_keep, args=("llm_model",),
                               help="The model id from its page on openrouter.ai, e.g. " + CLOUD_MODEL if cloud else
                                    "Detected from the model server when the app starts or on 'Check connection'.")
-        temperature = st.slider("Temperature", 0.0, 1.0, DEFAULT_LLM.temperature, 0.05, key="llm_temperature",
-                                help="Low values give more consistent, reproducible analyses.")
-        max_tokens = st.number_input("Max tokens per reply", 256, 16384, DEFAULT_LLM.max_tokens, 256, key="llm_max_tokens")
+        temperature = st.slider("Temperature", 0.0, 1.0, step=0.05, key="llm_temperature", on_change=_keep,
+                                args=("llm_temperature",), help="Low values give more consistent, reproducible analyses.")
+        max_tokens = st.number_input("Max tokens per reply", 256, 16384, step=256, key="llm_max_tokens",
+                                     on_change=_keep, args=("llm_max_tokens",))
         thinking = Thinking(st.selectbox(
-            "Model thinking", list(Thinking), index=list(Thinking).index(DEFAULT_LLM.thinking), key="llm_thinking",
+            "Model thinking", list(Thinking), key="llm_thinking", on_change=_keep, args=("llm_thinking",),
             format_func=lambda mode: THINKING_LABELS[Thinking(mode)],
             help="Off: the patent steps run without thinking; the Data analysis and Workspace pages leave it to the "
                  "model. Writing and analysis: the model thinks when it plans, names clusters, judges white space, "
@@ -271,15 +304,17 @@ def model_settings() -> LLMConfig:
         ))
         if thinking in THINKING_NOTES:
             st.caption(THINKING_NOTES[thinking])
-        read_timeout = st.number_input("Request timeout (s)", 10, 1800, int(DEFAULT_LLM.read_timeout), 10, key="llm_timeout")
+        read_timeout = st.number_input("Request timeout (s)", 10, 1800, step=10, key="llm_timeout", on_change=_keep,
+                                       args=("llm_timeout",))
         # The value lives only in session state so "Check connection" can update it.
-        st.session_state.setdefault("llm_context", DEFAULT_LLM.context_tokens)
         context_tokens = st.number_input(
             "Context window (tokens)", min_value=2048, max_value=1_048_576, step=4096, key="llm_context",
+            on_change=_keep, args=("llm_context",),
             help=f"'Check connection' reads it from OpenRouter (at most {CLOUD_CONTEXT_CAP:,} are used)." if cloud
             else "Must match llama-server's -c value. 'Check connection' reads it from the server.",
         )
-        seed_text = st.text_input("Sampling seed (optional)", "", key="llm_seed", help="Passed to the server if set.")
+        seed_text = st.text_input("Sampling seed (optional)", key="llm_seed", on_change=_keep, args=("llm_seed",),
+                                  help="Passed to the server if set.")
         llm_cfg = replace(
             DEFAULT_LLM,
             base_url=base_url.strip(),
@@ -309,6 +344,7 @@ def model_settings() -> LLMConfig:
 def _check_connection(llm_cfg: LLMConfig) -> None:
     """Button callback: test the server and adopt its model and context window."""
     st.session_state.llm_check = detect_server(llm_cfg)
+    _keep("llm_model", "llm_context")
 
 
 def render_artifact(art: Artifact, key: str) -> None:

@@ -7,10 +7,13 @@ and every answer is cached on disk, so a stopped or crashed run resumes where it
 
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import json
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -18,13 +21,14 @@ from typing import Callable
 import pandas as pd
 
 from ..config import thinks_in
-from ..llm import LLMClient, LLMError, RequestLimitReached
+from ..llm import LLMClient, LLMError, RequestLimitReached, is_openrouter
 from .llmjson import ReplyCutOff, chat_text, json_objects, structured_client
 from .plan import AnalysisPlan
 from .semantic import CACHE_DIR
 
 PROMPT_VERSION = 1
 MAX_BATCH = 6
+MAX_BATCH_CLOUD, MAX_BATCH_CLOUD_LONG = 10, 8
 NOT_STATED = "not stated"
 
 
@@ -257,10 +261,12 @@ class ExtractionResult:
     stop_reason: str = ""  # why it stopped, if not at the user's request (e.g. the service's daily limit)
 
 
-def batch_size_for(context_tokens: int, long: bool = False) -> int:
+def batch_size_for(context_tokens: int, long: bool = False, cloud: bool = False) -> int:
     """Patents per request: about 1,600 tokens each (prompt + reply, with room for a model that thinks first;
-    2,800 with the long text) after the instructions and the reply's reserve."""
-    return max(1, min(MAX_BATCH, (int(context_tokens or 16384) - 3000) // (2800 if long else 1600)))
+    2,800 with the long text) after the instructions and the reply's reserve. Up to 6 for a local server; a cloud
+    model (large context, requests paced or paid per request) takes up to 10 (8 with the long text)."""
+    most = (MAX_BATCH_CLOUD_LONG if long else MAX_BATCH_CLOUD) if cloud else MAX_BATCH
+    return max(1, min(most, (int(context_tokens or 16384) - 3000) // (2800 if long else 1600)))
 
 
 def _signature(system: str, model: str) -> str:
@@ -309,14 +315,19 @@ def extract_details(
     use_cache: bool = True,
     on_progress: Callable[[int, int], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
+    parallel: int = 1,
 ) -> ExtractionResult:
+    """Every patent read by the model in batches. `parallel` batches are sent at once (OpenRouter; a local server
+    gets one at a time), each on its own connection; the free-model pacing in LLMClient still applies."""
     fields = build_fields(plan)
     system = system_prompt(plan, fields)
     # Answers read with thinking are cached apart from those read without, as answers of another model are.
     model_name = (llm.config.model + (" with thinking" if thinks_in(llm.config, reading=True) else "")
                   if isinstance(llm, LLMClient) else type(llm).__name__)
     context = llm.config.context_tokens if isinstance(llm, LLMClient) else 16384
-    size = batch_size or batch_size_for(context, plan.long_text)
+    cloud = isinstance(llm, LLMClient) and is_openrouter(llm.config.base_url)
+    size = batch_size or batch_size_for(context, plan.long_text, cloud=cloud)
+    workers = max(1, int(parallel or 1))
     cache = _Cache(CACHE_DIR / "extract" / f"{_signature(system, model_name)}.jsonl" if use_cache else None)
     started = time.perf_counter()
 
@@ -332,25 +343,37 @@ def extract_details(
     stats = {"patents": total, "from cache": len(values), "extracted": 0, "failed": 0, "model calls": 0,
              "values corrected": 0, "batch size": size}
 
-    reason = ""  # why the last reply gave no answers, for the patents that fail
+    calls_lock = threading.Lock()
+    local = threading.local()
 
-    def ask(batch: list) -> dict[int, dict]:
-        """One request for a batch; returns {position in batch: object}."""
-        nonlocal reason
+    def client_for_thread():
+        """The model client of this thread: with several batches at once, each thread has its own connection."""
+        if workers == 1 or not isinstance(llm, LLMClient):
+            return llm
+        if getattr(local, "client", None) is None:
+            import requests
+
+            local.client = type(llm)(llm.config, session=requests.Session())
+        return local.client
+
+    def ask(batch: list) -> tuple[dict[int, dict], str]:
+        """One request for a batch: ({position in batch: object}, why there were no answers)."""
+        reason = ""
         user = "\n\n".join(f"P{i + 1} | {prompts[idx]}" for i, idx in enumerate(batch))
-        client = llm
-        if isinstance(llm, LLMClient):
-            cfg = llm.config
+        client = base = client_for_thread()
+        if isinstance(base, LLMClient):
+            cfg = base.config
             # Generous, within what the context window leaves after the prompt (about 3 characters a token).
             room = cfg.context_tokens - (len(system) + len(user)) // 3 - 256
-            client = structured_client(llm, max(600 * len(batch) + 1500, min(1000 * len(batch) + 2000, room)),
+            client = structured_client(base, max(600 * len(batch) + 1500, min(1000 * len(batch) + 2000, room)),
                                        reading=True,
                                        read_timeout=max(cfg.read_timeout, 600),
                                        temperature=min(cfg.temperature, 0.2), seed=seed)
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         objs: list[dict] = []
         for attempt in range(2):
-            stats["model calls"] += 1
+            with calls_lock:
+                stats["model calls"] += 1
             reply = chat_text(client, messages)
             objs = json_objects(reply)
             if objs:
@@ -365,7 +388,15 @@ def extract_details(
                 by_pos.setdefault(ref - 1, obj)
         if not by_pos and len(objs) == len(batch):  # no usable refs: trust the order
             by_pos = dict(enumerate(objs))
-        return by_pos
+        return by_pos, reason
+
+    def attempt(batch: list):
+        """ask(batch), with what went wrong instead of raising: (answers, why none, exception or None)."""
+        try:
+            got, why = ask(batch)
+            return got, why, None
+        except Exception as exc:
+            return {}, "", exc
 
     def store(idx, obj: dict, how: str) -> None:
         nonlocal corrected
@@ -388,41 +419,59 @@ def extract_details(
     last_error = ""
     report()
     queue = [todo[i : i + size] for i in range(0, len(todo), size)]
-    while queue:
-        if should_stop is not None and should_stop():
-            stopped = True
-            break
-        batch = queue.pop(0)
-        try:
-            got = ask(batch)
-            hard_failures, last_error = 0, ""
-        except ReplyCutOff as exc:  # the model answers, but ran out of room: smaller requests may work
-            got, last_error = {}, str(exc)
-        except RequestLimitReached as exc:  # every further request would be refused: stop, keep what is done
-            stopped, stop_reason = True, str(exc)
-            break
-        except Exception as exc:  # LLMError, or anything unexpected: this batch fails, the others go on
-            got = {}
-            last_error = str(exc) if isinstance(exc, LLMError) else f"{type(exc).__name__}: {exc}"
-            hard_failures += 1
-            if hard_failures >= 3:  # the model is gone: don't grind through every batch
-                for idx in batch + [i for b in queue for i in b]:
-                    status[idx] = f"failed: {exc}"[:200]
-                stats["failed"] += len(batch) + sum(len(b) for b in queue)
+    pool = ThreadPoolExecutor(max_workers=workers) if workers > 1 else None
+    try:
+        while queue:
+            if should_stop is not None and should_stop():
+                stopped = True
+                break
+            wave, queue = queue[:workers], queue[workers:]  # one batch at a time, or a few at once
+            if pool is None:
+                outcomes = [attempt(b) for b in wave]
+            else:  # each thread keeps this run's context (the saved-answers cache)
+                outcomes = [f.result() for f in [pool.submit(contextvars.copy_context().run, attempt, b)
+                                                 for b in wave]]
+            retry = []
+            gone = None
+            for batch, (got, why, exc) in zip(wave, outcomes):
+                if isinstance(exc, RequestLimitReached):  # every further request would be refused: stop
+                    stopped, stop_reason = True, str(exc)
+                    continue
+                if exc is None:
+                    hard_failures, last_error = 0, ""
+                elif isinstance(exc, ReplyCutOff):  # the model answers, but ran out of room: smaller requests may work
+                    last_error = str(exc)
+                else:  # LLMError, or anything unexpected: this batch fails, the others go on
+                    last_error = str(exc) if isinstance(exc, LLMError) else f"{type(exc).__name__}: {exc}"
+                    hard_failures += 1
+                    if hard_failures >= 3:  # the model is gone: don't grind through every batch
+                        gone = exc
+                for pos, idx in enumerate(batch):
+                    if pos in got:
+                        store(idx, got[pos], "extracted")
+                        stats["extracted"] += 1
+                    elif gone is not None:
+                        status[idx] = f"failed: {gone}"[:200]
+                        stats["failed"] += 1
+                    elif len(batch) > 1:
+                        retry.append([idx])  # missing from a batch reply: once more on its own
+                    else:
+                        status[idx] = f"failed: {last_error or why or 'no usable answer'}"[:300]
+                        stats["failed"] += 1
+            if stop_reason:
+                break
+            if gone is not None:
+                rest = [i for b in retry + queue for i in b]
+                for idx in rest:
+                    status[idx] = f"failed: {gone}"[:200]
+                stats["failed"] += len(rest)
                 queue = []
                 break
-        retry = []
-        for pos, idx in enumerate(batch):
-            if pos in got:
-                store(idx, got[pos], "extracted")
-                stats["extracted"] += 1
-            elif len(batch) > 1:
-                retry.append([idx])  # missing from a batch reply: once more on its own
-            else:
-                status[idx] = f"failed: {last_error or reason or 'no usable answer'}"[:300]
-                stats["failed"] += 1
-        queue = retry + queue
-        report()
+            queue = retry + queue
+            report()
+    finally:
+        if pool is not None:
+            pool.shutdown(wait=True)
 
     for idx in std.index:
         status.setdefault(idx, "not run (request limit reached)" if stop_reason else "not run (stopped)")

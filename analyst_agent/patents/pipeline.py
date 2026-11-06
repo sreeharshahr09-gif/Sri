@@ -123,7 +123,7 @@ def _run_landscape(raw, mapping, plan, llm, options: PipelineOptions, on_event, 
         _guarded(result, "Collecting the facts", collect_facts, result)
         if options.answer_questions and result.plan.analysis_questions:
             _guarded(result, "Answering the brief's questions", questions_stage, result, llm, emit, checkpoint,
-                     should_stop, preview)
+                     should_stop, preview, min(3, parallel_for(llm, options)))
             _guarded(result, "Adding the answers to the facts", add_answers_to_facts, result)
         if options.write_report:
             checkpoint("Writing the report")
@@ -333,9 +333,11 @@ def answered_questions(result: LandscapeResult) -> list[str]:
 
 
 def questions_stage(result: LandscapeResult, llm, emit: EventHandler, checkpoint: Callable[[str], None],
-                    should_stop: Callable[[], bool] | None = None, on_answer: Callable[[], None] | None = None) -> None:
+                    should_stop: Callable[[], bool] | None = None, on_answer: Callable[[], None] | None = None,
+                    parallel: int = 1) -> None:
     """The data agent answers each brief-specific question with code run on the enriched patent table.
-    `on_answer` is called after each answer (for the preview)."""
+    `on_answer` is called after each answer (for the preview). With `parallel` > 1 (OpenRouter), that many
+    questions are answered at once, each with its own sandbox and connection."""
     if llm is None:
         result.warnings.append("The brief-specific questions were not answered (no analysis server connected).")
         return
@@ -345,9 +347,23 @@ def questions_stage(result: LandscapeResult, llm, emit: EventHandler, checkpoint
     client = agent_client(llm)
     # Room for questions with several parts (a chart and a table), and for long tables in the output.
     config = AgentConfig(max_steps=max(AgentConfig().max_steps, 10), max_observation_chars=12_000)
+    profile = landscape_profile(result, dataset, max_chars=profile_budget(client))
+    if parallel > 1 and len(questions) > 1:
+        _questions_at_once(result, questions, client, dataset, config, profile, emit, checkpoint, should_stop,
+                           on_answer, min(parallel, len(questions)))
+    else:
+        _questions_in_turn(result, questions, client, dataset, config, profile, emit, checkpoint, should_stop,
+                           on_answer)
+    answered = sum(1 for _, run in result.question_runs if run.answer and run.executed)
+    result.methods["Brief-specific questions"] = (
+        f"{answered} of {len(questions)} answered with Python code run on the enriched patent table (up to "
+        f"{config.max_steps} steps each); numbers in the answers are traced to the code output.")
+
+
+def _questions_in_turn(result, questions, client, dataset, config, profile, emit, checkpoint, should_stop,
+                       on_answer) -> None:
     with Sandbox(SandboxConfig()) as sandbox:
-        agent = DataAnalystAgent(client, sandbox, dataset, config=config,
-                                 profile=landscape_profile(result, dataset, max_chars=profile_budget(client)))
+        agent = DataAnalystAgent(client, sandbox, dataset, config=config, profile=profile)
         for i, question in enumerate(questions):
             checkpoint(f"Answering the brief's questions ({i + 1} of {len(questions)})")
             # The agent's own events show its steps in the status bar; Stop reaches it between steps.
@@ -362,10 +378,50 @@ def questions_stage(result: LandscapeResult, llm, emit: EventHandler, checkpoint
             result.question_runs.append((question, run))
             if on_answer is not None:
                 on_answer()
-    answered = sum(1 for _, run in result.question_runs if run.answer and run.executed)
-    result.methods["Brief-specific questions"] = (
-        f"{answered} of {len(questions)} answered with Python code run on the enriched patent table (up to "
-        f"{config.max_steps} steps each); numbers in the answers are traced to the code output.")
+
+
+def _questions_at_once(result, questions, client, dataset, config, profile, emit, checkpoint, should_stop,
+                       on_answer, workers: int) -> None:
+    """The questions answered `workers` at a time; the report keeps the plan's order."""
+    import contextvars
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    from ..llm import LLMClient
+
+    checkpoint(f"Answering the brief's questions ({workers} at a time)")
+
+    def answer(question: str):
+        own = client
+        if isinstance(client, LLMClient):  # its own connection: requests sessions are not shared between threads
+            import requests
+
+            own = type(client)(client.config, session=requests.Session())
+        with Sandbox(SandboxConfig()) as sandbox:
+            agent = DataAnalystAgent(own, sandbox, dataset, config=config, profile=profile)
+            return agent.run(question, on_event=emit, should_stop=should_stop)
+
+    done: dict[int, tuple] = {}
+    cancelled = False
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(contextvars.copy_context().run, answer, q): i for i, q in enumerate(questions)}
+        for future in as_completed(futures):
+            i = futures[future]
+            try:
+                run = future.result()
+            except Exception as exc:  # this question is not answered; the others still are
+                result.warnings.append(f"Question {i + 1} could not be answered ({type(exc).__name__}: "
+                                       f"{str(exc)[:160]}).")
+                continue
+            if run.status == RunStatus.CANCELLED:
+                cancelled = True
+                continue
+            done[i] = (questions[i], run)
+            result.question_runs = [done[k] for k in sorted(done)]
+            emit(Event.PROGRESS, (len(done), len(questions)))
+            if on_answer is not None:
+                on_answer()
+    if cancelled:
+        raise Cancelled()
 
 
 def add_answers_to_facts(result: LandscapeResult) -> None:
@@ -409,6 +465,14 @@ def result_model(llm) -> str:
     return (cfg.model or type(llm).__name__) + (" with thinking" if thinks_in(cfg) else "")
 
 
+def parallel_for(llm, options: PipelineOptions) -> int:
+    """Requests sent at once: the option on OpenRouter, one at a time for a local model server (unchanged)."""
+    from ..llm import LLMClient
+
+    cloud = isinstance(llm, LLMClient) and is_openrouter(llm.config.base_url)
+    return max(1, int(options.parallel_requests or 1)) if cloud else 1
+
+
 def extraction_stage(result: LandscapeResult, llm, options: PipelineOptions, emit, should_stop) -> None:
     if llm is None:
         result.warnings.append("The patent details (topic, design lever, ...) were not extracted (no analysis server "
@@ -417,6 +481,7 @@ def extraction_stage(result: LandscapeResult, llm, options: PipelineOptions, emi
     res = enrich.extract_details(
         result.corpus.std, result.plan, llm, batch_size=options.batch_size, seed=options.seed,
         on_progress=lambda done, total: emit(Event.PROGRESS, (done, total)), should_stop=should_stop,
+        parallel=parallel_for(llm, options),
     )
     result.extraction = res
     result.methods["Patent details"] = res.info

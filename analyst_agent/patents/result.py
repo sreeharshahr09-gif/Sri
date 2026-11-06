@@ -40,6 +40,7 @@ class PipelineOptions:
     vision_model: str = ""  # a vision model that picks and describes the figures (empty: the page analysis alone)
     branding: Branding | None = None  # logo, who generated the report and its notice, on the downloads
     reuse_replies: bool = True  # answer requests asked in an earlier run from the saved replies (saves requests)
+    parallel_requests: int = 4  # OpenRouter: patent batches sent at once (questions: up to 3); a local server: 1
 
 
 class LandscapeStatus(StrEnum):

@@ -336,6 +336,11 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
             st.checkbox("Reuse saved answers for unchanged steps (saves tokens)", key=remember("pl_reuse", True),
                         help="Every model reply of a run is saved. Running again after a crash or a stop, or with "
                              "an unchanged plan, asks the model only what changed. Untick it for fresh text.")
+            if is_openrouter(llm_cfg.base_url):
+                st.number_input("Requests at once (OpenRouter)", 1, 8, key=remember("pl_parallel", 4),
+                                help="Patent batches sent at the same time (the brief's questions: up to 3 at a "
+                                     "time). Free models stay within their rate limit: requests still start at "
+                                     "least 3.5 s apart. A local model server always gets one request at a time.")
             n1, n2 = st.columns([1, 2])
             n1.number_input("Notable patents with figures (0 = none)", 0, 30, key=remember("pl_notable", 10),
                             help="The patents with the highest interest (value and novelty), as cards with their "
@@ -394,10 +399,13 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
         st.caption(f"With this plan, **{n:,} patents** will be analysed (of {flow[0].remaining:,} in the export; "
                    f"year basis: {basis}).")
         if st.session_state.get("pl_extract", True) and n:
-            size = enrich.batch_size_for(llm_cfg.context_tokens, plan.long_text)
+            cloud = is_openrouter(llm_cfg.base_url)
+            size = enrich.batch_size_for(llm_cfg.context_tokens, plan.long_text, cloud=cloud)
+            at_once = int(st.session_state.get("pl_parallel", 4) or 1) if cloud else 1
             st.caption(f"The model reads them in about {-(-n // size):,} requests of {size} patents (context window "
-                       f"{llm_cfg.context_tokens:,} tokens). Answers are cached, so a stopped run continues where it "
-                       "left off. For a first look, try a trial run of 50–100 patents.")
+                       f"{llm_cfg.context_tokens:,} tokens)" + (f", {at_once} at a time" if at_once > 1 else "")
+                       + ". Answers are cached, so a stopped run continues where it left off. For a first look, try "
+                       "a trial run of 50–100 patents.")
             if is_free_model(llm_cfg):
                 free_model_note(min(n, int(sample)) if sample else n, size, plan)
         for note in notes:
@@ -433,6 +441,7 @@ def start_run(plan: AnalysisPlan, mapping: dict, sample: int, llm_cfg: LLMConfig
         fetch_figures=bool(st.session_state.get("pl_fetch_pdfs", True)),
         vision_model=str(st.session_state.get("pl_vision_model") or "").strip(),
         reuse_replies=bool(st.session_state.get("pl_reuse", True)),
+        parallel_requests=int(st.session_state.get("pl_parallel", 4) or 1),
         embedding_model=(st.session_state.get("pl_embed_model") or semantic.DEFAULT_MODEL).strip(),
         branding=current_branding(),
     )
