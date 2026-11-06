@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
+import hashlib
 import json
 import os
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 import requests
@@ -16,6 +20,71 @@ from .config import LLMConfig, reply_budget
 
 class LLMError(RuntimeError):
     """Raised when the model server cannot produce a completion."""
+
+
+class ReplyCache:
+    """Model replies on disk, keyed by exactly what was asked: server, model, settings and messages. A long run
+    that is repeated (after a crash, a stop or with an unchanged plan) then costs no requests for the steps
+    already done. Only complete, non-empty replies are kept."""
+
+    def __init__(self, folder: Path):
+        self.folder = Path(folder)
+        self.hits = 0
+        self.saved = 0
+
+    @staticmethod
+    def key(base: str, payload: dict) -> str:
+        text = json.dumps({"base": base, "payload": payload}, sort_keys=True, ensure_ascii=False, default=str)
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def _path(self, key: str) -> Path:
+        return self.folder / key[:2] / f"{key}.json"
+
+    def get(self, key: str) -> "Completion | None":
+        try:
+            data = json.loads(self._path(key).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if not isinstance(data, dict) or not str(data.get("content") or "").strip():
+            return None
+        self.hits += 1
+        return Completion(content=data["content"], finish_reason=data.get("finish_reason"), latency_s=0.0)
+
+    def put(self, key: str, completion: "Completion") -> None:
+        if not (completion.content or "").strip() or completion.finish_reason == "length":
+            return  # an empty or cut-off reply is asked again next time
+        path = self._path(key)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(json.dumps({"content": completion.content, "finish_reason": completion.finish_reason},
+                                      ensure_ascii=False), encoding="utf-8")
+            tmp.replace(path)
+            self.saved += 1
+        except OSError:
+            pass
+
+
+_REPLY_CACHE: contextvars.ContextVar[ReplyCache | None] = contextvars.ContextVar("reply_cache", default=None)
+
+
+def active_reply_cache() -> ReplyCache | None:
+    """The reply cache of the running block, if any (for reporting how many answers it gave)."""
+    return _REPLY_CACHE.get()
+
+
+@contextlib.contextmanager
+def reply_cache(folder: Path | None):
+    """Within the block (in this thread), LLMClient answers requests asked before from `folder`; None: off."""
+    if folder is None:
+        yield None
+        return
+    cache = ReplyCache(folder)
+    token = _REPLY_CACHE.set(cache)
+    try:
+        yield cache
+    finally:
+        _REPLY_CACHE.reset(token)
 
 
 class ReplyCutOff(LLMError):
@@ -152,9 +221,16 @@ class LLMClient:
 
         Connection failures, server errors (5xx) and providers' transient errors use up the retries;
         waiting out a per-minute rate limit and asking again without the reasoning switch do not.
+        Inside `reply_cache(...)`, a request asked before is answered from the saved reply, without a request.
         """
         cfg = self.config
         payload = self._payload(messages)
+        cache = _REPLY_CACHE.get()
+        key = cache.key(self._base, payload) if cache is not None else ""
+        if cache is not None:
+            saved = cache.get(key)
+            if saved is not None:
+                return saved
         last_error: Exception | None = None
         attempt = waits = 0
         while attempt <= cfg.max_retries:
@@ -168,8 +244,13 @@ class LLMClient:
             except requests.ConnectionError as exc:
                 last_error = exc
                 continue
+            except requests.RequestException as exc:  # e.g. a reply cut off in transfer: worth asking again
+                last_error = LLMError(f"The connection to the model server failed ({type(exc).__name__}).")
+                continue
             outcome = self._outcome(resp, payload, start)
             if isinstance(outcome, Completion):
+                if cache is not None:
+                    cache.put(key, outcome)
                 return outcome
             last_error = outcome.error
             if outcome.drop_reasoning:
@@ -275,7 +356,7 @@ class LLMClient:
         except (ValueError, KeyError, IndexError, TypeError) as exc:
             raise LLMError(f"Unexpected response from model server: {resp.text[:500]}") from exc
 
-        usage = data.get("usage") or {}
+        usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
         if not content.strip() and choice.get("finish_reason") == "length":
             raise ReplyCutOff(
                 f"The model used all {reply_budget(cfg, cfg.max_tokens):,} reply tokens without writing an answer; "

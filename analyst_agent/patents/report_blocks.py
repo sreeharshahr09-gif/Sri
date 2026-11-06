@@ -25,15 +25,24 @@ from .workbook import report_workbook
 
 
 def assemble_blocks(result: LandscapeResult, options: PipelineOptions | None = None) -> list[rb.Block]:
-    """The final report: its body, then the patent table and the downloads."""
+    """The final report: its body, then the patent table and the downloads. A download that cannot be built is
+    replaced by a note saying so: it must never cost the finished analysis."""
     body = report_body(result)
-    blocks = body + table_blocks(result, options)
+    blocks = body + _attempt(result, "The patent table and its CSV", lambda: table_blocks(result, options), [])
     branding = options.branding if options is not None else None
-    blocks.append(html_download(result, blocks, branding))
-    workbook = workbook_download(result, body, branding)
-    if workbook is not None:
-        blocks.append(workbook)
-    return blocks
+    html = _attempt(result, "The HTML report", lambda: html_download(result, blocks, branding), None)
+    workbook = _attempt(result, "The Excel workbook", lambda: workbook_download(result, body, branding), None)
+    return blocks + [b for b in (html, workbook) if b is not None]
+
+
+def _attempt(result: LandscapeResult, what: str, build, fallback):
+    """build(), or `fallback` with a note in the run's notes when it fails."""
+    try:
+        return build()
+    except Exception as exc:  # one broken download must not lose the report
+        result.warnings.append(f"{what} could not be built ({type(exc).__name__}: {str(exc)[:200]}); the rest of "
+                               "the report is complete.")
+        return fallback
 
 
 PREVIEW_NOTE = ("Preliminary results: the analysis is still running. What is shown below is finished; the rest "
@@ -52,8 +61,28 @@ def preview_blocks(result: LandscapeResult) -> list[rb.Block]:
 
 
 def report_body(result: LandscapeResult) -> list[rb.Block]:
-    """The report without its downloads: title, sections, brief-specific answers, methodology and notes."""
-    blocks = title_blocks(result)
+    """The report without its downloads: title, sections, brief-specific answers, methodology and notes. Each part
+    is laid out on its own: one that fails gives a note in its place, the others are kept."""
+    blocks = _part("The title", lambda: title_blocks(result), [rb.heading(f"Patent landscape: {result.plan.title}", 1)])
+    blocks += _part("The report sections", lambda: _section_blocks(result), [])
+    blocks += _part("The notable patents", lambda: notable_blocks(result), [])
+    blocks += _part("The brief-specific analyses", lambda: brief_specific_blocks(result), [])
+    blocks += _part("The records to check", lambda: check_blocks(result), [])
+    blocks += _part("The methodology", lambda: nar.methodology_blocks(result), [])
+    if result.warnings:
+        blocks.append(rb.markdown("**Notes from this run**\n\n" + "\n".join(f"- {w}" for w in result.warnings)))
+    return blocks
+
+
+def _part(what: str, build, fallback: list[rb.Block]) -> list[rb.Block]:
+    try:
+        return build()
+    except Exception as exc:  # the rest of the report is kept
+        return fallback + [rb.note(f"{what} could not be laid out ({type(exc).__name__}: {str(exc)[:160]}).")]
+
+
+def _section_blocks(result: LandscapeResult) -> list[rb.Block]:
+    blocks: list[rb.Block] = []
     sections = result.sections or nar.plan_sections(result.plan.report_sections)
     for sec in sections:
         parts = nar.section_blocks(sec)
@@ -63,20 +92,15 @@ def report_body(result: LandscapeResult) -> list[rb.Block]:
             if scope:
                 parts.append(rb.markdown(f"**Scope of this study:** {scope}"))
         if "clusters" in sec.kinds and result.semantic is not None:
-            parts.extend(semantic_blocks(result.corpus, result.semantic, analysed_topics(result),
-                                         analysed_index(result), per_patent=result.extraction is not None))
+            parts.extend(_part("The patent map", lambda: semantic_blocks(
+                result.corpus, result.semantic, analysed_topics(result), analysed_index(result),
+                per_patent=result.extraction is not None), []))
         for ex in (e for e in result.exhibits if e.section in sec.kinds):
             parts.append(rb.heading(ex.title, level=3))
             parts.extend(ex.blocks)
         if parts:
             blocks.append(rb.heading(sec.heading))
             blocks.extend(parts)
-    blocks.extend(notable_blocks(result))
-    blocks.extend(brief_specific_blocks(result))
-    blocks.extend(check_blocks(result))
-    blocks.extend(nar.methodology_blocks(result))
-    if result.warnings:
-        blocks.append(rb.markdown("**Notes from this run**\n\n" + "\n".join(f"- {w}" for w in result.warnings)))
     return blocks
 
 
@@ -312,7 +336,7 @@ def artifact_block(art: Artifact) -> rb.Block | None:
         if art.kind == ArtifactKind.TEXT:
             return rb.markdown(art.text)
         return rb.metrics([(art.title or "Result", art.text)]) if art.is_metric else rb.markdown(f"`{art.text}`")
-    except (AttributeError, KeyError, TypeError, ValueError):  # a broken output must not break the report
+    except Exception:  # a broken output must not break the report
         return None
 
 

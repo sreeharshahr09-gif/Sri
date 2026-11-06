@@ -6,7 +6,7 @@ import json
 import re
 from dataclasses import asdict, dataclass, field
 
-from .llmjson import JSONReplyError, LLMError, ask_json
+from .llmjson import ask_json
 
 
 @dataclass
@@ -174,7 +174,7 @@ def parse_brief(llm, brief: str, sample_titles: list[str] | None = None,
                  + "\n".join(f"- {t}" for t in titles))
     try:
         data = ask_json(llm, PLAN_SYSTEM, user, retries=1, max_tokens=8000)  # a whole plan, long ones included
-    except (LLMError, JSONReplyError):
+    except Exception:  # whatever went wrong, the plan is set up by rules
         fallback.not_possible.append("The plan could not be prepared automatically; it was set up by rules instead. "
                                      "Please review it.")
         return fallback

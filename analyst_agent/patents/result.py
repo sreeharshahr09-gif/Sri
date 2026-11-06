@@ -39,6 +39,7 @@ class PipelineOptions:
     figures_per_patent: int = 2
     vision_model: str = ""  # a vision model that picks and describes the figures (empty: the page analysis alone)
     branding: Branding | None = None  # logo, who generated the report and its notice, on the downloads
+    reuse_replies: bool = True  # answer requests asked in an earlier run from the saved replies (saves requests)
 
 
 class LandscapeStatus(StrEnum):
@@ -100,6 +101,7 @@ def analysed_topics(result: LandscapeResult) -> pd.DataFrame | None:
         # group, not the namer's guess from keywords (which put "Carcass ply architecture" under "Novel
         # architecture" for the user).
         groups = frame.loc[frame["tech_group"] != an.UNCLASSIFIED].assign(cid=std.loc[frame.index, "cluster_id"])
-        majority = groups.groupby("cid")["tech_group"].agg(lambda g: g.value_counts().index[0])
+        majority = groups.groupby("cid")["tech_group"].agg(
+            lambda g: g.value_counts().index[0] if g.notna().any() else "")  # a cluster without a known group
         topics["tech_group"] = topics["id"].map(majority).fillna(topics.get("tech_group", ""))
     return topics.sort_values(["patents", "all_patents"], ascending=False, kind="stable")

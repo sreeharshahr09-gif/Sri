@@ -383,6 +383,13 @@ Type a request in the box under the report; the outcome is added below it.
   under **Advanced settings** in the plan.
 - Cache: `~/.research_agent/patent_cache` (set `PATENT_CACHE_DIR` to move it). A stopped or
   crashed run continues where it left off; delete the folder to start fresh.
+- **Saved answers:** every model reply of a run is also saved (`PATENT_CACHE_DIR/replies`). Running again after a
+  crash, a stop or with an unchanged plan asks the model only what changed: in a test, a repeated run sent no
+  request at all. Untick *Reuse saved answers for unchanged steps* under **Advanced settings** for fresh text.
+- **A run always ends with a report.** A step, question, report section, chart, table or download that fails is
+  replaced by a note saying so; everything else is kept (checked with a model that returns broken or no answers
+  for half, most or all of its replies, and with exports of 1 to 2,500 patents). A daily request limit stops the
+  run early with the finished part reported.
 - With a 16k context the model reads 6 patents per request; a larger context does not make
   requests bigger. Structured requests (plan, cluster names, reading patents, report text) ask the
   server to skip the model's "thinking" (`chat_template_kwargs: enable_thinking=false`, honoured by

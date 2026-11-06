@@ -22,29 +22,63 @@ def _axis_title(fig, axis: str) -> str:
         return ""
 
 
+def _values(data) -> np.ndarray | None:
+    """A trace's numbers as an array. A chart rebuilt from JSON (as the analysis sandbox hands them over) holds
+    them as Plotly's packed form {"dtype": "i1", "bdata": "<base64>", "shape": "3, 4"}, which must be unpacked."""
+    if data is None:
+        return None
+    if isinstance(data, dict):
+        if "bdata" not in data:
+            return None
+        import base64
+
+        array = np.frombuffer(base64.b64decode(data["bdata"]), dtype=np.dtype(str(data.get("dtype", "f8"))))
+        shape = data.get("shape")
+        if shape is not None:
+            dims = [int(d) for d in (shape.split(",") if isinstance(shape, str) else shape)]
+            array = array.reshape(dims)
+        return array
+    return np.asarray(data, dtype=object if not np.ndim(data) else None)
+
+
 def figure_table(fig) -> pd.DataFrame | None:
     """The numbers a chart shows: a heatmap as its grid, bars and lines as one row per category and one column per
-    series. None for charts without a table behind them (maps, box plots, treemaps)."""
+    series. None for charts without a table behind them (maps, box plots, treemaps) or whose data cannot be read."""
+    try:
+        return _figure_table(fig)
+    except (ValueError, TypeError, KeyError, IndexError):  # an unusual chart: its sheet is left out, never the file
+        return None
+
+
+def _figure_table(fig) -> pd.DataFrame | None:
     heat = [t for t in fig.data if t.type == "heatmap" and t.z is not None]
     if heat:
         t = heat[0]
-        z = np.asarray(t.z)
-        x = list(t.x) if t.x is not None else list(range(z.shape[1]))
-        y = list(t.y) if t.y is not None else list(range(z.shape[0]))
+        z = _values(t.z)
+        if z is None or z.ndim != 2:
+            return None
+        x, y = _values(t.x), _values(t.y)
+        x = list(x) if x is not None and len(x) == z.shape[1] else list(range(z.shape[1]))
+        y = list(y) if y is not None and len(y) == z.shape[0] else list(range(z.shape[0]))
         grid = pd.DataFrame(z, index=y, columns=x)
         return grid.rename_axis(_axis_title(fig, "yaxis") or "").reset_index()
-    traces = [t for t in fig.data if t.type in ("bar", "scatter") and t.x is not None and t.y is not None]
-    if not traces or sum(len(t.x) for t in traces) > MAX_POINTS:
+    traces = []
+    for t in fig.data:
+        if t.type in ("bar", "scatter"):
+            xs, ys = _values(t.x), _values(t.y)
+            if xs is not None and ys is not None and xs.ndim == 1 and ys.ndim == 1:
+                traces.append((t, xs, ys))
+    if not traces or sum(len(xs) for _, xs, _ in traces) > MAX_POINTS:
         return None
     rows = []
-    for t in traces:
+    for t, xs, ys in traces:
         horizontal = t.type == "bar" and t.orientation == "h"
-        cats, vals = (t.y, t.x) if horizontal else (t.x, t.y)
+        cats, vals = (ys, xs) if horizontal else (xs, ys)
         rows += [{"category": c, "series": t.name or "Value", "value": v} for c, v in zip(cats, vals)]
     long = pd.DataFrame(rows)
     if long.empty:
         return None
-    horizontal = traces[0].type == "bar" and traces[0].orientation == "h"
+    horizontal = traces[0][0].type == "bar" and traces[0][0].orientation == "h"
     cat_name = _axis_title(fig, "yaxis" if horizontal else "xaxis") or "Category"
     if long["series"].nunique() == 1:
         value_name = _axis_title(fig, "xaxis" if horizontal else "yaxis") or "Value"
@@ -118,7 +152,11 @@ def report_workbook(blocks: list[rb.Block], title: str, branding=None) -> bytes 
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         _clean(contents).to_excel(writer, sheet_name="Contents", index=False, startrow=2)
         for name, (_, _, _, data) in zip(names, sheets):
-            _clean(data).to_excel(writer, sheet_name=name, index=False)
+            try:
+                _clean(data).to_excel(writer, sheet_name=name, index=False)
+            except Exception as exc:  # one table Excel cannot take: its sheet says so, the others are written
+                pd.DataFrame({"Note": [f"This table could not be written ({type(exc).__name__})."]}).to_excel(
+                    writer, sheet_name=name, index=False)
         for ws in writer.sheets.values():
             first = 3 if ws.title == "Contents" else 1  # the title and branding lines may run across
             for column in ws.iter_cols(min_row=first, max_row=min(ws.max_row, 200)):

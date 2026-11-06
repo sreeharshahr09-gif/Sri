@@ -86,7 +86,11 @@ def branding_settings() -> Branding:
                                   key="brand_logo_upload")
         logo = upload.getvalue() if upload is not None and upload.size <= MAX_LOGO_BYTES else default.logo
         if logo and ss.brand_show_logo:
-            st.image(logo, width=180)
+            try:
+                st.image(logo, width=180)
+            except Exception:  # a damaged image file: no logo rather than a broken page
+                st.caption("⚠️ This logo file cannot be read; choose another one.")
+                logo = default.logo if upload is not None else None
         st.caption("On every HTML report, the Excel workbook and the Markdown and notebook exports. To change the "
                    "defaults for good, edit branding/branding.json or replace branding/logo.png in the app folder.")
     branding = Branding(organisation=ss.brand_org, author=ss.brand_author, notice=ss.brand_notice, logo=logo,
@@ -107,7 +111,10 @@ def show_branding(branding: Branding) -> None:
         return
     left, right = st.columns([1, 2], vertical_alignment="center")
     if branding.logo_shown:
-        left.image(branding.logo_shown, width=200)
+        try:
+            left.image(branding.logo_shown, width=200)
+        except Exception:  # a damaged logo: the text lines still show
+            pass
     if branding.credit:
         right.caption(_plain(branding.credit_on()))
     if branding.notice.strip():

@@ -57,7 +57,8 @@ def format_execution(result: ExecutionResult, limit: int, hint: str = "") -> str
         return "\n\n".join(parts)
 
     if result.ok:
-        parts.append(f"Status: success ({result.duration_s:.1f}s)")
+        # No run time here: it varies between runs, and a saved answer is only reused for the same request.
+        parts.append("Status: success")
     else:
         parts.append(f"Status: ERROR ({result.error_type}): {result.error_message}")
 

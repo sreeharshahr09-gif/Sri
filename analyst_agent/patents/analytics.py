@@ -1112,7 +1112,7 @@ def run_analytics(frame: pd.DataFrame, plan: AnalysisPlan, year_basis: str, ref_
     for fn in EXHIBITS:
         try:
             ex = fn(frame, ctx)
-        except (KeyError, ValueError, TypeError, ZeroDivisionError, IndexError) as exc:  # one bad exhibit must not
+        except Exception as exc:  # one bad exhibit must not
             notes.append(f"{fn.__name__.replace('_', ' ').capitalize()} could not be computed ({exc}).")  # sink all
             continue
         if ex is not None:

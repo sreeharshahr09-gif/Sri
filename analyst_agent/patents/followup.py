@@ -18,7 +18,7 @@ from ..data import Dataset, describe_for_llm
 from ..enums import StrEnum
 from ..llm import LLMClient
 from . import narrative as nar
-from .llmjson import JSONReplyError, LLMError, ask_json
+from .llmjson import ask_json
 from .plan import AnalysisPlan, Category, clean_plan, focus_names
 
 ACTIONS = ("analyse", "change_plan", "rewrite")
@@ -98,7 +98,7 @@ def route(llm, text: str, plan: AnalysisPlan, headings: list[str]) -> Route:
             f"Report sections: {json.dumps(headings, ensure_ascii=False)}\n\nRequest: {text.strip()}")
     try:
         data = ask_json(llm, ROUTER_SYSTEM, user, retries=1, max_tokens=6000) if llm is not None else None
-    except (LLMError, JSONReplyError) as exc:
+    except Exception as exc:  # decided by rules instead
         data = None
         note = f"decided by rules: the model could not ({exc})"
     else:
@@ -210,7 +210,9 @@ def agent_client(llm):
 def analysis_dataset(result) -> Dataset:
     """The enriched table of the patents the report analyses: off-topic patents are left out, as in the report,
     so the data agent's counts match the report's."""
-    table = result.enriched.drop(columns=[c for c in ("Map X", "Map Y") if c in result.enriched])
+    # Bookkeeping columns are left out: "Extraction" (read now or from the cache) would make an unchanged run's
+    # questions look new, so their saved answers would not be reused.
+    table = result.enriched.drop(columns=[c for c in ("Map X", "Map Y", "Extraction") if c in result.enriched])
     if getattr(result, "analysis_frame", None) is not None:
         keep = result.corpus.std.index.isin(result.analysis_frame.index)  # the enriched table follows std's order
         if len(keep) == len(table):

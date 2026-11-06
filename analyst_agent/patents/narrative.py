@@ -13,11 +13,11 @@ from datetime import datetime
 import pandas as pd
 
 from ..config import reply_budget
-from ..llm import LLMClient, LLMError
+from ..llm import LLMClient
 from ..parsing import strip_thinking
 from . import report as rb
 from .analytics import INSUFFICIENT
-from .llmjson import JSONReplyError, ask_json_list, chat_text, structured_client
+from .llmjson import ask_json_list, chat_text, structured_client
 
 CANONICAL = ["summary", "visuals", "players", "clusters", "process", "gaps"]
 SECTION_RULES = [  # first match wins; "Research gaps & future trends" is about gaps, not trend charts
@@ -289,7 +289,7 @@ def write_sections(sections: list[Section], facts_by_kind: dict[str, str], all_f
         ]
         try:
             reply = chat_text(client, messages)
-        except LLMError:
+        except Exception:  # one section without text, not the rest of them
             sec.note = "This section's text could not be written; the charts and tables below are complete."
             continue
         sec.text = drop_answered_gaps(_clean_text(reply, sec.heading), answered_elsewhere or [])
@@ -367,7 +367,7 @@ def check_white_space(exhibit, plan, llm) -> str:
         lines.append(f"{i + 1}. {where}: {r['Gap']} ({r['Patents']} patents{counted})")
     try:
         items = ask_json_list(llm, WHITE_SPACE_SYSTEM, "\n".join(lines), retries=1, max_tokens=4000)
-    except (LLMError, JSONReplyError):
+    except Exception:  # the statistical leads stay, without the check
         return "Not done: the combinations could not be judged."
     verdicts = {}
     for item in items:

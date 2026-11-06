@@ -28,7 +28,7 @@ import pandas as pd
 
 from ..agent import DataAnalystAgent
 from ..config import AgentConfig, SandboxConfig, Thinking, thinks_in
-from ..llm import is_openrouter
+from ..llm import active_reply_cache, is_openrouter, reply_cache
 from ..runs import Event, EventHandler, RunStatus
 from ..sandbox import Sandbox
 from . import analytics as an
@@ -63,6 +63,14 @@ def run_landscape(
     dataset_sha256: str = "",
 ) -> LandscapeResult:
     options = options or PipelineOptions()
+    # Every reply is saved as it comes: a run repeated after a crash, a stop or with an unchanged plan asks again
+    # only what changed (the patents' own readings have their cache in enrich.py).
+    with reply_cache(enrich.CACHE_DIR / "replies" if options.reuse_replies else None):
+        return _run_landscape(raw, mapping, plan, llm, options, on_event, should_stop, dataset_name, dataset_sha256)
+
+
+def _run_landscape(raw, mapping, plan, llm, options: PipelineOptions, on_event, should_stop, dataset_name: str,
+                   dataset_sha256: str) -> LandscapeResult:
     emit = on_event or (lambda *_: None)
     started = time.perf_counter()
 
@@ -116,7 +124,7 @@ def run_landscape(
         if options.answer_questions and result.plan.analysis_questions:
             _guarded(result, "Answering the brief's questions", questions_stage, result, llm, emit, checkpoint,
                      should_stop, preview)
-            add_answers_to_facts(result)  # the report text is written from them too
+            _guarded(result, "Adding the answers to the facts", add_answers_to_facts, result)
         if options.write_report:
             checkpoint("Writing the report")
             _guarded(result, "Writing the report text", narrative_stage, result, llm, emit, preview)
@@ -129,11 +137,35 @@ def run_landscape(
         result.methods["Language model"] = result.model_name + (
             f"; figures chosen with {options.vision_model}" if options.fetch_figures and options.vision_model
             and options.notable_count else "")
-    if result.enriched is None:
-        result.enriched = enriched_table(result)
-    result.blocks = assemble_blocks(result, options)
+    saved = active_reply_cache()
+    if saved is not None and saved.hits:
+        result.methods["Saved answers"] = (f"{saved.hits} answers for steps unchanged since an earlier run were taken "
+                                           "from that run instead of being asked again.")
+    try:
+        if result.enriched is None:
+            result.enriched = enriched_table(result)
+        result.blocks = assemble_blocks(result, options)
+    except Exception as exc:  # the analysis is done: whatever goes wrong now, show what there is
+        message = (f"Laying out the report failed ({type(exc).__name__}: {str(exc)[:200]}); the results that could "
+                   "be shown are below.")
+        result.status, result.error = LandscapeStatus.ERROR, result.error or message
+        result.warnings.append(message)
+        result.blocks = fallback_blocks(result)
     result.duration_s = time.perf_counter() - started
     return result
+
+
+def fallback_blocks(result: LandscapeResult) -> list:
+    """The report body alone when the full layout fails, or at least a note, never nothing."""
+    from . import report as rb
+    from .report_blocks import report_body
+
+    try:
+        return report_body(result)
+    except Exception as exc:
+        return [rb.heading(f"Patent landscape: {result.plan.title}", level=1),
+                rb.note(f"The report could not be laid out ({type(exc).__name__}: {str(exc)[:200]}). The patents "
+                        "read so far are cached: running the analysis again reuses them.")]
 
 
 def _guarded(result: LandscapeResult, name: str, stage: Callable, *args) -> None:
@@ -215,6 +247,12 @@ def group_gallery(result: LandscapeResult, groups: list[str], llm=None, options:
     """The top patents (by interest, scored against the whole analysed set) of the chosen technology groups, with
     the model's notes and their figures."""
     options = options or PipelineOptions()
+    with reply_cache(enrich.CACHE_DIR / "replies" if options.reuse_replies else None):
+        return _group_gallery(result, groups, llm, options, on_event, should_stop)
+
+
+def _group_gallery(result: LandscapeResult, groups: list[str], llm, options: PipelineOptions, on_event,
+                   should_stop) -> nb.Gallery:
     emit = on_event or (lambda *_: None)
     frame = result.analysis_frame if result.analysis_frame is not None else an.build_frame(result.corpus.std, None, [])
     within = frame.index[frame["tech_group"].isin(groups)]
@@ -313,7 +351,12 @@ def questions_stage(result: LandscapeResult, llm, emit: EventHandler, checkpoint
         for i, question in enumerate(questions):
             checkpoint(f"Answering the brief's questions ({i + 1} of {len(questions)})")
             # The agent's own events show its steps in the status bar; Stop reaches it between steps.
-            run = agent.run(question, on_event=emit, should_stop=should_stop)
+            try:
+                run = agent.run(question, on_event=emit, should_stop=should_stop)
+            except Exception as exc:  # this question is not answered; the others still are
+                result.warnings.append(f"Question {i + 1} could not be answered ({type(exc).__name__}: "
+                                       f"{str(exc)[:160]}).")
+                continue
             if run.status == RunStatus.CANCELLED:
                 raise Cancelled()
             result.question_runs.append((question, run))

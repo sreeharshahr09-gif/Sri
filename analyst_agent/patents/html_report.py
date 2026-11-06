@@ -239,6 +239,48 @@ def _with_footer(body: str, footer: str) -> str:
             f"<tfoot><tr><td>{footer}</td></tr></tfoot></table>")
 
 
+def _block_html(block: rb.Block, plotly_loaded: bool, markdown_heading_offset: int) -> tuple[str, bool]:
+    """One block as HTML, and whether Plotly's script is in the page now."""
+    out: list[str] = []
+    if block.title and block.kind not in ("plotly", "download", "code"):
+        out.append(f'<div class="block-title">{html.escape(block.title)}</div>')
+    if block.kind == "markdown":
+        out.append(markdown_to_html(block.text, markdown_heading_offset))
+    elif block.kind == "note":
+        out.append(f'<div class="note">{_inline(block.text)}</div>')
+    elif block.kind == "caption":
+        out.append(f'<div class="caption">{_inline(block.text)}</div>')
+    elif block.kind == "metrics":
+        cards = "".join(f'<div class="metric"><div class="label">{html.escape(k)}</div>'
+                        f'<div class="value">{html.escape(v)}</div></div>' for k, v in block.metrics)
+        out.append(f'<div class="metrics">{cards}</div>')
+    elif block.kind == "table" and block.table is not None:
+        out.append(_table(block.table))
+    elif block.kind == "plotly" and block.figure is not None:
+        out.append('<div class="chartwrap">'
+                     + block.figure.to_html(full_html=False, include_plotlyjs=not plotly_loaded,
+                                            config={"displaylogo": False, "responsive": True})
+                     + "</div>")
+        plotly_loaded = True
+    elif block.kind == "image" and block.data:
+        import base64
+
+        src = base64.b64encode(block.data).decode("ascii")
+        out.append(f'<img alt="{html.escape(block.title or "chart")}" src="data:image/png;base64,{src}" '
+                     'style="max-width:100%">')
+    elif block.kind == "cards":
+        out.append(_cards(block.items))
+    elif block.kind == "code":
+        out.append(f'<details class="code"><summary>{html.escape(block.title or "Code")}</summary>'
+                     f"<pre><code>{html.escape(block.text)}</code></pre></details>")
+    elif block.kind == "download":
+        out.append(f'<div class="caption">Download in the app: {html.escape(block.file_name)}</div>')
+        return "".join(out), plotly_loaded
+    if block.caption:
+        out.append(f'<div class="caption">{_inline(block.caption)}</div>')
+    return "".join(out), plotly_loaded
+
+
 def report_html(blocks: list[rb.Block], title: str, subtitle: str = "", extra_css: str = "",
                 markdown_heading_offset: int = 2, branding=None) -> bytes:
     """The blocks as one offline HTML page. `extra_css` is added after the standard styles; Markdown headings move
@@ -258,42 +300,12 @@ def report_html(blocks: list[rb.Block], title: str, subtitle: str = "", extra_cs
                 parts.append(f'<p class="meta">{html.escape(subtitle)}</p>')
                 parts.append("<!--TOC-->")
             continue
-        if block.title and block.kind not in ("plotly", "download", "code"):
-            parts.append(f'<div class="block-title">{html.escape(block.title)}</div>')
-        if block.kind == "markdown":
-            parts.append(markdown_to_html(block.text, markdown_heading_offset))
-        elif block.kind == "note":
-            parts.append(f'<div class="note">{_inline(block.text)}</div>')
-        elif block.kind == "caption":
-            parts.append(f'<div class="caption">{_inline(block.text)}</div>')
-        elif block.kind == "metrics":
-            cards = "".join(f'<div class="metric"><div class="label">{html.escape(k)}</div>'
-                            f'<div class="value">{html.escape(v)}</div></div>' for k, v in block.metrics)
-            parts.append(f'<div class="metrics">{cards}</div>')
-        elif block.kind == "table" and block.table is not None:
-            parts.append(_table(block.table))
-        elif block.kind == "plotly" and block.figure is not None:
-            parts.append('<div class="chartwrap">'
-                         + block.figure.to_html(full_html=False, include_plotlyjs=not plotly_loaded,
-                                                config={"displaylogo": False, "responsive": True})
-                         + "</div>")
-            plotly_loaded = True
-        elif block.kind == "image" and block.data:
-            import base64
-
-            src = base64.b64encode(block.data).decode("ascii")
-            parts.append(f'<img alt="{html.escape(block.title or "chart")}" src="data:image/png;base64,{src}" '
-                         'style="max-width:100%">')
-        elif block.kind == "cards":
-            parts.append(_cards(block.items))
-        elif block.kind == "code":
-            parts.append(f'<details class="code"><summary>{html.escape(block.title or "Code")}</summary>'
-                         f"<pre><code>{html.escape(block.text)}</code></pre></details>")
-        elif block.kind == "download":
-            parts.append(f'<div class="caption">Download in the app: {html.escape(block.file_name)}</div>')
-            continue
-        if block.caption:
-            parts.append(f'<div class="caption">{_inline(block.caption)}</div>')
+        try:
+            html_part, plotly_loaded = _block_html(block, plotly_loaded, markdown_heading_offset)
+        except Exception as exc:  # one block that cannot be shown must not cost the report
+            html_part = (f'<div class="note">This {html.escape(block.kind)} could not be shown '
+                         f"({html.escape(type(exc).__name__)}).</div>")
+        parts.append(html_part)
     body = "\n".join(parts)
     toc_html = f'<nav class="toc"><strong>Contents</strong><ol>{"".join(toc)}</ol></nav>' if toc else ""
     body = body.replace("<!--TOC-->", toc_html, 1) if "<!--TOC-->" in body else toc_html + body

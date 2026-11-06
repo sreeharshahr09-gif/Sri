@@ -18,7 +18,7 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 
-from .llmjson import JSONReplyError, LLMError, ask_json_list
+from .llmjson import ask_json_list
 from .plan import AnalysisPlan
 
 DEFAULT_MODEL = os.environ.get("PATENT_EMBEDDING_MODEL", "AI-Growth-Lab/PatentSBERTa")
@@ -278,8 +278,10 @@ def name_topics(llm, topics: pd.DataFrame, plan: AnalysisPlan, batch: int = 10) 
                 lines.append(f"  - {str(title)[:140]}")
         try:
             items = ask_json_list(llm, NAMING_SYSTEM, "\n".join(lines), retries=1, max_tokens=6000)
-        except (LLMError, JSONReplyError) as exc:
+        except Exception as exc:  # these clusters keep their keyword names; the map is not lost
             failures.append(str(exc))
+            continue
+        if not isinstance(items, list):
             continue
         by_id = {}
         for item in items:

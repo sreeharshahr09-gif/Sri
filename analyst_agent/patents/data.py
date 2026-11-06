@@ -422,7 +422,8 @@ def build_corpus(
     def col(role: str) -> pd.Series:
         name = mapping.get(role)
         if name and name in raw.columns:
-            return raw[name]
+            values = raw[name]
+            return values.iloc[:, 0] if isinstance(values, pd.DataFrame) else values  # a repeated column name
         return pd.Series([None] * len(raw), index=raw.index, dtype=object)
 
     std = pd.DataFrame(index=raw.index)

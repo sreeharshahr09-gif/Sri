@@ -333,6 +333,9 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
                      "already read with the shorter text are read again (each version is cached).")
             st.checkbox("Build the patent map and topic clusters", key=remember("pl_semantic", True))
             st.checkbox("Answer the brief-specific questions (data agent)", key=remember("pl_questions", True))
+            st.checkbox("Reuse saved answers for unchanged steps (saves tokens)", key=remember("pl_reuse", True),
+                        help="Every model reply of a run is saved. Running again after a crash or a stop, or with "
+                             "an unchanged plan, asks the model only what changed. Untick it for fresh text.")
             n1, n2 = st.columns([1, 2])
             n1.number_input("Notable patents with figures (0 = none)", 0, 30, key=remember("pl_notable", 10),
                             help="The patents with the highest interest (value and novelty), as cards with their "
@@ -429,6 +432,7 @@ def start_run(plan: AnalysisPlan, mapping: dict, sample: int, llm_cfg: LLMConfig
         notable_count=int(st.session_state.get("pl_notable", 10) or 0),
         fetch_figures=bool(st.session_state.get("pl_fetch_pdfs", True)),
         vision_model=str(st.session_state.get("pl_vision_model") or "").strip(),
+        reuse_replies=bool(st.session_state.get("pl_reuse", True)),
         embedding_model=(st.session_state.get("pl_embed_model") or semantic.DEFAULT_MODEL).strip(),
         branding=current_branding(),
     )
@@ -446,42 +450,50 @@ def start_run(plan: AnalysisPlan, mapping: dict, sample: int, llm_cfg: LLMConfig
 
 def render_blocks(blocks: list[rb.Block], key: str) -> None:
     for i, block in enumerate(blocks):
-        if block.kind == "heading":
-            st.markdown(f"{'#' * max(1, min(block.level, 4))} {block.title}")
-            continue
-        if block.title and block.kind not in ("plotly", "download", "code"):
-            st.markdown(f"**{block.title}**")
-        if block.kind == "markdown":
-            st.markdown(block.text)
-        elif block.kind == "note":
-            st.info(block.text, icon="ℹ️")
-        elif block.kind == "caption":
-            st.caption(block.text)
-        elif block.kind == "image" and block.data:
-            st.image(block.data)
-        elif block.kind == "code":
-            with st.expander(block.title or "Code"):
-                st.code(block.text, language="python")
-        elif block.kind == "metrics":
-            cols = st.columns(max(1, len(block.metrics)))
-            for col, (label, value) in zip(cols, block.metrics):
-                col.metric(label, value)
-        elif block.kind == "table" and block.table is not None:
-            if len(block.table) <= 30:  # report-style table: real text, readable and printable
-                report_table(block.table)
-            else:  # long tables: scrollable, sortable grid; web addresses as links
-                links = {c: st.column_config.LinkColumn(c, display_text="open") for c in block.table.columns
-                         if block.table[c].astype(str).str.match(r"https?://").any()}
-                st.dataframe(block.table, width="stretch", hide_index=True, column_config=links or None)
-        elif block.kind == "plotly" and block.figure is not None:
-            st.plotly_chart(block.figure, width="stretch", key=f"{key}-fig-{i}")
-        elif block.kind == "download" and block.data is not None:
-            st.download_button(block.title, block.data, file_name=block.file_name, mime=block.mime, type="primary",
-                               icon=":material/download:", key=f"{key}-dl-{i}", on_click="ignore")
-        elif block.kind == "cards":
-            render_cards(block.items)
-        if block.caption:
-            st.caption(block.caption)
+        try:
+            _render_block(block, i, key)
+        except Exception as exc:  # one block the page cannot show must not hide the rest of the report
+            st.warning(f"This part of the report could not be shown ({type(exc).__name__}); the downloads have it.")
+
+
+def _render_block(block: rb.Block, i: int, key: str) -> None:
+    """One report block on the page."""
+    if block.kind == "heading":
+        st.markdown(f"{'#' * max(1, min(block.level, 4))} {block.title}")
+        return
+    if block.title and block.kind not in ("plotly", "download", "code"):
+        st.markdown(f"**{block.title}**")
+    if block.kind == "markdown":
+        st.markdown(block.text)
+    elif block.kind == "note":
+        st.info(block.text, icon="ℹ️")
+    elif block.kind == "caption":
+        st.caption(block.text)
+    elif block.kind == "image" and block.data:
+        st.image(block.data)
+    elif block.kind == "code":
+        with st.expander(block.title or "Code"):
+            st.code(block.text, language="python")
+    elif block.kind == "metrics":
+        cols = st.columns(max(1, len(block.metrics)))
+        for col, (label, value) in zip(cols, block.metrics):
+            col.metric(label, value)
+    elif block.kind == "table" and block.table is not None:
+        if len(block.table) <= 30:  # report-style table: real text, readable and printable
+            report_table(block.table)
+        else:  # long tables: scrollable, sortable grid; web addresses as links
+            links = {c: st.column_config.LinkColumn(c, display_text="open") for c in block.table.columns
+                     if block.table[c].astype(str).str.match(r"https?://").any()}
+            st.dataframe(block.table, width="stretch", hide_index=True, column_config=links or None)
+    elif block.kind == "plotly" and block.figure is not None:
+        st.plotly_chart(block.figure, width="stretch", key=f"{key}-fig-{i}")
+    elif block.kind == "download" and block.data is not None:
+        st.download_button(block.title, block.data, file_name=block.file_name, mime=block.mime, type="primary",
+                           icon=":material/download:", key=f"{key}-dl-{i}", on_click="ignore")
+    elif block.kind == "cards":
+        render_cards(block.items)
+    if block.caption:
+        st.caption(block.caption)
 
 
 def _md(text: str) -> str:
@@ -594,7 +606,8 @@ def gallery_step(busy: bool, llm_cfg: LLMConfig) -> None:
 
 def start_gallery(base: LandscapeResult, groups: list[str], n: int, llm_cfg: LLMConfig) -> None:
     options = PipelineOptions(notable_count=n, fetch_figures=bool(st.session_state.get("pl_fetch_pdfs", True)),
-                              vision_model=str(st.session_state.get("pl_vision_model") or "").strip())
+                              vision_model=str(st.session_state.get("pl_vision_model") or "").strip(),
+                              reuse_replies=bool(st.session_state.get("pl_reuse", True)))
     branding = current_branding()
 
     def work(on_event, should_stop):

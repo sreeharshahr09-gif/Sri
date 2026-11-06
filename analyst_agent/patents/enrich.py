@@ -401,9 +401,9 @@ def extract_details(
         except RequestLimitReached as exc:  # every further request would be refused: stop, keep what is done
             stopped, stop_reason = True, str(exc)
             break
-        except LLMError as exc:
+        except Exception as exc:  # LLMError, or anything unexpected: this batch fails, the others go on
             got = {}
-            last_error = str(exc)
+            last_error = str(exc) if isinstance(exc, LLMError) else f"{type(exc).__name__}: {exc}"
             hard_failures += 1
             if hard_failures >= 3:  # the model is gone: don't grind through every batch
                 for idx in batch + [i for b in queue for i in b]:
