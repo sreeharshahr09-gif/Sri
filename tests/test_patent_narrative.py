@@ -86,7 +86,7 @@ def test_clean_text_drops_repeated_heading_and_fences():
 def test_write_sections_without_model_or_with_errors():
     sections = nar.plan_sections(["Summary", "Gaps"])
     nar.write_sections(sections, {"gaps": "x 12"}, "facts 12", "brief", {}, None)
-    assert all("No model connected" in s.note for s in sections)
+    assert all(s.note == "This section has charts and tables only." for s in sections)
 
     class Down:
         def chat(self, messages):
@@ -94,7 +94,7 @@ def test_write_sections_without_model_or_with_errors():
 
     sections = nar.plan_sections(["Summary"])
     nar.write_sections(sections, {}, "facts 12", "brief", {}, Down())
-    assert sections[0].text == "" and "timed out" in sections[0].note
+    assert sections[0].text == "" and "could not be written" in sections[0].note
 
 
 def test_write_sections_prompt_and_flags():
@@ -231,7 +231,7 @@ def test_empty_section_text_leaves_a_note():
 
     sections = nar.plan_sections(["Summary"])
     nar.write_sections(sections, {}, "facts 12", "brief", {}, Blank())
-    assert sections[0].text == "" and "returned no text" in sections[0].note
+    assert sections[0].text == "" and "No text was produced" in sections[0].note
     assert "Say nothing about market maturity" in nar.SECTION_SYSTEM and "freedom to operate" in nar.SUMMARY_SYSTEM
 
 
@@ -306,7 +306,8 @@ def test_white_space_combinations_get_a_technical_check():
     assert ex.facts.startswith("White space (statistical leads, each checked by the model for technical sense). "
                                "Plausible leads: Belt & cap ply × Lower-density compounds (0 patents, expected 6.6")
     assert "Rare for technical reasons, not leads: Innerliner × Lighter reinforcement" in ex.facts
-    assert note.startswith("The model judged the 3 under-explored combinations: 1 plausible, 1 unsure, 1 unlikely")
+    assert note.startswith("Each of the 3 under-explored combinations was judged for technical sense: 1 plausible, "
+                           "1 unsure, 1 unlikely")
     assert "an expert should confirm it" in ex.blocks[0].caption
 
     class Down:

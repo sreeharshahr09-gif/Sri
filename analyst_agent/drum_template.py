@@ -240,7 +240,7 @@ def _select_sheets(workspace: Workspace, path: str, model: ChatModel | None = No
                 if candidate in names and output not in result:
                     result[output] = candidate
                     if notes is not None:
-                        notes.append(f"{path}: the model selected '{candidate}' as {output} from unfamiliar sheet labels. Review the listed source range before relying on that output.")
+                        notes.append(f"{path}: '{candidate}' was selected as {output} from unfamiliar sheet labels. Review the listed source range before relying on that output.")
         except (LLMError, ValueError, TypeError, AttributeError):
             pass
     if "Fy" not in result:

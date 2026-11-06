@@ -2,5 +2,6 @@
   "organisation": "Apollo Tyres Ltd",
   "author": "Dr Shreeharsha Ramaswamy",
   "notice": "For internal use only. Not for distribution outside Apollo Tyres Ltd.",
-  "logo": "logo.png"
+  "logo": "logo.png",
+  "mention_ai": false
 }

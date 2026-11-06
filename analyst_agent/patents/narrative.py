@@ -257,7 +257,7 @@ def write_sections(sections: list[Section], facts_by_kind: dict[str, str], all_f
     `summary_format`: the plan's structure for the executive summary (empty: the standard one)."""
     if llm is None:
         for sec in sections:
-            sec.note = "No model connected: this section has charts and tables only."
+            sec.note = "This section has charts and tables only."
         return
     client = llm
     if isinstance(llm, LLMClient):
@@ -289,12 +289,12 @@ def write_sections(sections: list[Section], facts_by_kind: dict[str, str], all_f
         ]
         try:
             reply = chat_text(client, messages)
-        except LLMError as exc:
-            sec.note = f"The model could not write this section ({exc}); the charts and tables below are complete."
+        except LLMError:
+            sec.note = "This section's text could not be written; the charts and tables below are complete."
             continue
         sec.text = drop_answered_gaps(_clean_text(reply, sec.heading), answered_elsewhere or [])
         if not sec.text:
-            sec.note = "The model returned no text for this section; the charts and tables below are complete."
+            sec.note = "No text was produced for this section; the charts and tables below are complete."
             continue
         sec.flagged = unmatched_numbers(sec.text, facts + " " + brief)
     if on_progress:
@@ -308,8 +308,7 @@ def section_blocks(sec: Section) -> list[rb.Block]:
         if sec.flagged:
             blocks.append(rb.note("Check before quoting: these figures in the text above were not found in the "
                                   f"computed results: {', '.join(sec.flagged)}."))
-        blocks.append(rb.caption("Text written by the model from the computed results below; numbers are "
-                                 "checked against them."))
+        blocks.append(rb.caption("Summary of the computed results below; every number is checked against them."))
     elif sec.note:
         blocks.append(rb.caption(sec.note))
     return blocks
@@ -340,7 +339,7 @@ combinations that have few or no patents in the study's patent set. Judge each c
 Reply with only a JSON list, one object per combination: \
 {"n": <its number>, "verdict": "plausible" | "unlikely" | "unsure", "reason": "<at most 15 words>"}\
 """
-CHECK_COLUMN = "Technical check (model)"
+CHECK_COLUMN = "Technical check"
 _VERDICT_ORDER = {"plausible": 0, "unsure": 1, "unlikely": 2}
 
 
@@ -368,8 +367,8 @@ def check_white_space(exhibit, plan, llm) -> str:
         lines.append(f"{i + 1}. {where}: {r['Gap']} ({r['Patents']} patents{counted})")
     try:
         items = ask_json_list(llm, WHITE_SPACE_SYSTEM, "\n".join(lines), retries=1, max_tokens=4000)
-    except (LLMError, JSONReplyError) as exc:
-        return f"Not done: the model could not judge the combinations ({str(exc)[:120]})."
+    except (LLMError, JSONReplyError):
+        return "Not done: the combinations could not be judged."
     verdicts = {}
     for item in items:
         try:
@@ -380,14 +379,14 @@ def check_white_space(exhibit, plan, llm) -> str:
         verdict = verdict if verdict in _VERDICT_ORDER else "unsure"
         verdicts[n - 1] = (verdict, " ".join(str(item.get("reason", "")).split())[:160])
     if not verdicts:
-        return "Not done: the model's reply held no judgements."
+        return "Not done: no judgements were returned."
     table[CHECK_COLUMN] = [f"{verdicts[i][0]}: {verdicts[i][1]}".rstrip(": ") if i in verdicts else "not judged"
                            for i in table.index]
     rank = [_VERDICT_ORDER.get(verdicts.get(i, ("unsure",))[0], 1) for i in table.index]
     rest = full[thin].assign(**{CHECK_COLUMN: "not judged: insufficient data"})
     block.table = pd.concat([table.assign(_rank=rank).sort_values("_rank", kind="stable").drop(columns="_rank"),
                              rest], ignore_index=True)
-    block.caption += (" Technical check: the model's view of whether each combination is a real R&D option; "
+    block.caption += (" Technical check: a first view of whether each combination is a real R&D option; "
                       "an expert should confirm it.")
 
     def listing(kind: str) -> str:
@@ -404,7 +403,8 @@ def check_white_space(exhibit, plan, llm) -> str:
                           + "; ".join(r[label] if r["Technology group"] == "any" else f"{r[label]} × {r['Technology group']}"
                                       for _, r in full[thin].head(8).iterrows()) + ".")
     counts = {k: sum(v[0] == k for v in verdicts.values()) for k in _VERDICT_ORDER}
-    return (f"The model judged the {len(table)} under-explored combinations: {counts['plausible']} plausible, "
+    return (f"Each of the {len(table)} under-explored combinations was judged for technical sense: "
+            f"{counts['plausible']} plausible, "
             f"{counts['unsure']} unsure, {counts['unlikely']} unlikely; only plausible and unsure ones are leads.")
 
 
@@ -425,12 +425,13 @@ DEFINITIONS = [
                      "spread evenly (expected = row total × column total / all).")),
     ("Crown-jewel score", ("Weighted percentiles of forward citations (when exported), relevance, claim breadth "
                            "(shorter first claim) and recency; weights are given under the table.")),
-    ("Off-topic screening", ("Patents the model rated Relevance: Low against the plan's scope are left out of "
+    ("Off-topic screening", ("Patents rated Relevance: Low against the plan's scope are left out of "
                              "the analytics but kept in the CSV.")),
 ]
 LIMITATIONS = [
     "Coverage is what the uploaded export contains: the search strategy behind it decides what is in scope.",
-    "The model's per-patent answers can be wrong. Check the validation sample before relying on exact shares.",
+    "The automated per-patent classification can be wrong. Check the validation sample before relying on exact "
+    "shares.",
     "Topic clusters depend on the text embedding; small clusters and their names are indicative.",
     "Counts are patent families (or publications where no family ID was exported), not individual filings.",
     "This is a technology landscape, not a legal opinion on validity, infringement or freedom to operate.",
@@ -534,7 +535,8 @@ def low_confidence_block(result) -> rb.Block | None:
     table = pd.concat([pd.DataFrame({"Patent ID": std["id"], "Title": std["title"].map(lambda t: str(t)[:120])}),
                        low[keep]], axis=1)
     return rb.table(table.reset_index(drop=True), title=f"Read with low confidence ({len(low):,} patents)",
-                    caption="The model was unsure about these patents (little text, or an unclear claim). Check them "
+                    caption="These patents were classified with low confidence (little text, or an unclear claim). "
+                            "Check them "
                             "before relying on a finding that rests on them alone.")
 
 

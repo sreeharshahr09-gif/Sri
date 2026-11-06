@@ -112,3 +112,60 @@ def test_a_run_carries_the_branding_to_its_downloads(tmp_path, monkeypatch):
     table = next(bl.table for bl in res.blocks if bl.title == "Every patent with the study's columns")
     assert table["Patent link"].str.startswith("https://patents.google.com/patent/").all()
     assert '>open</a></td>' in page  # the links are clickable in the HTML report
+
+
+REMOVED_PHRASES = ["by the model", "the model's", "Text written by the model", "data agent", "Read by the model",
+                   "(model)", "vision model", "qwen-test", "with thinking", "LLM", "No model connected"]
+
+
+def _named_run(tmp_path, monkeypatch, mention_ai: bool):
+    from analyst_agent.config import LLMConfig, Thinking
+    from analyst_agent.patents import enrich
+    from analyst_agent.patents.data import detect_columns
+    from analyst_agent.patents.pipeline import PipelineOptions, run_landscape
+    from analyst_agent.patents.presets import preset_plan
+
+    from .patent_fixtures import make_export
+    from .test_patent_pipeline import FakeLLM
+
+    class Named(FakeLLM):  # a model with a name, as the app's client has
+        config = LLMConfig(model="qwen-test", base_url="http://localhost:8080", thinking=Thinking.ANALYSIS)
+
+    monkeypatch.setattr(enrich, "CACHE_DIR", tmp_path)
+    plan = preset_plan("Uneven wear")
+    plan.analysis_questions = plan.analysis_questions[:1]
+    raw = make_export(40, seed=8)
+    branding = Branding(organisation="Apollo Tyres Ltd", author="Dr A", notice="Internal", mention_ai=mention_ai)
+    return run_landscape(raw, detect_columns(list(raw.columns)), plan, llm=Named(plan),
+                         options=PipelineOptions(embedding_model="tfidf", notable_count=3, vision_model="vl-model",
+                                                 fetch_figures=False, branding=branding))
+
+
+def test_reports_name_no_ai_unless_asked(tmp_path, monkeypatch):
+    import re
+
+    res = _named_run(tmp_path, monkeypatch, mention_ai=False)
+    assert "Language model" not in res.methods
+    page = next(b.data for b in res.blocks if b.kind == "download" and b.file_name.endswith(".html")).decode()
+    text = re.sub(r"<script.*?</script>|<style.*?</style>", " ", page, flags=re.S)
+    found = [p for p in REMOVED_PHRASES if p in text]
+    assert found == [], found
+    assert "Summary of the computed results below" in text and "Patents read" in text
+    book = next(b.data for b in res.blocks if b.kind == "download" and b.file_name.endswith(".xlsx"))
+    sheets = pd.read_excel(io.BytesIO(book), sheet_name=None)
+    cells = " ".join(str(v) for df in sheets.values() for v in df.astype(str).values.ravel())
+    assert not [p for p in REMOVED_PHRASES if p in cells]
+
+
+def test_the_model_can_be_named(tmp_path, monkeypatch):
+    res = _named_run(tmp_path, monkeypatch, mention_ai=True)
+    assert res.methods["Language model"] == "qwen-test with thinking (patents read without)"
+    page = next(b.data for b in res.blocks if b.kind == "download" and b.file_name.endswith(".html")).decode()
+    assert "with qwen-test with thinking (patents read without)" in page  # under the title
+
+
+def test_branding_file_turns_the_model_name_off(monkeypatch):
+    monkeypatch.delenv("REPORT_MENTION_AI", raising=False)
+    assert load_branding().mention_ai is False  # the shipped defaults
+    monkeypatch.setenv("REPORT_MENTION_AI", "yes")
+    assert load_branding().mention_ai is True

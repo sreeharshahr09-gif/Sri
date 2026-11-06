@@ -158,7 +158,7 @@ def test_brief_questions_are_answered_with_code(answered):
     assert len(res.question_runs) == 2 and res.model.calls["agent"] == 4  # code, then answer, per question
     for question, run in res.question_runs:
         assert run.status == "answered" and run.executed and run.grounding.fully_traced
-    assert res.methods["Brief-specific questions"].startswith("2 of 2 answered by the data agent")
+    assert res.methods["Brief-specific questions"].startswith("2 of 2 answered with Python code")
     assert "[Brief question]" in res.all_facts
 
 

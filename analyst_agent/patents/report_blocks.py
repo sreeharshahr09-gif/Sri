@@ -38,7 +38,7 @@ def assemble_blocks(result: LandscapeResult, options: PipelineOptions | None = N
 
 PREVIEW_NOTE = ("Preliminary results: the analysis is still running. What is shown below is finished; the rest "
                 "fills in as each step completes, and the downloads come with the final report.")
-NOT_YET_SCREENED = (" Until the model has read every patent, the counts and the map still include patents it may "
+NOT_YET_SCREENED = (" Until every patent has been read, the counts and the map still include patents that may be "
                     "judge off-topic, and the clusters' technology groups are provisional.")
 
 
@@ -176,7 +176,7 @@ def semantic_blocks(corpus: PatentCorpus, res: sem.SemanticResult, topics: pd.Da
         blocks.append(rb.chart(fig2, title="Topic hierarchy", caption=(
             "Box size is the number of patents. Each cluster sits under the most frequent technology group of its "
             "patents." if per_patent else
-            "Box size is the number of patents. Groups come from your plan; the model assigned each cluster to one.")))
+            "Box size is the number of patents. Groups come from your plan; each cluster is assigned to one.")))
     return blocks
 
 
@@ -191,7 +191,7 @@ def brief_specific_blocks(result: LandscapeResult) -> list[rb.Block]:
     if not parts:
         return []
     return [rb.heading("🎯 Brief-specific analyses"),
-            rb.caption("Your extra columns, and your plan's own questions answered by the data agent with Python "
+            rb.caption("Your extra columns, and your plan's own questions answered with Python "
                        "code run on the enriched patent table. The code behind each answer is shown.")] + parts
 
 
@@ -207,8 +207,7 @@ def notable_blocks(result: LandscapeResult) -> list[rb.Block]:
 CARDS_NOTE = ("Interest is the mean of value and novelty (0–100). Value: the crown-jewel score (citations when "
               "exported, relevance, claim breadth, recency) and whether the patent is alive. Novelty: how rare its "
               "combination of categories is in this set and how few patents are close to it in meaning. Figures come "
-              "from the patent PDF; why it matters and what to check are the model's reading of the patent's own "
-              "fields.")
+              "from the patent PDF; why it matters and what to check are drawn from the patent's own fields.")
 
 
 def card_items(cards) -> list[dict]:
@@ -280,7 +279,7 @@ def agent_run_blocks(run: DataRun) -> list[rb.Block]:
         if not run.executed:
             blocks.append(rb.note("This answer is not backed by any executed code; treat it as unverified."))
         elif run.status == RunStatus.STEP_LIMIT:
-            blocks.append(rb.note("The step limit was reached before the agent finished; the answer may be "
+            blocks.append(rb.note("The step limit was reached before the analysis finished; the answer may be "
                                   "incomplete."))
     g = run.grounding
     if g and g.checked and run.executed:
@@ -335,7 +334,7 @@ def table_blocks(result: LandscapeResult, options: PipelineOptions | None = None
         rel = res.table["Relevance"].value_counts()
         read = res.stats["extracted"] + res.stats["from cache"]
         blocks.append(rb.metrics([
-            ("Read by the model", f"{read:,} of {res.stats['patents']:,}"),
+            ("Patents read", f"{read:,} of {res.stats['patents']:,}"),
             ("High relevance", f"{int(rel.get('High', 0)):,}"),
             ("Partial (set aside to check)" if result.plan.check_partial else "Partial", f"{int(rel.get('Partial', 0)):,}"),
             ("Low (off-topic)", f"{int(rel.get('Low', 0)):,}"),
@@ -369,7 +368,8 @@ def table_blocks(result: LandscapeResult, options: PipelineOptions | None = None
             blocks.append(rb.download(
                 "Download a validation sample (CSV)", sample.to_csv(index=False).encode("utf-8-sig"),
                 f"{slug}_validation_sample.csv",
-                caption=f"{len(sample)} random patents with the model's answers and empty Correct? / Comment columns. "
+                caption=f"{len(sample)} random patents with their automated classification and empty Correct? / "
+                        "Comment columns. "
                         "Have an expert mark them to measure the extraction accuracy, and quote it with the "
                         "findings.",
             ))
@@ -392,7 +392,8 @@ def html_download(result: LandscapeResult, blocks: list[rb.Block], branding=None
     subtitle = (f"{len(frame):,} patents" + (f" · {int(years.min())}–{int(years.max())}" if len(years) else "")
                 + f" · {result.dataset_name or 'uploaded export'} · generated "
                 + datetime.fromisoformat(result.started_at).strftime("%d %b %Y")
-                + (f" with {result.model_name}" if result.model_name else ""))
+                + (f" with {result.model_name}" if result.model_name and (branding is None or branding.mention_ai)
+                   else ""))
     if result.status == LandscapeStatus.CANCELLED:
         subtitle += " · stopped before the end: partial results"
     elif result.status == LandscapeStatus.ERROR:

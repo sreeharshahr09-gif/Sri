@@ -60,7 +60,7 @@ def embed(texts: list[str], model_name: str = DEFAULT_MODEL, seed: int = 42,
     if model_name.lower() not in ("tfidf", "tf-idf", "none"):
         cache = _cache_path(texts, model_name)
         if cache.exists():
-            return np.load(cache), {"embedding": f"{model_name} (sentence-transformers, cached)"}
+            return np.load(cache), {"embedding": f"{model_name.split('/')[-1]} (sentence-transformers, cached)"}
         # The embedding model runs on PyTorch. Without this, transformers also loads TensorFlow when it is
         # installed (Anaconda ships it): slower start, more memory, many log messages, no benefit.
         os.environ.setdefault("USE_TF", "0")
@@ -72,7 +72,7 @@ def embed(texts: list[str], model_name: str = DEFAULT_MODEL, seed: int = 42,
         except ImportError:
             reason = "sentence-transformers is not installed"
         except Exception as exc:  # model download blocked, offline, corrupt cache, ...
-            reason = f"the model could not be loaded ({type(exc).__name__}: {str(exc)[:120]})"
+            reason = f"it could not be loaded ({type(exc).__name__}: {str(exc)[:120]})"
         else:
             chunks = []
             step = 32
@@ -88,7 +88,7 @@ def embed(texts: list[str], model_name: str = DEFAULT_MODEL, seed: int = 42,
                 np.save(cache, matrix)
             except OSError:
                 pass
-            return matrix, {"embedding": f"{model_name} (sentence-transformers)"}
+            return matrix, {"embedding": f"{model_name.split('/')[-1]} (sentence-transformers)"}
         fallback_note = f"TF-IDF + LSA, because {reason}. Install sentence-transformers for PatentSBERTa."
     else:
         fallback_note = "TF-IDF + LSA (chosen in settings)."
@@ -265,7 +265,7 @@ def name_topics(llm, topics: pd.DataFrame, plan: AnalysisPlan, batch: int = 10) 
     topics["tech_group"] = ""
     topics["relevance"] = ""
     if llm is None:
-        return topics, "Cluster names are their top keywords (no model available)."
+        return topics, "Cluster names are their top keywords."
     lower_groups = {g.lower(): g for g in groups}
     used: set[str] = set()
     named, failures = 0, []
@@ -303,9 +303,9 @@ def name_topics(llm, topics: pd.DataFrame, plan: AnalysisPlan, batch: int = 10) 
             rel = str(item.get("relevance") or "").strip().lower()
             topics.loc[where, "relevance"] = rel if rel in ("high", "partial", "low") else ""
     if not named:
-        reason = f" ({failures[0]})" if failures else ""
-        return topics, f"Cluster names are their top keywords: the model could not name them{reason}."
-    note = f"Cluster names written by the model for {named} of {len(topics)} clusters"
+        return topics, "Cluster names are their top keywords."
+    note = (f"Cluster names and descriptions written from their keywords and patent titles for {named} of "
+            f"{len(topics)} clusters")
     return topics, note + ("; the rest are named by their top keywords." if named < len(topics) else ".")
 
 

@@ -103,18 +103,18 @@ def test_full_run_builds_map_and_topic_table():
     assert all(t.name.split(" · ")[0].isdigit() or t.name == "Off-topic (left out)" for t in fig.data)
     assert set(result.methods) == {"Year basis", "Text embedding", "Patent map", "Topic clusters", "Cluster keywords",
                                    "Cluster names", "Patent details", "Report text", "Notable patents"}
-    assert result.methods["Cluster names"].startswith("Cluster names written by the model for")
+    assert result.methods["Cluster names"].startswith("Cluster names and descriptions written from their keywords")
 
 
 def test_without_model_clusters_are_named_by_keywords_and_no_hierarchy():
     result, _ = _run()
-    assert any("No model connected" in w for w in result.warnings)
+    assert any("no analysis server connected" in w for w in result.warnings)
     assert "Topic" not in result.enriched and "Topic cluster" in result.enriched
     titles = [b.title for b in result.blocks]
     assert "Topic clusters" in titles and "Topic hierarchy" not in titles
     table = next(b.table for b in result.blocks if b.title == "Topic clusters")
     assert "Technology group" not in table.columns  # empty columns are left out
-    assert "no model available" in result.methods["Cluster names"]
+    assert result.methods["Cluster names"] == "Cluster names are their top keywords."
 
 
 def test_trial_sample_keeps_rows_aligned():
@@ -201,8 +201,8 @@ def test_enriched_csv_has_study_columns_then_clusters_then_the_export():
     assert list(shown.columns) == ["Patent ID", "Title", "Year", "Assignee (normalised)", "Topic", "Segment",
                                    "Wear type", "Technology group", "Complexity", "Performance target",
                                    "Design lever", "Relevance", "Patent link"]
-    metrics = dict(next(b for b in result.blocks if b.kind == "metrics" and b.metrics[0][0] == "Read by the model").metrics)
-    assert metrics["Read by the model"] == f"{len(table)} of {len(table)}"
+    metrics = dict(next(b for b in result.blocks if b.kind == "metrics" and b.metrics[0][0] == "Patents read").metrics)
+    assert metrics["Patents read"] == f"{len(table)} of {len(table)}"
     assert int(metrics["Low (off-topic)"]) == (table["Relevance"] == "Low").sum() > 0
 
 
@@ -254,7 +254,7 @@ def test_clusters_take_their_patents_group_and_white_space_is_checked():
     assert "most frequent technology group of its patents" in hierarchy.caption
     white = next(e for e in result.exhibits if e.key == "white_space")
     if any(b.kind == "table" for b in white.blocks):
-        assert model.calls.get("white_space") == 1 and result.methods["White-space check"].startswith("The model")
+        assert model.calls.get("white_space") == 1 and result.methods["White-space check"].startswith("Each of the")
         assert white.facts.startswith("White space (statistical leads, each checked by the model")
 
 
@@ -291,7 +291,7 @@ def test_finished_parts_are_previewed_while_the_run_goes_on():
     assert "Patent map and topic clusters" in titles[1]
     assert "off-topic" in previews[1][0].text  # not yet screened by the model: said so
     assert "off-topic" not in previews[2][0].text  # after reading and the analytics: final
-    written = [sum(1 for b in blocks if b.kind == "caption" and b.text.startswith("Text written by the model"))
+    written = [sum(1 for b in blocks if b.kind == "caption" and b.text.startswith("Summary of the computed results"))
                for blocks in previews[5:]]
     assert written == list(range(1, sections + 1))  # sections fill in one by one
     assert any(b.kind == "cards" for b in previews[4]) and not any(b.kind == "cards" for b in previews[3])

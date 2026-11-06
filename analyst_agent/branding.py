@@ -25,6 +25,7 @@ class Branding:
     notice: str = ""  # e.g. "For internal use only."
     logo: bytes | None = None  # PNG or JPEG
     show_logo: bool = True
+    mention_ai: bool = True  # name the language model in reports (the shipped defaults turn it off)
 
     @property
     def credit(self) -> str:
@@ -88,4 +89,11 @@ def load_branding(folder: Path | None = None) -> Branding:
         author=os.environ.get("REPORT_AUTHOR", str(settings.get("author", ""))),
         notice=os.environ.get("REPORT_NOTICE", str(settings.get("notice", ""))),
         logo=_read_logo(Path(logo_path)),
+        mention_ai=_flag(os.environ.get("REPORT_MENTION_AI"), settings.get("mention_ai", True)),
     )
+
+
+def _flag(value: str | None, default) -> bool:
+    if value is None:
+        return bool(default)
+    return value.strip().lower() in ("1", "true", "yes", "on")

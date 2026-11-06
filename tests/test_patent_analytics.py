@@ -41,7 +41,7 @@ def test_off_topic_patents_leave_the_analysis_set(result):
     frame = result.analysis_frame
     assert not (frame["relevance"] == "Low").any()
     step = result.corpus.flow[-1]
-    assert step.step == "Removed: judged off-topic by the model (Relevance: Low)"
+    assert step.step == "Removed: off-topic (Relevance: Low)"
     assert step.remaining == len(frame) and step.removed == (result.enriched["Relevance"] == "Low").sum() > 0
     metrics = dict(result.blocks[1].metrics)
     assert metrics["Patents analysed"] == f"{len(frame):,}"

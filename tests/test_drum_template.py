@@ -277,7 +277,7 @@ def test_model_can_resolve_opaque_sheet_name_then_python_checks_table(tmp_path):
     assert model.calls == 2
     assert study.common_loads == [1000]
     assert study.curves["Fy"]["a.xlsx"][1000].loc[-1] == 200
-    assert any("model selected" in check for check in study.checks)
+    assert any("was selected as" in check for check in study.checks)
 
 
 def test_stiffness_cross_check_can_move_to_other_columns_and_sheet(tmp_path):

@@ -94,7 +94,7 @@ def test_sentence_transformers_used_with_progress_and_cache(monkeypatch, tmp_pat
     matrix, info = semantic.embed(texts, model_name="fake/PatentSBERTa", on_progress=lambda d, t: seen.append((d, t)))
     assert matrix.shape == (70, 3) and matrix.dtype == np.float32
     assert seen == [(0, 70), (32, 70), (64, 70), (70, 70)]
-    assert info["embedding"] == "fake/PatentSBERTa (sentence-transformers)"
+    assert info["embedding"] == "PatentSBERTa (sentence-transformers)"
     assert len(list(tmp_path.glob("emb_*.npy"))) == 1
 
     again, info2 = semantic.embed(texts, model_name="fake/PatentSBERTa")
@@ -212,7 +212,7 @@ def test_name_topics_from_model():
     assert topics["label"].tolist() == ["Shoulder groove geometry", "Silica, compound", "Sensor-based wear prediction"]
     assert topics["tech_group"].tolist() == ["Structural / design", "", "Active / electronic"]
     assert topics["relevance"].tolist() == ["high", "", "partial"]
-    assert note == "Cluster names written by the model for 3 of 3 clusters."
+    assert note == "Cluster names and descriptions written from their keywords and patent titles for 3 of 3 clusters."
     prompt = llm.calls[0][1]["content"]
     assert "Structural / design; Material science" in prompt
     assert "Cluster 2 (10 patents) | keywords: sensor, model" in prompt and "Wear prediction model" in prompt
@@ -224,7 +224,8 @@ def test_name_topics_in_batches():
     topics, note = semantic.name_topics(llm, _topics(), AnalysisPlan(), batch=2)
     assert len(llm.calls) == 3  # one batch of two, then one retry for the second batch
     assert topics["label"].tolist() == ["A", "B", "Sensor, model"]
-    assert note.startswith("Cluster names written by the model for 2 of 3 clusters; the rest")
+    assert note.startswith("Cluster names and descriptions written from their keywords and patent titles for 2 of 3 "
+                           "clusters; the rest")
 
 
 def test_name_topics_without_model():
@@ -234,9 +235,9 @@ def test_name_topics_without_model():
 
     topics, note = semantic.name_topics(Down(), _topics(), AnalysisPlan())
     assert topics["label"].tolist() == ["Shoulder, groove", "Silica, compound", "Sensor, model"]
-    assert "could not name them (Cannot reach the model server)" in note
+    assert note == "Cluster names are their top keywords."
     topics, note = semantic.name_topics(None, _topics(), AnalysisPlan())
-    assert "no model available" in note
+    assert note == "Cluster names are their top keywords."
 
 
 def test_semantic_map_reports_phases_and_names(corpus):

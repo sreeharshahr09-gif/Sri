@@ -493,8 +493,8 @@ def segments(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
 def _no_categories(ctx: Context, key: str, section: str, title: str, what: str) -> Exhibit:
     label = ctx.problem_label.lower()
     text = (f"Not done: the plan defines no {label} categories, so each patent's {label} is free text and {what} "
-            f"cannot be counted. Add {label} categories in the plan (step 3) and run again; the model then reads "
-            "the patents again with those categories.")
+            f"cannot be counted. Add {label} categories in the plan (step 3) and run again; the patents are then read "
+            "again with those categories.")
     return Exhibit(key, section, title, [rb.note(text)], text)
 
 
@@ -900,8 +900,8 @@ def extra_columns(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
                          labels={"tech_group": "Technology group", "Value": ""})
             _layout(fig, f"{spec.column}: most frequent values", height=max(320, 30 * len(keep) + 140))
             blocks.append(rb.chart(fig, caption=f"{k} of {n} patents state a value; a patent can name several, so each "
-                                                "bar counts the patents naming that value (spelling as written by the "
-                                                "model)."))
+                                                "bar counts the patents naming that value (spelling as "
+                                                "extracted)."))
             facts.append(f"{spec.column}: {k} of {n} patents state a value; patents naming each value (a patent can "
                          "name several): " + "; ".join(f"{v} {c}" for v, c in counts_by_value.head(8).items()) + ".")
         elif len(top) and top.head(10).sum() >= 0.5 * k and top.iloc[0] >= 2:
@@ -913,7 +913,7 @@ def extra_columns(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
                          labels={"tech_group": "Technology group", "Value": ""})
             _layout(fig, f"{spec.column}: most frequent values", height=max(320, 30 * len(keep) + 140))
             blocks.append(rb.chart(fig, caption=f"{k} of {n} patents state a value; the 10 most frequent values "
-                                                f"cover {top.head(10).sum()} of them (spelling as written by the model)."))
+                                                f"cover {top.head(10).sum()} of them (spelling as extracted)."))
             facts.append(f"{spec.column}: {k} of {n} patents state a value; most frequent: "
                          + "; ".join(f"{v} {c}" for v, c in top.head(6).items()) + ".")
         else:
@@ -960,7 +960,7 @@ def _choice_column(a: pd.DataFrame, ctx: Context, spec) -> tuple[list[rb.Block],
     problems = [c.name for c in ctx.plan.problems]
     same_dimension = sum(c in problems for c in spec.choices) >= 0.5 * len(spec.choices)
     caption = ("A patent can have several values. " if spec.multi else "") + (
-        f"Values as read by the model from each patent; “{NOT_STATED_LABEL}” is kept as its own category."
+        f"Values as read from each patent; “{NOT_STATED_LABEL}” is kept as its own category."
         + (" " + "; ".join(f"{k}: {v}" for k, v in spec.notes.items()) + "." if spec.notes else ""))
     if "problem" not in a or not problems or same_dimension:
         frame = counts.rename_axis(spec.column).rename("Patents").reset_index()
@@ -1091,7 +1091,7 @@ def focus_set(a: pd.DataFrame, ctx: Context) -> Exhibit | None:
                  caption=f"Each dimension counts the {n} focus patents; “{NOT_STATED_LABEL}” is kept as a category."),
         rb.table(best_df, title="Most relevant focus patents",
                  caption=f"Up to 15 patents: high relevance, {ranked}most complex claims, newest first. Key "
-                         "parameters are the claimed windows as read by the model; check them in the claims."),
+                         "parameters are the claimed windows as extracted from the claims; check them there."),
     ]
     return Exhibit("focus", "summary", title, blocks, " ".join(facts))
 

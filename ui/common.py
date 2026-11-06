@@ -70,7 +70,8 @@ def branding_settings() -> Branding:
     default = _default_branding()
     ss = st.session_state
     for key, value in (("brand_org", default.organisation), ("brand_author", default.author),
-                       ("brand_notice", default.notice), ("brand_show_logo", True)):
+                       ("brand_notice", default.notice), ("brand_show_logo", True),
+                       ("brand_mention_ai", default.mention_ai)):
         remember(key, value)
     with st.sidebar.expander("🏷️ Report branding", expanded=False):
         st.text_input("Organisation", key="brand_org")
@@ -78,6 +79,9 @@ def branding_settings() -> Branding:
         st.text_input("Notice", key="brand_notice", help="Shown at the top and the foot of every report, e.g. "
                                                          "For internal use only.")
         st.checkbox("Show the logo", key="brand_show_logo")
+        st.checkbox("Name the AI model in reports", key="brand_mention_ai",
+                    help="Off: the reports describe the methods without naming the language model. On: the model's "
+                         "name appears under the title and in the methodology.")
         upload = st.file_uploader("Another logo for this session (PNG or JPG)", type=["png", "jpg", "jpeg"],
                                   key="brand_logo_upload")
         logo = upload.getvalue() if upload is not None and upload.size <= MAX_LOGO_BYTES else default.logo
@@ -86,7 +90,7 @@ def branding_settings() -> Branding:
         st.caption("On every HTML report, the Excel workbook and the Markdown and notebook exports. To change the "
                    "defaults for good, edit branding/branding.json or replace branding/logo.png in the app folder.")
     branding = Branding(organisation=ss.brand_org, author=ss.brand_author, notice=ss.brand_notice, logo=logo,
-                        show_logo=bool(ss.brand_show_logo))
+                        show_logo=bool(ss.brand_show_logo), mention_ai=bool(ss.brand_mention_ai))
     ss.branding = branding
     return branding
 

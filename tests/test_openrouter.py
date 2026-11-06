@@ -204,7 +204,7 @@ def test_patents_read_with_thinking_are_cached_apart(plan, std):  # noqa: F811
     assert read(Thinking.ALL).stats["from cache"] == 0  # read with thinking: not mixed with answers read without
     assert read(Thinking.ALL).stats["from cache"] == len(std)  # but cached for the next run with thinking
     assert read(Thinking.OFF).stats["from cache"] == len(std)  # and the earlier cache is untouched
-    assert "with thinking" in read(Thinking.ALL).info and "with thinking" not in read(Thinking.ANALYSIS).info
+    assert "thinking" not in read(Thinking.ALL).info  # the report describes the method without naming the model
 
 
 @pytest.mark.parametrize("mode, reading, analysis, pages", [

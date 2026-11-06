@@ -355,7 +355,7 @@ def extract_details(
             objs = json_objects(reply)
             if objs:
                 break
-            reason = "the model's reply was empty" if not reply.strip() else "the model's reply held no JSON answers"
+            reason = "the reply was empty" if not reply.strip() else "the reply held no answers"
             messages += [{"role": "assistant", "content": reply[:3000] or "(empty)"},
                          {"role": "user", "content": "That was not a valid JSON list. Reply with only the JSON list."}]
         by_pos = {}
@@ -432,8 +432,8 @@ def extract_details(
     table["Extraction"] = pd.Series(status)
     stats["values corrected"] = int(corrected)
     stats["seconds"] = round(time.perf_counter() - started, 1)
-    info = (f"{model_name}, {size} patents per request" + (", long patent text" if plan.long_text else "")
-            + f", temperature ≤ 0.2, seed {seed}; categories checked against "
+    info = (f"{size} patents per request" + (", long patent text" if plan.long_text else "")
+            + f", seed {seed}; categories checked against "
             f"the plan ({stats['values corrected']} values corrected); "
             f"{stats['extracted']} extracted now, {stats['from cache']} from the cache, {stats['failed']} failed")
     return ExtractionResult(table=table, fields=fields, stats=stats, info=info, stopped=stopped,

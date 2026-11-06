@@ -284,7 +284,12 @@ to PDF they repeat at the foot of every page.
 - Defaults: `branding/branding.json` (organisation, author, notice) and `branding/logo.png` in the app folder.
   Edit the file or replace the logo (PNG or JPG) to change them for every report.
 - For one session: the **🏷️ Report branding** panel in the sidebar (any field can be emptied; *Show the logo*;
-  another logo can be uploaded).
+  another logo can be uploaded; *Name the AI model in reports*).
+- The reports describe their methods in neutral terms (automated reading of every patent, computed analytics,
+  summaries checked against the computed results) and do not name the language model. With *Name the AI model
+  in reports* on (`"mention_ai": true` in `branding.json`, or `REPORT_MENTION_AI=yes`), the model's name appears
+  under the title, in a *Language model* row of the methodology and in the Markdown exports. The shipped defaults
+  leave it off.
 - Or set `REPORT_ORGANISATION`, `REPORT_AUTHOR`, `REPORT_NOTICE` and `REPORT_LOGO` (a file path), e.g. in
   `my_settings.bat`.
 
@@ -538,6 +543,7 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `PATENT_EMBEDDING_MODEL` | `AI-Growth-Lab/PatentSBERTa` | Embedding model for the patent map (`tfidf` to skip it) |
 | `PATENT_CACHE_DIR` | `~/.research_agent/patent_cache` | Cached embeddings, per-patent answers and patent PDFs (`pdf/`) |
 | `REPORT_ORGANISATION` / `REPORT_AUTHOR` / `REPORT_NOTICE` / `REPORT_LOGO` | *(branding/branding.json, branding/logo.png)* | Who the reports come from, their notice and logo |
+| `REPORT_MENTION_AI` | *(branding.json: off)* | `yes` names the language model in the reports |
 | `PATENT_PDF_LOOKUP` | `https://patents.google.com/patent/{number}/en` | Where a PDF is looked up by publication number when the export has no link; empty switches the lookup off |
 | `LLM_VISION_BASE_URL` / `LLM_VISION_API_KEY` | *(the model server's)* | Server and key for the vision model that picks and describes the figures |
 

@@ -234,7 +234,7 @@ def test_real_client_settings_for_extraction(plan, std):
     cfg = seen[0]
     assert cfg.temperature == 0.2 and cfg.seed == 7 and cfg.read_timeout == 600
     assert cfg.max_tokens == 1000 * 6 + 2000 and seen[1].max_tokens == 1000 * 4 + 2000  # room in 16k tokens
-    assert res.info.startswith("qwen-test, 6 patents per request")
+    assert res.info.startswith("6 patents per request, seed 7;") and "qwen" not in res.info
 
 
 def test_cut_off_replies_are_retried_per_patent_with_the_reason(plan, std):
@@ -259,7 +259,7 @@ def test_cut_off_replies_are_retried_per_patent_with_the_reason(plan, std):
             return Completion(content="", latency_s=0.0)
 
     res = enrich.extract_details(std.head(2), plan, Silent(), use_cache=False)
-    assert res.table["Extraction"].eq("failed: the model's reply was empty").all()
+    assert res.table["Extraction"].eq("failed: the reply was empty").all()
 
 
 def test_long_first_claim_keeps_its_characterising_end(std):

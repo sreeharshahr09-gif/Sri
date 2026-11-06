@@ -174,8 +174,8 @@ def parse_brief(llm, brief: str, sample_titles: list[str] | None = None,
                  + "\n".join(f"- {t}" for t in titles))
     try:
         data = ask_json(llm, PLAN_SYSTEM, user, retries=1, max_tokens=8000)  # a whole plan, long ones included
-    except (LLMError, JSONReplyError) as exc:
-        fallback.not_possible.append(f"The model could not prepare the plan ({exc}); it was set up by rules instead. "
+    except (LLMError, JSONReplyError):
+        fallback.not_possible.append("The plan could not be prepared automatically; it was set up by rules instead. "
                                      "Please review it.")
         return fallback
     if not isinstance(data, dict):
@@ -194,7 +194,7 @@ def _with_brief(plan: AnalysisPlan, brief: str) -> AnalysisPlan:
     data["brief"] = brief
     out = AnalysisPlan.from_dict(data)
     out.not_possible = [*plan.not_possible, (
-        "The model could not adapt the plan to your brief, so the standard objective's plan is used as it is. "
+        "The plan could not be adapted to your brief automatically, so the standard objective's plan is used as it is. "
         "Edit it below where your brief differs.")]
     return out
 

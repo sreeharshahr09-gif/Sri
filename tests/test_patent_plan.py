@@ -90,7 +90,7 @@ def test_unreachable_model_falls_back_to_rules():
                                     "🔮 Research Gaps & Future Trends"]
     assert plan.questions[0].startswith("Specific Focus")
     assert "B60C 23/00" in plan.classification_codes
-    assert any("offline" in n for n in plan.not_possible) and any("model could not" in n for n in plan.not_possible)
+    assert any("offline" in n for n in plan.not_possible) and any("could not be prepared automatically" in n for n in plan.not_possible)
     assert plan.tech_buckets == DEFAULT_BUCKETS
 
 

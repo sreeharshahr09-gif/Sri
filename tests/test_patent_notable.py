@@ -234,7 +234,7 @@ def test_notes_from_the_model_are_checked():
     note = nb.write_notes(cards, "Study", Model())
     assert cards[0].why == "Its tan d window of 0.10-0.20 targets noise." and cards[0].check == "Check the 60 °C test."
     assert cards[1].why == "Groove depth for even wear."  # "35 %" is not in the patent: the plain line instead
-    assert note.startswith("The model wrote the notes for 1 of 2")
+    assert note.startswith("Notes written for 1 of 2")
     plain = nb.pick(a, a.assign(pdf_link=""), None, n=1)
     nb.write_notes(plain, "Study", None)
     assert plain[0].why and plain[0].check.startswith("Check the claimed values")
@@ -391,7 +391,7 @@ def test_top_patents_of_chosen_groups(monkeypatch):
     assert set(res.analysis_frame.loc[[c.index for c in gallery.cards], "tech_group"]) <= set(groups)
     assert all(c.figures and c.figures[0].description == "view 1 of the layer 12" for c in gallery.cards)
     assert len(vision.calls) == len(gallery.cards) and "progress" in events
-    assert "chosen and described by the vision model vl-model" in gallery.note
+    assert "chosen and described among the drawings found on the pages" in gallery.note and "vl-model" not in gallery.note
     blocks = gallery_blocks(gallery)
     assert blocks[0].title == f"🖼️ Top patents: {', '.join(groups)}" and blocks[1].kind == "cards"
     assert blocks[1].items[0]["drawings"].startswith("Representative figure (front page): view 1")

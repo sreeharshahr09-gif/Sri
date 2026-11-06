@@ -201,17 +201,17 @@ def write_notes(notables: list[Notable], study: str, llm) -> str:
     if llm is None:
         for n in notables:
             fallback(n)
-        return "Notes from the patents' own fields (no model connected)."
+        return "Notes from the patents' own fields."
     lines = [f"Study: {study}", ""]
     for i, n in enumerate(notables, start=1):
         lines.append(f"N{i} | {n.id} | {n.title} | {n.assignee} | {n.year or 'n/a'} | picked for: "
                      f"{', '.join(n.reasons) or 'value and novelty'} | {n.fields}")
     try:
         items = ask_json_list(llm, NOTES_SYSTEM, "\n".join(lines), retries=1, max_tokens=4000)
-    except (LLMError, JSONReplyError, Exception) as exc:  # any failure: the cards keep the patents' own fields
+    except (LLMError, JSONReplyError, Exception):  # any failure: the cards keep the patents' own fields
         for n in notables:
             fallback(n)
-        return f"The model could not write the notes ({str(exc)[:100]}); they come from the patents' own fields."
+        return "Notes from the patents' own fields."
     written = 0
     for item in items:
         m = re.search(r"\d+", str(item.get("ref", "")))
@@ -226,7 +226,7 @@ def write_notes(notables: list[Notable], study: str, llm) -> str:
             n.check = check
     for n in notables:
         fallback(n)
-    return f"The model wrote the notes for {written} of {len(notables)} patents from their own fields; numbers checked."
+    return f"Notes written for {written} of {len(notables)} patents from their own fields; numbers checked."
 
 
 def vision_client(llm, model: str):

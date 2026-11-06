@@ -125,6 +125,10 @@ def run_landscape(
     cfg = getattr(llm, "config", None)
     result.model_name = (cfg.model + (" via OpenRouter" if is_openrouter(cfg.base_url) else "")
                          + THINKING_NOTES.get(getattr(cfg, "thinking", Thinking.OFF), "")) if cfg else ""
+    if result.model_name and (options.branding is None or options.branding.mention_ai):
+        result.methods["Language model"] = result.model_name + (
+            f"; figures chosen with {options.vision_model}" if options.fetch_figures and options.vision_model
+            and options.notable_count else "")
     if result.enriched is None:
         result.enriched = enriched_table(result)
     result.blocks = assemble_blocks(result, options)
@@ -151,7 +155,7 @@ def analytics_stage(result: LandscapeResult) -> None:
     keep, check = an.screen(frame, result.plan)
     off_topic = ~keep & ~check
     if off_topic.any():
-        corpus.flow.append(FlowStep("Removed: judged off-topic by the model (Relevance: Low)",
+        corpus.flow.append(FlowStep("Removed: off-topic (Relevance: Low)",
                                     int((keep | check).sum()), int(off_topic.sum())))
     if check.any():
         corpus.flow.append(FlowStep("Set aside for a manual check (Relevance: Partial), not counted",
@@ -189,10 +193,10 @@ def notable_method(cards, frame, embedded: bool, note: str, options: PipelineOpt
         fetched, described = nb.illustrate(cards, result.corpus.std, llm, options.vision_model,
                                            options.figures_per_patent, progress)
         shown = sum(bool(c.figures) for c in cards)
-        how = (f"chosen and described by the vision model {options.vision_model} among the drawings the page analysis "
-               f"found ({described} of {len(cards)}; for the rest the page analysis decided alone)"
+        how = (f"chosen and described among the drawings found on the pages ({described} of {len(cards)}; for the "
+               "rest, the front-page drawing, then drawing sheets that show something else)"
                if options.vision_model else
-               "chosen without a vision model: the front-page drawing, then drawing sheets that show something else")
+               "the front-page drawing, then drawing sheets that show something else")
         pdfs = (f" PDFs: {fetched} of {len(cards)} fetched (cache, the export's link, else a lookup by publication "
                 f"number); figures for {shown}, {how}.")
     else:
@@ -295,7 +299,7 @@ def questions_stage(result: LandscapeResult, llm, emit: EventHandler, checkpoint
     """The data agent answers each brief-specific question with code run on the enriched patent table.
     `on_answer` is called after each answer (for the preview)."""
     if llm is None:
-        result.warnings.append("No model connected: the brief-specific questions were not answered.")
+        result.warnings.append("The brief-specific questions were not answered (no analysis server connected).")
         return
     result.enriched = enriched_table(result)
     dataset = analysis_dataset(result)
@@ -317,9 +321,8 @@ def questions_stage(result: LandscapeResult, llm, emit: EventHandler, checkpoint
                 on_answer()
     answered = sum(1 for _, run in result.question_runs if run.answer and run.executed)
     result.methods["Brief-specific questions"] = (
-        f"{answered} of {len(questions)} answered by the data agent with code run on the enriched patent table "
-        f"(Python sandbox, up to {config.max_steps} steps each); numbers in the answers are traced to the "
-        "code output.")
+        f"{answered} of {len(questions)} answered with Python code run on the enriched patent table (up to "
+        f"{config.max_steps} steps each); numbers in the answers are traced to the code output.")
 
 
 def add_answers_to_facts(result: LandscapeResult) -> None:
@@ -350,9 +353,9 @@ def narrative_stage(result: LandscapeResult, llm, emit, on_section: Callable[[],
     if llm is not None:
         written = sum(1 for sec in sections if sec.text)
         flagged = sum(len(sec.flagged) for sec in sections)
-        result.methods["Report text"] = (f"Written by {result_model(llm)} for {written} of {len(sections)} sections "
-                                         f"from the computed facts only; {flagged} figures could not be matched to "
-                                         "them and are flagged in the text.")
+        result.methods["Report text"] = (f"Written for {written} of {len(sections)} sections from the computed facts "
+                                         f"only; {flagged} figures could not be matched to them and are flagged in "
+                                         "the text.")
 
 
 def result_model(llm) -> str:
@@ -365,7 +368,8 @@ def result_model(llm) -> str:
 
 def extraction_stage(result: LandscapeResult, llm, options: PipelineOptions, emit, should_stop) -> None:
     if llm is None:
-        result.warnings.append("No model connected: the patent details (topic, design lever, ...) were not extracted.")
+        result.warnings.append("The patent details (topic, design lever, ...) were not extracted (no analysis server "
+                               "connected).")
         return
     res = enrich.extract_details(
         result.corpus.std, result.plan, llm, batch_size=options.batch_size, seed=options.seed,
@@ -375,7 +379,7 @@ def extraction_stage(result: LandscapeResult, llm, options: PipelineOptions, emi
     result.methods["Patent details"] = res.info
     if res.stats["failed"]:
         reasons = res.table.loc[res.table["Extraction"].str.startswith("failed"), "Extraction"].value_counts()
-        result.warnings.append(f"The model could not read {res.stats['failed']:,} patents (most often: "
+        result.warnings.append(f"{res.stats['failed']:,} patents could not be read (most often: "
                                f"{reasons.index[0].removeprefix('failed: ')}). Run the analysis again to retry "
                                "them; finished patents are kept.")
     if res.stopped:
@@ -440,7 +444,7 @@ def enriched_table(result: LandscapeResult) -> pd.DataFrame:
     out["Patent link"] = [link or figures.patent_page_link(pid) for link, pid in zip(exported, std["id"])]
     if result.extraction is not None:
         for col in result.extraction.table.columns:
-            name = col if col not in out.columns else f"{col} (model)"
+            name = col if col not in out.columns else f"{col} (extracted)"
             out[name] = result.extraction.table[col]
     if "cluster_id" in std:
         out["Topic cluster"] = std["cluster_label"]
