@@ -49,7 +49,7 @@ from analyst_agent.patents.presets import preset_names, preset_plan
 from analyst_agent.runs import Event
 from analyst_agent.sandbox import Sandbox
 from ui import jobs
-from ui.common import CLOUD_MODEL, remember
+from ui.common import CLOUD_MODEL, current_branding, remember, show_branding
 from ui.data_page import describe_event as describe_agent_event
 from ui.data_page import render_run
 
@@ -430,6 +430,7 @@ def start_run(plan: AnalysisPlan, mapping: dict, sample: int, llm_cfg: LLMConfig
         fetch_figures=bool(st.session_state.get("pl_fetch_pdfs", True)),
         vision_model=str(st.session_state.get("pl_vision_model") or "").strip(),
         embedding_model=(st.session_state.get("pl_embed_model") or semantic.DEFAULT_MODEL).strip(),
+        branding=current_branding(),
     )
 
     def work(on_event, should_stop):
@@ -468,8 +469,10 @@ def render_blocks(blocks: list[rb.Block], key: str) -> None:
         elif block.kind == "table" and block.table is not None:
             if len(block.table) <= 30:  # report-style table: real text, readable and printable
                 report_table(block.table)
-            else:  # long tables: scrollable, sortable grid
-                st.dataframe(block.table, width="stretch", hide_index=True)
+            else:  # long tables: scrollable, sortable grid; web addresses as links
+                links = {c: st.column_config.LinkColumn(c, display_text="open") for c in block.table.columns
+                         if block.table[c].astype(str).str.match(r"https?://").any()}
+                st.dataframe(block.table, width="stretch", hide_index=True, column_config=links or None)
         elif block.kind == "plotly" and block.figure is not None:
             st.plotly_chart(block.figure, width="stretch", key=f"{key}-fig-{i}")
         elif block.kind == "download" and block.data is not None:
@@ -543,6 +546,7 @@ def download_row(blocks: list[rb.Block], key: str) -> None:
 
 
 def render_result(result: LandscapeResult, idx: int) -> None:
+    show_branding(current_branding())
     if result.status == LandscapeStatus.CANCELLED and result.stop_reason:
         st.warning(f"The analysis stopped early; what was finished is shown. {result.stop_reason}", icon="⏹")
     elif result.status == LandscapeStatus.CANCELLED:
@@ -591,11 +595,12 @@ def gallery_step(busy: bool, llm_cfg: LLMConfig) -> None:
 def start_gallery(base: LandscapeResult, groups: list[str], n: int, llm_cfg: LLMConfig) -> None:
     options = PipelineOptions(notable_count=n, fetch_figures=bool(st.session_state.get("pl_fetch_pdfs", True)),
                               vision_model=str(st.session_state.get("pl_vision_model") or "").strip())
+    branding = current_branding()
 
     def work(on_event, should_stop):
         gallery = group_gallery(base, groups, llm=LLMClient(llm_cfg), options=options, on_event=on_event,
                                 should_stop=should_stop)
-        return GalleryShown(gallery, gallery_blocks(gallery))
+        return GalleryShown(gallery, gallery_blocks(gallery, branding))
 
     st.session_state[JOB] = jobs.start_job(f"Top patents: {', '.join(groups)}", "Patent landscape", work,
                                            describe_event)

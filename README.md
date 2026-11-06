@@ -272,6 +272,26 @@ focus set counts alive patents per assignee and the data agent can use it. The m
 which export column was used for each field and what a missing one limits, your answers to the
 brief's questions, and the patents the model read with low confidence.
 
+### Report branding
+
+Every report the app produces carries who it is from: the **organisation's logo**, a line such as *Generated at
+Apollo Tyres Ltd by Dr Shreeharsha Ramaswamy on 06 Nov 2026*, and a **notice** such as *For internal use only. Not
+for distribution outside Apollo Tyres Ltd.* That covers the HTML reports (patent landscape, top-patent cards,
+drum / FLAT TRAC comparison), the Excel workbook (contents sheet, file author) and the Markdown and notebook
+exports. In an HTML report the logo, line and notice open the report, and the line and notice close it; printed
+to PDF they repeat at the foot of every page.
+
+- Defaults: `branding/branding.json` (organisation, author, notice) and `branding/logo.png` in the app folder.
+  Edit the file or replace the logo (PNG or JPG) to change them for every report.
+- For one session: the **🏷️ Report branding** panel in the sidebar (any field can be emptied; *Show the logo*;
+  another logo can be uploaded).
+- Or set `REPORT_ORGANISATION`, `REPORT_AUTHOR`, `REPORT_NOTICE` and `REPORT_LOGO` (a file path), e.g. in
+  `my_settings.bat`.
+
+Every patent also gets a **Patent link** (the export's PDF link when it has one, else the patent's Google Patents
+page from its publication number): a column of the enriched CSV and of the patent table, clickable in the app and in
+the HTML report, and the link behind the patent number on every card.
+
 ### Notable patents and their figures
 
 The report has a **🏅 Notable patents** section: the 10 patents with the highest *interest*, shown as cards
@@ -517,6 +537,7 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `SANDBOX_MEMORY_MB` | `4096` | Memory cap per execution (Linux/macOS) |
 | `PATENT_EMBEDDING_MODEL` | `AI-Growth-Lab/PatentSBERTa` | Embedding model for the patent map (`tfidf` to skip it) |
 | `PATENT_CACHE_DIR` | `~/.research_agent/patent_cache` | Cached embeddings, per-patent answers and patent PDFs (`pdf/`) |
+| `REPORT_ORGANISATION` / `REPORT_AUTHOR` / `REPORT_NOTICE` / `REPORT_LOGO` | *(branding/branding.json, branding/logo.png)* | Who the reports come from, their notice and logo |
 | `PATENT_PDF_LOOKUP` | `https://patents.google.com/patent/{number}/en` | Where a PDF is looked up by publication number when the export has no link; empty switches the lookup off |
 | `LLM_VISION_BASE_URL` / `LLM_VISION_API_KEY` | *(the model server's)* | Server and key for the vision model that picks and describes the figures |
 
@@ -541,6 +562,7 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `analyst_agent/patents/pipeline.py` | Runs the stages in order (the stage contract is at the top of the file), answers the brief's questions, builds the enriched table |
 | `analyst_agent/patents/report_blocks.py` | Lays the result out as the report: map, tables, brief-specific answers, downloads |
 | `analyst_agent/patents/html_report.py` | The report as one offline HTML file |
+| `analyst_agent/branding.py` | Report branding: organisation, author, notice and logo (defaults in `branding/`) |
 | `analyst_agent/patents/workbook.py` | The report's tables and chart data as one Excel workbook |
 | `analyst_agent/patents/notable.py` | Notable patents: value, novelty, the cards, the model's notes, top patents by group |
 | `analyst_agent/patents/figures.py` | Patent PDFs (link, Excel hyperlink, lookup, cache) and their representative figures |

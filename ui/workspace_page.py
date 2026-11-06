@@ -22,7 +22,7 @@ from analyst_agent.runs import Event, RunStatus
 from analyst_agent.workspace import Workspace, WorkspaceError, is_local_url
 from analyst_agent.workspace_agent import WorkspaceAgent
 from ui import jobs
-from ui.common import remember, render_artifact, render_execution
+from ui.common import current_branding, remember, render_artifact, render_execution
 from ui.compare_files import render_compare_files
 
 STARTER_QUESTIONS = [
@@ -163,7 +163,7 @@ def sidebar(llm_cfg: LLMConfig) -> tuple[AgentConfig, bool]:
             st.rerun()
         settings = {"llm": llm_cfg.__dict__ | {"api_key": "***" if llm_cfg.api_key else ""}, "agent": cfg.__dict__}
         stem = ws.root.name or "workspace"
-        st.sidebar.download_button("⬇️ Session notes (.md)", workspace_to_markdown(runs, str(ws.root)),
+        st.sidebar.download_button("⬇️ Session notes (.md)", workspace_to_markdown(runs, str(ws.root), current_branding()),
                                    file_name=f"{stem}_session.md", mime="text/markdown", width="stretch")
         st.sidebar.download_button("⬇️ Full transcript (.json)", workspace_to_json(runs, str(ws.root), settings),
                                    file_name=f"{stem}_transcript.json", mime="application/json", width="stretch")

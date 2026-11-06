@@ -19,6 +19,7 @@ from . import report as rb
 from . import semantic as sem
 from .data import PatentCorpus
 from .html_report import report_html
+from .figures import patent_page_link
 from .result import LandscapeResult, LandscapeStatus, PipelineOptions, analysed_index, analysed_topics
 from .workbook import report_workbook
 
@@ -27,8 +28,9 @@ def assemble_blocks(result: LandscapeResult, options: PipelineOptions | None = N
     """The final report: its body, then the patent table and the downloads."""
     body = report_body(result)
     blocks = body + table_blocks(result, options)
-    blocks.append(html_download(result, blocks))
-    workbook = workbook_download(result, body)
+    branding = options.branding if options is not None else None
+    blocks.append(html_download(result, blocks, branding))
+    workbook = workbook_download(result, body, branding)
     if workbook is not None:
         blocks.append(workbook)
     return blocks
@@ -218,7 +220,8 @@ def card_items(cards) -> list[dict]:
             meta += f". Segment: {n.segment}"
         drawings = "; ".join(f"{f.label}: {f.description}" for f in n.figures if f.description)
         items.append({
-            "id": n.id, "link": n.link, "title": n.title, "meta": meta, "badges": n.badges, "summary": n.summary,
+            "id": n.id, "link": n.link or patent_page_link(n.id), "title": n.title, "meta": meta, "badges": n.badges,
+            "summary": n.summary,
             "why": n.why, "check": n.check, "note": n.figure_note, "drawings": drawings,
             "figures": [(f.png, f.label) for f in n.figures],
             "scores": f"Interest {n.interest:.1f} · value {n.value:.0f} · novelty {n.novelty:.0f}"
@@ -227,7 +230,7 @@ def card_items(cards) -> list[dict]:
     return items
 
 
-def gallery_blocks(gallery) -> list[rb.Block]:
+def gallery_blocks(gallery, branding=None) -> list[rb.Block]:
     """The top patents of the chosen technology groups, as a section of its own (and its HTML download)."""
     groups = ", ".join(gallery.groups)
     blocks = [rb.heading(f"🖼️ Top patents: {groups}")]
@@ -235,7 +238,7 @@ def gallery_blocks(gallery) -> list[rb.Block]:
         return blocks + [rb.note("No analysed patent belongs to these technology groups.")]
     blocks.append(rb.cards(card_items(gallery.cards), caption=f"The {len(gallery.cards)} patents of these groups "
                                                               f"with the highest interest. {CARDS_NOTE} {gallery.note}"))
-    page = report_html(blocks, f"Top patents: {groups}", f"Patent landscape: {gallery.study}")
+    page = report_html(blocks, f"Top patents: {groups}", f"Patent landscape: {gallery.study}", branding=branding)
     blocks.append(rb.download("Download these cards (HTML)", page, f"{_slug('top patents ' + groups)}.html",
                               mime="text/html", caption="One file with the figures; opens in any browser."))
     return blocks
@@ -316,7 +319,7 @@ def artifact_block(art: Artifact) -> rb.Block | None:
 
 BULKY_TEXT_CHARS = 10_000
 KEY_COLUMNS = ["Patent ID", "Title", "Year", "Assignee (normalised)", "Topic", "Segment", "Technology group",
-               "Complexity", "Performance target", "Design lever", "Relevance"]
+               "Complexity", "Performance target", "Design lever", "Relevance", "Patent link"]
 
 
 def _slug(text: str) -> str:
@@ -373,8 +376,8 @@ def table_blocks(result: LandscapeResult, options: PipelineOptions | None = None
     return blocks
 
 
-def workbook_download(result: LandscapeResult, body: list[rb.Block]) -> rb.Block | None:
-    data = report_workbook(body, f"Patent landscape: {result.plan.title}")
+def workbook_download(result: LandscapeResult, body: list[rb.Block], branding=None) -> rb.Block | None:
+    data = report_workbook(body, f"Patent landscape: {result.plan.title}", branding)
     if data is None:
         return None
     return rb.download("Download the report's tables (Excel)", data, f"{_slug(result.plan.title)}_tables.xlsx",
@@ -383,7 +386,7 @@ def workbook_download(result: LandscapeResult, body: list[rb.Block]) -> rb.Block
                                "first. The patent-level data is in the CSV.")
 
 
-def html_download(result: LandscapeResult, blocks: list[rb.Block]) -> rb.Block:
+def html_download(result: LandscapeResult, blocks: list[rb.Block], branding=None) -> rb.Block:
     frame = result.analysis_frame if result.analysis_frame is not None else result.corpus.std
     years = frame["year"].dropna()
     subtitle = (f"{len(frame):,} patents" + (f" · {int(years.min())}–{int(years.max())}" if len(years) else "")
@@ -394,7 +397,7 @@ def html_download(result: LandscapeResult, blocks: list[rb.Block]) -> rb.Block:
         subtitle += " · stopped before the end: partial results"
     elif result.status == LandscapeStatus.ERROR:
         subtitle += " · part of the analysis failed: see the notes"
-    page = report_html(blocks, f"Patent landscape: {result.plan.title}", subtitle)
+    page = report_html(blocks, f"Patent landscape: {result.plan.title}", subtitle, branding=branding)
     return rb.download("Download the full report (HTML)", page, f"{_slug(result.plan.title)}_report.html",
                        mime="text/html", caption="One file with every chart (interactive), table and text; opens in "
                                                  "any browser, also offline. Print it to PDF from the browser if needed.")

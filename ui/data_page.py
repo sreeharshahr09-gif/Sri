@@ -30,7 +30,7 @@ from analyst_agent.data import (
 from analyst_agent.export import to_json, to_markdown, to_notebook
 from analyst_agent.runs import Event, RunStatus, StepNote
 from ui import jobs
-from ui.common import remember, render_artifact, render_execution
+from ui.common import current_branding, remember, render_artifact, render_execution
 
 STARTER_QUESTIONS = [
     "Give me an overview of this dataset and any data-quality issues.",
@@ -139,11 +139,11 @@ def sidebar_session(dataset: Dataset, llm_cfg: LLMConfig, agent_cfg: AgentConfig
                                      st.session_state.profile)
         stem = dataset.name.rsplit(".", 1)[0]
         st.sidebar.download_button(
-            "⬇️ Reproducible notebook (.ipynb)", to_notebook(runs, dataset),
+            "⬇️ Reproducible notebook (.ipynb)", to_notebook(runs, dataset, branding=current_branding()),
             file_name=f"{stem}_analysis.ipynb", mime="application/x-ipynb+json", width="stretch",
         )
         st.sidebar.download_button(
-            "⬇️ Report (.md)", to_markdown(runs, dataset),
+            "⬇️ Report (.md)", to_markdown(runs, dataset, branding=current_branding()),
             file_name=f"{stem}_report.md", mime="text/markdown", width="stretch",
         )
         st.sidebar.download_button(

@@ -174,16 +174,19 @@ def test_enriched_csv_has_study_columns_then_clusters_then_the_export():
     result, events = _run(plan=plan, llm=model)
     table = result.enriched
     cols = list(table.columns)
-    assert cols[:6] == ["Patent ID", "Title", "Year", "Assignee (normalised)", "Co-assignees", "Office"]
+    assert cols[:7] == ["Patent ID", "Title", "Year", "Assignee (normalised)", "Co-assignees", "Office", "Patent link"]
+    # No link in this export: each patent's page, built from its publication number.
+    assert table["Patent link"].iloc[0] == f"https://patents.google.com/patent/{table['Patent ID'].iloc[0]}/en"
+    rest = cols[:6] + cols[7:]
     study = ["Topic", "Segment", "Wear type", "Technology group", "Complexity", "Component", "Performance target",
              "Design lever", "Mechanism", "Core claim", "Key parameters", "Trade-offs", "Relevance", "Confidence",
              "Test method", "Extraction"]
-    assert cols[6 : 6 + len(study)] == study
-    assert cols[6 + len(study) : 11 + len(study)] == ["Topic cluster", "Cluster no.", "Cluster technology group",
+    assert rest[6 : 6 + len(study)] == study
+    assert rest[6 + len(study) : 11 + len(study)] == ["Topic cluster", "Cluster no.", "Cluster technology group",
                                                       "Map X", "Map Y"]
-    assert cols[11 + len(study)] == "First claim"
+    assert rest[11 + len(study)] == "First claim"
     raw_cols = [c for c in result.corpus.raw.columns if not c.startswith("_")]
-    assert cols[12 + len(study) :] == [c if c not in cols[:6] else f"{c} (export)" for c in raw_cols]
+    assert rest[12 + len(study) :] == [c if c not in rest[:6] else f"{c} (export)" for c in raw_cols]
     assert "Title (export)" in cols and "_theme" not in cols
     assert table["Extraction"].eq("extracted").all()
     assert model.calls["extract"] == -(-len(table) // 6)
@@ -197,7 +200,7 @@ def test_enriched_csv_has_study_columns_then_clusters_then_the_export():
     shown = next(b for b in result.blocks if b.title == "Every patent with the study's columns").table
     assert list(shown.columns) == ["Patent ID", "Title", "Year", "Assignee (normalised)", "Topic", "Segment",
                                    "Wear type", "Technology group", "Complexity", "Performance target",
-                                   "Design lever", "Relevance"]
+                                   "Design lever", "Relevance", "Patent link"]
     metrics = dict(next(b for b in result.blocks if b.kind == "metrics" and b.metrics[0][0] == "Read by the model").metrics)
     assert metrics["Read by the model"] == f"{len(table)} of {len(table)}"
     assert int(metrics["Low (off-topic)"]) == (table["Relevance"] == "Low").sum() > 0

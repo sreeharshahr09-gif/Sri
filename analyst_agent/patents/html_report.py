@@ -55,6 +55,7 @@ def _inline(text: str) -> str:
     return re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r'<a href="\2">\1</a>', text)
 
 
+_URL_CELL = re.compile(r"<td>(https?://[^<\s\"]+)</td>")
 _TABLE_SEPARATOR = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$")
 
 
@@ -187,14 +188,62 @@ def _table(df) -> str:
         if pd.api.types.is_extension_array_dtype(values) and values.isna().any():
             shown.isetitem(i, values.astype(object).where(values.notna(), ""))
     body = shown.to_html(index=False, classes="data", border=0, na_rep="", escape=True, float_format=lambda v: f"{v:,.2f}")
+    body = _URL_CELL.sub(r'<td><a href="\1">open</a></td>', body)  # addresses as links, kept short
     more = f'<div class="caption">First 500 of {len(df):,} rows; the CSV has all.</div>' if len(df) > 500 else ""
     return f'<div class="tablewrap">{body}</div>{more}'
 
 
+BRAND_CSS = """
+.brand { display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap;
+         padding: 0 0 14px; margin: 0 0 22px; border-bottom: 1px solid var(--line); }
+.brand img { height: 46px; width: auto; } .brand-text { text-align: right; color: var(--muted); font-size: 13px; }
+.brand-notice { display: inline-block; margin-top: 4px; padding: 2px 9px; border: 1.5px solid #b91c1c; border-radius: 4px;
+                color: #b91c1c; font-weight: 700; font-size: 12px; letter-spacing: .02em; }
+.brand-foot { margin-top: 48px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.brand-foot strong { color: #b91c1c; }
+/* On screen the report flows as usual and the footer comes once at the end; printed, the wrapper is a table whose
+   footer row the browser repeats at the foot of every page, with room kept for it. */
+.pagewrap, .pagewrap > tbody, .pagewrap > tfoot, .pagewrap > tbody > tr, .pagewrap > tfoot > tr,
+.pagewrap > tbody > tr > td, .pagewrap > tfoot > tr > td { display: block; width: 100%; padding: 0; border: 0; }
+@media print {
+  .pagewrap { display: table; table-layout: fixed; border-collapse: collapse; }
+  .pagewrap > tbody { display: table-row-group; } .pagewrap > tfoot { display: table-footer-group; }
+  .pagewrap > tbody > tr, .pagewrap > tfoot > tr { display: table-row; }
+  .pagewrap > tbody > tr > td, .pagewrap > tfoot > tr > td { display: table-cell; }
+  .brand-foot { margin-top: 6px; padding-top: 4px; }
+  .chartwrap, .metrics, .card, .note { break-inside: avoid; }  /* a chart split over two pages loses the footer */
+  h2, h3, h4, .block-title { break-after: avoid; }  /* a heading stays with what follows it */
+}
+"""
+
+
+def _brand_header(branding) -> tuple[str, str]:
+    """(header, footer) HTML for a report's branding; empty strings without one."""
+    if branding is None or branding.empty:
+        return "", ""
+    logo = (f'<img alt="{html.escape(branding.organisation or "Logo")}" src="{branding.logo_data_uri()}">'
+            if branding.logo_shown else "<span></span>")
+    notice = branding.notice.strip()
+    text = (f"<div>{html.escape(branding.credit_on())}</div>" if branding.credit else "") + (
+        f'<div class="brand-notice">{html.escape(notice)}</div>' if notice else "")
+    header = f'<header class="brand">{logo}<div class="brand-text">{text}</div></header>'
+    foot = " · ".join(x for x in [html.escape(branding.credit_on()) if branding.credit else "",
+                                   f"<strong>{html.escape(notice)}</strong>" if notice else ""] if x)
+    return header, f'<footer class="brand-foot">{foot}</footer>'
+
+
+def _with_footer(body: str, footer: str) -> str:
+    if not footer:
+        return body
+    return (f'<table class="pagewrap"><tbody><tr><td>{body}</td></tr></tbody>'
+            f"<tfoot><tr><td>{footer}</td></tr></tfoot></table>")
+
+
 def report_html(blocks: list[rb.Block], title: str, subtitle: str = "", extra_css: str = "",
-                markdown_heading_offset: int = 2) -> bytes:
+                markdown_heading_offset: int = 2, branding=None) -> bytes:
     """The blocks as one offline HTML page. `extra_css` is added after the standard styles; Markdown headings move
-    down `markdown_heading_offset` levels."""
+    down `markdown_heading_offset` levels. `branding` (analyst_agent.branding.Branding) adds the logo, who generated
+    the report and its notice at the top, and a footer that repeats on every printed page."""
     used: set[str] = set()
     toc, parts = [], []
     plotly_loaded = False
@@ -248,7 +297,11 @@ def report_html(blocks: list[rb.Block], title: str, subtitle: str = "", extra_cs
     body = "\n".join(parts)
     toc_html = f'<nav class="toc"><strong>Contents</strong><ol>{"".join(toc)}</ol></nav>' if toc else ""
     body = body.replace("<!--TOC-->", toc_html, 1) if "<!--TOC-->" in body else toc_html + body
+    header, footer = _brand_header(branding)
+    author = (f'<meta name="author" content="{html.escape(branding.author)}">'
+              if branding is not None and branding.author.strip() else "")
     page = (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
-            f'<meta name="viewport" content="width=device-width, initial-scale=1">'
-            f"<title>{html.escape(title)}</title><style>{CSS}{extra_css}</style></head><body><main>{body}</main></body></html>")
+            f'<meta name="viewport" content="width=device-width, initial-scale=1">{author}'
+            f"<title>{html.escape(title)}</title><style>{CSS}{BRAND_CSS if header else ''}{extra_css}</style></head>"
+            f"<body><main>{header}{_with_footer(body, footer)}</main></body></html>")
     return page.encode("utf-8")

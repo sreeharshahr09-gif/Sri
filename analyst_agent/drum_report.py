@@ -121,7 +121,7 @@ def _source_table(study: DrumStudy) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def drum_report_html(study: DrumStudy, followups: list[tuple[str, str]] | None = None) -> bytes:
+def drum_report_html(study: DrumStudy, followups: list[tuple[str, str]] | None = None, branding=None) -> bytes:
     if study.status != "answered" or not study.answer.strip():
         raise ValueError("A completed model interpretation is required for the full report export.")
     body = [blocks.heading("Drum / FLAT TRAC tyre comparison", 1),
@@ -168,4 +168,4 @@ def drum_report_html(study: DrumStudy, followups: list[tuple[str, str]] | None =
             body.append(blocks.markdown(f"**Q{i}. {question}**\n\n{answer}"))
     return report_html(body, "Drum / FLAT TRAC tyre comparison",
                        subtitle=f"{len(study.files)} workbooks · {len(study.common_loads)} common loads · {len(study.charts)} graphs",
-                       extra_css=DRUM_REPORT_CSS, markdown_heading_offset=0)
+                       extra_css=DRUM_REPORT_CSS, markdown_heading_offset=0, branding=branding)

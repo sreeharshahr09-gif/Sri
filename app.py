@@ -15,7 +15,7 @@ import streamlit as st
 
 import app_stamp
 from ui import data_page, jobs, patent_page, workspace_page
-from ui.common import keep_widget_state, model_settings, quiet_stale_fragment_logs
+from ui.common import branding_settings, keep_widget_state, model_settings, quiet_stale_fragment_logs
 
 st.set_page_config(page_title="Research Agent", page_icon="📊", layout="wide")
 
@@ -38,6 +38,7 @@ navigation = st.navigation(
 )
 keep_widget_state()
 model_settings()
+branding_settings()
 # Questions run in the background; a status bar on every page shows their progress.
 jobs.show_notice()
 if jobs.any_active():

@@ -108,6 +108,11 @@ def test_drum_report_formats_model_tables_and_field_validation(tmp_path):
     assert '<td>higher</td>' in report
     assert 'class="chartwrap"' in report
     assert 'width: min(100%, 820px)' in report
+    from analyst_agent.branding import Branding
+
+    branded = drum_report_html(study, branding=Branding(organisation="Apollo Tyres Ltd", author="Dr A",
+                                                        notice="For internal use only.")).decode()
+    assert "Generated at Apollo Tyres Ltd by Dr A on" in branded and "For internal use only." in branded
     assert "Initial steering response" in report
     assert "Validation sequence and decision rule" in report
     assert "paired vehicle measurements" in report

@@ -25,6 +25,7 @@ from analyst_agent.drum_template import (DrumStudy, analyze_drum_study, answer_d
 from analyst_agent.drum_report import drum_report_html
 from analyst_agent.workspace import Workspace
 from ui import jobs
+from ui.common import current_branding
 
 
 def _collect_compare_help(job: jobs.Job) -> None:
@@ -385,10 +386,12 @@ def render_drum_compare_files(workspace: Workspace, llm_cfg: LLMConfig) -> None:
         jobs.job_panel("ws_drum_followup_job")
     if study.answer.strip():
         followups = st.session_state.get("ws_drum_followups", [])
-        report_key = (signature, len(followups), study.answer)
+        branding = current_branding()
+        report_key = (signature, len(followups), study.answer, branding.credit, branding.notice,
+                      bool(branding.logo_shown), len(branding.logo_shown or b""))
         cached = st.session_state.get("ws_drum_report_cache")
         if not cached or cached[0] != report_key:
-            cached = (report_key, drum_report_html(study, followups))
+            cached = (report_key, drum_report_html(study, followups, branding))
             st.session_state.ws_drum_report_cache = cached
         st.download_button("Download complete HTML report", cached[1],
             file_name="drum_flat_trac_comparison.html", mime="text/html", key="ws_drum_html")

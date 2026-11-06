@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from ..agent import DataRun
+from ..branding import Branding
 from ..enums import StrEnum
 from . import analytics as an
 from . import enrich
@@ -37,6 +38,7 @@ class PipelineOptions:
     fetch_figures: bool = False  # download their PDFs for figures (internet; the app turns it on)
     figures_per_patent: int = 2
     vision_model: str = ""  # a vision model that picks and describes the figures (empty: the page analysis alone)
+    branding: Branding | None = None  # logo, who generated the report and its notice, on the downloads
 
 
 class LandscapeStatus(StrEnum):

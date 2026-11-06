@@ -32,7 +32,7 @@ from ..llm import is_openrouter
 from ..runs import Event, EventHandler, RunStatus
 from ..sandbox import Sandbox
 from . import analytics as an
-from . import enrich
+from . import enrich, figures
 from . import notable as nb
 from . import narrative as nar
 from . import semantic as sem
@@ -435,6 +435,9 @@ def enriched_table(result: LandscapeResult) -> pd.DataFrame:
     out["Office"] = std["country"]
     if "alive" in std and std["alive"].astype(str).ne("").any():
         out["Alive (from legal status)"] = std["alive"]
+    # The export's own link when it has one, else the patent's page built from its number (no download needed).
+    exported = std["pdf_link"] if "pdf_link" in std else pd.Series("", index=std.index)
+    out["Patent link"] = [link or figures.patent_page_link(pid) for link, pid in zip(exported, std["id"])]
     if result.extraction is not None:
         for col in result.extraction.table.columns:
             name = col if col not in out.columns else f"{col} (model)"

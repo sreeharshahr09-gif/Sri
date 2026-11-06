@@ -79,7 +79,7 @@ def _clean(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def report_workbook(blocks: list[rb.Block], title: str) -> bytes | None:
+def report_workbook(blocks: list[rb.Block], title: str, branding=None) -> bytes | None:
     """Every table of the report and the data of every chart that has a table behind it, one sheet each, with a
     contents sheet first. None when there is nothing to put in it."""
     sheets: list[tuple[str, str, str, pd.DataFrame]] = []  # (section, title, kind, table)
@@ -117,12 +117,39 @@ def report_workbook(blocks: list[rb.Block], title: str) -> bytes | None:
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         _clean(contents).to_excel(writer, sheet_name="Contents", index=False, startrow=2)
-        writer.sheets["Contents"].cell(row=1, column=1, value=title)
         for name, (_, _, _, data) in zip(names, sheets):
             _clean(data).to_excel(writer, sheet_name=name, index=False)
         for ws in writer.sheets.values():
-            for column in ws.iter_cols(min_row=1, max_row=min(ws.max_row, 200)):
+            first = 3 if ws.title == "Contents" else 1  # the title and branding lines may run across
+            for column in ws.iter_cols(min_row=first, max_row=min(ws.max_row, 200)):
                 width = max((len(str(c.value)) for c in column if c.value is not None), default=8)
                 ws.column_dimensions[column[0].column_letter].width = min(60, max(8, width + 2))
             ws.freeze_panes = "A2" if ws.title != "Contents" else "A4"
+        _brand_contents(writer.book, writer.sheets["Contents"], title, branding)
     return buf.getvalue()
+
+
+def _brand_contents(book, ws, title: str, branding) -> None:
+    """The contents sheet's title, who generated the workbook and its notice, the logo, and the file's properties."""
+    from openpyxl.styles import Font
+
+    ws.cell(row=1, column=1, value=title).font = Font(bold=True, size=13)
+    book.properties.title = title
+    if branding is None or branding.empty:
+        return
+    line = " · ".join(x for x in [branding.credit_on() if branding.credit else "", branding.notice.strip()] if x)
+    ws.cell(row=2, column=1, value=line).font = Font(italic=True, color="B91C1C" if branding.notice.strip() else "5F6B7A")
+    if branding.author.strip():
+        book.properties.creator = branding.author.strip()
+    if branding.notice.strip():
+        book.properties.description = branding.notice.strip()
+    logo = branding.logo_shown
+    if logo:
+        try:
+            from openpyxl.drawing.image import Image as SheetImage
+
+            image = SheetImage(io.BytesIO(logo))
+            image.width, image.height = int(image.width * 40 / image.height), 40
+            ws.add_image(image, "G1")
+        except Exception:  # an image openpyxl cannot place: the text lines stay
+            pass

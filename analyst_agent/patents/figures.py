@@ -58,6 +58,15 @@ def normalise_number(number: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", str(number or "").upper())
 
 
+def patent_page_link(number: str) -> str:
+    """The patent's page (Google Patents by default, with its PDF), built from the publication number alone;
+    "" for a number that is no publication number (such as a row number) or when the lookup is switched off."""
+    number = normalise_number(number)
+    if not LOOKUP_URL or not re.match(r"^[A-Z]{2}\d", number):
+        return ""
+    return LOOKUP_URL.format(number=number)
+
+
 def _get(session, url: str, timeout: float):
     """(body, content type) of a GET, at most MAX_PDF_BYTES; raises on an HTTP error."""
     resp = session.get(url, timeout=timeout, stream=True, headers={"User-Agent": USER_AGENT},
