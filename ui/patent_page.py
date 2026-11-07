@@ -335,7 +335,8 @@ def plan_step(busy: bool, llm_cfg: LLMConfig) -> None:
             st.checkbox("Answer the brief-specific questions (data agent)", key=remember("pl_questions", True))
             st.checkbox("Reuse saved answers for unchanged steps (saves tokens)", key=remember("pl_reuse", True),
                         help="Every model reply of a run is saved. Running again after a crash or a stop, or with "
-                             "an unchanged plan, asks the model only what changed. Untick it for fresh text.")
+                             "an unchanged plan, asks the model only what changed. Untick it for fresh text. "
+                             "To delete what is saved, use 🧹 Saved results in the sidebar.")
             if is_openrouter(llm_cfg.base_url):
                 st.number_input("Requests at once (OpenRouter)", 1, 8, key=remember("pl_parallel", 4),
                                 help="Patent batches sent at the same time (the brief's questions: up to 3 at a "

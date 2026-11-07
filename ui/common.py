@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from dataclasses import replace
 
 import streamlit as st
@@ -126,6 +127,78 @@ def _plain(text: str) -> str:
     import re
 
     return re.sub(r"([$*_\[\]`])", r"\\\1", text)
+
+
+def _count(n: int, word: str) -> str:
+    return f"{n:,} {word}{'' if n == 1 else 's'}"
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def _saved_parts(folder: str):
+    from analyst_agent.patents import cache
+
+    return cache.summary(folder)
+
+
+def saved_results_settings() -> None:
+    """Where the patent runs' saved results are, how much space they take, and a button to clear them, so
+    nobody has to find the folder. Not while a landscape run is in progress: it is writing there."""
+    from analyst_agent.patents import cache
+    from ui import jobs
+
+    def running() -> bool:
+        return jobs.is_running("pl_job")
+
+    ss = st.session_state
+    folder = cache.location()
+    with st.sidebar.expander("🧹 Saved results", expanded=bool(ss.get("cache_message"))):
+        st.caption("Patent landscape runs keep what the model answered, so a repeated run is quick and costs no "
+                   "requests. Clear it for a completely fresh run or to free space: the next run then reads "
+                   "every patent again.")
+        st.caption("Kept in this folder:")
+        st.code(str(folder), language=None, wrap_lines=True)
+        if sys.platform == "win32" and st.button("📂 Open the folder", key="cache_open", width="stretch"):
+            if not cache.open_folder(folder):
+                st.caption("⚠️ The folder could not be opened; copy the line above into File Explorer.")
+        parts = _saved_parts(str(folder))
+        chosen = []
+        for part in parts:
+            amount = f"{cache.human_size(part.size)}, {_count(part.files, 'file')}" if part.files else "empty"
+            if st.checkbox(f"{part.label} ({amount})", key=remember(f"cache_{part.key}", part.key != "pdf"),
+                           help=part.about[:1].upper() + part.about[1:] + ".", disabled=not part.files):
+                if part.files:
+                    chosen.append(part.key)
+        message = ss.pop("cache_message", None)
+        if message:
+            (st.success if message[0] == "ok" else st.warning)(message[1])
+        if running():
+            st.caption("⏳ A run is in progress. Clear the saved results after it has finished.")
+        elif not any(p.files for p in parts):
+            st.caption("Nothing is saved yet.")
+        elif ss.get("cache_confirm"):
+            st.warning("Delete the ticked items? This cannot be undone.")
+            yes, no = st.columns(2)
+            if yes.button("Yes, delete", key="cache_yes", type="primary", disabled=not chosen, width="stretch"):
+                ss.cache_confirm = False
+                if running():  # a run started since the page was drawn
+                    ss.cache_message = ("warn", "A run is in progress; nothing was deleted. Clear the saved "
+                                                "results after it has finished.")
+                    st.rerun()
+                deleted, freed, problems = cache.clear(chosen, folder)
+                _saved_parts.clear()
+                text = f"Deleted {_count(deleted, 'file')} ({cache.human_size(freed)})."
+                if problems:
+                    text += (f" {len(problems)} could not be deleted, probably open in another program: "
+                             + "; ".join(problems[:3]) + ("…" if len(problems) > 3 else "") + ". Close the app "
+                             "with stop_agent.bat, start it again and repeat.")
+                ss.cache_message = ("warn" if problems else "ok", text)
+                st.rerun()
+            if no.button("Cancel", key="cache_no", width="stretch"):
+                ss.cache_confirm = False
+                st.rerun()
+        elif st.button("🧹 Clear the ticked items", key="cache_clear", disabled=not chosen, width="stretch"):
+            ss.cache_confirm = True
+            st.rerun()
 
 
 def keep_widget_state() -> None:

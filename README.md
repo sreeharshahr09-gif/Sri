@@ -381,8 +381,13 @@ Type a request in the box under the report; the outcome is added below it.
   `python -m pip install sentence-transformers`; the model (about 0.5 GB) downloads once and its
   embeddings are cached. Without it the map uses TF-IDF + LSA. Choose the model, or `tfidf`,
   under **Advanced settings** in the plan.
-- Cache: `~/.research_agent/patent_cache` (set `PATENT_CACHE_DIR` to move it). A stopped or
-  crashed run continues where it left off; delete the folder to start fresh.
+- Cache: `~/.research_agent/patent_cache` (on Windows `C:\Users\<you>\.research_agent\patent_cache`; set
+  `PATENT_CACHE_DIR` to move it). A stopped or crashed run continues where it left off.
+- **Clearing it:** open **🧹 Saved results** in the sidebar (every page). It shows the folder (with *Open the
+  folder* on Windows), how much each part takes, and deletes the ticked parts after a confirmation: saved
+  answers, patent readings and patent map vectors are ticked; patent PDFs only when you tick them (they never
+  change, and a PDF you saved there yourself would go too). Other files in the folder are never touched, and
+  nothing is deleted while a landscape run is in progress. The next run then reads every patent again.
 - **Saved answers:** every model reply of a run is also saved (`PATENT_CACHE_DIR/replies`). Running again after a
   crash, a stop or with an unchanged plan asks the model only what changed: in a test, a repeated run sent no
   request at all. Untick *Reuse saved answers for unchanged steps* under **Advanced settings** for fresh text.
@@ -585,6 +590,7 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `analyst_agent/patents/workbook.py` | The report's tables and chart data as one Excel workbook |
 | `analyst_agent/patents/notable.py` | Notable patents: value, novelty, the cards, the model's notes, top patents by group |
 | `analyst_agent/patents/figures.py` | Patent PDFs (link, Excel hyperlink, lookup, cache) and their representative figures |
+| `analyst_agent/patents/cache.py` | What the runs keep on disk, its size, and clearing it (sidebar 🧹 Saved results) |
 | `analyst_agent/patents/followup.py` | Follow-ups: routing, plan changes, rewrites, data-agent context |
 | `analyst_agent/workspace.py` | Read-only, root-bounded file access and text extraction |
 | `analyst_agent/loop.py` | The agent loop both agents share: step limit, nudges, repeats, context trimming, Stop, errors |
