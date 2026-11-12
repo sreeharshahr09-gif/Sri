@@ -29,7 +29,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-__version__ = "1.6"
+__version__ = "1.7"
 
 log = logging.getLogger("catia_extract")
 

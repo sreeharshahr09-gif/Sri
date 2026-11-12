@@ -24,6 +24,22 @@ everything combined (handy for filtering across files); its first tab, **files**
 files worked and the reason for any failure. Files can also be
 dragged and dropped onto the `.bat` icon.
 
+## Vendor inspection sheet (checking drawings)
+
+`inspection_sheet.html` turns a drawing extract into an inspection sheet for the vendor.
+Open it in a browser (double-click), load the drawing's `.xlsx` from `catia_extract`, and
+type the measured values. Each dimension shows GOOD / NO-GOOD as you type.
+
+- Tolerances come from the drawing. Dimensions without their own tolerance use the
+  ISO 2768 class chosen on the sheet (default `m`, as in the title block). For general angle
+  tolerances, choose the shorter leg length band.
+- Reference dimensions `( … )` are not checked. `max.` / `min.` are one-sided limits.
+  Threads and features below 0.5 mm are judged OK / NOK.
+- Up to 10 samples per dimension. Entries are kept in that browser until cleared.
+- **Download report (.xlsx)** saves the filled sheet; **Copy for Excel** puts it on the clipboard.
+- Files are read in the browser only; nothing is uploaded. The page needs internet once to
+  load its fonts and the Excel reader.
+
 ## Command line usage
 
 ```bat

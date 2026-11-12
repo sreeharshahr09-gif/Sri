@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vendor Inspection Sheet</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/* Layout: a drawing-style title block on top, verdict strip, then sheet tabs over one wide inspection table. */
+:root {
+  --bg: #eef2f5;
+  --surface: #ffffff;
+  --surface-2: #f6f8fa;
+  --ink: #15212c;
+  --muted: #586977;
+  --line: #d3dbe2;
+  --accent: #1d5b86;
+  --accent-ink: #ffffff;
+  --accent-soft: #e2edf5;
+  --good: #1b7343;
+  --good-bg: #e1f2e8;
+  --ng: #b3261e;
+  --ng-bg: #fbe5e3;
+  --pend: #7b8995;
+  --pend-bg: #eef1f4;
+  --warn: #9a5800;
+  --warn-bg: #fbefd9;
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", "Segoe UI", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", Consolas, "Courier New", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e141a; --surface: #151e27; --surface-2: #1a2531; --ink: #e4ebf1; --muted: #98a9b7;
+    --line: #283746; --accent: #74b2de; --accent-ink: #0b1620; --accent-soft: #1b2e3e;
+    --good: #55c58a; --good-bg: #123022; --ng: #ff8378; --ng-bg: #3b1916; --pend: #7f8e9a; --pend-bg: #1d2935;
+    --warn: #e9a94f; --warn-bg: #33250d; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e141a; --surface: #151e27; --surface-2: #1a2531; --ink: #e4ebf1; --muted: #98a9b7;
+  --line: #283746; --accent: #74b2de; --accent-ink: #0b1620; --accent-soft: #1b2e3e;
+  --good: #55c58a; --good-bg: #123022; --ng: #ff8378; --ng-bg: #3b1916; --pend: #7f8e9a; --pend-bg: #1d2935;
+  --warn: #e9a94f; --warn-bg: #33250d; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font: 14px/1.5 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 48px;
+}
+.wrap { max-width: 1280px; margin: 0 auto; display: grid; gap: 16px; }
+.wrap > * { min-width: 0; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+h1 { font-size: 28px; font-weight: 700; letter-spacing: .01em; }
+.label { font-family: var(--font-display); font-weight: 600; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+button, select, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Header */
+.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; }
+.top p { margin: 4px 0 0; color: var(--muted); max-width: 65ch; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 7px 12px; font-weight: 500; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.quiet { background: transparent; }
+
+/* Banner + drop zone */
+.banner { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between;
+  background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 10px 14px; font-weight: 500; }
+.banner.err { background: var(--ng-bg); color: var(--ng); }
+.drop { border: 1.5px dashed var(--line); border-radius: 8px; padding: 14px; background: var(--surface);
+  display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); }
+.drop .hint { color: var(--muted); }
+.file-input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+
+/* Title block */
+.titleblock { background: var(--surface); border: 1.5px solid var(--ink); border-radius: 2px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.tb-cell { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 6px 10px 8px; display: grid; gap: 2px; min-width: 0; }
+.tb-cell input, .tb-cell select { border: 0; background: transparent; padding: 2px 0; width: 100%; min-width: 0; font-weight: 500; }
+.tb-cell input:focus, .tb-cell select:focus { outline: none; box-shadow: inset 0 -2px 0 var(--accent); }
+.tb-cell.drawing { grid-column: span 2; }
+.tb-cell .static { font-weight: 600; overflow-wrap: anywhere; }
+
+/* Verdict strip */
+.verdict { display: grid; grid-template-columns: minmax(220px, 1.3fr) repeat(4, minmax(90px, 1fr)); gap: 10px; }
+.verdict > div { background: var(--surface); border-radius: 8px; padding: 10px 14px; border: 1px solid var(--line); min-width: 0; }
+.verdict .big { font-family: var(--font-display); font-weight: 700; font-size: 26px; line-height: 1.1; }
+.v-overall { display: grid; gap: 6px; }
+.v-overall.good { background: var(--good-bg); border-color: transparent; color: var(--good); }
+.v-overall.ng { background: var(--ng-bg); border-color: transparent; color: var(--ng); }
+.v-overall .label { color: inherit; opacity: .85; }
+.bar { height: 6px; border-radius: 3px; background: var(--pend-bg); overflow: hidden; display: flex; }
+.bar span { display: block; height: 100%; }
+.c-good { color: var(--good); } .c-ng { color: var(--ng); } .c-pend { color: var(--pend); }
+
+/* Tabs + filters */
+.tabsrow { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: end; justify-content: space-between; border-bottom: 1.5px solid var(--line); }
+.tabs { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: -1.5px; }
+.tab { border: 1.5px solid transparent; border-bottom: 0; background: transparent; border-radius: 6px 6px 0 0;
+  padding: 7px 14px 8px; font-family: var(--font-display); font-weight: 600; font-size: 15px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.tab[aria-selected="true"] { background: var(--surface); border-color: var(--line); color: var(--ink); }
+.pill { font-family: var(--font-mono); font-size: 11.5px; border-radius: 10px; padding: 0 7px; background: var(--pend-bg); color: var(--muted); }
+.pill.ng { background: var(--ng-bg); color: var(--ng); }
+.pill.good { background: var(--good-bg); color: var(--good); }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-bottom: 8px; }
+.chip { border: 1px solid var(--line); background: var(--surface); border-radius: 14px; padding: 3px 11px; font-size: 13px; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.toggle { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; margin-left: 6px; }
+
+/* Table */
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 0 0 8px 8px; }
+table { border-collapse: collapse; width: 100%; min-width: 900px; }
+th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
+thead th { position: sticky; top: 0; background: var(--surface-2); z-index: 1; white-space: nowrap; }
+td.num, th.num { text-align: right; }
+tr.viewhead td { background: var(--surface-2); font-family: var(--font-display); font-weight: 600; font-size: 14px; padding-top: 10px; }
+tr.viewhead .count { color: var(--muted); font-weight: 500; margin-left: 8px; font-family: var(--font-body); font-size: 12.5px; }
+tr.row td:first-child { border-left: 4px solid transparent; }
+tr.row.s-good td:first-child { border-left-color: var(--good); }
+tr.row.s-ng td:first-child { border-left-color: var(--ng); }
+tr.row.s-ng { background: color-mix(in srgb, var(--ng-bg) 45%, transparent); }
+.dimname { color: var(--muted); font-size: 12px; }
+.callout { font-family: var(--font-mono); font-weight: 600; font-size: 15px; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+.stack { display: inline-grid; font-size: 10.5px; line-height: 1.05; font-weight: 500; }
+.affix { color: var(--muted); font-weight: 500; font-size: 12.5px; }
+.src { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.src.general { color: var(--warn); }
+.limits { white-space: nowrap; }
+.meas { width: 96px; border: 1px solid var(--line); border-radius: 5px; padding: 5px 7px; text-align: right;
+  background: var(--surface); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+select.meas { text-align: left; width: 96px; }
+.meas.good { border-color: var(--good); background: var(--good-bg); color: var(--good); }
+.meas.ng { border-color: var(--ng); background: var(--ng-bg); color: var(--ng); font-weight: 600; }
+.meas.bad { border-color: var(--warn); background: var(--warn-bg); }
+.status { font-family: var(--font-display); font-weight: 700; letter-spacing: .05em; font-size: 13px; border-radius: 4px; padding: 2px 8px; white-space: nowrap; display: inline-block; }
+.status.good { background: var(--good-bg); color: var(--good); }
+.status.ng { background: var(--ng-bg); color: var(--ng); }
+.status.pend { background: var(--pend-bg); color: var(--pend); }
+.status.ref { color: var(--muted); font-weight: 600; }
+.dev { font-size: 12px; color: var(--ng); white-space: nowrap; }
+.note { font-size: 12px; color: var(--muted); }
+.empty { padding: 28px; text-align: center; color: var(--muted); }
+.foot { color: var(--muted); font-size: 12.5px; display: grid; gap: 4px; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 6px; font-weight: 500; z-index: 20; }
+@media (max-width: 760px) {
+  .verdict { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .verdict .v-overall { grid-column: 1 / -1; }
+  .tb-cell.drawing { grid-column: auto; }
+}
+@media (prefers-reduced-motion: no-preference) { .bar span { transition: width .25s ease; } }
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Vendor Inspection Sheet</h1>
+      <p>Load the dimensions extracted from a CATIA drawing, enter the measured values, and each one is judged against its tolerance as you type.</p>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="btn-load" type="button">Load extracted Excel</button>
+      <button class="btn" id="btn-xlsx" type="button">Download report (.xlsx)</button>
+      <button class="btn" id="btn-copy" type="button">Copy for Excel</button>
+      <button class="btn quiet" id="btn-clear" type="button">Clear entries</button>
+    </div>
+  </header>
+
+  <div class="banner" id="banner" hidden></div>
+
+  <label class="drop" id="drop" for="file">
+    <input class="file-input" type="file" id="file" accept=".xlsx,.xls,.json">
+    <span class="label">Drawing data</span>
+    <span class="hint" id="drop-hint">Drop the <span class="mono">.xlsx</span> (or <span class="mono">.json</span>) made by <span class="mono">catia_extract</span> here, or click to choose it. Files stay on this computer.</span>
+  </label>
+
+  <section class="titleblock" aria-label="Report details">
+    <div class="tb-cell drawing"><span class="label">Drawing</span>
+      <select id="drawing" aria-label="Drawing"></select></div>
+    <div class="tb-cell"><span class="label">Vendor</span><input id="f-vendor" placeholder="Company name"></div>
+    <div class="tb-cell"><span class="label">Mould / part no.</span><input id="f-part" placeholder="e.g. A8321-01"></div>
+    <div class="tb-cell"><span class="label">Order no.</span><input id="f-order" placeholder="PO number"></div>
+    <div class="tb-cell"><span class="label">Inspected by</span><input id="f-inspector" placeholder="Name"></div>
+    <div class="tb-cell"><span class="label">Date</span><input id="f-date" type="date"></div>
+    <div class="tb-cell"><span class="label">Samples measured</span>
+      <select id="f-samples"></select></div>
+    <div class="tb-cell"><span class="label">General tolerance</span>
+      <select id="f-class">
+        <option value="f">ISO 2768-f</option>
+        <option value="m" selected>ISO 2768-m</option>
+        <option value="c">ISO 2768-c</option>
+        <option value="v">ISO 2768-v</option>
+      </select></div>
+    <div class="tb-cell"><span class="label">General angles: shorter leg</span>
+      <select id="f-angleband">
+        <option value="0">up to 10 mm</option>
+        <option value="1" selected>10 – 50 mm</option>
+        <option value="2">50 – 120 mm</option>
+        <option value="3">120 – 400 mm</option>
+        <option value="4">over 400 mm</option>
+      </select></div>
+  </section>
+
+  <section class="verdict" aria-label="Result summary">
+    <div class="v-overall" id="v-overall"><span class="label">Result</span><span class="big" id="v-text">–</span>
+      <div class="bar" aria-hidden="true"><span id="bar-good" style="background:var(--good)"></span><span id="bar-ng" style="background:var(--ng)"></span></div></div>
+    <div><span class="label">Good</span><div class="big c-good mono" id="n-good">0</div></div>
+    <div><span class="label">No-good</span><div class="big c-ng mono" id="n-ng">0</div></div>
+    <div><span class="label">To measure</span><div class="big c-pend mono" id="n-pend">0</div></div>
+    <div><span class="label">Not checked</span><div class="big mono" id="n-ref" style="color:var(--muted)">0</div></div>
+  </section>
+
+  <section>
+    <div class="tabsrow">
+      <div class="tabs" role="tablist" id="tabs"></div>
+      <div class="filters">
+        <button class="chip" type="button" data-filter="all" aria-pressed="true">All</button>
+        <button class="chip" type="button" data-filter="ng" aria-pressed="false">No-good</button>
+        <button class="chip" type="button" data-filter="pend" aria-pressed="false">To measure</button>
+        <label class="toggle"><input type="checkbox" id="f-frame" checked> Hide title-block dimensions</label>
+      </div>
+    </div>
+    <div class="tablewrap" id="tablewrap"></div>
+  </section>
+
+  <footer class="foot">
+    <div>Angles in degrees: type <span class="mono">30.25</span> or <span class="mono">30°15'</span>. A comma works as decimal point. Press Enter to move to the next dimension.</div>
+    <div>Dimensions without their own tolerance use the general tolerance chosen above (marked <span class="src general">ISO 2768</span>). Reference dimensions in brackets are not checked. Threads are judged OK / NOK with a gauge.</div>
+    <div>Download needs the tool opened from its HTML file; in a preview, use Copy for Excel instead.</div>
+  </footer>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const EPS = 1e-9;
+
+  // ISO 2768-1 general tolerances (permissible deviation ±, mm or degrees)
+  const ISO = {
+    linear: { upTo: [3, 6, 30, 120, 400, 1000, 2000, 4000],
+      f: [0.05, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, null], m: [0.1, 0.1, 0.2, 0.3, 0.5, 0.8, 1.2, 2],
+      c: [0.2, 0.3, 0.5, 0.8, 1.2, 2, 3, 4], v: [null, 0.5, 1, 1.5, 2.5, 4, 6, 8] },
+    radius: { upTo: [3, 6, Infinity], f: [0.2, 0.5, 1], m: [0.2, 0.5, 1], c: [0.4, 1, 2], v: [0.4, 1, 2] },
+    angle: { f: [1, 0.5, 1 / 3, 1 / 6, 1 / 12], m: [1, 0.5, 1 / 3, 1 / 6, 1 / 12],
+      c: [1.5, 1, 0.5, 0.25, 1 / 6], v: [3, 2, 1, 0.5, 1 / 3] },
+  };
+
+  // Example extract (invented values) so the page opens in a working state.
+  const EXAMPLE_FILE = "EXAMPLE_Sidewall_Ring.CATDrawing";
+  const ex = (sheet, view, name, display, type, value, o = {}) =>
+    Object.assign({ file: EXAMPLE_FILE, sheet, view, name, display, type, value, unit: type === "angle" ? "deg" : "mm" }, o);
+  const EXAMPLE = [
+    ex("Drawing", "Background View", "Dimension.2", "831", "distance", 831),
+    ex("Drawing", "Section View", "Dimension.c_OD", "OD 412 ±0.15", "distance", 412, { tol_upper: 0.15, tol_lower: -0.15, text_before: "OD" }),
+    ex("Drawing", "Section View", "Dimension.c_SD", "SD Ø385 +0.05/0", "diameter cylinder", 385, { tol_upper: 0.05, tol_lower: 0, text_before: "SD" }),
+    ex("Drawing", "Section View", "Dimension.ND", "ND Ø300.2 ±0.04", "diameter one-sided", 300.2, { tol_upper: 0.04, tol_lower: -0.04, text_before: "ND" }),
+    ex("Drawing", "Section View", "Dimension.Bc", "Bc Ø350 ±0.2 (4xM12 eq. spaced)", "diameter one-sided", 350, { tol_upper: 0.2, tol_lower: -0.2, text_before: "Bc", text_after: "(4xM12 eq. spaced)" }),
+    ex("Drawing", "Section View", "Dimension.55", "19.5 +0.05/0", "distance", 19.5, { tol_upper: 0.05, tol_lower: 0 }),
+    ex("Drawing", "Section View", "Dimension.41", "( 52.4 )", "distance", 52.4, { text_before: "(", text_after: ")" }),
+    ex("Drawing", "Section View", "Dimension.105", "R11", "radius", 11),
+    ex("Drawing", "Section View", "Dimension.44", "248.5", "distance", 248.5),
+    ex("Drawing", "Section View", "Dimension.307", "M 16 x1.5", "distance", 16, { text_before: "M", text_after: "x1.5" }),
+    ex("Drawing", "Section View", "Dimension.320", "1 x45°", "length", 1, { text_after: "x45°" }),
+    ex("Drawing", "Section View", "Dimension.243", "10°", "angle", 10),
+    ex("Drawing", "Top Ring Front View", "Dimension.16", "6x 60°", "angle", 60, { text_before: "6x" }),
+    ex("Drawing", "Top Ring Front View", "Dimension.11", "260", "length", 260),
+    ex("Drawing", "Top Ring Front View", "Dimension.15", "15° ±0°15'", "angle", 15, { tol_upper: 0, tol_lower: 0, tol_upper_text: "+0°15'", tol_lower_text: "-0°15'" }),
+    ex("Details", "Detail A", "Dimension.22", "max. 22.5°", "angle", 22.5, { text_before: "max." }),
+    ex("Details", "Detail A", "Dimension.21", "min. Ø2.5", "diameter cylinder", 2.5, { text_before: "min." }),
+    ex("Details", "Detail A", "Dimension.17", "Ø0.2", "diameter one-sided", 0.2),
+  ];
+  const EXAMPLE_MEAS = { "Dimension.c_OD": ["412.08"], "Dimension.c_SD": ["385.07"], "Dimension.ND": ["300.21"],
+    "Dimension.Bc": ["350.1"], "Dimension.55": ["19.52"], "Dimension.105": ["11.3"], "Dimension.44": ["249.1"],
+    "Dimension.307": ["OK"], "Dimension.243": ["10.2"] };
+
+  const state = {
+    files: {},          // file -> raw rows
+    file: null,
+    rows: [],           // classified rows for the current file
+    meas: {},           // row key -> [sample values]
+    sheet: null,
+    filter: "all",
+    example: false,
+  };
+  const settings = () => ({
+    cls: $("f-class").value, band: +$("f-angleband").value,
+    samples: +$("f-samples").value, hideFrame: $("f-frame").checked,
+  });
+
+  // ---------- number helpers ----------
+  const num = (v) => {
+    if (v === null || v === undefined || v === "") return null;
+    const n = typeof v === "number" ? v : parseFloat(String(v).replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  };
+  const fmt = (v, dec) => {
+    if (v === null || !Number.isFinite(v)) return "";
+    const d = dec == null ? 4 : dec;
+    let s = v.toFixed(d);
+    if (s.includes(".")) s = s.replace(/0+$/, "").replace(/\.$/, "");
+    return s === "-0" ? "0" : s;
+  };
+  const fmtDeg = (v) => {
+    const sign = v < 0 ? "−" : "";
+    const a = Math.abs(v); let d = Math.floor(a + EPS); let m = Math.round((a - d) * 60);
+    if (m === 60) { d += 1; m = 0; }
+    return m ? `${sign}${d}°${m}'` : `${sign}${d}°`;
+  };
+  // "30°15'", "30 15'", "30.25", "30,25" -> degrees
+  const parseAngle = (s) => {
+    const t = String(s).trim().replace(",", ".").replace("−", "-");
+    const m = t.match(/^(-?\d+(?:\.\d+)?)\s*(?:°|d|deg)?\s*(?:(\d+(?:\.\d+)?)\s*['′m]?)?\s*$/i);
+    if (!m) return null;
+    const deg = parseFloat(m[1]); const min = m[2] ? parseFloat(m[2]) : 0;
+    return deg < 0 ? deg - min / 60 : deg + min / 60;
+  };
+  // "+0°15'", "-0°30'", "±0°20'", "+0.05" -> signed number
+  const parseTolText = (s) => {
+    if (!s) return null;
+    const t = String(s).trim().replace(",", ".").replace("−", "-");
+    const m = t.match(/^([+\-±]?)\s*(\d+(?:\.\d+)?)\s*(?:°\s*(?:(\d+(?:\.\d+)?)\s*['′])?)?$/);
+    if (!m) return null;
+    const v = parseFloat(m[2]) + (m[3] ? parseFloat(m[3]) / 60 : 0);
+    return { sign: m[1] || "+", value: v };
+  };
+
+  // ---------- classify one extracted dimension ----------
+  function classify(r, idx, s) {
+    const before = String(r.text_before || "").trim();
+    const after = String(r.text_after || "").trim();
+    const display = String(r.display || "").trim();
+    const type = String(r.type || "");
+    const unit = r.unit || (type === "angle" ? "deg" : "mm");
+    const isAngle = unit === "deg";
+    const nominal = num(r.value);
+    const row = { key: `${r.sheet}|${r.view}|${r.name}|${idx}`, sheet: r.sheet || "Sheet", view: r.view || "View",
+      name: r.name || "", display, type, unit, isAngle, nominal, before, after, mode: "range",
+      lo: null, hi: null, tolUp: null, tolLo: null, src: "", note: "", frame: r.view === "Background View",
+      dec: num(r.shown_decimals) };
+
+    if (nominal === null) { row.mode = "info"; row.note = "No value in the extract"; return row; }
+    if ((before === "(" && after.startsWith(")")) || /^\(\s*[^()]*\)$/.test(display)) {
+      row.mode = "ref"; row.src = "Reference"; return row;
+    }
+    if (/^M$/i.test(before) || /^M\s*\d/.test(display)) {
+      row.mode = "attr"; row.src = "Thread gauge"; row.note = "Check with gauge"; return row;
+    }
+
+    // tolerance: drawing numbers, then drawing text, then general tolerance
+    let up = num(r.tol_upper), lo = num(r.tol_lower);
+    if (!(up || lo)) {
+      up = lo = null;
+      const ut = parseTolText(r.tol_upper_text), lt = parseTolText(r.tol_lower_text);
+      if (ut && ut.sign === "±") { up = ut.value; lo = -ut.value; }
+      else if (ut || lt) {
+        up = ut ? (ut.sign === "-" ? -ut.value : ut.value) : 0;
+        lo = lt ? (lt.sign === "+" ? lt.value : -lt.value) : 0;
+      }
+      if (up !== null && !(up || lo)) up = lo = null;
+    }
+    if (up !== null) { row.src = "Drawing"; }
+    else {
+      const kind = isAngle ? "angle" : (/radius|chamfer/.test(type) || /x\s*45/i.test(after)) ? "radius" : "linear";
+      let g = null;
+      if (kind === "angle") g = ISO.angle[s.cls][s.band];
+      else if (Math.abs(nominal) >= 0.5) {
+        const t = ISO[kind]; const i = t.upTo.findIndex((b) => Math.abs(nominal) <= b);
+        g = i >= 0 ? t[s.cls][i] : null;
+      }
+      if (g == null) {
+        row.mode = "attr"; row.src = "No tolerance";
+        row.note = Math.abs(nominal) < 0.5 && !isAngle ? "General tolerance not defined below 0.5 mm: judge OK / NOK" : "No tolerance defined: judge OK / NOK";
+        return row;
+      }
+      up = g; lo = -g; row.src = `ISO 2768-${s.cls}`; row.general = true;
+    }
+    row.tolUp = up; row.tolLo = lo;
+    if (/\bmax\b/i.test(before)) { row.mode = "max"; row.lo = -Infinity; row.hi = nominal; row.src = "max. on drawing"; row.general = false; }
+    else if (/\bmin\b/i.test(before)) { row.mode = "min"; row.lo = nominal; row.hi = Infinity; row.src = "min. on drawing"; row.general = false; }
+    else { row.lo = nominal + lo; row.hi = nominal + up; }
+    return row;
+  }
+
+  // ---------- judging ----------
+  function parseMeasured(row, raw) {
+    if (raw == null || String(raw).trim() === "") return null;
+    if (row.mode === "attr") return raw === "OK" ? "OK" : raw === "NOK" ? "NOK" : null;
+    return row.isAngle ? parseAngle(raw) : num(String(raw).trim());
+  }
+  function judgeValue(row, raw) {
+    if (raw == null || String(raw).trim() === "") return { st: "pend" };
+    if (row.mode === "attr") return raw === "OK" ? { st: "good" } : raw === "NOK" ? { st: "ng", dev: "NOK" } : { st: "pend" };
+    const v = parseMeasured(row, raw);
+    if (v === null) return { st: "bad" };
+    if (v > row.hi + EPS) return { st: "ng", dev: `+${row.isAngle ? fmtDeg(v - row.hi) : fmt(v - row.hi)} over`, v };
+    if (v < row.lo - EPS) return { st: "ng", dev: `${row.isAngle ? fmtDeg(row.lo - v) : fmt(row.lo - v)} under`, v };
+    return { st: "good", v };
+  }
+  function rowStatus(row) {
+    if (row.mode === "ref" || row.mode === "info") return { st: "ref" };
+    const n = settings().samples; const vals = state.meas[row.key] || [];
+    let anyNg = false, allGood = true, dev = "";
+    for (let i = 0; i < n; i++) {
+      const j = judgeValue(row, vals[i]);
+      if (j.st === "ng") { anyNg = true; dev = dev || (n > 1 ? `S${i + 1}: ${j.dev}` : j.dev); }
+      if (j.st !== "good") allGood = false;
+    }
+    if (anyNg) return { st: "ng", dev };
+    return allGood ? { st: "good" } : { st: "pend" };
+  }
+
+  // ---------- rendering ----------
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const visibleRows = () => state.rows.filter((r) => !(settings().hideFrame && r.frame));
+  const sheetsOf = (rows) => [...new Set(rows.map((r) => r.sheet))];
+
+  function calloutHtml(r) {
+    const prefix = /diameter/.test(r.type) ? "Ø" : /radius/.test(r.type) ? "R" : "";
+    const val = r.nominal === null ? esc(r.display) : prefix + fmt(r.nominal, r.dec ?? undefined) + (r.isAngle ? "°" : "");
+    let tol = "";
+    if (r.src === "Drawing" && r.mode === "range") {
+      const t = (x) => (r.isAngle ? (x > 0 ? "+" : "") + fmtDeg(x) : (x > 0 ? "+" : "") + fmt(x));
+      tol = Math.abs(r.tolUp + r.tolLo) < EPS ? `<span>±${r.isAngle ? fmtDeg(r.tolUp) : fmt(r.tolUp)}</span>`
+        : `<span class="stack"><span>${t(r.tolUp)}</span><span>${t(r.tolLo)}</span></span>`;
+    }
+    const b = r.before === "(" ? "(" : r.before ? `<span class="affix">${esc(r.before)}</span>` : "";
+    const a = r.after ? `<span class="affix">${esc(r.after)}</span>` : "";
+    return `<span class="callout">${b}${val}${tol}${a}</span>`;
+  }
+  function limitsHtml(r) {
+    if (r.mode === "ref") return `<span class="note">not checked</span>`;
+    if (r.mode === "attr" || r.mode === "info") return `<span class="note">${esc(r.note)}</span>`;
+    const f = (x) => (r.isAngle ? fmtDeg(x) : fmt(x));
+    if (r.mode === "max") return `<span class="mono">≤ ${f(r.hi)}</span>`;
+    if (r.mode === "min") return `<span class="mono">≥ ${f(r.lo)}</span>`;
+    return `<span class="mono">${f(r.lo)} … ${f(r.hi)}</span>`;
+  }
+  function inputHtml(r, i) {
+    const id = `m-${state.rows.indexOf(r)}-${i}`;
+    const v = (state.meas[r.key] || [])[i] ?? "";
+    const label = `Sample ${i + 1} for ${r.display}`;
+    if (r.mode === "ref" || r.mode === "info") return `<span class="note">–</span>`;
+    if (r.mode === "attr") {
+      return `<select class="meas" id="${id}" data-key="${esc(r.key)}" data-i="${i}" aria-label="${esc(label)}">
+        <option value=""${v === "" ? " selected" : ""}>–</option><option${v === "OK" ? " selected" : ""}>OK</option><option${v === "NOK" ? " selected" : ""}>NOK</option></select>`;
+    }
+    return `<input class="meas" id="${id}" data-key="${esc(r.key)}" data-i="${i}" inputmode="decimal" autocomplete="off" aria-label="${esc(label)}" value="${esc(v)}">`;
+  }
+
+  function renderTabs() {
+    const rows = visibleRows(); const sheets = sheetsOf(rows);
+    if (!sheets.includes(state.sheet)) state.sheet = sheets[0] || null;
+    $("tabs").innerHTML = sheets.map((sh) => {
+      const rs = rows.filter((r) => r.sheet === sh).map(rowStatus);
+      const ng = rs.filter((x) => x.st === "ng").length;
+      const todo = rs.filter((x) => x.st !== "ref").length; const done = rs.filter((x) => x.st === "good").length;
+      const pill = ng ? `<span class="pill ng">${ng} NG</span>` : todo && done === todo ? `<span class="pill good">done</span>` : `<span class="pill">${done}/${todo}</span>`;
+      return `<button class="tab" role="tab" type="button" data-sheet="${esc(sh)}" aria-selected="${sh === state.sheet}">${esc(sh)}${pill}</button>`;
+    }).join("");
+  }
+
+  function renderTable() {
+    const s = settings();
+    const rows = visibleRows().filter((r) => r.sheet === state.sheet);
+    if (!state.rows.length) { $("tablewrap").innerHTML = `<div class="empty">Load an extracted Excel to list the drawing's dimensions.</div>`; return; }
+    const sampleHeads = Array.from({ length: s.samples }, (_, i) => `<th class="num">${s.samples > 1 ? `Sample ${i + 1}` : "Measured"}</th>`).join("");
+    let html = `<table><thead><tr><th>Dimension on drawing</th><th>Limits (min … max)</th><th>Tolerance from</th>${sampleHeads}<th>Result</th></tr></thead><tbody>`;
+    const cols = 4 + s.samples;
+    let shown = 0;
+    for (const view of [...new Set(rows.map((r) => r.view))]) {
+      const vr = rows.filter((r) => r.view === view).filter((r) => {
+        if (state.filter === "all") return true;
+        const st = rowStatus(r).st; return state.filter === "ng" ? st === "ng" : st === "pend";
+      });
+      if (!vr.length) continue;
+      html += `<tr class="viewhead"><td colspan="${cols}">${esc(view)}<span class="count">${vr.length} dimension${vr.length > 1 ? "s" : ""}</span></td></tr>`;
+      for (const r of vr) {
+        shown++;
+        const st = rowStatus(r);
+        html += `<tr class="row s-${st.st}" data-key="${esc(r.key)}">
+          <td>${calloutHtml(r)}<div class="dimname">${esc(r.name)}${r.type ? " · " + esc(r.type) : ""}</div></td>
+          <td class="limits">${limitsHtml(r)}</td>
+          <td><span class="src${r.general ? " general" : ""}">${esc(r.src)}</span></td>
+          ${Array.from({ length: s.samples }, (_, i) => `<td class="num">${inputHtml(r, i)}</td>`).join("")}
+          <td class="res">${statusHtml(st)}</td></tr>`;
+      }
+    }
+    html += `</tbody></table>`;
+    if (!shown) html = `<div class="empty">${state.filter === "ng" ? "No no-good dimensions on this sheet." : "Nothing left to measure on this sheet."}</div>`;
+    $("tablewrap").innerHTML = html;
+    paintInputs();
+  }
+  function statusHtml(st) {
+    if (st.st === "good") return `<span class="status good">GOOD</span>`;
+    if (st.st === "ng") return `<span class="status ng">NO-GOOD</span><div class="dev mono">${esc(st.dev || "")}</div>`;
+    if (st.st === "ref") return `<span class="status ref">REF</span>`;
+    return `<span class="status pend">TO MEASURE</span>`;
+  }
+  function paintInputs() {
+    document.querySelectorAll(".meas").forEach((el) => {
+      const r = state.rows.find((x) => x.key === el.dataset.key); if (!r) return;
+      const j = judgeValue(r, el.value);
+      el.classList.toggle("good", j.st === "good"); el.classList.toggle("ng", j.st === "ng"); el.classList.toggle("bad", j.st === "bad");
+      el.title = j.st === "bad" ? "Not a number" : j.dev || "";
+    });
+  }
+  function renderSummary() {
+    const sts = visibleRows().map(rowStatus);
+    const c = { good: 0, ng: 0, pend: 0, ref: 0 }; sts.forEach((x) => c[x.st]++);
+    $("n-good").textContent = c.good; $("n-ng").textContent = c.ng; $("n-pend").textContent = c.pend; $("n-ref").textContent = c.ref;
+    const total = c.good + c.ng + c.pend;
+    $("bar-good").style.width = total ? `${(c.good / total) * 100}%` : "0";
+    $("bar-ng").style.width = total ? `${(c.ng / total) * 100}%` : "0";
+    const box = $("v-overall"); box.classList.toggle("good", total > 0 && c.good === total); box.classList.toggle("ng", c.ng > 0);
+    $("v-text").textContent = !total ? "–" : c.ng ? `NO-GOOD · ${c.ng} out of tolerance` : c.good === total ? "ALL GOOD" : `In progress · ${c.good} of ${total} done`;
+  }
+  function renderAll() { renderTabs(); renderTable(); renderSummary(); }
+
+  // ---------- loading ----------
+  function rowsFromJson(data) {
+    const out = [];
+    const file = data?.document?.name || "drawing";
+    for (const sh of data?.sheets || []) for (const v of sh.views || []) for (const d of v.dimensions || []) {
+      const t = d.tolerance || {};
+      out.push({ file, sheet: sh.name, view: v.name, name: d.name, display: d.display, type: d.type, value: d.value, unit: d.unit,
+        tol_upper: t.upper, tol_lower: t.lower, tol_upper_text: t.upper_text, tol_lower_text: t.lower_text,
+        shown_decimals: d.shown_decimals, text_before: d.text_before, text_after: d.text_after });
+    }
+    return out;
+  }
+  function loadRows(raw, label) {
+    if (!raw.length) throw new Error("No drawing dimensions found. Load the Excel or JSON that catia_extract made for a CATDrawing.");
+    if (!("display" in raw[0]) || !("unit" in raw[0])) {
+      throw new Error("This file comes from an older catia_extract (before 1.2). Extract the drawing again with the current version.");
+    }
+    state.files = {};
+    raw.forEach((r) => { (state.files[r.file || label] ??= []).push(r); });
+    if (state.example) ["f-vendor", "f-part", "f-order", "f-inspector"].forEach((id) => ($(id).value = ""));
+    state.example = false;
+    const sel = $("drawing");
+    sel.innerHTML = Object.keys(state.files).map((f) => `<option>${esc(f)}</option>`).join("");
+    selectFile(Object.keys(state.files)[0]);
+    showBanner(null);
+    toast(`Loaded ${raw.length} dimensions`);
+  }
+  async function loadFile(file) {
+    try {
+      if (/\.json$/i.test(file.name)) { loadRows(rowsFromJson(JSON.parse(await file.text())), file.name); return; }
+      if (typeof XLSX === "undefined") throw new Error("The Excel reader could not load. Check the internet connection and reopen the page.");
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const ws = wb.Sheets["drawing_dimensions"];
+      if (!ws) throw new Error(`"${file.name}" has no drawing_dimensions tab. Load the Excel that catia_extract made for a CATDrawing.`);
+      loadRows(XLSX.utils.sheet_to_json(ws, { defval: null }), file.name);
+    } catch (e) { showBanner(e.message, true); }
+  }
+  function selectFile(f) {
+    state.file = f; $("drawing").value = f;
+    state.meas = {};
+    const saved = storeGet(f);
+    if (saved) {
+      state.meas = saved.meas || {};
+      for (const [k, v] of Object.entries(saved.fields || {})) if ($(k)) $(k).value = v;
+    }
+    reclassify();
+    renderAll();
+  }
+  function reclassify() {
+    const s = settings();
+    state.rows = (state.files[state.file] || []).map((r, i) => classify(r, i, s));
+  }
+
+  // ---------- persistence (this browser only) ----------
+  const FIELDS = ["f-vendor", "f-part", "f-order", "f-inspector", "f-date", "f-samples", "f-class", "f-angleband"];
+  const storeKey = (f) => `vis:${f}`;
+  function storeGet(f) { try { return JSON.parse(localStorage.getItem(storeKey(f)) || "null"); } catch { return null; } }
+  function save() {
+    if (state.example || !state.file) return;
+    const fields = {}; FIELDS.forEach((k) => (fields[k] = $(k).value));
+    try { localStorage.setItem(storeKey(state.file), JSON.stringify({ meas: state.meas, fields })); } catch { /* storage unavailable */ }
+  }
+
+  // ---------- report ----------
+  function reportRows() {
+    const s = settings();
+    const head = ["Sheet", "View", "Dimension", "Drawing callout", "Nominal", "Min", "Max", "Tolerance from",
+      ...Array.from({ length: s.samples }, (_, i) => (s.samples > 1 ? `Sample ${i + 1}` : "Measured")), "Result", "Deviation"];
+    const body = visibleRows().map((r) => {
+      const st = rowStatus(r); const vals = state.meas[r.key] || [];
+      const lim = (x) => (Number.isFinite(x) ? +fmt(x, 6) : "");
+      return [r.sheet, r.view, r.name, r.display, r.nominal, r.mode === "range" || r.mode === "min" ? lim(r.lo) : "",
+        r.mode === "range" || r.mode === "max" ? lim(r.hi) : "", r.src,
+        ...Array.from({ length: s.samples }, (_, i) => vals[i] ?? ""),
+        { good: "GOOD", ng: "NO-GOOD", pend: "TO MEASURE", ref: "REF" }[st.st], st.dev || ""];
+    });
+    const info = [["Vendor inspection report"], ["Drawing", state.file], ["Vendor", $("f-vendor").value], ["Mould / part no.", $("f-part").value],
+      ["Order no.", $("f-order").value], ["Inspected by", $("f-inspector").value], ["Date", $("f-date").value],
+      ["General tolerance", `ISO 2768-${s.cls}`], ["Result", $("v-text").textContent], []];
+    return { info, head, body };
+  }
+  function downloadXlsx() {
+    if (!state.rows.length) return toast("Load a drawing first");
+    if (typeof XLSX === "undefined") return showBanner("The Excel writer could not load. Use Copy for Excel instead.", true);
+    const { info, head, body } = reportRows();
+    const ws = XLSX.utils.aoa_to_sheet([...info, head, ...body]);
+    ws["!cols"] = head.map((h, i) => ({ wch: [10, 22, 18, 30][i] || 12 }));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Inspection");
+    const base = String(state.file || "drawing").replace(/\.CATDrawing$/i, "");
+    if (window.self !== window.top) return showBanner("Download is not available in this preview. Use Copy for Excel, or open the tool from its HTML file.", true);
+    try { XLSX.writeFile(wb, `${base}_inspection_${$("f-date").value || "report"}.xlsx`); toast("Report saved to your downloads"); }
+    catch { showBanner("Download is blocked here. Use Copy for Excel, or open the tool from its HTML file.", true); }
+  }
+  async function copyReport() {
+    if (!state.rows.length) return toast("Load a drawing first");
+    const { info, head, body } = reportRows();
+    const tsv = [...info, head, ...body].map((r) => r.map((c) => String(c ?? "").replace(/\t|\n/g, " ")).join("\t")).join("\n");
+    try { await navigator.clipboard.writeText(tsv); toast("Copied. Paste into Excel"); }
+    catch {
+      const ta = document.createElement("textarea"); ta.value = tsv; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); toast("Copied. Paste into Excel"); } catch { toast("Copy blocked: select and copy manually"); }
+      ta.remove();
+    }
+  }
+
+  // ---------- small UI helpers ----------
+  let toastTimer;
+  function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 2200); }
+  function showBanner(msg, isErr) {
+    const b = $("banner");
+    if (!msg) { b.hidden = true; return; }
+    b.className = "banner" + (isErr ? " err" : ""); b.hidden = false;
+    b.innerHTML = isErr ? esc(msg) : msg;
+  }
+
+  // ---------- events ----------
+  $("f-samples").innerHTML = Array.from({ length: 10 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("");
+  $("f-date").value = new Date().toISOString().slice(0, 10);
+  $("btn-load").addEventListener("click", () => $("file").click());
+  $("file").addEventListener("change", (e) => { const f = e.target.files[0]; if (f) loadFile(f); e.target.value = ""; });
+  const drop = $("drop");
+  ["dragenter", "dragover"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop", (e) => { const f = e.dataTransfer.files[0]; if (f) loadFile(f); });
+  $("drawing").addEventListener("change", (e) => selectFile(e.target.value));
+  ["f-class", "f-angleband"].forEach((id) => $(id).addEventListener("change", () => { reclassify(); renderAll(); save(); }));
+  ["f-samples", "f-frame"].forEach((id) => $(id).addEventListener("change", () => { renderAll(); save(); }));
+  ["f-vendor", "f-part", "f-order", "f-inspector", "f-date"].forEach((id) => $(id).addEventListener("input", save));
+  $("tabs").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (t) { state.sheet = t.dataset.sheet; renderTabs(); renderTable(); } });
+  document.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => {
+    state.filter = c.dataset.filter;
+    document.querySelectorAll(".chip").forEach((x) => x.setAttribute("aria-pressed", String(x === c)));
+    renderTable();
+  }));
+
+  function onMeasure(el) {
+    const key = el.dataset.key, i = +el.dataset.i;
+    (state.meas[key] ??= [])[i] = el.value;
+    const r = state.rows.find((x) => x.key === key);
+    const tr = el.closest("tr"); const st = rowStatus(r);
+    tr.className = `row s-${st.st}`; tr.querySelector(".res").innerHTML = statusHtml(st);
+    paintInputs(); renderSummary(); renderTabs(); save();
+  }
+  $("tablewrap").addEventListener("input", (e) => { if (e.target.classList.contains("meas")) onMeasure(e.target); });
+  $("tablewrap").addEventListener("change", (e) => { if (e.target.tagName === "SELECT") onMeasure(e.target); });
+  $("tablewrap").addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || !e.target.classList.contains("meas")) return;
+    e.preventDefault();
+    const all = [...document.querySelectorAll(".meas")].filter((x) => x.dataset.i === e.target.dataset.i);
+    const next = all[all.indexOf(e.target) + (e.shiftKey ? -1 : 1)]; if (next) next.focus();
+  });
+  $("btn-xlsx").addEventListener("click", downloadXlsx);
+  $("btn-copy").addEventListener("click", copyReport);
+  $("btn-clear").addEventListener("click", (e) => {
+    const b = e.currentTarget;
+    if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "Click again to clear"; setTimeout(() => { b.dataset.armed = ""; b.textContent = "Clear entries"; }, 3000); return; }
+    b.dataset.armed = ""; b.textContent = "Clear entries"; state.meas = {}; save(); renderAll(); toast("Entries cleared");
+  });
+
+  // ---------- start with the example ----------
+  state.files = { [EXAMPLE_FILE]: EXAMPLE };
+  $("drawing").innerHTML = `<option>${EXAMPLE_FILE}</option>`;
+  state.file = EXAMPLE_FILE; reclassify(); state.example = true;
+  state.rows.forEach((r) => { if (EXAMPLE_MEAS[r.name]) state.meas[r.key] = EXAMPLE_MEAS[r.name].slice(); });
+  $("f-vendor").value = "Example Tooling Ltd."; $("f-part").value = "EX-0001";
+  showBanner(`<span>Example data with invented values. Load your extracted Excel to start a real inspection.</span><button class="btn" type="button" id="btn-load2">Load extracted Excel</button>`);
+  document.addEventListener("click", (e) => { if (e.target.id === "btn-load2") $("file").click(); });
+  renderAll();
+})();
+</script>
+
+</body>
+</html>
