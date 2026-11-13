@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Measurement data and generated reports (kept local - repo is public)
+data/
+output/
