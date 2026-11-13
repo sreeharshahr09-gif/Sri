@@ -39,6 +39,9 @@ STARTER_QUESTIONS = [
 ]
 
 DEFAULT_AGENT = AgentConfig()
+MAX_STEPS_LIMIT = 25
+CONTINUE_QUESTION = ("Continue the previous analysis: run the code still needed to finish the parts of your last "
+                     "answer that were incomplete or unverified, then give the complete answer to: {question}")
 DEFAULT_SANDBOX = SandboxConfig()
 
 
@@ -109,9 +112,10 @@ def sidebar() -> tuple[LLMConfig, AgentConfig, SandboxConfig]:
             st.rerun()
 
     with st.sidebar.expander("⚙️ Agent", expanded=False):
-        max_steps = st.slider("Max reasoning steps", min_value=1, max_value=15,
-                              key=remember("data_max_steps", DEFAULT_AGENT.max_steps),
-                              help="Code executions allowed before the agent must answer.")
+        max_steps = st.slider("Max reasoning steps", min_value=1, max_value=MAX_STEPS_LIMIT,
+                              key=remember("data_max_steps", min(DEFAULT_AGENT.max_steps, MAX_STEPS_LIMIT)),
+                              help="Code executions allowed before the agent must answer. It stops earlier "
+                                   "when it has the answer, so a higher limit costs nothing on easy questions.")
         history_turns = st.slider("Conversation memory (turns)", min_value=0, max_value=10,
                                   key=remember("data_history", DEFAULT_AGENT.history_turns))
         code_timeout = st.number_input("Code timeout (s)", min_value=5, max_value=1800, step=5,
@@ -212,7 +216,9 @@ def render_step(step, run_idx: int) -> None:
         render_execution(step.result, key=f"trace-{run_idx}-{step.index}")
 
 
-def render_run(run: DataRun, run_idx: int) -> None:
+def render_run(run: DataRun, run_idx: int, can_continue: bool = False) -> None:
+    """One answer with its evidence. `can_continue`: the latest answer, nothing running, so an answer cut short by
+    the step limit can be continued."""
     if run.status == RunStatus.LLM_ERROR:
         st.error(f"Model error: {run.error}")
     elif run.status == RunStatus.ERROR:
@@ -225,8 +231,14 @@ def render_run(run: DataRun, run_idx: int) -> None:
     if run.answer and not run.executed:
         st.warning("This answer is not backed by any executed code. Treat it as unverified.", icon="⚠️")
     elif run.status == RunStatus.STEP_LIMIT:
-        st.warning("The step limit was reached before the agent finished; the answer may be incomplete.",
+        limit = st.session_state.get("data_max_steps")
+        st.warning("The agent used all its steps" + (f" ({limit})" if limit else "") + " before it finished, so it "
+                   "answered with the results it had: parts may be missing or unverified. **Continue** lets it "
+                   "finish; or raise **Max reasoning steps** under ⚙️ Agent in the sidebar and ask again.",
                    icon="⏱️")
+        if can_continue and st.button("▶ Continue this analysis", key=f"continue-{run_idx}",
+                                      help="Asks a follow-up that picks up from this answer and its code."):
+            st.session_state.pending_question = CONTINUE_QUESTION.format(question=_original_question(run.question))
     g = run.grounding
     if g and g.checked and run.executed:
         if g.fully_traced:
@@ -251,6 +263,14 @@ def render_run(run: DataRun, run_idx: int) -> None:
             for step in run.steps:
                 render_step(step, run_idx)
                 st.divider()
+
+
+def _original_question(question: str) -> str:
+    """The question a chain of Continue clicks started from."""
+    head, _, tail = CONTINUE_QUESTION.partition("{question}")
+    while question.startswith(head) and question.endswith(tail):
+        question = question[len(head): len(question) - len(tail) or None]
+    return question
 
 
 def render_data_tab(dataset: Dataset, profile: str) -> None:
@@ -346,13 +366,13 @@ def page() -> None:
 
     with chat_tab:
         runs: list[DataRun] = st.session_state.runs
+        busy = jobs.active("data_job") is not None
         for idx, run in enumerate(runs):
             with st.chat_message("user"):
                 st.markdown(run.question)
             with st.chat_message("assistant"):
-                render_run(run, idx)
+                render_run(run, idx, can_continue=not busy and idx == len(runs) - 1)
 
-        busy = jobs.active("data_job") is not None
         if busy:
             jobs.job_panel("data_job")
         elif not runs:

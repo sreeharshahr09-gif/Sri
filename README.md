@@ -27,7 +27,9 @@ The app has three pages:
 - **Agent loop with self-correction.** It runs up to *N* steps of code, observes the results and
   writes a final answer. Errors come back to the model with targeted hints (for example, the
   available columns after a `KeyError`). Duplicate or truncated code is caught, and the agent is
-  made to answer when it reaches the step limit.
+  made to answer when it reaches the step limit (10 code runs by default; *Max reasoning steps* under
+  ⚙️ Agent, up to 25). An answer cut short that way says so, and **▶ Continue this analysis** lets the
+  agent finish it from where it stopped.
 - **Grounded answers.**
   - The model sees a factual profile of the data: types, missing values, distributions, sample
     rows, and hints such as "numbers stored as text".
@@ -552,7 +554,7 @@ You can change any setting in the sidebar. Defaults come from environment variab
 | `LLM_TIMEOUT` | `180` | Seconds to wait for a reply |
 | `LLM_CONTEXT_TOKENS` | `32768` | Server context window; **Check connection** detects it from llama-server |
 | `LLM_THINK` | `off` | How much the model thinks: `off`, `analysis` (writing and analysis) or `all` (sidebar: **Model thinking**) |
-| `AGENT_MAX_STEPS` | `6` | Code executions allowed per question (data page) |
+| `AGENT_MAX_STEPS` | `10` | Code executions allowed per question (data page; up to 25 in the sidebar) |
 | `AGENT_MAX_CONTEXT_CHARS` | *(derived)* | Overrides the conversation budget of both agents, which is otherwise derived from the context window |
 | `WORKSPACE_DIR` | *(empty)* | Default folder on the Workspace page |
 | `AGENT_BACKUP_DIR` | `~/.research_agent/backups` | Where backups and the change journal are kept |

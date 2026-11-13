@@ -281,7 +281,9 @@ def render_run(run: WorkspaceRun, run_idx: int) -> None:
     if run.answer and not run.executed:
         st.warning("This answer is not based on any file the assistant opened. Treat it as unverified.", icon="⚠️")
     elif run.status == RunStatus.STEP_LIMIT:
-        st.warning("The step limit was reached; the answer may be incomplete.", icon="⏱️")
+        st.warning("The assistant used all its steps before it finished, so the answer may be incomplete. Raise "
+                   "**Max steps per question** under ⚙️ Assistant in the sidebar and ask again, or ask it to "
+                   "continue.", icon="⏱️")
     render_sources(run, ws, run_idx)
     render_changes(run, run_idx)
     for i, art in enumerate(run.report_artifacts()):

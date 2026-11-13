@@ -108,7 +108,7 @@ class SandboxConfig:
 class AgentConfig:
     """Behaviour of the reasoning loop."""
 
-    max_steps: int = field(default_factory=lambda: _env_int("AGENT_MAX_STEPS", 6))
+    max_steps: int = field(default_factory=lambda: _env_int("AGENT_MAX_STEPS", 10))
     # How much of each execution result is fed back to the model.
     max_observation_chars: int = 6_000
     # Prior conversation turns included as context for follow-up questions.
