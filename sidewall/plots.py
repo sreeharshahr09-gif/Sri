@@ -35,43 +35,59 @@ def _zones(ax, r: Result, label=True):
                     ha="right", va="center", fontsize=8.5, color=INK2, rotation=90)
 
 
-def cross_section(ax, r: Result):
-    b, pi, pl, mt = r.band, r.inf, r.load, r.matched
-    for p, col, lab in [(r.passes["inflated"], INF, "inflated"), (r.passes["loaded"], LOAD, "loaded")]:
-        ax.plot(b.x_band - p.x, p.z, ".", ms=2.5, color=col, alpha=0.35, zorder=2)
-    ax.plot(pi.u, pi.z, color=INF, label="inflated", zorder=3)
-    ax.plot(pl.u, pl.z, color=LOAD, label="loaded", zorder=3)
+def _toward_rim(r: Result) -> np.ndarray:
+    dz = r.matched.dz
+    return -dz if r.metrics["assumptions"]["rim_end"] == "bottom" else dz
 
-    # rigid band (above the sidewall edge) in each scan
-    ax.axhspan(b.edge_inflated, r.passes["inflated"].z.max(), color=INF, alpha=0.06, lw=0)
-    ax.axhspan(b.edge_loaded, b.edge_inflated, color=LOAD, alpha=0.06, lw=0)
+
+def cross_section(ax, r: Result, fig=None):
+    """Profiles; the loaded one coloured by outward deflection (blue = less, red = more)."""
+    from matplotlib.collections import LineCollection
+
+    b, pi, pl, mt = r.band, r.inf, r.load, r.matched
+    for p, col in [(r.passes["inflated"], INF), (r.passes["loaded"], LOAD)]:
+        ax.plot(b.x_band - p.x, p.z, ".", ms=2.5, color=col, alpha=0.25, zorder=2)
+    ax.plot(pi.u, pi.z, color=INF, lw=2, label="inflated only", zorder=3)
+
+    pts = np.column_stack([mt.u_load, mt.z_load]).reshape(-1, 1, 2)
+    segs = np.concatenate([pts[:-1], pts[1:]], axis=1)
+    lc = LineCollection(segs, cmap="turbo", linewidths=5, zorder=4, capstyle="round")
+    lc.set_array(0.5 * (mt.du[1:] + mt.du[:-1]))
+    lc.set_clim(min(0.0, mt.du.min()), mt.du.max())
+    ax.add_collection(lc)
+    ax.plot([], [], color=LOAD, lw=4, label="loaded (coloured by outward deflection)")
+    if fig is not None:
+        cb = fig.colorbar(lc, ax=ax, orientation="horizontal", fraction=0.04, pad=0.08)
+        cb.set_label("outward deflection (mm): blue = less, red = more")
+
+    # the shoulder band moves toward the rim
     ax.annotate("", xy=(-3, b.edge_loaded), xytext=(-3, b.edge_inflated),
                 arrowprops=dict(arrowstyle="-|>", color=INK, lw=1.2))
-    ax.text(-4, (b.edge_loaded + b.edge_inflated) / 2, f"band moves\n{b.delta:.0f} mm down",
+    ax.text(-4, (b.edge_loaded + b.edge_inflated) / 2, f"shoulder moves\n{b.delta:.0f} mm\ntoward rim",
             ha="right", va="center", fontsize=8.5, color=INK)
 
-    # material-point displacement arrows
-    for s in np.arange(10, mt.s[-1], 18):
-        i = int(np.searchsorted(mt.s, s))
-        ax.annotate("", xy=(mt.u_load[i], mt.z_load[i]), xytext=(mt.u_inf[i], mt.z_inf[i]),
-                    arrowprops=dict(arrowstyle="-|>", color=CHANGE, lw=1.1, shrinkA=0, shrinkB=0),
-                    zorder=4)
     mw = r.metrics["max_width"]
     ax.plot([mw["inflated_u"]], [mw["inflated_z"]], "o", ms=8, mfc=INF, mec=SURF, mew=2, zorder=5)
-    ax.plot([mw["loaded_u"]], [mw["loaded_z"]], "o", ms=8, mfc=LOAD, mec=SURF, mew=2, zorder=5)
-    ax.annotate(f"max width\n+{mw['growth_mm']:.1f} mm", (mw["loaded_u"], mw["loaded_z"]),
-                xytext=(8, 0), textcoords="offset points", va="center", fontsize=8.5, color=INK)
+    ax.annotate(f"widest point\n+{mw['growth_mm']:.1f} mm", (mw["loaded_u"], mw["loaded_z"]),
+                xytext=(10, 0), textcoords="offset points", va="center", fontsize=8.5, color=INK)
 
     al = r.metrics["arc_length"]
-    ax.annotate(f"{al['deficit_mm']:.0f} mm of arc\nout of view\nwhen loaded", (pi.u[0], pi.z[0]),
-                xytext=(-10, 0), textcoords="offset points", ha="right", va="center",
-                fontsize=8.5, color=INK2)
-    ax.set_xlim(min(pi.u.min(), pl.u.min()) - 22, max(pi.u.max(), pl.u.max()) + 14)
-    ax.set_xlabel("outward offset u (mm), 0 = rim band")
-    ax.set_ylabel("stage height z (mm)")
-    ax.set_title("Cross-section: each arrow follows one material point")
+    ax.annotate(f"~{al['deficit_mm']:.0f} mm of sidewall\nfolds out of view\nwhen loaded",
+                (pl.u[-1], pl.z[-1]), xytext=(12, -6), textcoords="offset points",
+                ha="left", va="top", fontsize=8.5, color=INK2)
+    rim_low = r.metrics["assumptions"]["rim_end"] == "bottom"
+    ylo, yhi = pi.z[0], r.passes["inflated"].z.max()
+    ax.text(0.02, 0.01 if rim_low else 0.99, "RIM end", transform=ax.transAxes, fontsize=9,
+            color=INK2, fontweight="bold", va="bottom" if rim_low else "top")
+    ax.text(0.02, 0.99 if rim_low else 0.01, "SHOULDER end", transform=ax.transAxes, fontsize=9,
+            color=INK2, fontweight="bold", va="top" if rim_low else "bottom")
+    ax.set_xlim(min(pi.u.min(), pl.u.min()) - 22, max(pi.u.max(), pl.u.max()) + 16)
+    ax.set_ylim(min(ylo, pl.z[0]) - 5, yhi + 5)
+    ax.set_xlabel("outward position (mm), 0 = shoulder band →")
+    ax.set_ylabel("scanner height z (mm)")
+    ax.set_title("Sidewall shape: inflated vs loaded")
     ax.set_aspect("equal")
-    ax.legend(loc="upper left")
+    ax.legend(loc="upper right", fontsize=8.5)
 
 
 def bulge(ax_u, ax_z, r: Result):
@@ -87,18 +103,17 @@ def bulge(ax_u, ax_z, r: Result):
     _zones(ax_u, r, label=False)
     ax_u.set_xlabel("outward displacement (mm)")
     ax_u.set_ylabel("height in the inflated scan (mm)")
-    ax_u.set_title("Bulge: naive delta vs material-matched")
+    ax_u.set_title("Outward bulge along the sidewall")
     ax_u.legend(loc="upper right", fontsize=8.5)
 
-    ax_z.plot(-mt.dz, mt.z_inf, color=CHANGE)
-    ax_z.annotate(f"{-mt.dz[0]:.0f} mm", (-mt.dz[0], mt.z_inf[0]), xytext=(4, -4),
-                  textcoords="offset points", fontsize=8.5, color=INK)
-    ax_z.annotate(f"{-mt.dz[-1]:.0f} mm", (-mt.dz[-1], mt.z_inf[-1]), xytext=(4, 0),
+    tr = _toward_rim(r)
+    ax_z.plot(tr, mt.z_inf, color=CHANGE)
+    ax_z.axvline(0, color=MUTED, lw=0.8)
+    ax_z.annotate(f"{tr[-1]:.0f} mm", (tr[-1], mt.z_inf[-1]), xytext=(4, 0),
                   textcoords="offset points", fontsize=8.5, color=INK)
     _zones(ax_z, r)
-    ax_z.set_xlim(0, None)
-    ax_z.set_xlabel("downward displacement (mm)")
-    ax_z.set_title("Vertical drop of each material point")
+    ax_z.set_xlabel("movement toward the rim (mm)")
+    ax_z.set_title("How far each point slides toward the rim")
 
 
 def curvature(ax_k, ax_dk, ax_th, r: Result):
@@ -156,7 +171,7 @@ def zone_bars(ax, r: Result):
 def overview(r: Result, path):
     fig = plt.figure(figsize=(17, 11.5), layout="constrained")
     gs = fig.add_gridspec(2, 4, width_ratios=[1.25, 1, 1, 1])
-    cross_section(fig.add_subplot(gs[:, 0]), r)
+    cross_section(fig.add_subplot(gs[:, 0]), r, fig)
     bulge(fig.add_subplot(gs[0, 1]), fig.add_subplot(gs[0, 2]), r)
     zone_bars(fig.add_subplot(gs[0, 3]), r)
     curvature(fig.add_subplot(gs[1, 1]), fig.add_subplot(gs[1, 2]), fig.add_subplot(gs[1, 3]), r)
@@ -203,5 +218,53 @@ def data_quality(r: Result, path, x_all, z_all):
     a.set_ylabel("laser reading x (mm)")
     a.set_title(f"Rigid band texture lines up (r = {b.texture_corr:.2f}, axial shift {b.x_offset:+.2f} mm)")
     a.legend(loc="lower left", fontsize=8.5)
+    fig.savefig(path, dpi=110)
+    plt.close(fig)
+
+
+SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
+
+
+def _pct_from_rim(r: Result) -> np.ndarray:
+    """Height of each matched point in the inflated scan, as % of the span from the rim end."""
+    z = r.matched.z_inf
+    lo, hi = r.inf.z[0], r.inf.z[-1]
+    f = (z - lo) / (hi - lo)
+    return 100 * (f if r.metrics["assumptions"]["rim_end"] == "bottom" else 1 - f)
+
+
+def comparison(results, path):
+    """Several tires on common axes (first 8; one colour per tire, fixed order)."""
+    shown = results[:8]
+    fig, ax = plt.subplots(1, 3, figsize=(17, 6.2), layout="constrained")
+    for k, r in enumerate(shown):
+        c, h = SERIES[k], _pct_from_rim(r)
+        ax[0].plot(r.matched.du, h, color=c, label=r.label)
+        ax[1].plot(r.matched.dtheta, h, color=c, label=r.label)
+    ax[0].set_xlabel("outward deflection (mm)")
+    ax[0].set_ylabel("height above rim end (% of sidewall)")
+    ax[0].set_title("Outward bulge along the sidewall")
+    ax[1].axvline(0, color=MUTED, lw=0.8)
+    ax[1].set_xlabel("tilt change (deg), + = leans outward")
+    ax[1].set_title("Tilt of the sidewall under load")
+    ax[0].legend(loc="upper right", fontsize=8)
+
+    zones = ["rim-side", "middle", "shoulder-side"]
+    y = np.arange(len(zones))
+    hgt = 0.8 / len(shown)
+    for k, r in enumerate(shown):
+        v = [next(z["share_of_bending_energy_pct"] for z in r.zones if z["zone"] == n) for n in zones]
+        ax[2].barh(y + (k - (len(shown) - 1) / 2) * hgt, v, height=hgt * 0.92, color=SERIES[k],
+                   label=r.label)
+        for yy, vv in zip(y + (k - (len(shown) - 1) / 2) * hgt, v):
+            ax[2].text(vv + 1, yy, f"{vv:.0f}%", va="center", fontsize=8, color=INK)
+    ax[2].set_yticks(y, zones)
+    ax[2].invert_yaxis()
+    ax[2].grid(axis="y", visible=False)
+    ax[2].set_xlabel("share of the bending (%)")
+    ax[2].set_title("Where each tire bends")
+    if len(results) > len(shown):
+        fig.suptitle(f"First {len(shown)} of {len(results)} tires shown; all are in comparison.csv",
+                     color=INK2, fontsize=10)
     fig.savefig(path, dpi=110)
     plt.close(fig)

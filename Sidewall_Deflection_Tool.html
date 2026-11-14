@@ -1,0 +1,1697 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sidewall Deflection Analyzer</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f3f0; --card: #fcfcfb; --raise: #ffffff; --border: #e2e1dc; --grid: #ebeae6; --zone: #f0efec;
+  --ink: #0b0b0b; --ink2: #52514e; --muted: #77766f; --hover: #efeeea;
+  --inf: #2a78d6; --load: #eb6834; --change: #1baf7a; --energy: #eda100; --naive: #898781;
+  --accent: #2a78d6; --accent-ink: #ffffff; --bad: #d03b3b; --good: #0ca30c;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #121211; --card: #1a1a19; --raise: #222220; --border: #34342f; --grid: #2a2a27; --zone: #242422;
+    --ink: #f0efec; --ink2: #c3c2b7; --muted: #9a998f; --hover: #2a2a27;
+    --inf: #3987e5; --load: #d95926; --change: #199e70; --energy: #c98500; --naive: #8f8e86;
+    --accent: #3987e5; --accent-ink: #0b0b0b; --bad: #e66767; --good: #0ca30c;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211; --card: #1a1a19; --raise: #222220; --border: #34342f; --grid: #2a2a27; --zone: #242422;
+  --ink: #f0efec; --ink2: #c3c2b7; --muted: #9a998f; --hover: #2a2a27;
+  --inf: #3987e5; --load: #d95926; --change: #199e70; --energy: #c98500; --naive: #8f8e86;
+  --accent: #3987e5; --accent-ink: #0b0b0b; --bad: #e66767; --good: #0ca30c;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+button, select, input { font: inherit; color: inherit; }
+h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+h2 { font-size: 17px; margin: 0 0 4px; }
+h3 { font-size: 15px; margin: 0; }
+p { margin: 0 0 8px; }
+.muted { color: var(--muted); }
+.small { font-size: 12.5px; }
+
+header.top { position: sticky; top: 0; z-index: 5; background: var(--card); border-bottom: 1px solid var(--border);
+  padding: 12px 20px; display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
+header.top .brand { flex: 1 1 260px; min-width: 0; }
+header.top .brand p { margin: 2px 0 0; color: var(--ink2); font-size: 13px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.ctl { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink2); }
+.ctl select, .ctl input[type=number] { background: var(--raise); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
+.ctl input[type=number] { width: 58px; }
+.ctl input[type=range] { width: 110px; accent-color: var(--accent); }
+.btn { background: var(--raise); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+.btn:hover { background: var(--hover); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--ink2); padding: 4px 8px; }
+.btn.ghost:hover { background: var(--hover); }
+
+.tabs { display: flex; gap: 4px; padding: 10px 20px 0; flex-wrap: wrap; }
+.tab { border: 1px solid transparent; border-bottom: none; background: transparent; padding: 8px 14px; border-radius: 8px 8px 0 0;
+  cursor: pointer; color: var(--ink2); }
+.tab[aria-selected=true] { background: var(--card); border-color: var(--border); color: var(--ink); font-weight: 600; }
+
+.layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 16px; padding: 0 20px 40px; }
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); padding: 0 16px 40px; } header.top { padding: 12px 16px; } .tabs { padding: 10px 16px 0; } }
+
+aside.files { background: var(--card); border: 1px solid var(--border); border-radius: 0 10px 10px 10px; padding: 12px; align-self: start;
+  position: sticky; top: 76px; max-height: calc(100vh - 96px); overflow: auto; }
+@media (max-width: 900px) { aside.files { position: static; max-height: none; border-radius: 10px; } }
+.drop { border: 1.5px dashed var(--border); border-radius: 10px; padding: 14px; text-align: center; color: var(--ink2); font-size: 13px; }
+.drop.over, body.dragging .drop { border-color: var(--accent); background: var(--hover); }
+.filelist { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.fileitem { display: grid; grid-template-columns: 18px 12px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px 8px;
+  border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+.fileitem:hover { background: var(--hover); }
+.fileitem.active { background: var(--hover); border-color: var(--border); }
+.fileitem .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.fileitem .sub { display: block; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fileitem .err { color: var(--bad); font-size: 11.5px; white-space: normal; }
+.dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; border: 1px solid var(--border); }
+.dot.none { background: transparent; }
+.fileitem input { accent-color: var(--accent); margin: 0; }
+.x { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; border-radius: 4px; }
+.x:hover { color: var(--ink); background: var(--border); }
+
+main { min-width: 0; }
+.panel { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.panel.first { border-top-left-radius: 0; }
+.empty { text-align: center; padding: 48px 20px; }
+.empty h2 { font-size: 20px; }
+.empty .drop { max-width: 520px; margin: 18px auto 0; padding: 28px; font-size: 14px; }
+
+.titlebar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; align-items: baseline; }
+.titlebar > div { min-width: 0; }
+.titlebar h2, .titlebar .small, .chip { overflow-wrap: anywhere; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { background: var(--zone); border-radius: 999px; padding: 2px 10px; font-size: 12.5px; color: var(--ink2); }
+.chip b { color: var(--ink); font-weight: 600; }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 10px; margin-top: 14px; }
+.kpi { background: var(--raise); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.kpi .k { font-size: 12.5px; color: var(--ink2); }
+.kpi .v { font-size: 24px; font-weight: 650; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.kpi .v small { font-size: 13px; font-weight: 500; color: var(--ink2); margin-left: 2px; }
+.kpi .d { font-size: 12px; color: var(--muted); line-height: 1.4; margin-top: 2px; }
+
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 1200px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.cardhead { display: flex; flex-wrap: wrap; gap: 6px 12px; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.cardhead .opts { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.chartwrap { position: relative; }
+.chartwrap svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 720px) { .chart-split { grid-template-columns: minmax(0, 1fr); } }
+.tip { position: absolute; pointer-events: none; background: var(--raise); border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 8px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.12); white-space: nowrap; z-index: 3; display: none; }
+.tip .row { display: flex; gap: 6px; align-items: center; }
+.tip .sw { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--ink2); margin: 2px 0 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 18px; height: 3px; border-radius: 2px; display: inline-block; }
+.legend i.dash { background: repeating-linear-gradient(90deg, var(--naive) 0 5px, transparent 5px 8px) !important; }
+.legend i.dotk { width: 7px; height: 7px; border-radius: 50%; }
+.cbar { margin: 6px 0 2px; }
+.cbar .bar { height: 12px; border-radius: 3px; }
+.cbar .ticks { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ink2); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.cbar .cap { font-size: 12px; color: var(--ink2); text-align: center; }
+
+.explain { background: var(--zone); border-radius: 8px; padding: 10px 12px; margin-top: 10px; font-size: 13px; line-height: 1.5; }
+.explain p { margin: 0 0 6px; }
+.explain p:last-child { margin: 0; }
+.explain b { color: var(--ink); }
+.explain .this { border-top: 1px solid var(--border); padding-top: 6px; margin-top: 6px; }
+
+table.cmp { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+table.cmp th, table.cmp td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
+table.cmp th { color: var(--ink2); font-weight: 600; cursor: pointer; user-select: none; vertical-align: bottom; white-space: normal; min-width: 70px; }
+table.cmp th:hover { color: var(--ink); }
+table.cmp th:first-child, table.cmp td:first-child { text-align: left; }
+table.cmp td:first-child { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+table.cmp tr:hover td { background: var(--hover); }
+.tablewrap { overflow-x: auto; }
+.note { font-size: 12.5px; color: var(--ink2); }
+.warn { color: var(--bad); }
+details.check summary { cursor: pointer; font-weight: 600; }
+details.check ul { margin: 8px 0 0; padding-left: 18px; }
+.howto h3 { margin: 16px 0 4px; }
+.howto dl { margin: 0; }
+.howto dt { font-weight: 600; margin-top: 10px; }
+.howto dd { margin: 2px 0 0; color: var(--ink2); }
+.progress { font-size: 12.5px; color: var(--ink2); margin-top: 8px; }
+.range { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 12px; background: var(--raise); }
+.range h4 { margin: 0 0 2px; font-size: 14px; display: flex; gap: 8px; align-items: center; }
+.range .row { display: grid; grid-template-columns: 14px minmax(0, 1fr) 84px auto; gap: 8px; align-items: center; margin-top: 6px; font-size: 13px; }
+.range .row i { width: 14px; height: 0; border-top: 2px dashed; display: inline-block; }
+.range input { width: 84px; background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font-variant-numeric: tabular-nums; }
+.range .auto { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.badge { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px; background: var(--zone); color: var(--ink2); }
+.badge.adj { background: var(--load); color: #fff; }
+.handle { cursor: ns-resize; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <h1>Sidewall Deflection Analyzer</h1>
+    <p>Load Deflection Report files (.xlsx) → sidewall bulge, tilt and bending. Files are read in this browser and never uploaded.</p>
+  </div>
+  <div class="controls">
+    <button class="btn primary" id="choose">Choose files…</button>
+    <input type="file" id="fileinput" multiple accept=".xlsx,.xlsm,.tsv,.txt,.csv" hidden>
+    <label class="ctl" title="Changes how smooth the curves look. The numbers do not change.">Curve smoothing
+      <input type="range" id="smooth" min="1" max="20" step="1"><span id="smoothv"></span></label>
+    <label class="ctl" title="Which end of the scan data is the rim. In the lab rig the rim is at the low end of the Z positions.">Rim in scan
+      <select id="rimend"><option value="bottom">low Z end</option><option value="top">high Z end</option></select></label>
+    <label class="ctl" title="Only changes how charts are drawn.">Draw rim at
+      <select id="rimdraw"><option value="bottom">bottom</option><option value="top">top</option></select></label>
+    <label class="ctl" title="Rubber thickness from the cord ply to the outer surface. Used only to turn bending into strain.">Rubber over ply
+      <input type="number" id="hmm" min="1" max="20" step="0.5"> mm</label>
+    <button class="btn ghost" id="theme" title="Switch light / dark">◐ Theme</button>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button class="tab" role="tab" data-tab="single" aria-selected="true">Single tire</button>
+  <button class="tab" role="tab" data-tab="compare" aria-selected="false">Compare tires <span id="ncmp"></span></button>
+  <button class="tab" role="tab" data-tab="howto" aria-selected="false">How to read the charts</button>
+</nav>
+
+<div class="layout">
+  <aside class="files">
+    <div class="drop" id="drop">Drop report files here<br><span class="small muted">or use “Choose files…” · many at once is fine</span></div>
+    <div class="progress" id="progress" hidden></div>
+    <ul class="filelist" id="filelist"></ul>
+    <div id="filefoot" class="note" style="margin-top:10px" hidden>
+      Tick = include in Compare. Charts show up to 8 tires at a time; the table shows all.
+      <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap">
+        <button class="btn" id="exportAll">Download summary (CSV)</button>
+        <button class="btn ghost" id="clearAll">Remove all</button>
+      </div>
+    </div>
+  </aside>
+  <main id="main"></main>
+</div>
+
+<script id="sw-engine">
+/* Sidewall deflection engine: file readers + analysis.
+ * A line-for-line port of sidewall/analysis.py and sidewall/report_xlsx.py so the
+ * browser tool and the Python CLI give the same numbers. No dependencies; runs in
+ * any modern browser and in Node 18+ (for tests).
+ */
+const SW = (() => {
+  'use strict';
+  const DROPOUT = 250;
+
+  // ------------------------------------------------------------- numeric helpers
+  const arange = (a, b, step) => {
+    const n = Math.max(0, Math.ceil((b - a) / step));
+    const o = new Float64Array(n);
+    for (let i = 0; i < n; i++) o[i] = a + i * step;
+    return o;
+  };
+  const minOf = (a) => { let m = Infinity; for (const v of a) if (v < m) m = v; return m; };
+  const maxOf = (a) => { let m = -Infinity; for (const v of a) if (v > m) m = v; return m; };
+  const argmin = (a) => { let k = 0; for (let i = 1; i < a.length; i++) if (a[i] < a[k]) k = i; return k; };
+  const argmax = (a) => { let k = 0; for (let i = 1; i < a.length; i++) if (a[i] > a[k]) k = i; return k; };
+  const mean = (a) => { let s = 0; for (const v of a) s += v; return s / a.length; };
+  const std = (a) => { const m = mean(a); let s = 0; for (const v of a) s += (v - m) ** 2; return Math.sqrt(s / a.length); };
+  const median = (a) => {
+    const s = Array.from(a).sort((p, q) => p - q), n = s.length;
+    return n % 2 ? s[(n - 1) / 2] : 0.5 * (s[n / 2 - 1] + s[n / 2]);
+  };
+  const corr = (a, b) => {
+    const ma = mean(a), mb = mean(b);
+    let sab = 0, saa = 0, sbb = 0;
+    for (let i = 0; i < a.length; i++) {
+      const p = a[i] - ma, q = b[i] - mb;
+      sab += p * q; saa += p * p; sbb += q * q;
+    }
+    return sab / Math.sqrt(saa * sbb);
+  };
+  const pick = (a, idx) => Float64Array.from(idx, (i) => a[i]);
+  const mask = (a, m) => Float64Array.from(a.filter((_, i) => m[i]));
+
+  function interp(x, xp, fp) {
+    const n = xp.length, out = new Float64Array(x.length);
+    for (let k = 0; k < x.length; k++) {
+      const v = x[k];
+      if (v <= xp[0]) { out[k] = fp[0]; continue; }
+      if (v >= xp[n - 1]) { out[k] = fp[n - 1]; continue; }
+      let lo = 0, hi = n - 1;
+      while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (xp[mid] <= v) lo = mid; else hi = mid; }
+      out[k] = fp[lo] + (v - xp[lo]) / (xp[hi] - xp[lo]) * (fp[hi] - fp[lo]);
+    }
+    return out;
+  }
+  const interp1 = (v, xp, fp) => interp([v], xp, fp)[0];
+
+  function solve3(M, r) { // Gaussian elimination, 3x3
+    const a = M.map((row, i) => [...row, r[i]]);
+    for (let c = 0; c < 3; c++) {
+      let p = c;
+      for (let i = c + 1; i < 3; i++) if (Math.abs(a[i][c]) > Math.abs(a[p][c])) p = i;
+      [a[c], a[p]] = [a[p], a[c]];
+      for (let i = c + 1; i < 3; i++) {
+        const f = a[i][c] / a[c][c];
+        for (let j = c; j < 4; j++) a[i][j] -= f * a[c][j];
+      }
+    }
+    const x = [0, 0, 0];
+    for (let i = 2; i >= 0; i--) {
+      let s = a[i][3];
+      for (let j = i + 1; j < 3; j++) s -= a[i][j] * x[j];
+      x[i] = s / a[i][i];
+    }
+    return x;
+  }
+  function polyfit2(xs, ys) {
+    const S = [0, 0, 0, 0, 0], T = [0, 0, 0];
+    for (let i = 0; i < xs.length; i++) {
+      let p = 1;
+      for (let k = 0; k < 5; k++) { S[k] += p; if (k < 3) T[k] += p * ys[i]; p *= xs[i]; }
+    }
+    return solve3([[S[0], S[1], S[2]], [S[1], S[2], S[3]], [S[2], S[3], S[4]]], T);
+  }
+  const polyDeriv = (c, x, d) => (d === 0 ? c[0] + c[1] * x + c[2] * x * x : d === 1 ? c[1] + 2 * c[2] * x : 2 * c[2]);
+
+  /** Savitzky-Golay, polyorder 2, same as scipy.signal.savgol_filter(mode="interp"). */
+  function savgol(y, w, d = 0, delta = 1) {
+    const n = y.length;
+    if (w > n) w = n % 2 ? n : n - 1;
+    const h = (w - 1) / 2, out = new Float64Array(n), scale = delta ** d;
+    // interior: least-squares weights for the d-th derivative at the window centre
+    const S = [0, 0, 0, 0, 0];
+    for (let j = -h; j <= h; j++) { let p = 1; for (let k = 0; k < 5; k++) { S[k] += p; p *= j; } }
+    const G = [[S[0], S[1], S[2]], [S[1], S[2], S[3]], [S[2], S[3], S[4]]];
+    const e = [0, 0, 0]; e[d] = 1;
+    const row = solve3(G, e); // row d of G^-1 (G symmetric)
+    const fact = d === 2 ? 2 : 1;
+    const coef = new Float64Array(w);
+    for (let j = -h; j <= h; j++) coef[j + h] = fact * (row[0] + row[1] * j + row[2] * j * j) / scale;
+    for (let i = h; i < n - h; i++) {
+      let s = 0;
+      for (let j = 0; j < w; j++) s += coef[j] * y[i - h + j];
+      out[i] = s;
+    }
+    // edges: polynomial fitted to the first / last window
+    const xs = Array.from({ length: w }, (_, i) => i);
+    const cl = polyfit2(xs, y.slice(0, w)), cr = polyfit2(xs, y.slice(n - w));
+    for (let i = 0; i < h; i++) out[i] = polyDeriv(cl, i, d) / scale;
+    for (let i = n - h; i < n; i++) out[i] = polyDeriv(cr, i - (n - w), d) / scale;
+    return out;
+  }
+
+  // --------------------------------------------------------------- file readers
+  const u16 = (b, o) => b[o] | (b[o + 1] << 8);
+  const u32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16)) + b[o + 3] * 16777216;
+
+  async function inflateRaw(bytes) {
+    const ds = new DecompressionStream('deflate-raw');
+    const stream = new Blob([bytes]).stream().pipeThrough(ds);
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+
+  /** {name: Uint8Array} for every entry of a .zip / .xlsx */
+  async function unzip(buf) {
+    const b = new Uint8Array(buf);
+    let eocd = -1;
+    for (let i = b.length - 22; i >= Math.max(0, b.length - 65557); i--) {
+      if (u32(b, i) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) throw new Error('not a zip/xlsx file');
+    const count = u16(b, eocd + 10);
+    let p = u32(b, eocd + 16);
+    const out = {}, dec = new TextDecoder();
+    for (let k = 0; k < count; k++) {
+      if (u32(b, p) !== 0x02014b50) break;
+      const method = u16(b, p + 10), csize = u32(b, p + 20);
+      const nlen = u16(b, p + 28), xlen = u16(b, p + 30), clen = u16(b, p + 32), off = u32(b, p + 42);
+      const name = dec.decode(b.subarray(p + 46, p + 46 + nlen));
+      const start = off + 30 + u16(b, off + 26) + u16(b, off + 28);
+      out[name] = { method, data: b.subarray(start, start + csize) };
+      p += 46 + nlen + xlen + clen;
+    }
+    return {
+      names: Object.keys(out),
+      async get(name) {
+        const e = out[name];
+        if (!e) return null;
+        return e.method === 8 ? inflateRaw(e.data) : e.data;
+      },
+    };
+  }
+
+  /** OLE compound file -> {streamName: Uint8Array} */
+  function cfbStreams(b) {
+    const sig = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+    if (!sig.every((v, i) => b[i] === v)) throw new Error('not an OLE compound file');
+    const ssz = 1 << u16(b, 0x1e), msz = 1 << u16(b, 0x20);
+    const nFat = u32(b, 0x2c), dirStart = u32(b, 0x30), cutoff = u32(b, 0x38);
+    const mfatStart = u32(b, 0x3c), nMfat = u32(b, 0x40), difStart = u32(b, 0x44), nDif = u32(b, 0x48);
+    const sector = (i) => b.subarray((i + 1) * ssz, (i + 2) * ssz);
+    const words = (s) => Array.from({ length: s.length / 4 }, (_, i) => u32(s, 4 * i));
+    let difat = Array.from({ length: 109 }, (_, i) => u32(b, 0x4c + 4 * i));
+    let nxt = difStart;
+    for (let k = 0; k < nDif; k++) { const v = words(sector(nxt)); difat = difat.concat(v.slice(0, -1)); nxt = v[v.length - 1]; }
+    let fat = [];
+    for (const i of difat.slice(0, nFat)) fat = fat.concat(words(sector(i)));
+    const chain = (start, table) => {
+      const out = [], seen = new Set();
+      let i = start;
+      while (i < 0xfffffffa && !seen.has(i) && i < table.length + 1) { seen.add(i); out.push(i); i = table[i]; }
+      return out;
+    };
+    const concat = (parts, size) => {
+      const o = new Uint8Array(size);
+      let p = 0;
+      for (const s of parts) { const n = Math.min(s.length, size - p); o.set(s.subarray(0, n), p); p += n; if (p >= size) break; }
+      return o;
+    };
+    const read = (start, size) => concat(chain(start, fat).map(sector), size);
+    const dirChain = chain(dirStart, fat);
+    const dirs = read(dirStart, dirChain.length * ssz);
+    const entries = [];
+    for (let off = 0; off + 128 <= dirs.length; off += 128) {
+      const nlen = u16(dirs, off + 0x40);
+      let name = '';
+      for (let i = 0; i < Math.max(nlen - 2, 0); i += 2) name += String.fromCharCode(u16(dirs, off + i));
+      entries.push({ name, type: dirs[off + 0x42], start: u32(dirs, off + 0x74), size: u32(dirs, off + 0x78) });
+    }
+    const root = entries[0];
+    const ministream = read(root.start, root.size);
+    let mfat = [];
+    if (nMfat) for (const i of chain(mfatStart, fat).slice(0, nMfat)) mfat = mfat.concat(words(sector(i)));
+    const out = {};
+    for (const e of entries) {
+      if (e.type !== 2) continue;
+      out[e.name] = e.size < cutoff
+        ? concat(chain(e.start, mfat).map((i) => ministream.subarray(i * msz, (i + 1) * msz)), e.size)
+        : read(e.start, e.size);
+    }
+    return out;
+  }
+
+  /** MS Graph datasheet: numeric cells and series titles */
+  function graphDatasheet(w) {
+    const cells = new Map(), titles = [];
+    const dv = new DataView(w.buffer, w.byteOffset, w.byteLength);
+    let p = 0;
+    while (p + 4 <= w.length) {
+      const type = u16(w, p), n = u16(w, p + 2), d = p + 4;
+      p += 4 + n;
+      if ((type === 0x0003 || type === 0x0203) && n >= 12) {
+        cells.set(`${u16(w, d)},${u16(w, d + 2)}`, dv.getFloat64(d + n - 8, true));
+      } else if (type === 0x0002 && n >= 9) {
+        cells.set(`${u16(w, d)},${u16(w, d + 2)}`, u16(w, d + n - 2));
+      } else if (type === 0x100d && n >= 4) {
+        const k = w[d + 2];
+        let t = '';
+        if (w[d + 3]) for (let i = 0; i < k; i++) t += String.fromCharCode(u16(w, d + 4 + 2 * i));
+        else for (let i = 0; i < k; i++) t += String.fromCharCode(w[d + 4 + i]);
+        titles.push(t.trim());
+      }
+    }
+    return { cells, titles };
+  }
+
+  const isStage = (v) => {
+    if (v.length < 10) return false;
+    let flips = 0;
+    for (let i = 2; i < v.length; i++) if ((v[i - 1] - v[i - 2]) * (v[i] - v[i - 1]) < 0) flips++;
+    return flips <= 3 && maxOf(v) - minOf(v) > 20;
+  };
+
+  const xmlText = (s) => s.replace(/&(#x?[0-9a-fA-F]+|amp|lt|gt|quot|apos);/g, (_, e) =>
+    e[0] === '#' ? String.fromCodePoint(e[1] === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10))
+      : { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[e]);
+
+  function sheetCells(sheetXml, sharedXml) {
+    const shared = [];
+    if (sharedXml) {
+      for (const m of sharedXml.matchAll(/<si>([\s\S]*?)<\/si>/g)) {
+        shared.push([...m[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((t) => xmlText(t[1])).join(''));
+      }
+    }
+    const cells = new Map();
+    for (const m of sheetXml.matchAll(/<c ([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+      const attrs = m[1], body = m[2] || '';
+      const ref = /r="([A-Z]+)(\d+)"/.exec(attrs);
+      if (!ref) continue;
+      const t = (/ t="([^"]+)"/.exec(attrs) || [])[1];
+      const v = /<v>([\s\S]*?)<\/v>/.exec(body);
+      let val;
+      if (!v) {
+        const is = /<is>([\s\S]*?)<\/is>/.exec(body);
+        if (!is) continue;
+        val = [...is[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((x) => xmlText(x[1])).join('');
+      } else if (t === 's') val = shared[parseInt(v[1], 10)];
+      else if (t === 'str' || t === 'inlineStr' || t === 'e') val = xmlText(v[1]);
+      else if (t === 'b') val = v[1] === '1';
+      else val = parseFloat(v[1]);
+      let col = 0;
+      for (const ch of ref[1]) col = col * 26 + ch.charCodeAt(0) - 64;
+      cells.set(`${ref[2]},${col}`, val);
+    }
+    return cells;
+  }
+
+  const normLabel = (s) => s.replace(/（/g, '(').replace(/）/g, ')').replace(/[\s:：]+$/, '').trim();
+  const looksLikeLabel = (s) => /\((mm|kg|daN|PSI|°C)\)|^(Tyre Size|Brand|Product ID|Rim Type)$/.test(normLabel(s));
+
+  function headerPairs(cells) {
+    const out = {};
+    const keys = [...cells.keys()].map((k) => k.split(',').map(Number)).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const get = (r, c) => cells.get(`${r},${c}`);
+    for (const [r, c] of keys) {
+      const v = get(r, c);
+      if (typeof v !== 'string' || !v.trim()) continue;
+      if (/[:：]\s*$/.test(v)) {
+        for (let cc = c + 1; cc < c + 6; cc++) {
+          const rv = get(r, cc);
+          if (rv !== undefined && rv !== '') { out[normLabel(v)] = rv; break; }
+        }
+        continue;
+      }
+      for (let rr = r + 1; rr < r + 4; rr++) {
+        const cv = get(rr, c);
+        if (cv === undefined || cv === '') continue;
+        if (typeof cv === 'string' && looksLikeLabel(cv)) break;
+        if (!(normLabel(v) in out)) out[normLabel(v)] = cv;
+        break;
+      }
+    }
+    return out;
+  }
+
+  const FIELDS = {
+    'Request No.': 'request', 'Test Date': 'test_date', 'Serial number': 'serial',
+    'Test Feature': 'feature', 'Test engineer name': 'engineer', 'Product ID': 'product_id',
+    'Tyre Size': 'size', 'Brand': 'brand', 'SW (mm)': 'section_width_mm', 'OD (mm)': 'od_mm',
+    'Tire Weight(kg)': 'tire_weight_kg', 'Test Pressure(PSI)': 'pressure_psi',
+    'Load (daN)': 'load_daN', 'Rim Type': 'rim', 'Room Temp. (°C)': 'room_temp_C',
+    'Unload Distance (mm)': 'unload_distance_mm', 'Unload Position (mm)': 'unload_position_mm',
+    'Load Distance (mm)': 'load_distance_mm', 'Load Position (mm)': 'load_position_mm',
+    'Radial Deflection (mm)': 'radial_deflection_mm',
+    'Horizontal Deflection (mm)': 'horizontal_deflection_mm',
+  };
+
+  async function readReport(name, buf) {
+    const z = await unzip(buf);
+    const dec = new TextDecoder();
+    const sheetName = z.names.filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort()[0];
+    const shared = z.names.includes('xl/sharedStrings.xml') ? dec.decode(await z.get('xl/sharedStrings.xml')) : '';
+    const hdr = sheetName ? headerPairs(sheetCells(dec.decode(await z.get(sheetName)), shared)) : {};
+    const meta = { file: name };
+    for (const [label, key] of Object.entries(FIELDS)) meta[key] = hdr[label] ?? null;
+    for (const n of z.names.filter((n) => n.startsWith('xl/embeddings/')).sort()) {
+      let streams;
+      try { streams = cfbStreams(await z.get(n)); } catch { continue; }
+      if (!streams.Workbook) continue;
+      const { cells, titles } = graphDatasheet(streams.Workbook);
+      const rows = new Map();
+      for (const [k, v] of cells) {
+        const [r, c] = k.split(',').map(Number);
+        if (!rows.has(r)) rows.set(r, new Map());
+        rows.get(r).set(c, v);
+      }
+      const series = [...rows.keys()].sort((a, b) => a - b)
+        .map((r) => { const row = rows.get(r); return [...row.keys()].sort((a, b) => a - b).map((c) => row.get(c)); });
+      if (series.length < 2) continue;
+      let zi = series.findIndex(isStage);
+      if (zi < 0) zi = 1;
+      const xi = zi === 0 ? 1 : 0;
+      meta.series_titles = titles.filter(Boolean);
+      return { x: Float64Array.from(series[xi]), z: Float64Array.from(series[zi]), meta };
+    }
+    throw new Error('no embedded scan found in this workbook (expected an MS Graph chart with the profile)');
+  }
+
+  function readText(name, text) {
+    const rows = text.split(/\r?\n/).filter((r) => r.trim());
+    const nums = (cells) => cells.map((c) => c.trim()).filter((c) => c !== '' && !isNaN(Number(c))).map(Number);
+    let x, z;
+    if (rows.length === 2) {
+      [x, z] = rows.map((r) => nums(r.split('\t')));
+    } else {
+      const sep = rows[0].includes('\t') ? '\t' : rows[0].includes(',') ? ',' : /\s+/;
+      const pairs = rows.map((r) => nums(r.split(sep))).filter((p) => p.length >= 2);
+      x = pairs.map((p) => p[0]); z = pairs.map((p) => p[1]);
+    }
+    if (!x.length || x.length !== z.length) throw new Error(`could not read two equal-length channels (got ${x.length} and ${z.length})`);
+    return { x: Float64Array.from(x), z: Float64Array.from(z), meta: { file: name } };
+  }
+
+  async function readFile(name, buf) {
+    if (/\.(xlsx|xlsm)$/i.test(name)) return readReport(name, buf);
+    return readText(name, new TextDecoder().decode(buf));
+  }
+
+  // ------------------------------------------------------------------- analysis
+  function splitPasses(z) {
+    const n = z.length;
+    const i = z[0] > z[n >> 1] ? argmin(z) : argmax(z);
+    return [[0, i], [i, n]];
+  }
+
+  function cleanPass(name, x, z) {
+    const n = x.length, keep = [];
+    let nDrop = 0, nHold = 0;
+    for (let i = 0; i < n; i++) {
+      const ok = x[i] < DROPOUT;
+      if (!ok) { nDrop++; continue; }
+      if (i > 0 && x[i] === x[i - 1]) { nHold++; continue; }
+      keep.push(i);
+    }
+    keep.sort((a, b) => z[a] - z[b]);
+    return { name, xRaw: x, zRaw: z, z: pick(z, keep), x: pick(x, keep), nDropout: nDrop, nHold };
+  }
+
+  function crossingUp(p, level, zStart) {
+    const xs = savgol(p.x, 9, 0);
+    for (let i = 0; i < p.z.length; i++) if (p.z[i] > zStart && xs[i] >= level) return p.z[i];
+    throw new Error('could not find where the sidewall meets the shoulder band');
+  }
+
+  function findBandShift(inf, load, topMm = 30, search = 8, tol = 1) {
+    const zTop = maxOf(inf.z);
+    const xBand = median(inf.x.filter((_, i) => inf.z[i] > zTop - topMm));
+    const zMwI = inf.z[argmin(savgol(inf.x, 15, 0))];
+    const zMwL = load.z[argmin(savgol(load.x, 15, 0))];
+    const eI = crossingUp(inf, xBand - tol, zMwI), eL = crossingUp(load, xBand - tol, zMwL);
+    const dEdge = eI - eL;
+    const zg = arange(eI + 4, zTop - 1, 0.25);
+    const a = interp(zg, inf.z, inf.x), zLoadMin = minOf(load.z);
+    let best = [-2, dEdge, 0];
+    for (const d of arange(dEdge - search, dEdge + search + 1e-9, 0.25)) {
+      if (zg[0] - d < zLoadMin) continue;
+      const b = interp(zg.map((v) => v - d), load.z, load.x);
+      const r = corr(a, b);
+      if (r > best[0]) best = [r, d, mean(b) - mean(a)];
+    }
+    const [r, d, off] = best;
+    return { x_band: xBand, edge_inflated: eI, edge_loaded: eI - d, delta: d, delta_edge: dEdge,
+      texture_corr: r, x_offset: off };
+  }
+
+  function textureCorr(inf, load, eI, d) {
+    const zg = arange(eI + 4, maxOf(inf.z) - 1, 0.25);
+    if (zg.length < 8 || zg[0] - d < minOf(load.z)) return null;
+    const a = interp(zg, inf.z, inf.x), b = interp(zg.map((v) => v - d), load.z, load.x);
+    return corr(a, b);
+  }
+
+  function fitProfile(p, xBand, zLo, zHi, windowMm = 45, uWindowMm = 5, step = 0.25) {
+    const m = Array.from(p.z, (v) => v >= zLo && v <= zHi);
+    const zz = mask(p.z, m), uu = mask(p.x, m).map((v) => xBand - v);
+    const z = arange(minOf(zz), maxOf(zz) + 1e-9, step);
+    const ul = interp(z, zz, uu);
+    const sg = (wMm, d) => savgol(ul, Math.max(5, Math.round(wMm / step) | 1), d, step);
+    const u = sg(uWindowMm, 0), du = sg(windowMm, 1), d2u = sg(windowMm, 2);
+    const g = du.map((v) => Math.sqrt(1 + v * v));
+    const seg = new Float64Array(z.length);
+    for (let i = 1; i < z.length; i++) seg[i] = seg[i - 1] + 0.5 * (g[i] + g[i - 1]) * (z[i] - z[i - 1]);
+    const L = seg[seg.length - 1];
+    const resid = uu.map((v, i) => v - interp1(zz[i], z, u));
+    return {
+      name: p.name, z, u, du, theta: du.map((v) => Math.atan(v) * 180 / Math.PI),
+      kappa: d2u.map((v, i) => -v / g[i] ** 3), s: seg.map((v) => L - v), sBottom: seg, length: L,
+      sigma: std(resid), resid, residZ: zz,
+    };
+  }
+
+  function matchByArclength(pi, pl, anchor = 'bottom', ds = 0.25) {
+    const s = arange(0, Math.min(pi.length, pl.length), ds);
+    const at = (p, arr) => (anchor === 'bottom' ? interp(s, p.sBottom, arr)
+      : interp(s, Float64Array.from(p.s).reverse(), Float64Array.from(arr).reverse()));
+    const zi = at(pi, pi.z), zl = at(pl, pl.z), ui = at(pi, pi.u), ul = at(pl, pl.u);
+    const ki = at(pi, pi.kappa), kl = at(pl, pl.kappa), ti = at(pi, pi.theta), tl = at(pl, pl.theta);
+    return { s, z_inf: zi, z_load: zl, u_inf: ui, u_load: ul,
+      du: ul.map((v, i) => v - ui[i]), dz: zl.map((v, i) => v - zi[i]), dtheta: tl.map((v, i) => v - ti[i]),
+      kappa_inf: ki, kappa_load: kl, dkappa: kl.map((v, i) => v - ki[i]) };
+  }
+
+  function gradient(a) {
+    const n = a.length, g = new Float64Array(n);
+    if (n < 2) return g;
+    g[0] = a[1] - a[0]; g[n - 1] = a[n - 1] - a[n - 2];
+    for (let i = 1; i < n - 1; i++) g[i] = (a[i + 1] - a[i - 1]) / 2;
+    return g;
+  }
+
+  function localExtrema(y, x, n = 3, minSep = 15) {
+    const order = Array.from(y.keys()).sort((a, b) => Math.abs(y[b]) - Math.abs(y[a]));
+    const picked = [];
+    for (const i of order) {
+      if (i > 0 && i < y.length - 1 && picked.every((j) => Math.abs(x[i] - x[j]) >= minSep)
+          && Math.abs(y[i]) >= Math.abs(y[i - 1]) && Math.abs(y[i]) >= Math.abs(y[i + 1])) picked.push(i);
+      if (picked.length === n) break;
+    }
+    return picked.map((i) => [x[i], y[i]]);
+  }
+
+  function zoneTable(mt, towardRim, hMm) {
+    const names = ['rim-side', 'middle', 'shoulder-side'];
+    const sEnd = mt.s[mt.s.length - 1];
+    const edges = names.map((_, k) => (k * sEnd) / 3).concat([sEnd]);
+    const ds = gradient(mt.s);
+    let bulgeTot = 0, energyTot = 0;
+    for (let i = 0; i < mt.s.length; i++) { bulgeTot += Math.max(mt.du[i], 0) * ds[i]; energyTot += mt.dkappa[i] ** 2 * ds[i]; }
+    return names.map((zone, k) => {
+      const idx = [];
+      for (let i = 0; i < mt.s.length; i++) if (mt.s[i] >= edges[k] && mt.s[i] < edges[k + 1] + (k === 2 ? 1 : 0)) idx.push(i);
+      const sel = (a) => idx.map((i) => a[i]);
+      const dk = sel(mt.dkappa).map(Math.abs);
+      return {
+        zone, s_from: edges[k], s_to: edges[k + 1],
+        z_inflated_from: mt.z_inf[idx[0]], z_inflated_to: mt.z_inf[idx[idx.length - 1]],
+        mean_outward_mm: mean(sel(mt.du)), max_outward_mm: maxOf(sel(mt.du)),
+        mean_toward_rim_mm: mean(sel(towardRim)),
+        mean_abs_rotation_deg: mean(sel(mt.dtheta).map(Math.abs)),
+        peak_abs_dkappa_per_m: 1000 * maxOf(dk), peak_surface_strain_pct: 100 * hMm * maxOf(dk),
+        share_of_bulge_pct: 100 * idx.reduce((s, i) => s + Math.max(mt.du[i], 0) * ds[i], 0) / bulgeTot,
+        share_of_bending_energy_pct: 100 * idx.reduce((s, i) => s + mt.dkappa[i] ** 2 * ds[i], 0) / energyTot,
+      };
+    });
+  }
+
+  function trapezoid(y, x) {
+    let s = 0;
+    for (let i = 1; i < y.length; i++) s += 0.5 * (y[i] + y[i - 1]) * (x[i] - x[i - 1]);
+    return s;
+  }
+
+  const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
+
+  function analyze(x, z, meta = {}, opts = {}) {
+    const hMm = opts.hMm ?? 5, rimEnd = opts.rimEnd ?? 'bottom';
+    const windowMm = opts.windowMm ?? 45, smoothMm = opts.smoothMm ?? 5;
+    let loadKN = opts.loadKN ?? null;
+    if (loadKN == null && num(meta.load_daN) != null) loadKN = meta.load_daN / 100;
+    const [s1, s2] = splitPasses(z);
+    const inf = cleanPass('inflated', x.slice(s1[0], s1[1]), z.slice(s1[0], s1[1]));
+    const load = cleanPass('loaded', x.slice(s2[0], s2[1]), z.slice(s2[0], s2[1]));
+    const rawMin = {};
+    for (const p of [inf, load]) { const k = argmin(p.x); rawMin[p.name] = [p.x[k], p.z[k]]; }
+
+    // automatic range, then the user's overrides (null/undefined = keep automatic)
+    const bandAuto = findBandShift(inf, load);
+    const rimBottom = rimEnd === 'bottom';
+    const loAuto = Math.max(minOf(inf.z), minOf(load.z));
+    const auto = { z_start: loAuto, edge_inflated: bandAuto.edge_inflated, edge_loaded: bandAuto.edge_loaded };
+    const given = (v) => v != null && v !== '' && isFinite(v);
+    const manual = given(opts.zStart) || given(opts.edgeInflated) || given(opts.edgeLoaded);
+    const eI = given(opts.edgeInflated) ? +opts.edgeInflated : bandAuto.edge_inflated;
+    const eL = given(opts.edgeLoaded) ? +opts.edgeLoaded : eI - bandAuto.delta;
+    const band = manual
+      ? { ...bandAuto, edge_inflated: eI, edge_loaded: eL, delta: eI - eL, texture_corr: textureCorr(inf, load, eI, eI - eL), manual: true }
+      : { ...bandAuto, manual: false };
+    let loI, loL;
+    if (given(opts.zStart)) loI = loL = +opts.zStart;
+    else [loI, loL] = rimBottom ? [loAuto, loAuto] : [minOf(inf.z), minOf(load.z)];
+    if (!(eI - loI >= 20 && eL - loL >= 20)) {
+      throw new Error('The sidewall start must be at least 20 mm below both shoulder edges.');
+    }
+    if (eI > maxOf(inf.z) || eL > maxOf(load.z) || loI < minOf(inf.z) - 1 || loL < minOf(load.z) - 1) {
+      throw new Error('A chosen position is outside the scanned range.');
+    }
+    const pi = fitProfile(inf, band.x_band, loI, band.edge_inflated, windowMm, smoothMm);
+    const pl = fitProfile(load, band.x_band, loL, band.edge_loaded, windowMm, smoothMm);
+    const mt = matchByArclength(pi, pl, rimBottom ? 'bottom' : 'top');
+    const towardRim = mt.dz.map((v) => (rimBottom ? -v : v));
+
+    const zc = arange(Math.max(pi.z[0], pl.z[0]), Math.min(pi.z[pi.z.length - 1], pl.z[pl.z.length - 1]), 0.25);
+    const ndU = interp(zc, pl.z, pl.u), ndI = interp(zc, pi.z, pi.u);
+    const nd = ndU.map((v, i) => v - ndI[i]);
+
+    const iMw = argmax(pi.u), lMw = argmax(pl.u), kMt = argmax(mt.du), kNv = argmax(nd);
+    const fracFromRim = (zv, p) => { const f = (zv - p.z[0]) / (p.z[p.z.length - 1] - p.z[0]); return rimBottom ? f : 1 - f; };
+    const labRd = num(meta.radial_deflection_mm) || null;
+    const radial = labRd || band.delta;
+    const growth = pl.u[lMw] - pi.u[iMw];
+    const ds = gradient(mt.s);
+    let bulgeArea = 0;
+    for (let i = 0; i < mt.s.length; i++) bulgeArea += Math.max(mt.du[i], 0) * ds[i];
+    const zones = zoneTable(mt, towardRim, hMm);
+    const hdRaw = rawMin.inflated[0] - rawMin.loaded[0];
+    const margin = windowMm / 2, sEnd = mt.s[mt.s.length - 1];
+    const tIdx = Array.from(mt.s.keys()).filter((i) => mt.s[i] >= margin && mt.s[i] <= sEnd - margin);
+    const ext = localExtrema(pick(mt.dkappa, tIdx), pick(mt.s, tIdx));
+    let kRot = 0;
+    for (let i = 1; i < mt.dtheta.length; i++) if (Math.abs(mt.dtheta[i]) > Math.abs(mt.dtheta[kRot])) kRot = i;
+
+    const metrics = {
+      samples_total: x.length,
+      inflated: { samples: inf.xRaw.length, dropouts: inf.nDropout, held_repeats: inf.nHold, z_range: [minOf(inf.z), maxOf(inf.z)] },
+      loaded: { samples: load.xRaw.length, dropouts: load.nDropout, held_repeats: load.nHold, z_range: [minOf(load.z), maxOf(load.z)] },
+      noise_floor_mm: { inflated: pi.sigma, loaded: pl.sigma },
+      band,
+      deflection: {
+        radial_lab_mm: labRd, shoulder_travel_mm: band.delta,
+        crown_share_mm: labRd ? labRd - band.delta : null,
+        sidewall_share_pct: labRd ? (100 * band.delta) / labRd : null,
+        basis: labRd ? 'lab radial deflection' : 'shoulder travel (no lab value)',
+      },
+      load_kN: loadKN,
+      vertical_stiffness_N_per_mm: loadKN ? (1000 * loadKN) / radial : null,
+      max_width: {
+        inflated_z: pi.z[iMw], inflated_u: pi.u[iMw], inflated_frac_from_rim: fracFromRim(pi.z[iMw], pi),
+        loaded_z: pl.z[lMw], loaded_u: pl.u[lMw], loaded_frac_from_rim: fracFromRim(pl.z[lMw], pl),
+        growth_mm: growth, point_shift_mm: pl.z[lMw] - pi.z[iMw],
+      },
+      lab_style: {
+        unload_distance_mm: rawMin.inflated[0], unload_position_mm: rawMin.inflated[1],
+        load_distance_mm: rawMin.loaded[0], load_position_mm: rawMin.loaded[1], horizontal_deflection_mm: hdRaw,
+      },
+      bulge_per_mm_deflection: growth / radial,
+      bulge_per_kN_mm: loadKN ? growth / loadKN : null,
+      naive_same_z: { peak_mm: nd[kNv], at_z: zc[kNv], area_mm2: trapezoid(nd.map((v) => Math.max(v, 0)), zc) },
+      matched: {
+        peak_outward_mm: mt.du[kMt], at_s: mt.s[kMt], inflated_z_of_that_point: mt.z_inf[kMt],
+        bulge_area_mm2: bulgeArea, toward_rim_at_rim_end_mm: towardRim[0],
+        toward_rim_at_far_end_mm: towardRim[towardRim.length - 1], max_rotation_deg: mt.dtheta[kRot],
+      },
+      arc_length: { inflated_mm: pi.length, loaded_visible_mm: pl.length, deficit_mm: pi.length - pl.length,
+        deficit_pct: (100 * (pi.length - pl.length)) / pi.length },
+      hinges: ext.map(([s_, k_]) => ({ s: s_, z_inflated: interp1(s_, mt.s, mt.z_inf), dkappa_per_m: 1000 * k_,
+        surface_strain_pct: 100 * hMm * Math.abs(k_) })),
+      assumptions: { rim_end: rimEnd, surface_offset_from_ply_mm: hMm, derivative_window_mm: windowMm, smoothing_mm: smoothMm },
+      range: { z_start: loI, edge_inflated: eI, edge_loaded: eL, manual, auto },
+      test: Object.fromEntries(Object.entries(meta).filter(([k]) => k !== 'series_titles')),
+    };
+    if (labRd) metrics.vs_lab = { horizontal_deflection_lab_mm: meta.horizontal_deflection_mm,
+      horizontal_deflection_raw_mm: hdRaw, horizontal_deflection_smoothed_mm: growth };
+    return { passes: { inflated: inf, loaded: load }, band, inf: pi, load: pl, matched: mt, towardRim,
+      naive: { z: zc, du: nd }, metrics, zones, meta, auto, opts: { hMm, rimEnd, windowMm, smoothMm } };
+  }
+
+  /** Same scan, profiles re-smoothed for display only (numbers stay from analyze()). */
+  function displayCurves(res, smoothMm) {
+    const { passes, band, opts } = res;
+    const rimBottom = opts.rimEnd === 'bottom';
+    const pi = fitProfile(passes.inflated, band.x_band, res.inf.z[0], band.edge_inflated, opts.windowMm, smoothMm);
+    const pl = fitProfile(passes.loaded, band.x_band, res.load.z[0], band.edge_loaded, opts.windowMm, smoothMm);
+    const mt = matchByArclength(pi, pl, rimBottom ? 'bottom' : 'top');
+    const zc = res.naive.z;
+    const a = interp(zc, pl.z, pl.u), b = interp(zc, pi.z, pi.u);
+    return { inf: pi, load: pl, matched: mt, towardRim: mt.dz.map((v) => (rimBottom ? -v : v)),
+      naive: { z: zc, du: a.map((v, i) => v - b[i]) } };
+  }
+
+  function label(meta) {
+    const parts = ['brand', 'size'].filter((k) => meta[k]).map((k) => String(meta[k]));
+    if (meta.serial) parts.push(String(meta.serial));
+    return parts.length ? parts.join(' | ') : String(meta.file || 'scan').replace(/\.[^.]+$/, '');
+  }
+
+  /** One flat row per tire, same columns as the Python comparison.csv */
+  function summaryRow(res) {
+    const m = res.metrics, t = m.test, d = m.deflection, mw = m.max_width, mt = m.matched;
+    const z = Object.fromEntries(res.zones.map((r) => [r.zone, r]));
+    const peak = m.hinges.length ? m.hinges.reduce((a, b) => (b.surface_strain_pct > a.surface_strain_pct ? b : a)) : {};
+    return {
+      file: t.file, tire: label(res.meta), size: t.size ?? null, brand: t.brand ?? null, serial: t.serial ?? null,
+      test_date: t.test_date ?? null, feature: t.feature ?? null, load_daN: t.load_daN ?? null,
+      pressure_psi: t.pressure_psi ?? null, rim: t.rim ?? null,
+      radial_deflection_lab_mm: d.radial_lab_mm, shoulder_travel_mm: d.shoulder_travel_mm,
+      crown_share_mm: d.crown_share_mm, sidewall_share_pct: d.sidewall_share_pct,
+      vertical_stiffness_N_per_mm: m.vertical_stiffness_N_per_mm,
+      horizontal_deflection_lab_mm: t.horizontal_deflection_mm ?? null,
+      horizontal_deflection_raw_mm: m.lab_style.horizontal_deflection_mm,
+      horizontal_deflection_smoothed_mm: mw.growth_mm,
+      bulge_per_mm_deflection: m.bulge_per_mm_deflection, bulge_per_kN_mm: m.bulge_per_kN_mm,
+      widest_point_inflated_pct_from_rim: 100 * mw.inflated_frac_from_rim,
+      widest_point_loaded_pct_from_rim: 100 * mw.loaded_frac_from_rim,
+      peak_outward_deflection_mm: mt.peak_outward_mm, bulge_area_mm2: mt.bulge_area_mm2,
+      max_rotation_deg: mt.max_rotation_deg,
+      peak_bending_strain_pct: peak.surface_strain_pct ?? null, peak_bending_height_mm: peak.z_inflated ?? null,
+      rim_side_bending_share_pct: z['rim-side'].share_of_bending_energy_pct,
+      middle_bending_share_pct: z.middle.share_of_bending_energy_pct,
+      shoulder_side_bending_share_pct: z['shoulder-side'].share_of_bending_energy_pct,
+      hidden_sidewall_when_loaded_mm: m.arc_length.deficit_mm,
+      noise_mm: Math.max(m.noise_floor_mm.inflated, m.noise_floor_mm.loaded),
+      range_manual: m.range.manual, range_z_start_mm: m.range.z_start,
+      range_edge_inflated_mm: m.range.edge_inflated, range_edge_loaded_mm: m.range.edge_loaded,
+    };
+  }
+
+  /** Google "turbo" colormap (polynomial fit). t in [0,1] -> [r,g,b] 0-255 */
+  function turbo(t) {
+    t = Math.min(1, Math.max(0, t));
+    const r = 0.13572138 + t * (4.6153926 + t * (-42.66032258 + t * (132.13108234 + t * (-152.94239396 + t * 59.28637943))));
+    const g = 0.09140261 + t * (2.19418839 + t * (4.84296658 + t * (-14.18503333 + t * (4.27729857 + t * 2.82956604))));
+    const b = 0.1066733 + t * (12.64194608 + t * (-60.58204836 + t * (110.36276771 + t * (-89.90310912 + t * 27.34824973))));
+    const c = (v) => Math.round(255 * Math.min(1, Math.max(0, v)));
+    return [c(r), c(g), c(b)];
+  }
+
+  return { readFile, analyze, displayCurves, summaryRow, label, turbo, interp, savgol };
+})();
+if (typeof module !== 'undefined') module.exports = SW;
+
+</script>
+<script>
+'use strict';
+// ============================================================== state & settings
+const S = {
+  tires: [], current: null, tab: 'single', sort: { key: null, dir: -1 }, cmpMetric: 'vertical_stiffness_N_per_mm',
+  settings: { smoothMm: 8, rimEnd: 'bottom', rimDraw: 'bottom', hMm: 5, colorBy: 'du', showRaw: true, theme: null },
+};
+let nextId = 1;
+try { Object.assign(S.settings, JSON.parse(localStorage.getItem('swda-settings') || '{}')); } catch (e) { /* storage blocked */ }
+const saveSettings = () => { try { localStorage.setItem('swda-settings', JSON.stringify(S.settings)); } catch (e) { /* ignore */ } };
+if (S.settings.theme) document.documentElement.dataset.theme = S.settings.theme;
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const f = (v, d = 1) => (v == null || !isFinite(v) ? '–' : Number(v).toFixed(d));
+const fs = (v, d = 1) => (v == null || !isFinite(v) ? '–' : (v > 0 ? '+' : '') + Number(v).toFixed(d));
+const kg = (daN) => (daN == null ? null : (daN * 10) / 9.80665);
+const SLOTS = 8;
+
+// ============================================================== file handling
+$('choose').onclick = () => $('fileinput').click();
+$('fileinput').onchange = (e) => { addFiles([...e.target.files]); e.target.value = ''; };
+let dragDepth = 0;
+window.addEventListener('dragenter', (e) => { e.preventDefault(); dragDepth++; document.body.classList.add('dragging'); });
+window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', (e) => {
+  e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging');
+  addFiles([...(e.dataTransfer?.files || [])]);
+});
+
+function freeSlot() {
+  const used = new Set(S.tires.filter((t) => t.slot != null).map((t) => t.slot));
+  for (let i = 0; i < SLOTS; i++) if (!used.has(i)) return i;
+  return null;
+}
+
+async function addFiles(files) {
+  files = files.filter((fl) => /\.(xlsx|xlsm|tsv|txt|csv)$/i.test(fl.name) && !fl.name.startsWith('~$'));
+  if (!files.length) return;
+  const prog = $('progress');
+  prog.hidden = false;
+  let k = 0;
+  for (const file of files) {
+    k++;
+    prog.textContent = `Reading ${k} of ${files.length}: ${file.name}`;
+    const old = S.tires.find((t) => t.name === file.name);
+    const t = old || { id: nextId++, name: file.name, slot: null, inCompare: true, ov: {} };
+    if (!old) S.tires.push(t);
+    t.status = 'loading'; t.error = null; t.res = null; t.disp = {};
+    renderFiles();
+    try {
+      const buf = await file.arrayBuffer();
+      const { x, z, meta } = await SW.readFile(file.name, buf);
+      Object.assign(t, { x, z, meta });
+      runAnalysis(t);
+      t.status = 'ok';
+      if (t.inCompare && t.slot == null) t.slot = freeSlot();
+    } catch (err) {
+      t.status = 'error'; t.error = err.message || String(err);
+      if (t.slot != null) t.slot = null;
+    }
+    await new Promise((r) => setTimeout(r, 0)); // let the page repaint between files
+  }
+  prog.textContent = `${files.length} file${files.length > 1 ? 's' : ''} read.`;
+  setTimeout(() => { prog.hidden = true; }, 2500);
+  const firstOk = S.tires.find((t) => t.status === 'ok' && files.some((fl) => fl.name === t.name));
+  if (firstOk && (!S.current || !S.tires.find((t) => t.id === S.current && t.status === 'ok'))) S.current = firstOk.id;
+  if (files.length > 1 && S.tab === 'single' && S.tires.filter((t) => t.status === 'ok').length > 1) S.tab = 'compare';
+  render();
+}
+
+function runAnalysis(t) {
+  const { rimEnd, hMm } = S.settings;
+  t.ov = t.ov || {};
+  t.res = SW.analyze(t.x, t.z, t.meta, { rimEnd, hMm, ...t.ov });
+  t.row = SW.summaryRow(t.res);
+  t.label = SW.label(t.meta);
+  t.disp = {};
+}
+function gsmooth(arr, sigmaMm, ds = 0.25) {
+  const n = arr.length, out = new Float64Array(n);
+  if (!(sigmaMm > 0)) { out.set(arr); return out; }
+  const sg = sigmaMm / ds, r = Math.ceil(3 * sg);
+  const w = Array.from({ length: 2 * r + 1 }, (_, i) => Math.exp(-0.5 * ((i - r) / sg) ** 2));
+  for (let i = 0; i < n; i++) {
+    let s = 0, ws = 0;
+    for (let j = Math.max(-r, -i); j <= r && i + j < n; j++) { s += w[j + r] * arr[i + j]; ws += w[j + r]; }
+    out[i] = s / ws;
+  }
+  return out;
+}
+/** Curves for drawing at a given smoothing. Numbers in tiles/tables never use these. */
+function disp(t, mm) {
+  if (!t.disp[mm]) {
+    const D = SW.displayCurves(t.res, mm), h = t.res.opts.hMm;
+    D.strain = Array.from(D.matched.dkappa, (k) => 100 * h * k);
+    D.tiltS = gsmooth(D.matched.dtheta, 0.75 * mm);
+    D.strainS = gsmooth(D.strain, 0.75 * mm);
+    t.disp[mm] = D;
+  }
+  return t.disp[mm];
+}
+const okTires = () => S.tires.filter((t) => t.status === 'ok');
+const charted = () => okTires().filter((t) => t.inCompare && t.slot != null).sort((a, b) => a.slot - b.slot);
+
+// ============================================================== settings wiring
+$('smooth').value = S.settings.smoothMm; $('smoothv').textContent = `${S.settings.smoothMm} mm`;
+$('rimend').value = S.settings.rimEnd; $('hmm').value = S.settings.hMm; $('rimdraw').value = S.settings.rimDraw;
+$('rimdraw').onchange = (e) => { S.settings.rimDraw = e.target.value; saveSettings(); renderMain(); };
+$('smooth').oninput = (e) => { S.settings.smoothMm = +e.target.value; $('smoothv').textContent = `${e.target.value} mm`; saveSettings(); renderMain(); };
+$('rimend').onchange = (e) => { S.settings.rimEnd = e.target.value; saveSettings(); reanalyzeAll(); };
+$('hmm').onchange = (e) => { const v = +e.target.value; if (v > 0) { S.settings.hMm = v; saveSettings(); reanalyzeAll(); } };
+$('theme').onclick = () => {
+  const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  S.settings.theme = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = S.settings.theme; saveSettings(); renderMain();
+};
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => renderMain());
+function reanalyzeAll() {
+  for (const t of okTires()) {
+    try { runAnalysis(t); } catch (err) {
+      try { t.ov = {}; runAnalysis(t); } catch (err2) { t.status = 'error'; t.error = err2.message; t.slot = null; }
+    }
+  }
+  render();
+}
+/** Apply a user change to one tire's analysis range; undo it if the engine rejects it. */
+function setRange(t, key, value) {
+  const before = { ...t.ov };
+  if (value == null) delete t.ov[key]; else t.ov[key] = value;
+  try { runAnalysis(t); t.rangeError = null; } catch (err) { t.ov = before; runAnalysis(t); t.rangeError = err.message; }
+  render();
+}
+document.querySelectorAll('.tab').forEach((b) => { b.onclick = () => { S.tab = b.dataset.tab; render(); }; });
+$('exportAll').onclick = () => exportSummary();
+$('clearAll').onclick = () => { S.tires = []; S.current = null; render(); };
+
+// ============================================================== sidebar
+function renderFiles() {
+  const ul = $('filelist');
+  ul.innerHTML = S.tires.map((t) => {
+    const col = t.slot != null ? `var(--s${t.slot + 1})` : '';
+    const sub = t.status === 'ok'
+      ? [t.meta.load_daN != null ? `${f(kg(t.meta.load_daN), 0)} kg` : null, t.meta.pressure_psi != null ? `${t.meta.pressure_psi} psi` : null,
+        t.meta.test_date].filter(Boolean).join(' · ') || esc(t.name)
+      : t.status === 'loading' ? 'reading…' : '';
+    return `<li class="fileitem ${t.id === S.current ? 'active' : ''}" data-id="${t.id}" title="${esc(t.name)}">
+      <input type="checkbox" ${t.inCompare ? 'checked' : ''} ${t.status !== 'ok' ? 'disabled' : ''} aria-label="include in comparison">
+      <span class="dot ${col ? '' : 'none'}" style="${col ? `background:${col}` : ''}"></span>
+      <span style="min-width:0"><span class="name">${esc(t.label || t.name)}${t.res?.metrics.range.manual ? ' <span class="badge adj" title="analysis range adjusted by hand">adjusted</span>' : ''}</span>
+        <span class="sub">${esc(sub)}</span>${t.status === 'error' ? `<span class="err">Could not read: ${esc(t.error)}</span>` : ''}</span>
+      <button class="x" aria-label="remove">×</button></li>`;
+  }).join('');
+  ul.querySelectorAll('.fileitem').forEach((li) => {
+    const t = S.tires.find((x) => x.id === +li.dataset.id);
+    li.onclick = (e) => {
+      if (e.target.closest('.x')) { S.tires = S.tires.filter((x) => x !== t); if (S.current === t.id) S.current = okTires()[0]?.id ?? null; render(); return; }
+      if (e.target.matches('input')) {
+        t.inCompare = e.target.checked;
+        if (t.inCompare && t.slot == null) t.slot = freeSlot();
+        if (!t.inCompare) t.slot = null;
+        render(); return;
+      }
+      if (t.status === 'ok') { S.current = t.id; S.tab = 'single'; render(); }
+    };
+  });
+  $('filefoot').hidden = !okTires().length;
+  const n = okTires().filter((t) => t.inCompare).length;
+  $('ncmp').textContent = n ? `(${n})` : '';
+}
+
+function render() {
+  document.querySelectorAll('.tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === S.tab)));
+  renderFiles();
+  renderMain();
+}
+
+function renderMain() {
+  const main = $('main');
+  if (S.tab === 'howto') { main.innerHTML = howtoHTML(); return; }
+  if (!okTires().length) { main.innerHTML = emptyHTML(); wireEmpty(); return; }
+  if (S.tab === 'compare') renderCompare(main);
+  else renderSingle(main, S.tires.find((t) => t.id === S.current && t.status === 'ok') || okTires()[0]);
+}
+
+function emptyHTML() {
+  return `<div class="panel first empty"><h2>Start by choosing your test files</h2>
+    <p class="muted">Pick one or more <b>Load Deflection Report</b> workbooks (.xlsx). The tool finds the laser scan inside each file,
+    works out how the sidewall moves under load, and explains every chart in plain words. Choose several files to compare tires.</p>
+    <div class="drop" id="drop2"><button class="btn primary" id="choose2">Choose files…</button><br><br>or drop them here</div></div>`;
+}
+function wireEmpty() { const b = $('choose2'); if (b) b.onclick = () => $('fileinput').click(); }
+
+// ============================================================== chart toolkit
+function niceTicks(min, max, count = 5) {
+  const span = max - min;
+  if (!(span > 0)) return [min];
+  const raw = span / count, mag = 10 ** Math.floor(Math.log10(raw)), e = raw / mag;
+  const step = (e >= 7.5 ? 10 : e >= 3.5 ? 5 : e >= 1.5 ? 2 : 1) * mag;
+  const out = [];
+  for (let v = Math.ceil(min / step) * step; v <= max + step * 1e-6; v += step) out.push(+v.toFixed(10));
+  return out;
+}
+function niceDomain(min, max, count = 5, pad = 0.04) {
+  const span = max - min || 1;
+  min -= span * pad; max += span * pad;
+  const t = niceTicks(min, max, count), step = t.length > 1 ? t[1] - t[0] : span;
+  return [Math.floor(min / step) * step, Math.ceil(max / step) * step];
+}
+const extent = (arrs) => { let a = Infinity, b = -Infinity; for (const r of arrs) for (const v of r) if (isFinite(v)) { if (v < a) a = v; if (v > b) b = v; } return [a, b]; };
+
+const charts = new Map(); // id -> config (for hover)
+let chartSeq = 0;
+
+/**
+ * Line chart in "profile" orientation: values on x, height on y. Hover reads by height.
+ * cfg: { w, h, xLabel, yLabel, xDomain?, yDomain?, series:[{name,x,y,color,width,dash,opacity,colors,dots,hover,unit,dec}],
+ *        bands:[{y0,y1,label}], vlines:[x], markers:[{x,y,color,label,side}], texts:[{x,y,text,anchor}], yFmt }
+ */
+function lineChart(cfg) {
+  const id = `ch${++chartSeq}`;
+  const W = cfg.w || 560, H = cfg.h || 420, m = { l: 58, r: 18, t: 10, b: 44, ...(cfg.m || {}) };
+  const pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const xs = cfg.series.map((s) => s.x), ys = cfg.series.map((s) => s.y);
+  const xd = cfg.xDomain || niceDomain(...extent(xs.concat((cfg.vlines || []).map((v) => [v]))));
+  const yd = cfg.yDomain || niceDomain(...extent(ys), 6, 0.02);
+  const X = (v) => m.l + ((v - xd[0]) / (xd[1] - xd[0])) * pw;
+  const Y = cfg.yFlip ? (v) => m.t + ((v - yd[0]) / (yd[1] - yd[0])) * ph : (v) => m.t + ph - ((v - yd[0]) / (yd[1] - yd[0])) * ph;
+  const Yinv = cfg.yFlip ? (py) => yd[0] + ((py - m.t) / ph) * (yd[1] - yd[0]) : (py) => yd[0] + ((m.t + ph - py) / ph) * (yd[1] - yd[0]);
+  const grid = css('--grid'), ink2 = css('--ink2'), muted = css('--muted'), zone = css('--zone'), ink = css('--ink'), card = css('--card');
+  let g = '';
+  for (const b of cfg.bands || []) {
+    const ya = Y(Math.max(b.y0, yd[0])), yb = Y(Math.min(b.y1, yd[1]));
+    const y0 = Math.max(ya, yb), y1 = Math.min(ya, yb);
+    if (b.fill !== false) g += `<rect x="${m.l}" y="${y1}" width="${pw}" height="${Math.max(0, y0 - y1)}" fill="${zone}"/>`;
+    if (b.label) g += `<text x="${m.l + pw - 6}" y="${(y0 + y1) / 2}" text-anchor="end" dominant-baseline="middle" font-size="11" fill="${muted}">${esc(b.label)}</text>`;
+  }
+  for (const v of niceTicks(xd[0], xd[1], cfg.xTicks || 6)) {
+    g += `<line x1="${X(v)}" x2="${X(v)}" y1="${m.t}" y2="${m.t + ph}" stroke="${grid}"/>`;
+    g += `<text x="${X(v)}" y="${m.t + ph + 16}" text-anchor="middle" font-size="11.5" fill="${ink2}">${+v.toFixed(6)}</text>`;
+  }
+  for (const v of niceTicks(yd[0], yd[1], cfg.yTicks || 6)) {
+    g += `<line x1="${m.l}" x2="${m.l + pw}" y1="${Y(v)}" y2="${Y(v)}" stroke="${grid}"/>`;
+    g += `<text x="${m.l - 8}" y="${Y(v)}" text-anchor="end" dominant-baseline="middle" font-size="11.5" fill="${ink2}">${cfg.yFmt ? cfg.yFmt(v) : +v.toFixed(6)}</text>`;
+  }
+  for (const v of cfg.vlines || []) if (v >= xd[0] && v <= xd[1]) g += `<line x1="${X(v)}" x2="${X(v)}" y1="${m.t}" y2="${m.t + ph}" stroke="${muted}" stroke-width="1"/>`;
+  g += `<text x="${m.l + pw / 2}" y="${H - 6}" text-anchor="middle" font-size="12" fill="${ink2}">${esc(cfg.xLabel || '')}</text>`;
+  g += `<text transform="translate(14 ${m.t + ph / 2}) rotate(-90)" text-anchor="middle" font-size="12" fill="${ink2}">${esc(cfg.yLabel || '')}</text>`;
+  g += `<clipPath id="${id}c"><rect x="${m.l}" y="${m.t}" width="${pw}" height="${ph}"/></clipPath><g clip-path="url(#${id}c)">`;
+  for (const s of cfg.series) {
+    const n = s.x.length;
+    if (s.dots) {
+      for (let i = 0; i < n; i++) g += `<circle cx="${X(s.x[i]).toFixed(1)}" cy="${Y(s.y[i]).toFixed(1)}" r="${s.r || 1.6}" fill="${s.color}" opacity="${s.opacity ?? 0.4}"/>`;
+      continue;
+    }
+    if (s.colors) { // per-point colours: draw runs of equal colour
+      let run = null, d = '';
+      const flush = () => { if (run) g += `<path d="${d}" fill="none" stroke="${run}" stroke-width="${s.width || 5}" stroke-linecap="round" stroke-linejoin="round"/>`; };
+      for (let i = 1; i < n; i++) {
+        const c = s.colors[i];
+        if (c !== run) { flush(); run = c; d = `M${X(s.x[i - 1]).toFixed(1)} ${Y(s.y[i - 1]).toFixed(1)}`; }
+        d += `L${X(s.x[i]).toFixed(1)} ${Y(s.y[i]).toFixed(1)}`;
+      }
+      flush();
+      continue;
+    }
+    let d = '';
+    for (let i = 0; i < n; i++) d += `${i ? 'L' : 'M'}${X(s.x[i]).toFixed(1)} ${Y(s.y[i]).toFixed(1)}`;
+    g += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="${s.width || 2}" ${s.dash ? `stroke-dasharray="${s.dash}"` : ''} opacity="${s.opacity ?? 1}" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
+  g += `</g>`;
+  for (const mk of cfg.markers || []) {
+    g += `<circle cx="${X(mk.x)}" cy="${Y(mk.y)}" r="5" fill="${mk.color}" stroke="${card}" stroke-width="2"/>`;
+    if (mk.label) {
+      const right = mk.side !== 'left';
+      g += `<text x="${X(mk.x) + (right ? 9 : -9)}" y="${Y(mk.y)}" text-anchor="${right ? 'start' : 'end'}" dominant-baseline="middle" font-size="11.5" fill="${ink}" paint-order="stroke" stroke="${card}" stroke-width="3">${esc(mk.label)}</text>`;
+    }
+  }
+  for (const t of cfg.texts || []) {
+    g += `<text x="${t.px != null ? t.px : X(t.x)}" y="${t.py != null ? t.py : Y(t.y)}" text-anchor="${t.anchor || 'start'}" dominant-baseline="middle" font-size="${t.size || 11.5}" font-weight="${t.bold ? 650 : 400}" fill="${t.color || ink2}" paint-order="stroke" stroke="${card}" stroke-width="3">${esc(t.text)}</text>`;
+  }
+  g += `<line class="hx" x1="${m.l}" x2="${m.l + pw}" y1="0" y2="0" stroke="${muted}" stroke-dasharray="3 3" visibility="hidden"/>`;
+  g += `<rect class="hit" x="${m.l}" y="${m.t}" width="${pw}" height="${ph}" fill="transparent"/>`;
+  for (const hd of cfg.handles || []) {
+    if (!(hd.y >= yd[0] && hd.y <= yd[1])) continue;
+    g += `<g class="handle" data-key="${hd.key}" transform="translate(0 ${Y(hd.y).toFixed(1)})">
+      <line x1="${m.l}" x2="${m.l + pw}" y1="0" y2="0" stroke="${hd.color}" stroke-width="1.6" stroke-dasharray="6 4"/>
+      <line x1="${m.l}" x2="${m.l + pw}" y1="0" y2="0" stroke="transparent" stroke-width="14"/>
+      <rect x="${m.l + pw - 30}" y="-7" width="26" height="14" rx="7" fill="${hd.color}"/>
+      <text x="${m.l + pw - 17}" y="0.5" text-anchor="middle" dominant-baseline="middle" font-size="10" fill="#fff">⇕</text>
+      <text class="hl" x="${m.l + pw - 36}" y="-7" text-anchor="end" font-size="11" fill="${ink}" paint-order="stroke" stroke="${card}" stroke-width="3">${esc(hd.label)} · ${hd.y.toFixed(1)} mm</text></g>`;
+  }
+  charts.set(id, { cfg, X, Y, Yinv, yd, m, W, H, ph });
+  return `<div class="chartwrap" data-chart="${id}"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(cfg.title || '')}" font-family="system-ui, sans-serif">${g}</svg><div class="tip"></div></div>`;
+}
+
+function wireCharts(root) {
+  root.querySelectorAll('.chartwrap[data-chart]').forEach((wrap) => {
+    const ch = charts.get(wrap.dataset.chart);
+    if (!ch) return;
+    const svg = wrap.querySelector('svg'), tip = wrap.querySelector('.tip'), hx = svg.querySelector('.hx'), hit = svg.querySelector('.hit');
+    if (!hit) return;
+    // draggable range lines
+    svg.querySelectorAll('.handle').forEach((hg) => {
+      const key = hg.dataset.key, hd = (ch.cfg.handles || []).find((h) => h.key === key), lbl = hg.querySelector('.hl');
+      let drag = false, value = hd.y;
+      const toY = (ev) => { const r = svg.getBoundingClientRect(); return (ev.clientY - r.top) * (ch.W / r.width); };
+      hg.addEventListener('pointerdown', (ev) => { ev.preventDefault(); drag = true; hg.setPointerCapture(ev.pointerId); });
+      hg.addEventListener('pointermove', (ev) => {
+        if (!drag) return;
+        const py = Math.min(ch.m.t + ch.ph, Math.max(ch.m.t, toY(ev)));
+        value = Math.round(ch.Yinv(py) * 2) / 2;
+        hg.setAttribute('transform', `translate(0 ${ch.Y(value).toFixed(1)})`);
+        lbl.textContent = `${hd.label} · ${value.toFixed(1)} mm`;
+      });
+      hg.addEventListener('pointerup', () => { if (drag) { drag = false; ch.cfg.onHandle?.(key, value); } });
+    });
+    const hoverSeries = ch.cfg.series.filter((s) => s.hover);
+    if (!hoverSeries.length) return;
+    // y-sorted copies for interpolation
+    const sorted = hoverSeries.map((s) => {
+      const idx = Array.from(s.y.keys()).sort((a, b) => s.y[a] - s.y[b]);
+      return { s, y: Float64Array.from(idx, (i) => s.y[i]), x: Float64Array.from(idx, (i) => s.x[i]) };
+    });
+    const move = (ev) => {
+      const r = svg.getBoundingClientRect(), k = ch.W / r.width;
+      const sy = (ev.clientY - r.top) * k;
+      const yv = ch.Yinv(sy);
+      hx.setAttribute('y1', sy); hx.setAttribute('y2', sy); hx.setAttribute('visibility', 'visible');
+      const rows = sorted.filter((o) => yv >= o.y[0] && yv <= o.y[o.y.length - 1])
+        .map((o) => `<div class="row"><i class="sw" style="background:${o.s.tipColor || o.s.color}"></i>${esc(o.s.name)}: <b>${fs(SW.interp([yv], o.y, o.x)[0], o.s.dec ?? 1)}</b> ${esc(o.s.unit || '')}</div>`);
+      tip.innerHTML = `<div class="muted">${esc(ch.cfg.yName || 'height')}: ${(ch.cfg.yFmt ? ch.cfg.yFmt(yv) : yv.toFixed(0))}${esc(ch.cfg.yUnit || '')}</div>${rows.join('') || '<div class="muted">no data at this height</div>'}`;
+      tip.style.display = 'block';
+      const wr = wrap.getBoundingClientRect();
+      let left = ev.clientX - wr.left + 14, top = ev.clientY - wr.top + 12;
+      if (left + tip.offsetWidth > wr.width) left = ev.clientX - wr.left - tip.offsetWidth - 14;
+      tip.style.left = `${Math.max(0, left)}px`; tip.style.top = `${top}px`;
+    };
+    hit.addEventListener('mousemove', move);
+    hit.addEventListener('mouseleave', () => { tip.style.display = 'none'; hx.setAttribute('visibility', 'hidden'); });
+  });
+}
+
+/** Horizontal grouped bars. rows: [{label}], groups: [{name,color,values:[]}] */
+function barChart(cfg) {
+  const W = cfg.w || 560, rows = cfg.rows, groups = cfg.groups;
+  const bh = cfg.barH || 16, gap = 3, rowGap = 16, m = { l: cfg.ml || 120, r: 56, t: 6, b: 34 };
+  const rowH = groups.length * (bh + gap) - gap;
+  const H = m.t + rows.length * (rowH + rowGap) - rowGap + m.b;
+  const pw = W - m.l - m.r;
+  const vals = groups.flatMap((g) => g.values).filter((v) => v != null && isFinite(v));
+  const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals) || 1;
+  const nd = niceDomain(lo, hi, 5, 0.02);
+  const xd = [lo >= 0 ? 0 : nd[0], hi <= 0 ? 0 : nd[1]];
+  const X = (v) => m.l + ((v - xd[0]) / (xd[1] - xd[0])) * pw;
+  const grid = css('--grid'), ink2 = css('--ink2'), ink = css('--ink'), muted = css('--muted');
+  let g = '';
+  for (const v of niceTicks(xd[0], xd[1], 5)) {
+    g += `<line x1="${X(v)}" x2="${X(v)}" y1="${m.t}" y2="${H - m.b}" stroke="${grid}"/>`;
+    g += `<text x="${X(v)}" y="${H - m.b + 16}" text-anchor="middle" font-size="11.5" fill="${ink2}">${+v.toFixed(6)}</text>`;
+  }
+  g += `<line x1="${X(0)}" x2="${X(0)}" y1="${m.t}" y2="${H - m.b}" stroke="${muted}"/>`;
+  rows.forEach((row, i) => {
+    const y0 = m.t + i * (rowH + rowGap);
+    g += `<text x="${m.l - 8}" y="${y0 + rowH / 2}" text-anchor="end" dominant-baseline="middle" font-size="12" fill="${ink}">${esc(row.label)}</text>`;
+    groups.forEach((gr, j) => {
+      const v = gr.values[i];
+      if (v == null || !isFinite(v)) return;
+      const y = y0 + j * (bh + gap), x0 = X(Math.min(0, v)), x1 = X(Math.max(0, v));
+      g += `<rect x="${x0}" y="${y}" width="${Math.max(1, x1 - x0)}" height="${bh}" rx="3" fill="${gr.colors ? gr.colors[i] : gr.color}"><title>${esc(gr.name)} · ${esc(row.label)}: ${f(v, cfg.dec ?? 1)}${esc(cfg.unit || '')}</title></rect>`;
+      g += `<text x="${v >= 0 ? x1 + 5 : x0 - 5}" y="${y + bh / 2}" text-anchor="${v >= 0 ? 'start' : 'end'}" dominant-baseline="middle" font-size="11.5" fill="${ink}">${f(v, cfg.dec ?? 1)}${esc(cfg.unit || '')}</text>`;
+    });
+  });
+  g += `<text x="${m.l + pw / 2}" y="${H - 4}" text-anchor="middle" font-size="12" fill="${ink2}">${esc(cfg.xLabel || '')}</text>`;
+  return `<div class="chartwrap"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(cfg.title || '')}" font-family="system-ui, sans-serif">${g}</svg></div>`;
+}
+
+const turboCss = (t) => `rgb(${SW.turbo(t).join(',')})`;
+function colorbarHTML(lo, hi, caption, dec = 1) {
+  const stops = Array.from({ length: 11 }, (_, i) => `${turboCss(i / 10)} ${i * 10}%`).join(',');
+  const ticks = niceTicks(lo, hi, 4).filter((v) => v >= lo && v <= hi);
+  return `<div class="cbar"><div class="bar" style="background:linear-gradient(90deg,${stops})"></div>
+    <div class="ticks" style="position:relative;height:16px">${ticks.map((v) => `<span style="position:absolute;left:${((v - lo) / (hi - lo || 1)) * 100}%;transform:translateX(-50%)">${+v.toFixed(6)}</span>`).join('')}</div>
+    <div class="cap">${esc(caption)} · <b>blue = less</b>, <b>red = more</b> (range ${f(lo, dec)} to ${f(hi, dec)})</div></div>`;
+}
+const legendHTML = (items) => `<div class="legend">${items.map((it) => `<span><i class="${it.cls || ''}" style="background:${it.color}"></i>${esc(it.name)}</span>`).join('')}</div>`;
+const explainHTML = (what, how, mine, label = 'For this tire') => `<div class="explain"><p><b>What it shows.</b> ${what}</p><p><b>How to read it.</b> ${how}</p>${mine ? `<p class="this"><b>${label}.</b> ${mine}</p>` : ''}</div>`;
+
+function savePNG(wrap, name) {
+  const svg = wrap.querySelector('svg');
+  const vb = svg.viewBox.baseVal, scale = 2;
+  const clone = svg.cloneNode(true);
+  clone.setAttribute('width', vb.width); clone.setAttribute('height', vb.height);
+  clone.insertAdjacentHTML('afterbegin', `<rect width="100%" height="100%" fill="${css('--card')}"/>`);
+  clone.querySelectorAll('.hx,.hit').forEach((n) => n.remove());
+  const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml' }));
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement('canvas');
+    c.width = vb.width * scale; c.height = vb.height * scale;
+    const ctx = c.getContext('2d'); ctx.scale(scale, scale); ctx.drawImage(img, 0, 0);
+    URL.revokeObjectURL(url);
+    c.toBlob((b) => download(b, `${name}.png`));
+  };
+  img.src = url;
+}
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+const csvCell = (v) => (v == null ? '' : typeof v === 'number' ? (isFinite(v) ? +v.toFixed(6) : '') : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+const toCSV = (rows) => rows.map((r) => r.map(csvCell).join(',')).join('\n');
+const slug = (s) => String(s).replace(/\.[^.]+$/, '').replace(/[^\w.-]+/g, '_').slice(0, 80);
+
+// ============================================================== helpers on results
+const rimBottom = () => S.settings.rimEnd === 'bottom';
+function pctFromRim(res, zArr) { // inflated height of each matched point -> % of sidewall above the rim end
+  const lo = res.inf.z[0], hi = res.inf.z[res.inf.z.length - 1];
+  return Array.from(zArr, (z) => { const p = (100 * (z - lo)) / (hi - lo); return rimBottom() ? p : 100 - p; });
+}
+const pctAt = (res, z) => pctFromRim(res, [z])[0];
+function zoneBands(res) {
+  return res.zones.map((zr, k) => {
+    const a = pctAt(res, zr.z_inflated_from), b = pctAt(res, zr.z_inflated_to);
+    return { y0: Math.min(a, b), y1: Math.max(a, b), label: zr.zone, fill: k !== 1 };
+  });
+}
+const pctFmt = (v) => `${Math.round(v)}%`;
+const where = (p) => (p < 33 ? 'the third next to the rim' : p < 67 ? 'the middle third' : 'the third next to the shoulder');
+
+const COLOR_BY = {
+  du: { name: 'Outward deflection', unit: 'mm', dec: 1, get: (d) => d.matched.du,
+    say: 'how far each point pushed outward when the load went on', noun: 'the outward push',
+    neg: 'negative = moved slightly inward' },
+  rim: { name: 'Movement toward the rim', unit: 'mm', dec: 1, get: (d) => d.towardRim,
+    say: 'how far each point slid toward the rim', noun: 'the slide toward the rim' },
+  tilt: { name: 'Tilt change', unit: '°', dec: 1, get: (d) => d.tiltS,
+    say: 'how much each part of the sidewall rotated', noun: 'the tilt', neg: 'negative = leans inward' },
+  strain: { name: 'Bending strain', unit: '%', dec: 1, get: (d) => d.strainS,
+    say: 'how hard each part of the sidewall is being bent', noun: 'the bending', neg: 'negative = bent the other way' },
+};
+
+// ============================================================== single tire view
+function renderSingle(main, t) {
+  charts.clear();
+  const res = t.res, m = res.metrics, meta = t.meta, d = m.deflection, mw = m.max_width;
+  const sm = S.settings.smoothMm, D = disp(t, sm), Dfine = disp(t, 1.5);
+  const peak = m.hinges.length ? m.hinges.reduce((a, b) => (b.surface_strain_pct > a.surface_strain_pct ? b : a)) : null;
+  const zones = Object.fromEntries(res.zones.map((z) => [z.zone, z]));
+  const chips = [
+    ['Size', meta.size], ['Brand', meta.brand], ['Serial', meta.serial], ['Load', meta.load_daN != null ? `${meta.load_daN} daN (${f(kg(meta.load_daN), 0)} kg)` : null],
+    ['Pressure', meta.pressure_psi != null ? `${meta.pressure_psi} psi` : null], ['Rim', meta.rim], ['Tested', meta.test_date], ['Type', meta.feature],
+  ].filter(([, v]) => v != null && v !== '');
+
+  const labH = meta.horizontal_deflection_mm;
+  const kpis = [
+    { k: 'Radial deflection', v: f(d.radial_lab_mm ?? d.shoulder_travel_mm, 1), u: 'mm',
+      d: d.radial_lab_mm ? 'How far the tire squashes down under the load (lab machine value).' : 'No lab value in this file; this is the shoulder travel measured from the scan.' },
+    { k: 'Sidewall bulge', v: f(mw.growth_mm, 1), u: 'mm',
+      d: `How far the widest point of the sidewall pushes out.${labH != null ? ` Lab report: ${f(labH, 2)} mm.` : ''}` },
+    { k: 'Vertical stiffness', v: m.vertical_stiffness_N_per_mm ? f(m.vertical_stiffness_N_per_mm, 0) : '–', u: 'N/mm',
+      d: 'Load ÷ radial deflection. Higher = the tire is stiffer and squashes less.' },
+    { k: 'Sidewall share of deflection', v: d.sidewall_share_pct != null ? f(d.sidewall_share_pct, 0) : '–', u: '%',
+      d: d.crown_share_mm != null ? `The sidewall takes ${f(d.shoulder_travel_mm, 1)} mm of the squash; the tread/crown takes the other ${f(d.crown_share_mm, 1)} mm.` : 'Needs the lab radial deflection from the report file.' },
+    { k: 'Peak bending strain', v: peak ? f(peak.surface_strain_pct, 1) : '–', u: '%',
+      d: peak ? `At ${pctFmt(pctAt(res, peak.z_inflated))} of the height above the rim. Highest bending = most fatigue with every turn.` : '' },
+    { k: 'Bulge per mm of deflection', v: f(m.bulge_per_mm_deflection, 2), u: '',
+      d: 'Outward bulge for each mm the tire squashes. Lower = the sidewall stays more upright.' },
+  ];
+
+  // --- chart A: shape, coloured
+  const cb = COLOR_BY[S.settings.colorBy] || COLOR_BY.du;
+  const q = cb.get(D, res);
+  const qlo = Math.min(...q), qhi = Math.max(...q);
+  const qcol = Array.from(q, (v) => turboCss(Math.round(((v - qlo) / (qhi - qlo || 1)) * 48) / 48));
+  const pin = res.passes.inflated, pld = res.passes.loaded, xb = res.band.x_band;
+  const series = [];
+  if (S.settings.showRaw) {
+    series.push({ name: 'measured (inflated)', x: Array.from(pin.x, (v) => xb - v), y: pin.z, dots: true, color: css('--inf'), opacity: 0.35 });
+    series.push({ name: 'measured (loaded)', x: Array.from(pld.x, (v) => xb - v), y: pld.z, dots: true, color: css('--load'), opacity: 0.35 });
+  }
+  series.push({ name: 'Inflated', x: D.inf.u, y: D.inf.z, color: css('--inf'), width: 2.2, hover: true, unit: 'mm out' });
+  series.push({ name: 'Loaded', x: D.matched.u_load, y: D.matched.z_load, colors: qcol, width: 6, hover: true, unit: 'mm out', tipColor: css('--load') });
+  const qAtLoadZ = { name: cb.name, x: q, y: D.matched.z_load, hover: true, unit: cb.unit, dec: cb.dec, color: 'transparent', width: 0, tipColor: turboCss(0.85) };
+  series.push(qAtLoadZ);
+  // whole scanned height, so the range lines can be dragged anywhere in it
+  const zTop = Math.max(...pin.z, ...pld.z), zBot = Math.min(...pin.z, ...pld.z);
+  const rimTopDrawn = S.settings.rimDraw === 'top';
+  const flipShape = rimTopDrawn === rimBottom(); // rim at low Z but drawn at top, or the reverse
+  const ends = rimTopDrawn ? ['SHOULDER end', 'RIM end'] : ['RIM end', 'SHOULDER end']; // [bottom, top] of the chart
+  const xmin = Math.min(...D.inf.u, ...D.matched.u_load) - 8, xmax = Math.max(...D.inf.u, ...D.matched.u_load) + 10;
+  const kq = Array.from(q).indexOf(qhi);
+  const rg = m.range, startSide = rimBottom() ? 'rim side' : 'shoulder side';
+  const shapeChart = lineChart({
+    title: 'Sidewall shape', w: 520, h: 640, xDomain: niceDomain(xmin, xmax, 5, 0), yDomain: niceDomain(zBot, zTop, 6, 0.01),
+    xLabel: 'sideways position (mm), 0 = shoulder band → further out', yLabel: 'height in the scanner (mm)', yName: 'height', yUnit: ' mm',
+    series, vlines: [0], yFlip: flipShape,
+    markers: [{ x: mw.inflated_u, y: mw.inflated_z, color: css('--inf'), label: 'widest (inflated)', side: 'left' },
+      { x: D.matched.u_load[kq], y: D.matched.z_load[kq], color: turboCss(1), label: `max: ${f(qhi, cb.dec)} ${cb.unit}` }],
+    texts: [{ px: 64, py: 640 - 58, text: ends[0], bold: true }, { px: 64, py: 22, text: ends[1], bold: true }],
+    handles: [
+      { key: 'zStart', y: rg.z_start, color: css('--ink2'), label: `sidewall start (${startSide})` },
+      { key: 'edgeInflated', y: rg.edge_inflated, color: css('--inf'), label: 'shoulder edge · inflated' },
+      { key: 'edgeLoaded', y: rg.edge_loaded, color: css('--load'), label: 'shoulder edge · loaded' },
+    ],
+    onHandle: (key, v) => setRange(t, key, v),
+  });
+  const shapeMine = (() => {
+    const pHi = pctAt(res, D.matched.z_inf[kq]), kl = Array.from(q).indexOf(qlo), pLo = pctAt(res, D.matched.z_inf[kl]);
+    return `The red part is at about <b>${pctFmt(pHi)}</b> of the height above the rim (${where(pHi)}). That is where ${cb.noun} is largest: <b>${f(qhi, cb.dec)} ${cb.unit}</b>. `
+      + `The bluest part is at about ${pctFmt(pLo)} (${f(qlo, cb.dec)} ${cb.unit}${qlo < 0 && cb.neg ? `; ${cb.neg}` : ''}). The shoulder band moves <b>${f(res.band.delta, 1)} mm</b> toward the rim.`;
+  })();
+
+  // --- chart B: bulge along the sidewall
+  const hB = pctFromRim(res, D.matched.z_inf), hBf = pctFromRim(res, Dfine.matched.z_inf);
+  const naiveH = pctFromRim(res, D.naive.z);
+  const bands = zoneBands(res);
+  const bulgeChart = lineChart({
+    title: 'Outward bulge', w: 520, h: 420, yDomain: [0, 100], yFmt: pctFmt, yFlip: rimTopDrawn, yName: 'height above rim', xLabel: 'outward deflection (mm)',
+    yLabel: 'height above the rim (% of sidewall)', vlines: [0], bands,
+    series: [
+      { name: 'less smoothed', x: Dfine.matched.du, y: hBf, color: css('--change'), width: 1.2, opacity: 0.35 },
+      { name: 'same height (simple)', x: D.naive.du, y: naiveH, color: css('--naive'), width: 1.6, dash: '6 4', hover: true, unit: 'mm' },
+      { name: 'Outward deflection', x: D.matched.du, y: hB, color: css('--change'), width: 2.6, hover: true, unit: 'mm' },
+    ],
+    markers: [{ x: m.matched.peak_outward_mm, y: pctAt(res, m.matched.inflated_z_of_that_point), color: css('--change'), label: `${f(m.matched.peak_outward_mm, 1)} mm` }],
+  });
+  const pPk = pctAt(res, m.matched.inflated_z_of_that_point);
+  const bulgeMine = `The sidewall pushes out most at about <b>${pctFmt(pPk)}</b> of the height above the rim (${where(pPk)}), by <b>${f(m.matched.peak_outward_mm, 1)} mm</b>. `
+    + `On average the rim-side third moves out ${f(zones['rim-side'].mean_outward_mm, 1)} mm, the middle ${f(zones.middle.mean_outward_mm, 1)} mm and the shoulder-side third ${f(zones['shoulder-side'].mean_outward_mm, 1)} mm. `
+    + `The simple same-height subtraction gives a peak of ${f(m.naive_same_z.peak_mm, 1)} mm.`;
+
+  // --- chart C: tilt
+  const tiltChart = lineChart({
+    title: 'Tilt', w: 520, h: 420, yDomain: [0, 100], yFmt: pctFmt, yFlip: rimTopDrawn, yName: 'height above rim', xLabel: 'tilt change (degrees), + = leans further out',
+    yLabel: 'height above the rim (% of sidewall)', vlines: [0], bands,
+    series: [{ name: 'less smoothed', x: D.matched.dtheta, y: hB, color: css('--change'), width: 1.2, opacity: 0.35 },
+      { name: 'Tilt change', x: D.tiltS, y: hB, color: css('--change'), width: 2.6, hover: true, unit: '°' }],
+  });
+  const kT = (() => { let k = 0; D.matched.dtheta.forEach((v, i) => { if (Math.abs(v) > Math.abs(D.matched.dtheta[k])) k = i; }); return k; })();
+  const tMax = D.matched.dtheta[kT], pT = hB[kT];
+  const tiltZone = res.zones.reduce((a, b) => (b.mean_abs_rotation_deg > a.mean_abs_rotation_deg ? b : a));
+  const tiltMine = `The biggest tilt is <b>${f(Math.abs(tMax), 0)}°</b> at about ${pctFmt(pT)} of the height (${where(pT)}), leaning ${tMax > 0 ? 'further outward' : 'inward'}. `
+    + `The ${tiltZone.zone} third twists the most on average (${f(tiltZone.mean_abs_rotation_deg, 0)}°).`;
+
+  // --- chart D: bending strain
+  const bendChart = lineChart({
+    title: 'Bending', w: 520, h: 420, yDomain: [0, 100], yFmt: pctFmt, yFlip: rimTopDrawn, yName: 'height above rim', xLabel: 'bending strain at the surface (%)',
+    yLabel: 'height above the rim (% of sidewall)', vlines: [0], bands,
+    series: [{ name: 'less smoothed', x: D.strain, y: hB, color: css('--change'), width: 1.2, opacity: 0.35 },
+      { name: 'Bending strain', x: D.strainS, y: hB, color: css('--change'), width: 2.6, hover: true, unit: '%' }],
+    markers: m.hinges.slice(0, 2).map((h) => ({ x: Math.sign(h.dkappa_per_m) * h.surface_strain_pct, y: pctAt(res, h.z_inflated), color: css('--change'),
+      label: `≈${f(h.surface_strain_pct, 1)}%`, side: h.dkappa_per_m < 0 ? 'left' : 'right' })),
+  });
+  const bendMine = peak
+    ? `The sidewall bends hardest at about <b>${pctFmt(pctAt(res, peak.z_inflated))}</b> of the height (${where(pctAt(res, peak.z_inflated))}), about <b>${f(peak.surface_strain_pct, 1)}%</b> strain at the surface`
+      + `${m.hinges[1] ? `, and again at ${pctFmt(pctAt(res, m.hinges[1].z_inflated))} (${f(m.hinges[1].surface_strain_pct, 1)}%)` : ''}. `
+      + `These are the spots to watch for cracking and heat. (Assumes ${f(res.opts.hMm, 1)} mm of rubber over the cords; change it at the top.)`
+    : '';
+
+  // --- chart E: zones
+  const zoneChart = barChart({
+    title: 'Zones', w: 520, ml: 108, unit: '%', dec: 0, xLabel: '% of the whole sidewall',
+    rows: res.zones.map((z) => ({ label: z.zone })),
+    groups: [{ name: 'Share of the bulge', color: css('--change'), values: res.zones.map((z) => z.share_of_bulge_pct) },
+      { name: 'Share of the bending', color: css('--energy'), values: res.zones.map((z) => z.share_of_bending_energy_pct) }],
+  });
+  const bigBulge = res.zones.reduce((a, b) => (b.share_of_bulge_pct > a.share_of_bulge_pct ? b : a));
+  const bigBend = res.zones.reduce((a, b) => (b.share_of_bending_energy_pct > a.share_of_bending_energy_pct ? b : a));
+  const zoneMine = `The <b>${bigBulge.zone}</b> third carries most of the bulge (${f(bigBulge.share_of_bulge_pct, 0)}%), `
+    + `while the <b>${bigBend.zone}</b> third does most of the bending (${f(bigBend.share_of_bending_energy_pct, 0)}%).`;
+
+  const vl = m.vs_lab;
+  const quality = [
+    `Laser noise after cleaning: <b>${f(Math.max(m.noise_floor_mm.inflated, m.noise_floor_mm.loaded), 2)} mm</b> (small compared with a ${f(mw.growth_mm, 0)} mm bulge).`,
+    `Points where the laser lost the surface (300.15): ${m.inflated.dropouts + m.loaded.dropouts}. Repeated readings removed: ${m.inflated.held_repeats + m.loaded.held_repeats}.`,
+    `Shoulder band match between the two scans: r = ${f(res.band.texture_corr, 2)} at ${f(res.band.delta, 1)} mm shift, with ${f(Math.abs(res.band.x_offset), 2)} mm sideways shift (≈0 = it moved straight toward the rim).`,
+    `About <b>${f(m.arc_length.deficit_mm, 0)} mm</b> of sidewall just under the shoulder folds out of the laser's view when loaded, so values in the top part of the charts are less certain.`,
+    vl ? `Check against the lab report: horizontal deflection ${f(vl.horizontal_deflection_lab_mm, 3)} mm (lab) vs ${f(vl.horizontal_deflection_raw_mm, 3)} mm (same method here) vs ${f(vl.horizontal_deflection_smoothed_mm, 2)} mm (smoothed).` : null,
+  ].filter(Boolean);
+
+  const fileName = slug(t.name);
+  main.innerHTML = `
+  <section class="panel first">
+    <div class="titlebar"><div><h2>${esc(t.label)}</h2><div class="small muted">${esc(t.name)}</div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn" id="dlProfile">Download profile data (CSV)</button><button class="btn ghost" id="dlRaw">Raw scan (CSV)</button></div></div>
+    <div class="chips">${chips.map(([k, v]) => `<span class="chip">${esc(k)} <b>${esc(v)}</b></span>`).join('')}</div>
+    <div class="kpis">${kpis.map((k) => `<div class="kpi"><div class="k">${esc(k.k)}</div><div class="v">${k.v}<small>${esc(k.u)}</small></div><div class="d">${esc(k.d)}</div></div>`).join('')}</div>
+  </section>
+  <section class="card" style="margin-bottom:16px">
+    <div class="cardhead"><h3>1 · Sidewall shape, coloured by how much it moves</h3>
+      <div class="opts"><label class="ctl">Colour by <select id="colorBy">${Object.entries(COLOR_BY).map(([k, v]) => `<option value="${k}" ${k === S.settings.colorBy ? 'selected' : ''}>${v.name}</option>`).join('')}</select></label>
+      <label class="ctl"><input type="checkbox" id="showRaw" ${S.settings.showRaw ? 'checked' : ''}> show measured points</label>
+      <button class="btn ghost png" data-name="${fileName}_shape">Save PNG</button></div></div>
+    <div class="chart-split">
+      <div>${shapeChart}${colorbarHTML(qlo, qhi, `${cb.name} (${cb.unit})`, cb.dec)}</div>
+      <div>${legendHTML([{ name: 'Inflated only', color: css('--inf') }, { name: 'Loaded (coloured)', color: `linear-gradient(90deg,${turboCss(0)},${turboCss(0.5)},${turboCss(1)})` }, ...(S.settings.showRaw ? [{ name: 'measured points', color: css('--muted'), cls: 'dotk' }] : [])])}
+      ${explainHTML(
+        'A slice through the sidewall, as the laser saw it. The thin blue line is the tire inflated with no load. The thick coloured line is the same sidewall with the load on. Dots are the actual laser readings; the lines are smoothed through them.',
+        `The ${ends[0] === 'RIM end' ? 'rim' : 'shoulder'} is at the bottom of the chart and the ${ends[1] === 'RIM end' ? 'rim' : 'shoulder'} at the top (switch with “Draw rim at”). Further right means that part of the sidewall sticks out more. The colour shows ${cb.say}: <b>blue = little, green/yellow = medium, red = most</b>. Use “Colour by” to switch what the colours mean. The sideways scale is stretched so small movements are easy to see. Hover the chart to read values.`,
+        shapeMine)}
+        <div class="range" id="rangeBox">
+          <h4>Analysis range <span class="badge ${rg.manual ? 'adj' : ''}">${rg.manual ? 'adjusted by you' : 'automatic'}</span></h4>
+          <div class="small muted">Where the sidewall starts and ends in each scan. The tool finds these automatically; if a line is in the wrong place, drag it on the chart or type a height (mm). Each tire keeps its own setting.</div>
+          ${[['zStart', `Sidewall start (${startSide}), both scans`, rg.z_start, rg.auto.z_start, '--ink2'],
+             ['edgeInflated', 'Shoulder edge, inflated scan', rg.edge_inflated, rg.auto.edge_inflated, '--inf'],
+             ['edgeLoaded', 'Shoulder edge, loaded scan', rg.edge_loaded, rg.auto.edge_loaded, '--load']]
+            .map(([k, name, v, a, c]) => `<label class="row"><i style="border-color:var(${c})"></i><span>${name}</span>
+              <input type="number" step="0.5" data-k="${k}" value="${v.toFixed(1)}"><span class="auto">auto ${a.toFixed(1)}</span></label>`).join('')}
+          <div class="small" style="margin-top:8px">Shoulder travel used: <b>${f(res.band.delta, 1)} mm</b>
+            ${res.band.texture_corr != null ? ` · band texture match r = ${f(res.band.texture_corr, 2)}${res.band.texture_corr < 0.5 ? ' <span class="warn">(weak: check the shoulder lines)</span>' : ''}` : ''}</div>
+          ${t.rangeError ? `<div class="small warn" style="margin-top:6px">Not applied: ${esc(t.rangeError)}</div>` : ''}
+          <div style="margin-top:8px"><button class="btn" id="rangeReset" ${rg.manual ? '' : 'disabled'}>Reset to automatic</button></div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <div class="grid2">
+    <section class="card"><div class="cardhead"><h3>2 · How far each part pushes out</h3><button class="btn ghost png" data-name="${fileName}_bulge">Save PNG</button></div>
+      ${legendHTML([{ name: 'outward deflection (smoothed)', color: css('--change') }, { name: 'less smoothed', color: css('--change') + '59' }, { name: 'same-height subtraction (simple)', color: css('--naive'), cls: 'dash' }])}
+      ${bulgeChart}
+      ${explainHTML(
+        'For every point on the sidewall, how far it moved outward when the load went on. Shaded bands mark the rim-side, middle and shoulder-side thirds.',
+        `Height runs from the rim (0%, ${rimTopDrawn ? 'top' : 'bottom'}) to the shoulder (100%, ${rimTopDrawn ? 'bottom' : 'top'}). The further right the green line, the bigger the bulge at that height. The faint line is the same thing with less smoothing, so you can see nothing was lost. The grey dashed line is the simple “subtract the two scans at the same height” method; it drifts because the sidewall also slides toward the rim under load.`,
+        bulgeMine)}
+    </section>
+    <section class="card"><div class="cardhead"><h3>3 · How much each part tilts</h3><button class="btn ghost png" data-name="${fileName}_tilt">Save PNG</button></div>
+      ${legendHTML([{ name: 'tilt change (smoothed)', color: css('--change') }, { name: 'less smoothed', color: css('--change') + '59' }])}
+      ${tiltChart}
+      ${explainHTML(
+        'Under load the sidewall does not only push out, it also rotates, a bit like a door swinging on a hinge. This is that rotation, in degrees.',
+        'Right of the centre line = that part leans further outward than before; left = it leans inward. The further from the centre line, the more the rubber there is being twisted.',
+        tiltMine)}
+    </section>
+    <section class="card"><div class="cardhead"><h3>4 · Where the sidewall bends hardest</h3><button class="btn ghost png" data-name="${fileName}_bending">Save PNG</button></div>
+      ${legendHTML([{ name: 'bending strain (smoothed)', color: css('--change') }, { name: 'less smoothed (peak values are read from this)', color: css('--change') + '59' }])}
+      ${bendChart}
+      ${explainHTML(
+        'How sharply the sidewall is being bent under load, turned into an estimate of how much the outer rubber surface stretches (strain, %).',
+        'Peaks are the places that flex the most every time the wheel turns. That is where cracks and heat start first. Right = bent outward more than before; left = bent the other way.',
+        bendMine)}
+    </section>
+    <section class="card"><div class="cardhead"><h3>5 · Which part of the sidewall does the work</h3><button class="btn ghost png" data-name="${fileName}_zones">Save PNG</button></div>
+      ${legendHTML([{ name: 'share of the bulge', color: css('--change') }, { name: 'share of the bending', color: css('--energy') }])}
+      ${zoneChart}
+      ${explainHTML(
+        'The sidewall split into three equal parts: next to the rim, the middle, and next to the shoulder.',
+        'Green = how much of the total push-out happens in that part. Yellow = how much of the total bending happens there. Each colour adds up to 100%.',
+        zoneMine)}
+      <details class="check" style="margin-top:12px"><summary>Data check</summary><ul>${quality.map((qq) => `<li>${qq}</li>`).join('')}</ul></details>
+    </section>
+  </div>`;
+
+  main.querySelectorAll('#rangeBox input[data-k]').forEach((inp) => {
+    inp.onchange = () => { const v = parseFloat(inp.value); setRange(t, inp.dataset.k, isFinite(v) ? v : null); };
+  });
+  $('rangeReset').onclick = () => { t.ov = {}; t.rangeError = null; runAnalysis(t); render(); };
+  wireCharts(main);
+  main.querySelectorAll('.png').forEach((b) => { b.onclick = () => savePNG(b.closest('.card').querySelector('.chartwrap'), b.dataset.name); });
+  $('colorBy').onchange = (e) => { S.settings.colorBy = e.target.value; saveSettings(); renderMain(); };
+  $('showRaw').onchange = (e) => { S.settings.showRaw = e.target.checked; saveSettings(); renderMain(); };
+  $('dlProfile').onclick = () => {
+    const Dd = disp(t, sm), mt = res.matched;
+    const head = ['arc_from_rim_mm', 'height_above_rim_pct', 'z_inflated_mm', 'z_loaded_mm', 'u_inflated_mm', 'u_loaded_mm',
+      'outward_deflection_mm', 'outward_deflection_smoothed_mm', 'toward_rim_mm', 'tilt_change_deg', 'bending_strain_pct'];
+    const hp = pctFromRim(res, mt.z_inf);
+    const smU = SW.interp(mt.s, Dd.matched.s, Dd.matched.du);
+    const rows = Array.from(mt.s, (s, i) => [s, hp[i], mt.z_inf[i], mt.z_load[i], mt.u_inf[i], mt.u_load[i], mt.du[i], smU[i], res.towardRim[i], mt.dtheta[i], 100 * res.opts.hMm * mt.dkappa[i]]);
+    download(new Blob([toCSV([head, ...rows])], { type: 'text/csv' }), `${fileName}_profile.csv`);
+  };
+  $('dlRaw').onclick = () => {
+    const rows = Array.from(t.x, (v, i) => [i < res.passes.inflated.xRaw.length ? 'inflated' : 'loaded', v, t.z[i]]);
+    download(new Blob([toCSV([['pass', 'laser_distance_mm', 'z_position_mm'], ...rows])], { type: 'text/csv' }), `${fileName}_raw.csv`);
+  };
+}
+
+// ============================================================== compare view
+const METRICS = [
+  { key: 'radial_deflection_lab_mm', name: 'Radial deflection', unit: 'mm', dec: 1, better: 'low', say: 'how far the tire squashes down' },
+  { key: 'horizontal_deflection_smoothed_mm', name: 'Sidewall bulge', unit: 'mm', dec: 1, better: 'low', say: 'how far the widest point pushes out' },
+  { key: 'vertical_stiffness_N_per_mm', name: 'Vertical stiffness', unit: 'N/mm', dec: 0, better: 'high', say: 'load needed per mm of squash' },
+  { key: 'sidewall_share_pct', short: 'Sidewall share', name: 'Sidewall share of deflection', unit: '%', dec: 0, say: 'part of the squash taken by the sidewall (the rest is the tread/crown)' },
+  { key: 'bulge_per_mm_deflection', short: 'Bulge per mm defl.', name: 'Bulge per mm of deflection', unit: '', dec: 2, better: 'low', say: 'outward bulge for each mm of squash' },
+  { key: 'peak_bending_strain_pct', short: 'Peak bending', name: 'Peak bending strain', unit: '%', dec: 1, better: 'low', say: 'strongest bending of the sidewall surface' },
+  { key: 'widest_point_loaded_pct_from_rim', short: 'Widest point, loaded', name: 'Widest point under load (height above rim)', unit: '%', dec: 0, say: 'where the bulge sits; lower = closer to the rim' },
+  { key: 'max_rotation_deg', name: 'Largest tilt', unit: '°', dec: 0, abs: true, say: 'biggest rotation of any part of the sidewall' },
+  { key: 'rim_side_bending_share_pct', short: 'Rim-side bending', name: 'Rim-side share of bending', unit: '%', dec: 0, say: 'how much of the bending happens next to the rim' },
+  { key: 'hidden_sidewall_when_loaded_mm', short: 'Hidden under load', name: 'Sidewall hidden from the laser under load', unit: 'mm', dec: 0, say: 'how much sidewall folds out of view under the shoulder' },
+];
+const COLS = [
+  { key: 'tire', name: 'Tire' },
+  { key: 'load_kg', name: 'Load (kg)', dec: 0, get: (r) => kg(r.load_daN) },
+  { key: 'pressure_psi', name: 'Pressure (psi)', dec: 0 },
+  ...METRICS.map((mm) => ({ key: mm.key, name: `${mm.short || mm.name}${mm.unit ? ` (${mm.unit})` : ''}`, full: mm.name, dec: mm.dec, abs: mm.abs })),
+];
+const val = (row, c) => { const v = c.get ? c.get(row) : row[c.key]; return c.abs && v != null ? Math.abs(v) : v; };
+
+function renderCompare(main) {
+  charts.clear();
+  const inCmp = okTires().filter((t) => t.inCompare);
+  const shown = charted();
+  if (inCmp.length < 1) {
+    main.innerHTML = `<div class="panel first empty"><h2>Nothing to compare yet</h2><p class="muted">Tick two or more files in the list on the left (or choose more files).</p></div>`;
+    return;
+  }
+  let rows = inCmp.map((t) => ({ t, r: t.row }));
+  if (S.sort.key) {
+    const c = COLS.find((x) => x.key === S.sort.key);
+    rows.sort((a, b) => {
+      const va = c.key === 'tire' ? a.t.label : val(a.r, c), vb = c.key === 'tire' ? b.t.label : val(b.r, c);
+      if (va == null) return 1; if (vb == null) return -1;
+      return (va > vb ? 1 : va < vb ? -1 : 0) * S.sort.dir;
+    });
+  }
+  const table = `<div class="tablewrap"><table class="cmp"><thead><tr>${COLS.map((c) => `<th data-k="${c.key}" title="${esc(c.full || c.name)}">${esc(c.name)}${S.sort.key === c.key ? (S.sort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(({ t, r }) => `<tr><td title="${esc(t.name)}"><span class="dot ${t.slot != null ? '' : 'none'}" style="${t.slot != null ? `background:var(--s${t.slot + 1})` : ''};margin-right:6px;vertical-align:-1px"></span>${esc(t.label)}${t.res.metrics.range.manual ? ' <span class="badge adj" title="analysis range adjusted by hand">adjusted</span>' : ''}</td>${COLS.slice(1).map((c) => `<td>${f(val(r, c), c.dec)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+
+  const sc = (t) => css(`--s${t.slot + 1}`);
+  const lines = (get, unit, dec = 1) => shown.map((t) => {
+    const D = disp(t, S.settings.smoothMm);
+    return { name: t.label, x: get(D, t.res), y: pctFromRim(t.res, D.matched.z_inf), color: sc(t), width: 2.4, hover: true, unit, dec };
+  });
+  const common = { w: 520, h: 420, yDomain: [0, 100], yFmt: pctFmt, yFlip: S.settings.rimDraw === 'top', yName: 'height above rim', yLabel: 'height above the rim (% of sidewall)', vlines: [0] };
+  const lg = legendHTML(shown.map((t) => ({ name: t.label, color: sc(t) })));
+  const bulgeC = lineChart({ ...common, title: 'Bulge', xLabel: 'outward deflection (mm)', series: lines((D) => D.matched.du, 'mm') });
+  const tiltC = lineChart({ ...common, title: 'Tilt', xLabel: 'tilt change (degrees), + = leans further out', series: lines((D) => D.tiltS, '°', 0) });
+  const bendC = lineChart({ ...common, title: 'Bending', xLabel: 'bending strain at the surface (%)', series: lines((D) => D.strainS, '%') });
+
+  const met = METRICS.find((mm) => mm.key === S.cmpMetric) || METRICS[0];
+  const mv = shown.map((t) => { const v = t.row[met.key]; return met.abs && v != null ? Math.abs(v) : v; });
+  const barC = barChart({ title: met.name, w: 520, ml: 170, unit: met.unit === '°' ? '°' : met.unit ? ` ${met.unit}` : '', dec: met.dec, xLabel: `${met.name}${met.unit ? ` (${met.unit})` : ''}`,
+    rows: shown.map((t) => ({ label: t.label.length > 26 ? `${t.label.slice(0, 25)}…` : t.label })), barH: 18,
+    groups: [{ name: met.name, colors: shown.map(sc), values: mv }] });
+
+  const ext = (arr, pickMax) => { let k = -1; arr.forEach((v, i) => { if (v != null && (k < 0 || (pickMax ? v > arr[k] : v < arr[k]))) k = i; }); return k; };
+  const peaks = shown.map((t) => t.res.metrics.matched.peak_outward_mm);
+  const kHi = ext(peaks, true), kLo = ext(peaks, false);
+  const bulgeMine = shown.length > 1
+    ? `<b>${esc(shown[kHi].label)}</b> pushes out the most (${f(peaks[kHi], 1)} mm at ${pctFmt(pctAt(shown[kHi].res, shown[kHi].res.metrics.matched.inflated_z_of_that_point))} height); <b>${esc(shown[kLo].label)}</b> the least (${f(peaks[kLo], 1)} mm).`
+    : 'Tick a second tire to compare.';
+  const strains = shown.map((t) => t.row.peak_bending_strain_pct);
+  const sHi = ext(strains, true), sLo = ext(strains, false);
+  const bendMine = shown.length > 1 && sHi >= 0
+    ? `<b>${esc(shown[sHi].label)}</b> has the hardest bending (${f(strains[sHi], 1)}% at ${shown[sHi].row.peak_bending_height_mm != null ? pctFmt(pctAt(shown[sHi].res, shown[sHi].row.peak_bending_height_mm)) : '?'} height); <b>${esc(shown[sLo].label)}</b> the gentlest (${f(strains[sLo], 1)}%).` : '';
+  const tilts = shown.map((t) => Math.abs(t.row.max_rotation_deg));
+  const tHi = ext(tilts, true);
+  const tiltMine = shown.length > 1 ? `<b>${esc(shown[tHi].label)}</b> twists the most (${f(tilts[tHi], 0)}°).` : '';
+  const mHi = ext(mv, true), mLo = ext(mv, false);
+  const metMine = shown.length > 1 && mHi >= 0
+    ? `Highest: <b>${esc(shown[mHi].label)}</b> (${f(mv[mHi], met.dec)} ${met.unit}). Lowest: <b>${esc(shown[mLo].label)}</b> (${f(mv[mLo], met.dec)} ${met.unit}). Difference: ${f(mv[mHi] - mv[mLo], met.dec)} ${met.unit}`
+      + `${met.better ? ` — ${met.better === 'low' ? 'lower' : 'higher'} is usually better here.` : '.'}` : '';
+  const overflow = inCmp.length > shown.length ? `<p class="note warn">Charts show ${shown.length} of ${inCmp.length} ticked tires (8 colours at a time). Untick one to bring another into the charts; the table shows all of them.</p>` : '';
+
+  main.innerHTML = `
+  <section class="panel first">
+    <div class="titlebar"><h2>Compare ${inCmp.length} tire${inCmp.length > 1 ? 's' : ''}</h2><button class="btn" id="exportCmp">Download table (CSV)</button></div>
+    ${overflow}
+    ${table}
+    ${explainHTML(
+      'One row per tire, with the key numbers from each file. Load and pressure are shown so you only compare like with like.',
+      'Click a column heading to sort by it. Radial deflection and stiffness describe the whole tire; bulge, tilt and bending describe how the sidewall behaves. Smaller bulge and bending usually mean a calmer, cooler-running sidewall.',
+      null)}
+  </section>
+  <div class="grid2">
+    <section class="card"><div class="cardhead"><h3>How far each tire's sidewall pushes out</h3><button class="btn ghost png" data-name="compare_bulge">Save PNG</button></div>${lg}${bulgeC}
+      ${explainHTML('Outward deflection along the sidewall, one line per tire, from the rim (0%) to the shoulder (100%).',
+        'Further right = more bulge at that height. A peak lower down means the tire bulges close to the rim; a flatter line means the bulge is spread out.', bulgeMine, 'In this comparison')}</section>
+    <section class="card"><div class="cardhead"><h3>Pick a number to compare</h3>
+      <div class="opts"><select id="cmpMetric" class="ctl">${METRICS.map((mm) => `<option value="${mm.key}" ${mm.key === met.key ? 'selected' : ''}>${esc(mm.name)}</option>`).join('')}</select>
+      <button class="btn ghost png" data-name="compare_${met.key}">Save PNG</button></div></div>${barC}
+      ${explainHTML(`${esc(met.name)}: ${esc(met.say)}.`, 'One bar per tire, in the tire\'s colour. Hover a bar for the exact value.', metMine, 'In this comparison')}</section>
+    <section class="card"><div class="cardhead"><h3>Where each tire bends hardest</h3><button class="btn ghost png" data-name="compare_bending">Save PNG</button></div>${lg}${bendC}
+      ${explainHTML('Estimated bending strain of the outer rubber along the sidewall, one line per tire.',
+        'Peaks are the spots that flex most with every wheel turn, where fatigue cracks and heat start. Compare both the height of the peaks and where they sit.', bendMine, 'In this comparison')}</section>
+    <section class="card"><div class="cardhead"><h3>How much each tire's sidewall tilts</h3><button class="btn ghost png" data-name="compare_tilt">Save PNG</button></div>${lg}${tiltC}
+      ${explainHTML('How much each part of the sidewall rotates under load, one line per tire.',
+        'Right of the centre line = leans further outward, left = inward. Bigger swings mean more twisting of the rubber.', tiltMine, 'In this comparison')}</section>
+  </div>`;
+
+  wireCharts(main);
+  main.querySelectorAll('th[data-k]').forEach((th) => { th.onclick = () => { const k = th.dataset.k; S.sort = { key: k, dir: S.sort.key === k ? -S.sort.dir : -1 }; renderMain(); }; });
+  main.querySelectorAll('.png').forEach((b) => { b.onclick = () => savePNG(b.closest('.card').querySelector('.chartwrap'), b.dataset.name); });
+  $('cmpMetric').onchange = (e) => { S.cmpMetric = e.target.value; renderMain(); };
+  $('exportCmp').onclick = () => exportSummary(inCmp);
+}
+
+function exportSummary(list) {
+  const ts = list || okTires();
+  if (!ts.length) return;
+  const keys = Object.keys(ts[0].row);
+  download(new Blob([toCSV([keys, ...ts.map((t) => keys.map((k) => t.row[k]))])], { type: 'text/csv' }), 'sidewall_comparison.csv');
+}
+
+// ============================================================== how-to
+function howtoHTML() {
+  return `<section class="panel first howto">
+  <h2>How to read the charts</h2>
+  <p class="muted">Everything here comes from the two laser scans inside each Load Deflection Report: one with the tire only inflated, one with the load on.</p>
+  <h3>What the test measures</h3>
+  <p>A laser looks at the side of the tire and moves from one end of the sidewall to the other, measuring how far away the rubber is at each height.
+  It does this twice: first with the tire inflated, then again with the load applied. Comparing the two scans shows how the sidewall moves under load.</p>
+  <h3>Words used in the tool</h3>
+  <dl>
+    <dt>Rim end / shoulder end</dt><dd>The sidewall runs from the wheel rim to the shoulder (where it meets the tread). In this test rig the rim is at the bottom of the scan.</dd>
+    <dt>Radial deflection</dt><dd>How far the tire squashes down under the load, measured by the machine (from the report).</dd>
+    <dt>Sidewall bulge (horizontal deflection)</dt><dd>How far the widest point of the sidewall pushes out under load. The lab report uses the single closest laser reading in each scan; the tool shows the same number and a smoothed one, which is less affected by noise.</dd>
+    <dt>Shoulder travel and sidewall share</dt><dd>The textured band at the top of the scan is the shoulder. Under load it moves straight toward the rim. That movement is how much the sidewall itself shortened. The rest of the radial deflection is taken by the tread and crown.</dd>
+    <dt>Outward deflection</dt><dd>How far each point of the sidewall moved outward. The tool follows the same piece of rubber in both scans, not just the same height, because under load the rubber also slides toward the rim.</dd>
+    <dt>Tilt</dt><dd>How much a part of the sidewall rotates under load, in degrees.</dd>
+    <dt>Bending strain</dt><dd>How sharply the sidewall is bent, turned into an estimate of how much the outer surface stretches. It assumes a rubber thickness over the cords (setting at the top, default 5 mm). Peaks are where fatigue and heat build up first.</dd>
+    <dt>Rim-side / middle / shoulder-side</dt><dd>The sidewall split into three equal parts, so tires can be compared part by part.</dd>
+    <dt>Colours on the shape chart</dt><dd>Blue = little, green/yellow = medium, red = most, like an FEA contour plot. The colour bar under the chart gives the values.</dd>
+    <dt>Curve smoothing</dt><dd>Only changes how smooth the curves look. The measured points stay on the chart and the numbers in the tiles and tables do not change.</dd>
+    <dt>Sidewall hidden under load</dt><dd>Under load, a little of the sidewall just below the shoulder folds out of the laser's view. Values in the top part of the charts are therefore less certain.</dd>
+  </dl>
+  <h3>Comparing tires</h3>
+  <p>Choose several files at once (or keep adding). Every file is analysed the same way. Tick the files you want in the Compare tab; each ticked tire gets its own colour.
+  Compare tires at the same load and pressure. Use “Download summary (CSV)” to take the numbers into Excel.</p>
+  <h3>Your data stays on this computer</h3>
+  <p>The files are opened inside this web page only. Nothing is uploaded anywhere, and the page works without an internet connection.</p>
+  </section>`;
+}
+
+render();
+</script>
+</body>
+</html>

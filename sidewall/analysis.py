@@ -33,6 +33,16 @@ DROPOUT = 250.0  # sensor out-of-range code is 300.15; anything above this is in
 
 
 # --------------------------------------------------------------------------- I/O
+def load_scan_meta(path: str | Path) -> tuple[np.ndarray, np.ndarray, dict]:
+    """Return (x, z, meta). Lab report workbooks (.xlsx) carry test metadata."""
+    if Path(path).suffix.lower() in (".xlsx", ".xlsm"):
+        from .report_xlsx import read_report
+        x, z, meta = read_report(path)
+        return np.asarray(x, float), np.asarray(z, float), meta
+    x, z = load_scan(path)
+    return x, z, {"file": Path(path).name}
+
+
 def load_scan(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
     """Return (x, z) sample arrays.
 
@@ -168,6 +178,15 @@ class Profile:
     resid: np.ndarray = field(repr=False)    # raw - smoothed u at the raw samples
     resid_z: np.ndarray = field(repr=False)  # z of those samples
 
+    @property
+    def length(self) -> float:
+        return float(self.s[0])
+
+    @property
+    def s_bottom(self) -> np.ndarray:
+        """Arc length measured from the bottom of the span instead of the top."""
+        return self.s[0] - self.s
+
 
 def fit_profile(p: Pass, x_band: float, z_lo: float, z_hi: float,
                 step: float = 0.25, window_mm: float = 45.0, u_window_mm: float = 5.0) -> Profile:
@@ -199,7 +218,7 @@ def fit_profile(p: Pass, x_band: float, z_lo: float, z_hi: float,
 # ----------------------------------------------------------- material matching
 @dataclass
 class Matched:
-    """Inflated vs loaded compared at the same arc length from the band edge."""
+    """Inflated vs loaded compared at the same arc length from the anchor (rim end)."""
     s: np.ndarray
     z_inf: np.ndarray
     z_load: np.ndarray
@@ -213,11 +232,18 @@ class Matched:
     dkappa: np.ndarray       # curvature change (1/mm)
 
 
-def match_by_arclength(pi: Profile, pl: Profile, ds: float = 0.25) -> Matched:
-    s = np.arange(0.0, min(pi.s.max(), pl.s.max()), ds)
+def match_by_arclength(pi: Profile, pl: Profile, anchor: str = "bottom", ds: float = 0.25) -> Matched:
+    """Pair points that sit the same distance along the sidewall from ``anchor``.
 
-    def at(p, arr):  # p.s decreases with z; flip for np.interp
-        return np.interp(s, p.s[::-1], arr[::-1])
+    The anchor is the rim end: it does not move relative to the scanner, so the
+    same arc length from it is (nearly) the same material in both scans.
+    """
+    s = np.arange(0.0, min(pi.length, pl.length), ds)
+
+    def at(p, arr):
+        if anchor == "bottom":
+            return np.interp(s, p.s_bottom, arr)
+        return np.interp(s, p.s[::-1], arr[::-1])  # p.s decreases with z
 
     zi, zl = at(pi, pi.z), at(pl, pl.z)
     ui, ul = at(pi, pi.u), at(pl, pl.u)
@@ -246,8 +272,9 @@ def _trim_ends(y: np.ndarray, x: np.ndarray, margin: float):
     return y[m], x[m]
 
 
-def zone_table(mt: Matched, names=("rim-side", "middle", "shoulder-side"), h_mm: float = 5.0):
-    """Split the matched sidewall into thirds of arc length (from the band edge)."""
+def zone_table(mt: Matched, toward_rim: np.ndarray, names=("rim-side", "middle", "shoulder-side"),
+               h_mm: float = 5.0):
+    """Split the matched sidewall into thirds of arc length, starting at the rim end."""
     edges = np.linspace(0, mt.s[-1], len(names) + 1)
     ds = np.gradient(mt.s)
     bulge_tot = np.sum(np.clip(mt.du, 0, None) * ds)
@@ -261,7 +288,7 @@ def zone_table(mt: Matched, names=("rim-side", "middle", "shoulder-side"), h_mm:
             z_inflated_from=float(mt.z_inf[m][0]), z_inflated_to=float(mt.z_inf[m][-1]),
             mean_outward_mm=float(np.mean(mt.du[m])),
             max_outward_mm=float(np.max(mt.du[m])),
-            mean_drop_mm=float(-np.mean(mt.dz[m])),
+            mean_toward_rim_mm=float(np.mean(toward_rim[m])),
             mean_abs_rotation_deg=float(np.mean(np.abs(mt.dtheta[m]))),
             peak_abs_dkappa_per_m=float(1000 * np.max(np.abs(mt.dkappa[m]))),
             peak_surface_strain_pct=float(100 * h_mm * np.max(np.abs(mt.dkappa[m]))),
@@ -282,68 +309,152 @@ class Result:
     naive_du: np.ndarray
     metrics: dict
     zones: list
+    meta: dict = field(default_factory=dict)
+
+    @property
+    def label(self) -> str:
+        m = self.meta
+        parts = [str(m[k]) for k in ("brand", "size") if m.get(k)]
+        if m.get("serial"):
+            parts.append(str(m["serial"]))
+        return " | ".join(parts) if parts else Path(m.get("file", "scan")).stem
+
+
+def _texture_corr(inf: Pass, load: Pass, e_i: float, d: float):
+    zg = np.arange(e_i + 4.0, inf.z.max() - 1.0, 0.25)
+    if len(zg) < 8 or zg[0] - d < load.z.min():
+        return None
+    return float(np.corrcoef(np.interp(zg, inf.z, inf.x), np.interp(zg - d, load.z, load.x))[0, 1])
 
 
 def analyze(path: str | Path, h_mm: float = 5.0, load_kN: float | None = None,
-            rim_end: str = "top", window_mm: float = 45.0) -> Result:
-    x, z = load_scan(path)
+            rim_end: str = "bottom", window_mm: float = 45.0, smooth_mm: float = 5.0,
+            z_start: float | None = None, edge_inflated: float | None = None,
+            edge_loaded: float | None = None) -> Result:
+    """Full analysis of one scan file (.xlsx lab report, or two-row paste).
+
+    rim_end    : which end of the scan is the rim. "bottom" (default) for the lab
+                 rig: the rim end stays put relative to the scanner and the
+                 textured band at the top is the shoulder. Arc lengths are
+                 measured from the rim end.
+    smooth_mm  : smoothing of the plotted profiles and displacements.
+    window_mm  : length scale for slope and curvature.
+    z_start, edge_inflated, edge_loaded : optional manual analysis range
+                 (scanner heights, mm). None keeps the automatic value. If only
+                 edge_inflated is given, the loaded edge follows it with the
+                 automatic shoulder travel.
+    """
+    x, z, meta = load_scan_meta(path)
+    if load_kN is None and isinstance(meta.get("load_daN"), (int, float)):
+        load_kN = meta["load_daN"] / 100.0
     s1, s2 = split_passes(x, z)
     inf = clean_pass("inflated", x[s1], z[s1])
     load = clean_pass("loaded", x[s2], z[s2])
+    # the lab's definition: closest single reading in each pass
+    raw_min = {p.name: (float(p.x.min()), float(p.z[np.argmin(p.x)])) for p in (inf, load)}
 
-    band = find_band_shift(inf, load)
-    pi = fit_profile(inf, band.x_band, inf.z.min(), band.edge_inflated, window_mm=window_mm)
-    pl = fit_profile(load, band.x_band, load.z.min(), band.edge_loaded, window_mm=window_mm)
-    mt = match_by_arclength(pi, pl)
+    band_auto = find_band_shift(inf, load)
+    rim_bottom = rim_end == "bottom"
+    lo_auto = float(max(inf.z.min(), load.z.min()))  # same rim-end height in both scans
+    auto = dict(z_start=lo_auto, edge_inflated=band_auto.edge_inflated, edge_loaded=band_auto.edge_loaded)
+    manual = any(v is not None for v in (z_start, edge_inflated, edge_loaded))
+    e_i = float(edge_inflated) if edge_inflated is not None else band_auto.edge_inflated
+    e_l = float(edge_loaded) if edge_loaded is not None else e_i - band_auto.delta
+    band = band_auto
+    if manual:
+        band = BandShift(band_auto.x_band, e_i, e_l, e_i - e_l, band_auto.delta_edge,
+                         _texture_corr(inf, load, e_i, e_i - e_l), band_auto.x_offset)
+    if z_start is not None:
+        lo_i = lo_l = float(z_start)
+    elif rim_bottom:
+        lo_i = lo_l = lo_auto
+    else:
+        lo_i, lo_l = inf.z.min(), load.z.min()
+    if not (e_i - lo_i >= 20 and e_l - lo_l >= 20):
+        raise ValueError("the sidewall start must be at least 20 mm below both shoulder edges")
+    if e_i > inf.z.max() or e_l > load.z.max() or lo_i < inf.z.min() - 1 or lo_l < load.z.min() - 1:
+        raise ValueError("a chosen position is outside the scanned range")
+    kw = dict(window_mm=window_mm, u_window_mm=smooth_mm)
+    pi = fit_profile(inf, band.x_band, lo_i, band.edge_inflated, **kw)
+    pl = fit_profile(load, band.x_band, lo_l, band.edge_loaded, **kw)
+    mt = match_by_arclength(pi, pl, anchor="bottom" if rim_bottom else "top")
+    toward_rim = -mt.dz if rim_bottom else mt.dz
 
     # naive delta at equal stage height (the "same z" comparison)
     zc = np.arange(max(pi.z[0], pl.z[0]), min(pi.z[-1], pl.z[-1]), 0.25)
     nd = np.interp(zc, pl.z, pl.u) - np.interp(zc, pi.z, pi.u)
 
     i_mw, l_mw = int(np.argmax(pi.u)), int(np.argmax(pl.u))
-    k_mt = int(np.argmax(mt.du))
-    k_nv = int(np.argmax(nd))
-    span_i = band.edge_inflated - pi.z[0]
+    k_mt, k_nv = int(np.argmax(mt.du)), int(np.argmax(nd))
 
-    zones = zone_table(
-        mt,
-        names=("rim-side", "middle", "shoulder-side") if rim_end == "top"
-        else ("shoulder-side", "middle", "rim-side"),
-        h_mm=h_mm,
-    )
+    def frac_from_rim(zv, p):  # 0 at rim end of the span, 1 at the band edge
+        f = (zv - p.z[0]) / (p.z[-1] - p.z[0])
+        return float(f if rim_bottom else 1 - f)
+
+    lab_rd = meta.get("radial_deflection_mm")
+    lab_rd = float(lab_rd) if isinstance(lab_rd, (int, float)) else None
+    radial = lab_rd if lab_rd else band.delta  # what "deflection" means below
+    growth = float(pl.u[l_mw] - pi.u[i_mw])
+    ds = np.gradient(mt.s)
+    bulge_area = float(np.sum(np.clip(mt.du, 0, None) * ds))
+
+    zones = zone_table(mt, toward_rim, h_mm=h_mm)
+    hd_raw = raw_min["inflated"][0] - raw_min["loaded"][0]
     metrics = dict(
         samples_total=int(len(x)),
         inflated=dict(samples=int(len(inf.x_raw)), dropouts=inf.n_dropout, held_repeats=inf.n_hold,
                       z_range=[float(inf.z.min()), float(inf.z.max())]),
         loaded=dict(samples=int(len(load.x_raw)), dropouts=load.n_dropout, held_repeats=load.n_hold,
                     z_range=[float(load.z.min()), float(load.z.max())]),
-        noise_floor_mm=dict(inflated=pi.sigma, loaded=pl.sigma,
-                            band_texture_inflated=float(np.std(
-                                inf.x[inf.z > band.edge_inflated + 4]
-                                - savgol_filter(inf.x[inf.z > band.edge_inflated + 4], 15, 2)))),
-        band=asdict(band),
-        vertical_deflection_mm=band.delta,
-        vertical_stiffness_N_per_mm=(1000 * load_kN / band.delta) if load_kN else None,
+        noise_floor_mm=dict(inflated=pi.sigma, loaded=pl.sigma),
+        band={**asdict(band), "manual": manual},
+        deflection=dict(
+            radial_lab_mm=lab_rd,
+            shoulder_travel_mm=band.delta,               # sidewall span shortening
+            crown_share_mm=(lab_rd - band.delta) if lab_rd else None,
+            sidewall_share_pct=(100 * band.delta / lab_rd) if lab_rd else None,
+            basis="lab radial deflection" if lab_rd else "shoulder travel (no lab value)",
+        ),
+        load_kN=load_kN,
+        vertical_stiffness_N_per_mm=(1000 * load_kN / radial) if load_kN else None,
         max_width=dict(
             inflated_z=float(pi.z[i_mw]), inflated_u=float(pi.u[i_mw]),
-            inflated_height_frac=float((pi.z[i_mw] - pi.z[0]) / span_i),
+            inflated_frac_from_rim=frac_from_rim(pi.z[i_mw], pi),
             loaded_z=float(pl.z[l_mw]), loaded_u=float(pl.u[l_mw]),
-            growth_mm=float(pl.u[l_mw] - pi.u[i_mw]),
-            point_drop_mm=float(pi.z[i_mw] - pl.z[l_mw]),
+            loaded_frac_from_rim=frac_from_rim(pl.z[l_mw], pl),
+            growth_mm=growth,
+            point_shift_mm=float(pl.z[l_mw] - pi.z[i_mw]),
         ),
-        bulge_per_mm_deflection=float((pl.u[l_mw] - pi.u[i_mw]) / band.delta),
+        lab_style=dict(
+            unload_distance_mm=raw_min["inflated"][0], unload_position_mm=raw_min["inflated"][1],
+            load_distance_mm=raw_min["loaded"][0], load_position_mm=raw_min["loaded"][1],
+            horizontal_deflection_mm=hd_raw,
+        ),
+        bulge_per_mm_deflection=growth / radial,
+        bulge_per_kN_mm=(growth / load_kN) if load_kN else None,
         naive_same_z=dict(peak_mm=float(nd[k_nv]), at_z=float(zc[k_nv]),
                           area_mm2=float(np.trapezoid(np.clip(nd, 0, None), zc))),
         matched=dict(peak_outward_mm=float(mt.du[k_mt]), at_s=float(mt.s[k_mt]),
                      inflated_z_of_that_point=float(mt.z_inf[k_mt]),
-                     drop_at_band_mm=float(-mt.dz[0]), drop_at_bottom_mm=float(-mt.dz[-1])),
-        arc_length=dict(inflated_mm=float(pi.s.max()), loaded_visible_mm=float(pl.s.max()),
-                        deficit_mm=float(pi.s.max() - pl.s.max()),
-                        deficit_pct=float(100 * (pi.s.max() - pl.s.max()) / pi.s.max())),
+                     bulge_area_mm2=bulge_area,
+                     toward_rim_at_rim_end_mm=float(toward_rim[0]),
+                     toward_rim_at_far_end_mm=float(toward_rim[-1]),
+                     max_rotation_deg=float(mt.dtheta[np.argmax(np.abs(mt.dtheta))])),
+        arc_length=dict(inflated_mm=pi.length, loaded_visible_mm=pl.length,
+                        deficit_mm=pi.length - pl.length,
+                        deficit_pct=100 * (pi.length - pl.length) / pi.length),
         hinges=[dict(s=s_, z_inflated=float(np.interp(s_, mt.s, mt.z_inf)),
                      dkappa_per_m=1000 * k_, surface_strain_pct=100 * h_mm * abs(k_))
                 for s_, k_ in _local_extrema(*_trim_ends(mt.dkappa, mt.s, window_mm / 2))],
-        assumptions=dict(rim_end=rim_end, surface_offset_from_ply_mm=h_mm, load_kN=load_kN,
-                         derivative_window_mm=window_mm),
+        assumptions=dict(rim_end=rim_end, surface_offset_from_ply_mm=h_mm,
+                         derivative_window_mm=window_mm, smoothing_mm=smooth_mm),
+        range=dict(z_start=float(lo_i), edge_inflated=e_i, edge_loaded=e_l, manual=manual, auto=auto),
+        test={k: v for k, v in meta.items() if k != "series_titles"},
     )
-    return Result(dict(inflated=inf, loaded=load), band, pi, pl, mt, zc, nd, metrics, zones)
+    if lab_rd:
+        metrics["vs_lab"] = dict(
+            horizontal_deflection_lab_mm=meta.get("horizontal_deflection_mm"),
+            horizontal_deflection_raw_mm=hd_raw,
+            horizontal_deflection_smoothed_mm=growth,
+        )
+    return Result(dict(inflated=inf, loaded=load), band, pi, pl, mt, zc, nd, metrics, zones, meta)
