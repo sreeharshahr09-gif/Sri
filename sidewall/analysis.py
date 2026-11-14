@@ -4,7 +4,8 @@ Data model
 ----------
 The scanner logs two channels per sample:
   x : laser distance reading (mm). Smaller x = surface closer to the sensor,
-      i.e. further axially outward. 300.15 (anything >= ``DROPOUT``) = no return.
+      i.e. further axially outward. Out-of-range codes (300.15 in the lab rig,
+      or 999, 0, blanks...) are spotted by the gap to the real readings.
   z : vertical stage position (mm).
 The stage runs one way for the inflated scan, reverses, and runs back for the
 loaded scan. Pass 1 = inflated, pass 2 = loaded.
@@ -29,51 +30,23 @@ from pathlib import Path
 import numpy as np
 from scipy.signal import savgol_filter
 
-DROPOUT = 250.0  # sensor out-of-range code is 300.15; anything above this is invalid
+from .readers import read_any, dropout_mask
+
 
 
 # --------------------------------------------------------------------------- I/O
 def load_scan_meta(path: str | Path) -> tuple[np.ndarray, np.ndarray, dict]:
-    """Return (x, z, meta). Lab report workbooks (.xlsx) carry test metadata."""
-    if Path(path).suffix.lower() in (".xlsx", ".xlsm"):
-        from .report_xlsx import read_report
-        x, z, meta = read_report(path)
-        return np.asarray(x, float), np.asarray(z, float), meta
-    x, z = load_scan(path)
-    return x, z, {"file": Path(path).name}
+    """Return (x, z, meta) from a lab report workbook (.xlsx/.xlsm/.xls) or a text file.
+
+    The reader looks for the scan wherever the file keeps it (embedded chart,
+    sheet rows/columns, chart cache, nested workbook, text columns); see readers.py.
+    """
+    x, z, meta = read_any(path)
+    return np.asarray(x, float), np.asarray(z, float), meta
 
 
 def load_scan(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
-    """Return (x, z) sample arrays.
-
-    Accepts the two-row, tab-separated layout copied from Excel (row 1 = laser x,
-    row 2 = stage z, blank/space cells ignored) or a two-column file (x, z) with
-    an optional header, separated by tabs, commas or whitespace.
-    """
-    rows = [r for r in Path(path).read_text().splitlines() if r.strip()]
-
-    def nums(cells):
-        out = []
-        for c in cells:
-            c = c.strip()
-            if not c:
-                continue
-            try:
-                out.append(float(c))
-            except ValueError:
-                pass  # header / label cell
-        return np.asarray(out, float)
-
-    if len(rows) == 2:
-        x, z = (nums(r.split("\t")) for r in rows)
-    else:
-        sep = "\t" if "\t" in rows[0] else ("," if "," in rows[0] else None)
-        pairs = [nums(r.split(sep)) for r in rows]
-        pairs = [p for p in pairs if len(p) >= 2]
-        x = np.array([p[0] for p in pairs])
-        z = np.array([p[1] for p in pairs])
-    if len(x) != len(z):
-        raise ValueError(f"x has {len(x)} samples but z has {len(z)}")
+    x, z, _ = load_scan_meta(path)
     return x, z
 
 
@@ -95,14 +68,14 @@ def split_passes(x: np.ndarray, z: np.ndarray) -> tuple[slice, slice]:
     return slice(0, i), slice(i, len(z))
 
 
-def clean_pass(name: str, x: np.ndarray, z: np.ndarray, drop_holds: bool = True) -> Pass:
+def clean_pass(name: str, x: np.ndarray, z: np.ndarray, valid=None, drop_holds: bool = True) -> Pass:
     """Remove dropouts and sample-and-hold repeats, sort by z.
 
     The laser updates slower than the stage encoder is logged, so a reading is
     often repeated 2-3 times against advancing z. Only the first sample of each
     run is kept; the repeats carry a stale x against a new z.
     """
-    ok = x < DROPOUT
+    ok = np.isfinite(x) if valid is None else np.asarray(valid, bool)
     hold = np.r_[False, x[1:] == x[:-1]] & ok
     keep = ok & ~hold if drop_holds else ok
     o = np.argsort(z[keep])
@@ -151,15 +124,18 @@ def find_band_shift(inf: Pass, load: Pass, top_mm: float = 30.0,
 
     zg = np.arange(e_i + 4.0, inf.z.max() - 1.0, 0.25)
     a = np.interp(zg, inf.z, inf.x)
-    best = (-2.0, d_edge, 0.0)
-    for d in np.arange(d_edge - search, d_edge + search + 1e-9, 0.25):
-        if zg[0] - d < load.z.min():
-            continue
-        b = np.interp(zg - d, load.z, load.x)
-        r = np.corrcoef(a, b)[0, 1]
-        if r > best[0]:
-            best = (float(r), float(d), float(np.mean(b - a)))
-    r, d, off = best
+    shifts = np.arange(d_edge - search, d_edge + search + 1e-9, 0.25)
+    rs = np.full(len(shifts), -1.0)
+    for k, d in enumerate(shifts):
+        if zg[0] - d >= load.z.min():
+            rs[k] = np.corrcoef(a, np.interp(zg - d, load.z, load.x))[0, 1]
+    # centre of the best-matching 2 mm range, not a single noisy peak: the match
+    # curve is often flat-topped and small timing differences flip between peaks
+    smooth = np.array([rs[max(0, k - 4):k + 5].sum() / 9 for k in range(len(rs))])
+    k = int(np.argmax(smooth))
+    d = float(shifts[k])
+    b = np.interp(zg - d, load.z, load.x)
+    r, off = float(rs[k]), float(np.mean(b - a))
     return BandShift(x_band, e_i, e_i - d, d, d_edge, r, off)
 
 
@@ -348,8 +324,9 @@ def analyze(path: str | Path, h_mm: float = 5.0, load_kN: float | None = None,
     if load_kN is None and isinstance(meta.get("load_daN"), (int, float)):
         load_kN = meta["load_daN"] / 100.0
     s1, s2 = split_passes(x, z)
-    inf = clean_pass("inflated", x[s1], z[s1])
-    load = clean_pass("loaded", x[s2], z[s2])
+    valid = np.asarray(dropout_mask(x), bool)
+    inf = clean_pass("inflated", x[s1], z[s1], valid[s1])
+    load = clean_pass("loaded", x[s2], z[s2], valid[s2])
     # the lab's definition: closest single reading in each pass
     raw_min = {p.name: (float(p.x.min()), float(p.z[np.argmin(p.x)])) for p in (inf, load)}
 
@@ -449,7 +426,7 @@ def analyze(path: str | Path, h_mm: float = 5.0, load_kN: float | None = None,
         assumptions=dict(rim_end=rim_end, surface_offset_from_ply_mm=h_mm,
                          derivative_window_mm=window_mm, smoothing_mm=smooth_mm),
         range=dict(z_start=float(lo_i), edge_inflated=e_i, edge_loaded=e_l, manual=manual, auto=auto),
-        test={k: v for k, v in meta.items() if k != "series_titles"},
+        test={k: v for k, v in meta.items() if k not in ("series_titles", "notes")},
     )
     if lab_rd:
         metrics["vs_lab"] = dict(

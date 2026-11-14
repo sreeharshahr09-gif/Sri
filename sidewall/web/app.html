@@ -78,7 +78,7 @@ aside.files { background: var(--card); border: 1px solid var(--border); border-r
 .fileitem.active { background: var(--hover); border-color: var(--border); }
 .fileitem .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .fileitem .sub { display: block; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fileitem .err { color: var(--bad); font-size: 11.5px; white-space: normal; }
+.fileitem .err { color: var(--bad); font-size: 11.5px; white-space: normal; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; border: 1px solid var(--border); }
 .dot.none { background: transparent; }
 .fileitem input { accent-color: var(--accent); margin: 0; }
@@ -161,6 +161,15 @@ details.check ul { margin: 8px 0 0; padding-left: 18px; }
 .badge { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px; background: var(--zone); color: var(--ink2); }
 .badge.adj { background: var(--load); color: #fff; }
 .handle { cursor: ns-resize; }
+.formgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 14px; margin-top: 8px; }
+.formgrid label { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--ink2); }
+.formgrid input, .formgrid textarea, .formgrid select { background: var(--raise); border: 1px solid var(--border); border-radius: 6px; padding: 5px 7px; color: var(--ink); font-size: 13.5px; }
+.formgrid textarea { min-height: 70px; resize: vertical; font-family: inherit; }
+.formgrid .wide { grid-column: 1 / -1; }
+.pastegrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 10px; }
+.pastegrid label { display: flex; flex-direction: column; gap: 4px; }
+.pastegrid textarea { min-height: 220px; font: 12.5px/1.35 ui-monospace, Menlo, Consolas, monospace; background: var(--raise); color: var(--ink); border: 1px solid var(--border); border-radius: 8px; padding: 8px; resize: vertical; }
+@media (max-width: 600px) { .pastegrid { grid-template-columns: minmax(0, 1fr); } }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -168,11 +177,11 @@ details.check ul { margin: 8px 0 0; padding-left: 18px; }
 <header class="top">
   <div class="brand">
     <h1>Sidewall Deflection Analyzer</h1>
-    <p>Load Deflection Report files (.xlsx) → sidewall bulge, tilt and bending. Files are read in this browser and never uploaded.</p>
+    <p>Load Deflection Report files (.xlsx, .xls, .csv…) → sidewall bulge, tilt and bending. Files are read in this browser and never uploaded.</p>
   </div>
   <div class="controls">
     <button class="btn primary" id="choose">Choose files…</button>
-    <input type="file" id="fileinput" multiple accept=".xlsx,.xlsm,.tsv,.txt,.csv" hidden>
+    <input type="file" id="fileinput" multiple accept=".xlsx,.xlsm,.xls,.csv,.tsv,.txt,.dat,.prn" hidden>
     <label class="ctl" title="Changes how smooth the curves look. The numbers do not change.">Curve smoothing
       <input type="range" id="smooth" min="1" max="20" step="1"><span id="smoothv"></span></label>
     <label class="ctl" title="Which end of the scan data is the rim. In the lab rig the rim is at the low end of the Z positions.">Rim in scan
@@ -188,12 +197,15 @@ details.check ul { margin: 8px 0 0; padding-left: 18px; }
 <nav class="tabs" role="tablist">
   <button class="tab" role="tab" data-tab="single" aria-selected="true">Single tire</button>
   <button class="tab" role="tab" data-tab="compare" aria-selected="false">Compare tires <span id="ncmp"></span></button>
+  <button class="tab" role="tab" data-tab="report" aria-selected="false">Report</button>
+  <button class="tab" role="tab" data-tab="paste" aria-selected="false">Paste columns</button>
   <button class="tab" role="tab" data-tab="howto" aria-selected="false">How to read the charts</button>
 </nav>
 
 <div class="layout">
   <aside class="files">
     <div class="drop" id="drop">Drop report files here<br><span class="small muted">or use “Choose files…” · many at once is fine</span></div>
+    <button class="btn ghost" id="pasteBtn" style="margin-top:6px;width:100%" title="If a file will not import, paste the two columns from Excel">Paste columns instead…</button>
     <div class="progress" id="progress" hidden></div>
     <ul class="filelist" id="filelist"></ul>
     <div id="filefoot" class="note" style="margin-top:10px" hidden>
@@ -249,7 +261,7 @@ function freeSlot() {
 }
 
 async function addFiles(files) {
-  files = files.filter((fl) => /\.(xlsx|xlsm|tsv|txt|csv)$/i.test(fl.name) && !fl.name.startsWith('~$'));
+  files = files.filter((fl) => !fl.name.startsWith('~$')); // the reader decides by content; Excel lock files skipped
   if (!files.length) return;
   const prog = $('progress');
   prog.hidden = false;
@@ -288,7 +300,7 @@ function runAnalysis(t) {
   t.ov = t.ov || {};
   t.res = SW.analyze(t.x, t.z, t.meta, { rimEnd, hMm, ...t.ov });
   t.row = SW.summaryRow(t.res);
-  t.label = SW.label(t.meta);
+  t.label = t.customLabel || SW.label(t.meta);
   t.disp = {};
 }
 function gsmooth(arr, sigmaMm, ds = 0.25) {
@@ -347,6 +359,7 @@ function setRange(t, key, value) {
 }
 document.querySelectorAll('.tab').forEach((b) => { b.onclick = () => { S.tab = b.dataset.tab; render(); }; });
 $('exportAll').onclick = () => exportSummary();
+$('pasteBtn').onclick = () => { S.tab = 'paste'; render(); };
 $('clearAll').onclick = () => { S.tires = []; S.current = null; render(); };
 
 // ============================================================== sidebar
@@ -362,7 +375,7 @@ function renderFiles() {
       <input type="checkbox" ${t.inCompare ? 'checked' : ''} ${t.status !== 'ok' ? 'disabled' : ''} aria-label="include in comparison">
       <span class="dot ${col ? '' : 'none'}" style="${col ? `background:${col}` : ''}"></span>
       <span style="min-width:0"><span class="name">${esc(t.label || t.name)}${t.res?.metrics.range.manual ? ' <span class="badge adj" title="analysis range adjusted by hand">adjusted</span>' : ''}</span>
-        <span class="sub">${esc(sub)}</span>${t.status === 'error' ? `<span class="err">Could not read: ${esc(t.error)}</span>` : ''}</span>
+        <span class="sub">${esc(sub)}</span>${t.status === 'error' ? `<span class="err" title="${esc(t.error)}">Could not read: ${esc(t.error)}</span>` : ''}</span>
       <button class="x" aria-label="remove">×</button></li>`;
   }).join('');
   ul.querySelectorAll('.fileitem').forEach((li) => {
@@ -392,8 +405,10 @@ function render() {
 function renderMain() {
   const main = $('main');
   if (S.tab === 'howto') { main.innerHTML = howtoHTML(); return; }
+  if (S.tab === 'paste') { renderPaste(main); return; }
   if (!okTires().length) { main.innerHTML = emptyHTML(); wireEmpty(); return; }
   if (S.tab === 'compare') renderCompare(main);
+  else if (S.tab === 'report') renderReport(main);
   else renderSingle(main, S.tires.find((t) => t.id === S.current && t.status === 'ok') || okTires()[0]);
 }
 
@@ -434,6 +449,8 @@ let chartSeq = 0;
 function lineChart(cfg) {
   const id = `ch${++chartSeq}`;
   const W = cfg.w || 560, H = cfg.h || 420, m = { l: 58, r: 18, t: 10, b: 44, ...(cfg.m || {}) };
+  const legendSvg = cfg.legendItems ? svgLegend(cfg.legendItems, m.l, 14, W - m.r) : null;
+  if (legendSvg) m.t += legendSvg.h;
   const pw = W - m.l - m.r, ph = H - m.t - m.b;
   const xs = cfg.series.map((s) => s.x), ys = cfg.series.map((s) => s.y);
   const xd = cfg.xDomain || niceDomain(...extent(xs.concat((cfg.vlines || []).map((v) => [v]))));
@@ -460,6 +477,7 @@ function lineChart(cfg) {
   for (const v of cfg.vlines || []) if (v >= xd[0] && v <= xd[1]) g += `<line x1="${X(v)}" x2="${X(v)}" y1="${m.t}" y2="${m.t + ph}" stroke="${muted}" stroke-width="1"/>`;
   g += `<text x="${m.l + pw / 2}" y="${H - 6}" text-anchor="middle" font-size="12" fill="${ink2}">${esc(cfg.xLabel || '')}</text>`;
   g += `<text transform="translate(14 ${m.t + ph / 2}) rotate(-90)" text-anchor="middle" font-size="12" fill="${ink2}">${esc(cfg.yLabel || '')}</text>`;
+  if (legendSvg) g += legendSvg.g;
   g += `<clipPath id="${id}c"><rect x="${m.l}" y="${m.t}" width="${pw}" height="${ph}"/></clipPath><g clip-path="url(#${id}c)">`;
   for (const s of cfg.series) {
     const n = s.x.length;
@@ -555,10 +573,29 @@ function wireCharts(root) {
   });
 }
 
+/** Legend drawn inside an SVG: wraps onto more lines when needed. Returns {g, h}. */
+function svgLegend(items, x0, y0, xMax) {
+  const ink2 = css('--ink2'), card = css('--card');
+  let x = x0, y = y0, g = '';
+  for (const it of items) {
+    const label = it.name.length > 48 ? `${it.name.slice(0, 47)}…` : it.name;
+    const w = 26 + label.length * 6.1 + 14;
+    if (x + w > xMax && x > x0) { x = x0; y += 17; }
+    if (it.dot) g += `<circle cx="${x + 9}" cy="${y}" r="3.5" fill="${it.color}"/>`;
+    else if (it.gradient) [0, 0.25, 0.5, 0.75].forEach((t, k) => { g += `<line x1="${x + k * 5}" x2="${x + k * 5 + 5}" y1="${y}" y2="${y}" stroke="${turboCss(t + 0.125)}" stroke-width="4"/>`; });
+    else g += `<line x1="${x}" x2="${x + 20}" y1="${y}" y2="${y}" stroke="${it.color}" stroke-width="${it.opacity ? 1.6 : 2.6}" ${it.dash ? 'stroke-dasharray="5 3"' : ''} opacity="${it.opacity ?? 1}" stroke-linecap="round"/>`;
+    g += `<text x="${x + 26}" y="${y}" dominant-baseline="middle" font-size="11.5" fill="${ink2}">${esc(label)}</text>`;
+    x += w;
+  }
+  return { g, h: y - y0 + 22 };
+}
+
 /** Horizontal grouped bars. rows: [{label}], groups: [{name,color,values:[]}] */
 function barChart(cfg) {
   const W = cfg.w || 560, rows = cfg.rows, groups = cfg.groups;
   const bh = cfg.barH || 16, gap = 3, rowGap = 16, m = { l: cfg.ml || 120, r: 56, t: 6, b: 34 };
+  const legendSvg = cfg.legendItems ? svgLegend(cfg.legendItems, 8, 14, W - m.r) : null;
+  if (legendSvg) m.t += legendSvg.h;
   const rowH = groups.length * (bh + gap) - gap;
   const H = m.t + rows.length * (rowH + rowGap) - rowGap + m.b;
   const pw = W - m.l - m.r;
@@ -586,17 +623,24 @@ function barChart(cfg) {
     });
   });
   g += `<text x="${m.l + pw / 2}" y="${H - 4}" text-anchor="middle" font-size="12" fill="${ink2}">${esc(cfg.xLabel || '')}</text>`;
+  if (legendSvg) g += legendSvg.g;
   return `<div class="chartwrap"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(cfg.title || '')}" font-family="system-ui, sans-serif">${g}</svg></div>`;
 }
 
 const turboCss = (t) => `rgb(${SW.turbo(t).join(',')})`;
-function colorbarHTML(lo, hi, caption, dec = 1) {
-  const stops = Array.from({ length: 11 }, (_, i) => `${turboCss(i / 10)} ${i * 10}%`).join(',');
-  const ticks = niceTicks(lo, hi, 4).filter((v) => v >= lo && v <= hi);
-  return `<div class="cbar"><div class="bar" style="background:linear-gradient(90deg,${stops})"></div>
-    <div class="ticks" style="position:relative;height:16px">${ticks.map((v) => `<span style="position:absolute;left:${((v - lo) / (hi - lo || 1)) * 100}%;transform:translateX(-50%)">${+v.toFixed(6)}</span>`).join('')}</div>
-    <div class="cap">${esc(caption)} · <b>blue = less</b>, <b>red = more</b> (range ${f(lo, dec)} to ${f(hi, dec)})</div></div>`;
+function colorbarSVG(lo, hi, caption, dec = 1, w = 520) {
+  const m = { l: 58, r: 18 }, pw = w - m.l - m.r, H = 58, N = 64;
+  const ink2 = css('--ink2');
+  let g = '';
+  for (let i = 0; i < N; i++) g += `<rect x="${(m.l + (i * pw) / N).toFixed(2)}" y="4" width="${(pw / N + 0.6).toFixed(2)}" height="12" fill="${turboCss((i + 0.5) / N)}"/>`;
+  for (const v of niceTicks(lo, hi, 4).filter((v) => v >= lo && v <= hi)) {
+    const x = m.l + ((v - lo) / (hi - lo || 1)) * pw;
+    g += `<line x1="${x}" x2="${x}" y1="16" y2="20" stroke="${ink2}"/><text x="${x}" y="31" text-anchor="middle" font-size="11.5" fill="${ink2}">${+v.toFixed(6)}</text>`;
+  }
+  g += `<text x="${m.l + pw / 2}" y="50" text-anchor="middle" font-size="12" fill="${ink2}">${esc(caption)}: blue = less, red = more (${f(lo, dec)} to ${f(hi, dec)})</text>`;
+  return `<div class="chartwrap"><svg viewBox="0 0 ${w} ${H}" role="img" aria-label="colour scale" font-family="system-ui, sans-serif">${g}</svg></div>`;
 }
+const svgOf = (html) => (html.match(/<svg[\s\S]*<\/svg>/) || [''])[0];
 const legendHTML = (items) => `<div class="legend">${items.map((it) => `<span><i class="${it.cls || ''}" style="background:${it.color}"></i>${esc(it.name)}</span>`).join('')}</div>`;
 const explainHTML = (what, how, mine, label = 'For this tire') => `<div class="explain"><p><b>What it shows.</b> ${what}</p><p><b>How to read it.</b> ${how}</p>${mine ? `<p class="this"><b>${label}.</b> ${mine}</p>` : ''}</div>`;
 
@@ -657,168 +701,216 @@ const COLOR_BY = {
 };
 
 // ============================================================== single tire view
-function renderSingle(main, t) {
-  charts.clear();
+/** Everything shown for one tire: numbers, charts (SVG markup) and plain-English texts.
+ *  Used by the Single tire view and by the reports (forReport: legends inside the
+ *  charts, no drag lines, no on-screen hints). */
+function tireModel(t, o = {}) {
+  const forReport = !!o.forReport;
+  const colorBy = o.colorBy || S.settings.colorBy, showRaw = o.showRaw ?? S.settings.showRaw;
   const res = t.res, m = res.metrics, meta = t.meta, d = m.deflection, mw = m.max_width;
-  const sm = S.settings.smoothMm, D = disp(t, sm), Dfine = disp(t, 1.5);
+  const D = disp(t, o.smoothMm || S.settings.smoothMm), Dfine = disp(t, 1.5);
   const peak = m.hinges.length ? m.hinges.reduce((a, b) => (b.surface_strain_pct > a.surface_strain_pct ? b : a)) : null;
   const zones = Object.fromEntries(res.zones.map((z) => [z.zone, z]));
   const chips = [
-    ['Size', meta.size], ['Brand', meta.brand], ['Serial', meta.serial], ['Load', meta.load_daN != null ? `${meta.load_daN} daN (${f(kg(meta.load_daN), 0)} kg)` : null],
-    ['Pressure', meta.pressure_psi != null ? `${meta.pressure_psi} psi` : null], ['Rim', meta.rim], ['Tested', meta.test_date], ['Type', meta.feature],
+    ['Size', meta.size], ['Brand', meta.brand], ['Serial', meta.serial], ['Load', meta.load_daN != null ? `${f(meta.load_daN, 0)} daN (${f(kg(meta.load_daN), 0)} kg)` : null],
+    ['Pressure', meta.pressure_psi != null ? `${f(meta.pressure_psi, 1).replace(/\.0$/, '')} psi` : null], ['Rim', meta.rim], ['Tested', meta.test_date], ['Type', meta.feature],
   ].filter(([, v]) => v != null && v !== '');
 
   const labH = meta.horizontal_deflection_mm;
   const kpis = [
     { k: 'Radial deflection', v: f(d.radial_lab_mm ?? d.shoulder_travel_mm, 1), u: 'mm',
-      d: d.radial_lab_mm ? 'How far the tire squashes down under the load (lab machine value).' : 'No lab value in this file; this is the shoulder travel measured from the scan.' },
+      d: d.radial_lab_mm ? 'How far the tire squashes down under the load (lab machine value).' : 'No lab value given; this is the shoulder travel measured from the scan.' },
     { k: 'Sidewall bulge', v: f(mw.growth_mm, 1), u: 'mm',
       d: `How far the widest point of the sidewall pushes out.${labH != null ? ` Lab report: ${f(labH, 2)} mm.` : ''}` },
     { k: 'Vertical stiffness', v: m.vertical_stiffness_N_per_mm ? f(m.vertical_stiffness_N_per_mm, 0) : '–', u: 'N/mm',
-      d: 'Load ÷ radial deflection. Higher = the tire is stiffer and squashes less.' },
+      d: m.vertical_stiffness_N_per_mm ? 'Load ÷ radial deflection. Higher = the tire is stiffer and squashes less.' : 'Needs the load (enter it under Test details).' },
     { k: 'Sidewall share of deflection', v: d.sidewall_share_pct != null ? f(d.sidewall_share_pct, 0) : '–', u: '%',
-      d: d.crown_share_mm != null ? `The sidewall takes ${f(d.shoulder_travel_mm, 1)} mm of the squash; the tread/crown takes the other ${f(d.crown_share_mm, 1)} mm.` : 'Needs the lab radial deflection from the report file.' },
+      d: d.crown_share_mm != null ? `The sidewall takes ${f(d.shoulder_travel_mm, 1)} mm of the squash; the tread/crown takes the other ${f(d.crown_share_mm, 1)} mm.` : 'Needs the radial deflection from the machine (enter it under Test details).' },
     { k: 'Peak bending strain', v: peak ? f(peak.surface_strain_pct, 1) : '–', u: '%',
       d: peak ? `At ${pctFmt(pctAt(res, peak.z_inflated))} of the height above the rim. Highest bending = most fatigue with every turn.` : '' },
     { k: 'Bulge per mm of deflection', v: f(m.bulge_per_mm_deflection, 2), u: '',
       d: 'Outward bulge for each mm the tire squashes. Lower = the sidewall stays more upright.' },
   ];
 
-  // --- chart A: shape, coloured
-  const cb = COLOR_BY[S.settings.colorBy] || COLOR_BY.du;
+  // ---- 1. shape, coloured
+  const cb = COLOR_BY[colorBy] || COLOR_BY.du;
   const q = cb.get(D, res);
   const qlo = Math.min(...q), qhi = Math.max(...q);
   const qcol = Array.from(q, (v) => turboCss(Math.round(((v - qlo) / (qhi - qlo || 1)) * 48) / 48));
   const pin = res.passes.inflated, pld = res.passes.loaded, xb = res.band.x_band;
   const series = [];
-  if (S.settings.showRaw) {
+  if (showRaw) {
     series.push({ name: 'measured (inflated)', x: Array.from(pin.x, (v) => xb - v), y: pin.z, dots: true, color: css('--inf'), opacity: 0.35 });
     series.push({ name: 'measured (loaded)', x: Array.from(pld.x, (v) => xb - v), y: pld.z, dots: true, color: css('--load'), opacity: 0.35 });
   }
   series.push({ name: 'Inflated', x: D.inf.u, y: D.inf.z, color: css('--inf'), width: 2.2, hover: true, unit: 'mm out' });
   series.push({ name: 'Loaded', x: D.matched.u_load, y: D.matched.z_load, colors: qcol, width: 6, hover: true, unit: 'mm out', tipColor: css('--load') });
-  const qAtLoadZ = { name: cb.name, x: q, y: D.matched.z_load, hover: true, unit: cb.unit, dec: cb.dec, color: 'transparent', width: 0, tipColor: turboCss(0.85) };
-  series.push(qAtLoadZ);
-  // whole scanned height, so the range lines can be dragged anywhere in it
+  if (!forReport) series.push({ name: cb.name, x: q, y: D.matched.z_load, hover: true, unit: cb.unit, dec: cb.dec, color: 'transparent', width: 0, tipColor: turboCss(0.85) });
   const zTop = Math.max(...pin.z, ...pld.z), zBot = Math.min(...pin.z, ...pld.z);
   const rimTopDrawn = S.settings.rimDraw === 'top';
-  const flipShape = rimTopDrawn === rimBottom(); // rim at low Z but drawn at top, or the reverse
-  const ends = rimTopDrawn ? ['SHOULDER end', 'RIM end'] : ['RIM end', 'SHOULDER end']; // [bottom, top] of the chart
+  const flipShape = rimTopDrawn === rimBottom();
+  const ends = rimTopDrawn ? ['SHOULDER end', 'RIM end'] : ['RIM end', 'SHOULDER end']; // [bottom, top]
   const xmin = Math.min(...D.inf.u, ...D.matched.u_load) - 8, xmax = Math.max(...D.inf.u, ...D.matched.u_load) + 10;
   const kq = Array.from(q).indexOf(qhi);
   const rg = m.range, startSide = rimBottom() ? 'rim side' : 'shoulder side';
-  const shapeChart = lineChart({
-    title: 'Sidewall shape', w: 520, h: 640, xDomain: niceDomain(xmin, xmax, 5, 0), yDomain: niceDomain(zBot, zTop, 6, 0.01),
+  const shapeLegend = [{ name: 'inflated only', color: css('--inf') }, { name: 'loaded, coloured by movement', gradient: true },
+    ...(showRaw ? [{ name: 'measured points', color: css('--muted'), dot: true }] : [])];
+  const shapeH = forReport ? 660 : 640;
+  const shape = lineChart({
+    title: 'Sidewall shape', w: 520, h: shapeH, xDomain: niceDomain(xmin, xmax, 5, 0), yDomain: niceDomain(zBot, zTop, 6, 0.01),
     xLabel: 'sideways position (mm), 0 = shoulder band → further out', yLabel: 'height in the scanner (mm)', yName: 'height', yUnit: ' mm',
-    series, vlines: [0], yFlip: flipShape,
+    series, vlines: [0], yFlip: flipShape, legendItems: forReport ? shapeLegend : null,
     markers: [{ x: mw.inflated_u, y: mw.inflated_z, color: css('--inf'), label: 'widest (inflated)', side: 'left' },
       { x: D.matched.u_load[kq], y: D.matched.z_load[kq], color: turboCss(1), label: `max: ${f(qhi, cb.dec)} ${cb.unit}` }],
-    texts: [{ px: 64, py: 640 - 58, text: ends[0], bold: true }, { px: 64, py: 22, text: ends[1], bold: true }],
-    handles: [
+    texts: [{ px: 64, py: shapeH - 58, text: ends[0], bold: true }, { px: 64, py: forReport ? 46 : 22, text: ends[1], bold: true }],
+    handles: forReport ? null : [
       { key: 'zStart', y: rg.z_start, color: css('--ink2'), label: `sidewall start (${startSide})` },
       { key: 'edgeInflated', y: rg.edge_inflated, color: css('--inf'), label: 'shoulder edge · inflated' },
       { key: 'edgeLoaded', y: rg.edge_loaded, color: css('--load'), label: 'shoulder edge · loaded' },
     ],
     onHandle: (key, v) => setRange(t, key, v),
   });
-  const shapeMine = (() => {
-    const pHi = pctAt(res, D.matched.z_inf[kq]), kl = Array.from(q).indexOf(qlo), pLo = pctAt(res, D.matched.z_inf[kl]);
-    return `The red part is at about <b>${pctFmt(pHi)}</b> of the height above the rim (${where(pHi)}). That is where ${cb.noun} is largest: <b>${f(qhi, cb.dec)} ${cb.unit}</b>. `
-      + `The bluest part is at about ${pctFmt(pLo)} (${f(qlo, cb.dec)} ${cb.unit}${qlo < 0 && cb.neg ? `; ${cb.neg}` : ''}). The shoulder band moves <b>${f(res.band.delta, 1)} mm</b> toward the rim.`;
-  })();
+  const pHi = pctAt(res, D.matched.z_inf[kq]), kl = Array.from(q).indexOf(qlo), pLo = pctAt(res, D.matched.z_inf[kl]);
+  const shapeTx = {
+    what: 'A slice through the sidewall, as the laser saw it. The thin blue line is the tire inflated with no load. The thick coloured line is the same sidewall with the load on. Dots are the actual laser readings; the lines are smoothed through them.',
+    how: `The ${ends[0] === 'RIM end' ? 'rim' : 'shoulder'} is at the bottom of the chart and the ${ends[1] === 'RIM end' ? 'rim' : 'shoulder'} at the top${forReport ? '' : ' (switch with “Draw rim at”)'}. Further right means that part of the sidewall sticks out more. The colour shows ${cb.say}: <b>blue = little, green/yellow = medium, red = most</b>.${forReport ? '' : ' Use “Colour by” to switch what the colours mean.'} The sideways scale is stretched so small movements are easy to see.${forReport ? '' : ' Hover the chart to read values.'}`,
+    mine: `The red part is at about <b>${pctFmt(pHi)}</b> of the height above the rim (${where(pHi)}). That is where ${cb.noun} is largest: <b>${f(qhi, cb.dec)} ${cb.unit}</b>. `
+      + `The bluest part is at about ${pctFmt(pLo)} (${f(qlo, cb.dec)} ${cb.unit}${qlo < 0 && cb.neg ? `; ${cb.neg}` : ''}). The shoulder band moves <b>${f(res.band.delta, 1)} mm</b> toward the rim.`,
+  };
+  const colorbar = colorbarSVG(qlo, qhi, `${cb.name} (${cb.unit})`, cb.dec);
 
-  // --- chart B: bulge along the sidewall
+  // ---- 2. bulge
   const hB = pctFromRim(res, D.matched.z_inf), hBf = pctFromRim(res, Dfine.matched.z_inf);
-  const naiveH = pctFromRim(res, D.naive.z);
   const bands = zoneBands(res);
-  const bulgeChart = lineChart({
-    title: 'Outward bulge', w: 520, h: 420, yDomain: [0, 100], yFmt: pctFmt, yFlip: rimTopDrawn, yName: 'height above rim', xLabel: 'outward deflection (mm)',
-    yLabel: 'height above the rim (% of sidewall)', vlines: [0], bands,
+  const pct = { w: 520, h: forReport ? 370 : 420, yDomain: [0, 100], yFmt: pctFmt, yFlip: rimTopDrawn, yName: 'height above rim',
+    yLabel: 'height above the rim (% of sidewall)', vlines: [0], bands };
+  const faint = css('--change');
+  const bulge = lineChart({ ...pct, title: 'Outward bulge', xLabel: 'outward deflection (mm)',
+    legendItems: forReport ? [{ name: 'outward deflection', color: faint }, { name: 'less smoothed', color: faint, opacity: 0.35 }, { name: 'same-height subtraction', color: css('--naive'), dash: true }] : null,
     series: [
-      { name: 'less smoothed', x: Dfine.matched.du, y: hBf, color: css('--change'), width: 1.2, opacity: 0.35 },
-      { name: 'same height (simple)', x: D.naive.du, y: naiveH, color: css('--naive'), width: 1.6, dash: '6 4', hover: true, unit: 'mm' },
-      { name: 'Outward deflection', x: D.matched.du, y: hB, color: css('--change'), width: 2.6, hover: true, unit: 'mm' },
+      { name: 'less smoothed', x: Dfine.matched.du, y: hBf, color: faint, width: 1.2, opacity: 0.35 },
+      { name: 'same height (simple)', x: D.naive.du, y: pctFromRim(res, D.naive.z), color: css('--naive'), width: 1.6, dash: '6 4', hover: true, unit: 'mm' },
+      { name: 'Outward deflection', x: D.matched.du, y: hB, color: faint, width: 2.6, hover: true, unit: 'mm' },
     ],
-    markers: [{ x: m.matched.peak_outward_mm, y: pctAt(res, m.matched.inflated_z_of_that_point), color: css('--change'), label: `${f(m.matched.peak_outward_mm, 1)} mm` }],
+    markers: [{ x: m.matched.peak_outward_mm, y: pctAt(res, m.matched.inflated_z_of_that_point), color: faint, label: `${f(m.matched.peak_outward_mm, 1)} mm` }],
   });
   const pPk = pctAt(res, m.matched.inflated_z_of_that_point);
-  const bulgeMine = `The sidewall pushes out most at about <b>${pctFmt(pPk)}</b> of the height above the rim (${where(pPk)}), by <b>${f(m.matched.peak_outward_mm, 1)} mm</b>. `
-    + `On average the rim-side third moves out ${f(zones['rim-side'].mean_outward_mm, 1)} mm, the middle ${f(zones.middle.mean_outward_mm, 1)} mm and the shoulder-side third ${f(zones['shoulder-side'].mean_outward_mm, 1)} mm. `
-    + `The simple same-height subtraction gives a peak of ${f(m.naive_same_z.peak_mm, 1)} mm.`;
+  const bulgeTx = {
+    what: 'For every point on the sidewall, how far it moved outward when the load went on. Shaded bands mark the rim-side, middle and shoulder-side thirds.',
+    how: `Height runs from the rim (0%, ${rimTopDrawn ? 'top' : 'bottom'}) to the shoulder (100%, ${rimTopDrawn ? 'bottom' : 'top'}). The further right the green line, the bigger the bulge at that height. The faint line is the same thing with less smoothing, so nothing is hidden. The grey dashed line is the simple “subtract the two scans at the same height” method; it drifts because the sidewall also slides toward the rim under load.`,
+    mine: `The sidewall pushes out most at about <b>${pctFmt(pPk)}</b> of the height above the rim (${where(pPk)}), by <b>${f(m.matched.peak_outward_mm, 1)} mm</b>. `
+      + `On average the rim-side third moves out ${f(zones['rim-side'].mean_outward_mm, 1)} mm, the middle ${f(zones.middle.mean_outward_mm, 1)} mm and the shoulder-side third ${f(zones['shoulder-side'].mean_outward_mm, 1)} mm. `
+      + `The simple same-height subtraction gives a peak of ${f(m.naive_same_z.peak_mm, 1)} mm.`,
+  };
 
-  // --- chart C: tilt
-  const tiltChart = lineChart({
-    title: 'Tilt', w: 520, h: 420, yDomain: [0, 100], yFmt: pctFmt, yFlip: rimTopDrawn, yName: 'height above rim', xLabel: 'tilt change (degrees), + = leans further out',
-    yLabel: 'height above the rim (% of sidewall)', vlines: [0], bands,
-    series: [{ name: 'less smoothed', x: D.matched.dtheta, y: hB, color: css('--change'), width: 1.2, opacity: 0.35 },
-      { name: 'Tilt change', x: D.tiltS, y: hB, color: css('--change'), width: 2.6, hover: true, unit: '°' }],
-  });
-  const kT = (() => { let k = 0; D.matched.dtheta.forEach((v, i) => { if (Math.abs(v) > Math.abs(D.matched.dtheta[k])) k = i; }); return k; })();
+  // ---- 3. tilt
+  const tilt = lineChart({ ...pct, title: 'Tilt', xLabel: 'tilt change (degrees), + = leans further out',
+    legendItems: forReport ? [{ name: 'tilt change', color: faint }, { name: 'less smoothed', color: faint, opacity: 0.35 }] : null,
+    series: [{ name: 'less smoothed', x: D.matched.dtheta, y: hB, color: faint, width: 1.2, opacity: 0.35 },
+      { name: 'Tilt change', x: D.tiltS, y: hB, color: faint, width: 2.6, hover: true, unit: '°' }] });
+  let kT = 0;
+  D.matched.dtheta.forEach((v, i) => { if (Math.abs(v) > Math.abs(D.matched.dtheta[kT])) kT = i; });
   const tMax = D.matched.dtheta[kT], pT = hB[kT];
   const tiltZone = res.zones.reduce((a, b) => (b.mean_abs_rotation_deg > a.mean_abs_rotation_deg ? b : a));
-  const tiltMine = `The biggest tilt is <b>${f(Math.abs(tMax), 0)}°</b> at about ${pctFmt(pT)} of the height (${where(pT)}), leaning ${tMax > 0 ? 'further outward' : 'inward'}. `
-    + `The ${tiltZone.zone} third twists the most on average (${f(tiltZone.mean_abs_rotation_deg, 0)}°).`;
+  const tiltTx = {
+    what: 'Under load the sidewall does not only push out, it also rotates, a bit like a door swinging on a hinge. This is that rotation, in degrees.',
+    how: 'Right of the centre line = that part leans further outward than before; left = it leans inward. The further from the centre line, the more the rubber there is being twisted.',
+    mine: `The biggest tilt is <b>${f(Math.abs(tMax), 0)}°</b> at about ${pctFmt(pT)} of the height (${where(pT)}), leaning ${tMax > 0 ? 'further outward' : 'inward'}. `
+      + `The ${tiltZone.zone} third twists the most on average (${f(tiltZone.mean_abs_rotation_deg, 0)}°).`,
+  };
 
-  // --- chart D: bending strain
-  const bendChart = lineChart({
-    title: 'Bending', w: 520, h: 420, yDomain: [0, 100], yFmt: pctFmt, yFlip: rimTopDrawn, yName: 'height above rim', xLabel: 'bending strain at the surface (%)',
-    yLabel: 'height above the rim (% of sidewall)', vlines: [0], bands,
-    series: [{ name: 'less smoothed', x: D.strain, y: hB, color: css('--change'), width: 1.2, opacity: 0.35 },
-      { name: 'Bending strain', x: D.strainS, y: hB, color: css('--change'), width: 2.6, hover: true, unit: '%' }],
-    markers: m.hinges.slice(0, 2).map((h) => ({ x: Math.sign(h.dkappa_per_m) * h.surface_strain_pct, y: pctAt(res, h.z_inflated), color: css('--change'),
-      label: `≈${f(h.surface_strain_pct, 1)}%`, side: h.dkappa_per_m < 0 ? 'left' : 'right' })),
-  });
-  const bendMine = peak
-    ? `The sidewall bends hardest at about <b>${pctFmt(pctAt(res, peak.z_inflated))}</b> of the height (${where(pctAt(res, peak.z_inflated))}), about <b>${f(peak.surface_strain_pct, 1)}%</b> strain at the surface`
-      + `${m.hinges[1] ? `, and again at ${pctFmt(pctAt(res, m.hinges[1].z_inflated))} (${f(m.hinges[1].surface_strain_pct, 1)}%)` : ''}. `
-      + `These are the spots to watch for cracking and heat. (Assumes ${f(res.opts.hMm, 1)} mm of rubber over the cords; change it at the top.)`
-    : '';
+  // ---- 4. bending
+  const bend = lineChart({ ...pct, title: 'Bending', xLabel: 'bending strain at the surface (%)',
+    legendItems: forReport ? [{ name: 'bending strain', color: faint }, { name: 'less smoothed (peaks read here)', color: faint, opacity: 0.35 }] : null,
+    series: [{ name: 'less smoothed', x: D.strain, y: hB, color: faint, width: 1.2, opacity: 0.35 },
+      { name: 'Bending strain', x: D.strainS, y: hB, color: faint, width: 2.6, hover: true, unit: '%' }],
+    markers: m.hinges.slice(0, 2).map((h) => ({ x: Math.sign(h.dkappa_per_m) * h.surface_strain_pct, y: pctAt(res, h.z_inflated), color: faint,
+      label: `≈${f(h.surface_strain_pct, 1)}%`, side: h.dkappa_per_m < 0 ? 'left' : 'right' })) });
+  const bendTx = {
+    what: 'How sharply the sidewall is being bent under load, turned into an estimate of how much the outer rubber surface stretches (strain, %).',
+    how: 'Peaks are the places that flex the most every time the wheel turns. That is where cracks and heat start first. Right = bent outward more than before; left = bent the other way.',
+    mine: peak
+      ? `The sidewall bends hardest at about <b>${pctFmt(pctAt(res, peak.z_inflated))}</b> of the height (${where(pctAt(res, peak.z_inflated))}), about <b>${f(peak.surface_strain_pct, 1)}%</b> strain at the surface`
+        + `${m.hinges[1] ? `, and again at ${pctFmt(pctAt(res, m.hinges[1].z_inflated))} (${f(m.hinges[1].surface_strain_pct, 1)}%)` : ''}. `
+        + `These are the spots to watch for cracking and heat. (Assumes ${f(res.opts.hMm, 1)} mm of rubber over the cords.)`
+      : '',
+  };
 
-  // --- chart E: zones
-  const zoneChart = barChart({
-    title: 'Zones', w: 520, ml: 108, unit: '%', dec: 0, xLabel: '% of the whole sidewall',
+  // ---- 5. zones
+  const zonesC = barChart({ title: 'Zones', w: 520, ml: 108, unit: '%', dec: 0, xLabel: '% of the whole sidewall',
+    legendItems: forReport ? [{ name: 'share of the bulge', color: faint }, { name: 'share of the bending', color: css('--energy') }] : null,
     rows: res.zones.map((z) => ({ label: z.zone })),
-    groups: [{ name: 'Share of the bulge', color: css('--change'), values: res.zones.map((z) => z.share_of_bulge_pct) },
-      { name: 'Share of the bending', color: css('--energy'), values: res.zones.map((z) => z.share_of_bending_energy_pct) }],
-  });
+    groups: [{ name: 'Share of the bulge', color: faint, values: res.zones.map((z) => z.share_of_bulge_pct) },
+      { name: 'Share of the bending', color: css('--energy'), values: res.zones.map((z) => z.share_of_bending_energy_pct) }] });
   const bigBulge = res.zones.reduce((a, b) => (b.share_of_bulge_pct > a.share_of_bulge_pct ? b : a));
   const bigBend = res.zones.reduce((a, b) => (b.share_of_bending_energy_pct > a.share_of_bending_energy_pct ? b : a));
-  const zoneMine = `The <b>${bigBulge.zone}</b> third carries most of the bulge (${f(bigBulge.share_of_bulge_pct, 0)}%), `
-    + `while the <b>${bigBend.zone}</b> third does most of the bending (${f(bigBend.share_of_bending_energy_pct, 0)}%).`;
+  const zonesTx = {
+    what: 'The sidewall split into three equal parts: next to the rim, the middle, and next to the shoulder.',
+    how: 'Green = how much of the total push-out happens in that part. Yellow = how much of the total bending happens there. Each colour adds up to 100%.',
+    mine: `The <b>${bigBulge.zone}</b> third carries most of the bulge (${f(bigBulge.share_of_bulge_pct, 0)}%), while the <b>${bigBend.zone}</b> third does most of the bending (${f(bigBend.share_of_bending_energy_pct, 0)}%).`,
+  };
 
   const vl = m.vs_lab;
   const quality = [
+    `Scan read from: ${esc(meta.source || 'file')}. Test details found in the file: ${meta.fields_found ?? 0} of ${SW.FIELD_KEYS.length}${t.metaEdited ? ' (some entered by hand)' : ''}.`,
     `Laser noise after cleaning: <b>${f(Math.max(m.noise_floor_mm.inflated, m.noise_floor_mm.loaded), 2)} mm</b> (small compared with a ${f(mw.growth_mm, 0)} mm bulge).`,
-    `Points where the laser lost the surface (300.15): ${m.inflated.dropouts + m.loaded.dropouts}. Repeated readings removed: ${m.inflated.held_repeats + m.loaded.held_repeats}.`,
-    `Shoulder band match between the two scans: r = ${f(res.band.texture_corr, 2)} at ${f(res.band.delta, 1)} mm shift, with ${f(Math.abs(res.band.x_offset), 2)} mm sideways shift (≈0 = it moved straight toward the rim).`,
+    `Readings where the laser lost the surface: ${m.inflated.dropouts + m.loaded.dropouts}. Repeated readings removed: ${m.inflated.held_repeats + m.loaded.held_repeats}.`,
+    `Shoulder band match between the two scans: r = ${f(res.band.texture_corr, 2)} at ${f(res.band.delta, 1)} mm shift${rg.manual ? ' (range set by hand)' : ''}, sideways shift ${f(Math.abs(res.band.x_offset), 2)} mm (≈0 = it moved straight toward the rim).`,
     `About <b>${f(m.arc_length.deficit_mm, 0)} mm</b> of sidewall just under the shoulder folds out of the laser's view when loaded, so values in the top part of the charts are less certain.`,
     vl ? `Check against the lab report: horizontal deflection ${f(vl.horizontal_deflection_lab_mm, 3)} mm (lab) vs ${f(vl.horizontal_deflection_raw_mm, 3)} mm (same method here) vs ${f(vl.horizontal_deflection_smoothed_mm, 2)} mm (smoothed).` : null,
+    ...(meta.notes || []).map((n) => `Note from reading the file: ${esc(n)}.`),
   ].filter(Boolean);
 
-  const fileName = slug(t.name);
+  return { t, res, m, chips, kpis, peak, cb, rg, startSide, ends, rimTopDrawn,
+    shape: { svg: shape, colorbar, ...shapeTx, title: 'Sidewall shape, coloured by how much it moves' },
+    bulge: { svg: bulge, ...bulgeTx, title: 'How far each part pushes out' },
+    tilt: { svg: tilt, ...tiltTx, title: 'How much each part tilts' },
+    bend: { svg: bend, ...bendTx, title: 'Where the sidewall bends hardest' },
+    zones: { svg: zonesC, ...zonesTx, title: 'Which part of the sidewall does the work' },
+    quality };
+}
+
+const DETAIL_FIELDS = [
+  ['size', 'Tire size', 'text'], ['brand', 'Brand', 'text'], ['serial', 'Serial', 'text'], ['test_date', 'Test date', 'text'],
+  ['load_daN', 'Load (daN)', 'num'], ['pressure_psi', 'Pressure (psi)', 'num'],
+  ['radial_deflection_mm', 'Radial deflection from the machine (mm)', 'num'], ['horizontal_deflection_mm', 'Horizontal deflection, lab report (mm)', 'num'],
+];
+
+function renderSingle(main, t) {
+  charts.clear();
+  const M = tireModel(t), res = M.res, rg = M.rg, fileName = slug(t.name);
+  const sm = S.settings.smoothMm;
+  const missing = ['load_daN', 'radial_deflection_mm'].filter((k) => t.meta[k] == null);
+  const card = (n, sec, legend, extra = '') => `<section class="card"><div class="cardhead"><h3>${n} · ${sec.title}</h3><button class="btn ghost png" data-name="${fileName}_${n}">Save PNG</button></div>
+      ${legend}${sec.svg}${explainHTML(sec.what, sec.how, sec.mine)}${extra}</section>`;
   main.innerHTML = `
   <section class="panel first">
     <div class="titlebar"><div><h2>${esc(t.label)}</h2><div class="small muted">${esc(t.name)}</div></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn" id="dlProfile">Download profile data (CSV)</button><button class="btn ghost" id="dlRaw">Raw scan (CSV)</button></div></div>
-    <div class="chips">${chips.map(([k, v]) => `<span class="chip">${esc(k)} <b>${esc(v)}</b></span>`).join('')}</div>
-    <div class="kpis">${kpis.map((k) => `<div class="kpi"><div class="k">${esc(k.k)}</div><div class="v">${k.v}<small>${esc(k.u)}</small></div><div class="d">${esc(k.d)}</div></div>`).join('')}</div>
+    <div class="chips">${M.chips.map(([k, v]) => `<span class="chip">${esc(k)} <b>${esc(v)}</b></span>`).join('')}</div>
+    ${missing.length ? `<p class="note warn" style="margin-top:8px">Not found in the file: ${missing.map((k) => DETAIL_FIELDS.find((d) => d[0] === k)[1].toLowerCase()).join(' and ')}. Enter ${missing.length > 1 ? 'them' : 'it'} under “Test details” below to get stiffness and the sidewall share.</p>` : ''}
+    <div class="kpis">${M.kpis.map((k) => `<div class="kpi"><div class="k">${esc(k.k)}</div><div class="v">${k.v}<small>${esc(k.u)}</small></div><div class="d">${esc(k.d)}</div></div>`).join('')}</div>
+    <details class="check details-edit" style="margin-top:12px" ${missing.length || t.metaEdited ? 'open' : ''}><summary>Test details${t.metaEdited ? ' <span class="badge adj">edited</span>' : ''} <span class="small muted">— check or fill in; changes update every number</span></summary>
+      <div class="formgrid">
+        <label><span>Name shown in charts</span><input data-k="__label" value="${esc(t.customLabel || '')}" placeholder="${esc(SW.label(t.meta))}"></label>
+        ${DETAIL_FIELDS.map(([k, name, kind]) => `<label><span>${esc(name)}</span><input data-k="${k}" ${kind === 'num' ? 'type="number" step="any"' : ''} value="${esc(t.meta[k] ?? '')}"></label>`).join('')}
+      </div>
+      <div class="small muted" style="margin-top:6px">Scan read from: ${esc(t.meta.source || '')}</div>
+    </details>
   </section>
   <section class="card" style="margin-bottom:16px">
-    <div class="cardhead"><h3>1 · Sidewall shape, coloured by how much it moves</h3>
+    <div class="cardhead"><h3>1 · ${M.shape.title}</h3>
       <div class="opts"><label class="ctl">Colour by <select id="colorBy">${Object.entries(COLOR_BY).map(([k, v]) => `<option value="${k}" ${k === S.settings.colorBy ? 'selected' : ''}>${v.name}</option>`).join('')}</select></label>
       <label class="ctl"><input type="checkbox" id="showRaw" ${S.settings.showRaw ? 'checked' : ''}> show measured points</label>
-      <button class="btn ghost png" data-name="${fileName}_shape">Save PNG</button></div></div>
+      <button class="btn ghost png" data-name="${fileName}_1">Save PNG</button></div></div>
     <div class="chart-split">
-      <div>${shapeChart}${colorbarHTML(qlo, qhi, `${cb.name} (${cb.unit})`, cb.dec)}</div>
+      <div>${M.shape.svg}${M.shape.colorbar}</div>
       <div>${legendHTML([{ name: 'Inflated only', color: css('--inf') }, { name: 'Loaded (coloured)', color: `linear-gradient(90deg,${turboCss(0)},${turboCss(0.5)},${turboCss(1)})` }, ...(S.settings.showRaw ? [{ name: 'measured points', color: css('--muted'), cls: 'dotk' }] : [])])}
-      ${explainHTML(
-        'A slice through the sidewall, as the laser saw it. The thin blue line is the tire inflated with no load. The thick coloured line is the same sidewall with the load on. Dots are the actual laser readings; the lines are smoothed through them.',
-        `The ${ends[0] === 'RIM end' ? 'rim' : 'shoulder'} is at the bottom of the chart and the ${ends[1] === 'RIM end' ? 'rim' : 'shoulder'} at the top (switch with “Draw rim at”). Further right means that part of the sidewall sticks out more. The colour shows ${cb.say}: <b>blue = little, green/yellow = medium, red = most</b>. Use “Colour by” to switch what the colours mean. The sideways scale is stretched so small movements are easy to see. Hover the chart to read values.`,
-        shapeMine)}
+      ${explainHTML(M.shape.what, M.shape.how, M.shape.mine)}
         <div class="range" id="rangeBox">
           <h4>Analysis range <span class="badge ${rg.manual ? 'adj' : ''}">${rg.manual ? 'adjusted by you' : 'automatic'}</span></h4>
           <div class="small muted">Where the sidewall starts and ends in each scan. The tool finds these automatically; if a line is in the wrong place, drag it on the chart or type a height (mm). Each tire keeps its own setting.</div>
-          ${[['zStart', `Sidewall start (${startSide}), both scans`, rg.z_start, rg.auto.z_start, '--ink2'],
+          ${[['zStart', `Sidewall start (${M.startSide}), both scans`, rg.z_start, rg.auto.z_start, '--ink2'],
              ['edgeInflated', 'Shoulder edge, inflated scan', rg.edge_inflated, rg.auto.edge_inflated, '--inf'],
              ['edgeLoaded', 'Shoulder edge, loaded scan', rg.edge_loaded, rg.auto.edge_loaded, '--load']]
             .map(([k, name, v, a, c]) => `<label class="row"><i style="border-color:var(${c})"></i><span>${name}</span>
@@ -832,43 +924,18 @@ function renderSingle(main, t) {
     </div>
   </section>
   <div class="grid2">
-    <section class="card"><div class="cardhead"><h3>2 · How far each part pushes out</h3><button class="btn ghost png" data-name="${fileName}_bulge">Save PNG</button></div>
-      ${legendHTML([{ name: 'outward deflection (smoothed)', color: css('--change') }, { name: 'less smoothed', color: css('--change') + '59' }, { name: 'same-height subtraction (simple)', color: css('--naive'), cls: 'dash' }])}
-      ${bulgeChart}
-      ${explainHTML(
-        'For every point on the sidewall, how far it moved outward when the load went on. Shaded bands mark the rim-side, middle and shoulder-side thirds.',
-        `Height runs from the rim (0%, ${rimTopDrawn ? 'top' : 'bottom'}) to the shoulder (100%, ${rimTopDrawn ? 'bottom' : 'top'}). The further right the green line, the bigger the bulge at that height. The faint line is the same thing with less smoothing, so you can see nothing was lost. The grey dashed line is the simple “subtract the two scans at the same height” method; it drifts because the sidewall also slides toward the rim under load.`,
-        bulgeMine)}
-    </section>
-    <section class="card"><div class="cardhead"><h3>3 · How much each part tilts</h3><button class="btn ghost png" data-name="${fileName}_tilt">Save PNG</button></div>
-      ${legendHTML([{ name: 'tilt change (smoothed)', color: css('--change') }, { name: 'less smoothed', color: css('--change') + '59' }])}
-      ${tiltChart}
-      ${explainHTML(
-        'Under load the sidewall does not only push out, it also rotates, a bit like a door swinging on a hinge. This is that rotation, in degrees.',
-        'Right of the centre line = that part leans further outward than before; left = it leans inward. The further from the centre line, the more the rubber there is being twisted.',
-        tiltMine)}
-    </section>
-    <section class="card"><div class="cardhead"><h3>4 · Where the sidewall bends hardest</h3><button class="btn ghost png" data-name="${fileName}_bending">Save PNG</button></div>
-      ${legendHTML([{ name: 'bending strain (smoothed)', color: css('--change') }, { name: 'less smoothed (peak values are read from this)', color: css('--change') + '59' }])}
-      ${bendChart}
-      ${explainHTML(
-        'How sharply the sidewall is being bent under load, turned into an estimate of how much the outer rubber surface stretches (strain, %).',
-        'Peaks are the places that flex the most every time the wheel turns. That is where cracks and heat start first. Right = bent outward more than before; left = bent the other way.',
-        bendMine)}
-    </section>
-    <section class="card"><div class="cardhead"><h3>5 · Which part of the sidewall does the work</h3><button class="btn ghost png" data-name="${fileName}_zones">Save PNG</button></div>
-      ${legendHTML([{ name: 'share of the bulge', color: css('--change') }, { name: 'share of the bending', color: css('--energy') }])}
-      ${zoneChart}
-      ${explainHTML(
-        'The sidewall split into three equal parts: next to the rim, the middle, and next to the shoulder.',
-        'Green = how much of the total push-out happens in that part. Yellow = how much of the total bending happens there. Each colour adds up to 100%.',
-        zoneMine)}
-      <details class="check" style="margin-top:12px"><summary>Data check</summary><ul>${quality.map((qq) => `<li>${qq}</li>`).join('')}</ul></details>
-    </section>
+    ${card(2, M.bulge, legendHTML([{ name: 'outward deflection (smoothed)', color: css('--change') }, { name: 'less smoothed', color: css('--change') + '59' }, { name: 'same-height subtraction (simple)', color: css('--naive'), cls: 'dash' }]))}
+    ${card(3, M.tilt, legendHTML([{ name: 'tilt change (smoothed)', color: css('--change') }, { name: 'less smoothed', color: css('--change') + '59' }]))}
+    ${card(4, M.bend, legendHTML([{ name: 'bending strain (smoothed)', color: css('--change') }, { name: 'less smoothed (peak values are read from this)', color: css('--change') + '59' }]))}
+    ${card(5, M.zones, legendHTML([{ name: 'share of the bulge', color: css('--change') }, { name: 'share of the bending', color: css('--energy') }]),
+      `<details class="check" style="margin-top:12px"><summary>Data check</summary><ul>${M.quality.map((qq) => `<li>${qq}</li>`).join('')}</ul></details>`)}
   </div>`;
 
   main.querySelectorAll('#rangeBox input[data-k]').forEach((inp) => {
     inp.onchange = () => { const v = parseFloat(inp.value); setRange(t, inp.dataset.k, isFinite(v) ? v : null); };
+  });
+  main.querySelectorAll('.details-edit input[data-k]').forEach((inp) => {
+    inp.onchange = () => setDetail(t, inp.dataset.k, inp.value);
   });
   $('rangeReset').onclick = () => { t.ov = {}; t.rangeError = null; runAnalysis(t); render(); };
   wireCharts(main);
@@ -888,6 +955,103 @@ function renderSingle(main, t) {
     const rows = Array.from(t.x, (v, i) => [i < res.passes.inflated.xRaw.length ? 'inflated' : 'loaded', v, t.z[i]]);
     download(new Blob([toCSV([['pass', 'laser_distance_mm', 'z_position_mm'], ...rows])], { type: 'text/csv' }), `${fileName}_raw.csv`);
   };
+}
+
+/** A test detail typed by the user (fills gaps when a file's labels were not recognised). */
+function setDetail(t, key, raw) {
+  if (key === '__label') { t.customLabel = raw.trim() || null; t.label = t.customLabel || SW.label(t.meta); render(); return; }
+  const kind = DETAIL_FIELDS.find((d) => d[0] === key)?.[2];
+  const v = raw.trim() === '' ? null : kind === 'num' ? SW.parseNum(raw) : raw.trim();
+  t.meta[key] = kind === 'num' && !isFinite(v) ? null : v;
+  t.metaEdited = true;
+  runAnalysis(t);
+  render();
+}
+
+// ============================================================== paste columns
+const PASTE = { x: '', z: '', details: {} };
+function renderPaste(main) {
+  main.innerHTML = `<section class="panel first">
+    <h2>Paste the scan columns</h2>
+    <p class="muted">If a file will not import, copy the two columns from Excel and paste one into each box. Copy whole columns, blank cells included, so the rows stay lined up. A header at the top is ignored. Pasting both columns (or both rows) into the first box also works: they are split automatically.</p>
+    <div class="pastegrid">
+      <label><b>Laser distance (mm)</b><textarea id="pX" spellcheck="false" placeholder="178.79&#10;177.32&#10;…">${esc(PASTE.x)}</textarea><span class="small muted" id="pXc"></span></label>
+      <label><b>Z position (mm)</b><textarea id="pZ" spellcheck="false" placeholder="268.41&#10;268.10&#10;…">${esc(PASTE.z)}</textarea><span class="small muted" id="pZc"></span></label>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button class="btn" id="pSwap">Swap the two boxes</button><button class="btn ghost" id="pClear">Clear</button></div>
+    <h3 style="margin-top:16px">Test details <span class="small muted">(optional, but load and radial deflection give stiffness and the sidewall share)</span></h3>
+    <div class="formgrid">
+      <label><span>Name</span><input data-k="__label" value="${esc(PASTE.details.__label || '')}" placeholder="e.g. Tire A, 4500 kg"></label>
+      ${DETAIL_FIELDS.map(([k, name, kind]) => `<label><span>${esc(name)}</span><input data-k="${k}" ${kind === 'num' ? 'type="number" step="any"' : ''} value="${esc(PASTE.details[k] ?? '')}"></label>`).join('')}
+    </div>
+    <div id="pPreview" style="margin-top:14px"></div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><button class="btn primary" id="pAdd" disabled>Add this tire</button><span class="small" id="pMsg"></span></div>
+  </section>`;
+  const area = { x: $('pX'), z: $('pZ') };
+  const toText = (vals) => Array.from(vals, (v) => (isFinite(v) ? String(v) : '')).join('\n');
+  let ready = null;
+  const update = () => {
+    PASTE.x = area.x.value; PASTE.z = area.z.value;
+    let px = SW.parseColumnText(area.x.value), pz = SW.parseColumnText(area.z.value);
+    if (px.columns.length >= 2 && !area.z.value.trim()) { // both columns pasted into the first box
+      area.x.value = toText(px.columns[0]); area.z.value = toText(px.columns[1]);
+      PASTE.x = area.x.value; PASTE.z = area.z.value;
+      px = SW.parseColumnText(area.x.value); pz = SW.parseColumnText(area.z.value);
+      $('pMsg').textContent = 'Both columns were in the first box; they have been split.';
+    }
+    const info = (p, el) => {
+      const v = p.columns[0] || [], n = Array.from(v).filter(isFinite).length;
+      el.textContent = v.length ? `${n} numbers${v.length - n ? `, ${v.length - n} blank/text rows (kept as gaps)` : ''}${p.header ? ` · header “${p.header.slice(0, 40)}” skipped` : ''}` : '';
+      return v;
+    };
+    const xv = info(px, $('pXc')), zv = info(pz, $('pZc'));
+    ready = null;
+    $('pAdd').disabled = true;
+    const prev = $('pPreview');
+    if (!xv.length || !zv.length) { prev.innerHTML = ''; return; }
+    try {
+      const r = SW.fromColumns(xv, zv, {});
+      ready = { xv, zv };
+      $('pAdd').disabled = false;
+      const half = r.z.indexOf(Math.min(...r.z)) > 0 && r.z[0] > r.z[r.z.length >> 1] ? r.z.indexOf(Math.min(...r.z)) : r.z.indexOf(Math.max(...r.z));
+      const valid = SW.dropoutMask(r.x); // hide out-of-range codes, as the analysis does
+      const xs = Array.from(r.x, (v, i) => (valid[i] ? v : NaN));
+      const sel = (a, b) => ({ x: xs.slice(a, b).filter(isFinite), y: Array.from(r.z).slice(a, b).filter((_, i) => isFinite(xs[a + i])) });
+      const p1 = sel(0, half), p2 = sel(half, xs.length);
+      prev.innerHTML = `<div class="small" style="margin-bottom:4px"><b>Preview.</b> ${r.z.length} points; the scan turns at row ${half + 1}. Blue = first pass (inflated), orange = second pass (loaded).${r.swapped ? ' <span class="warn">The boxes looked swapped, so the tool swapped them.</span>' : ''}</div>`
+        + `<div style="max-width:420px">${lineChart({ w: 420, h: 300, xLabel: 'laser distance (mm)', yLabel: 'Z position (mm)',
+          series: [{ name: 'first pass', ...p1, color: css('--inf'), width: 1.6 }, { name: 'second pass', ...p2, color: css('--load'), width: 1.6 }] })}</div>`;
+    } catch (err) {
+      prev.innerHTML = `<p class="small warn">${esc(err.message)}</p>`;
+    }
+  };
+  area.x.oninput = update; area.z.oninput = update;
+  main.querySelectorAll('.formgrid input[data-k]').forEach((inp) => { inp.oninput = () => { PASTE.details[inp.dataset.k] = inp.value; }; });
+  $('pSwap').onclick = () => { [area.x.value, area.z.value] = [area.z.value, area.x.value]; update(); };
+  $('pClear').onclick = () => { PASTE.x = PASTE.z = ''; PASTE.details = {}; renderPaste(main); };
+  $('pAdd').onclick = () => {
+    if (!ready) return;
+    const meta = {};
+    for (const [k, , kind] of DETAIL_FIELDS) {
+      const raw = (PASTE.details[k] ?? '').trim();
+      if (raw) meta[k] = kind === 'num' ? SW.parseNum(raw) : raw;
+      if (kind === 'num' && !isFinite(meta[k])) delete meta[k];
+    }
+    const n = S.tires.filter((x) => x.name.startsWith('Pasted')).length + 1;
+    const name = `Pasted ${n}`;
+    try {
+      const r = SW.fromColumns(ready.xv, ready.zv, { ...meta, file: name });
+      const t = { id: nextId++, name, slot: null, inCompare: true, ov: {}, x: r.x, z: r.z, meta: r.meta, status: 'ok',
+        customLabel: (PASTE.details.__label || '').trim() || null, metaEdited: Object.keys(meta).length > 0 };
+      runAnalysis(t);
+      t.slot = freeSlot();
+      S.tires.push(t);
+      S.current = t.id; S.tab = 'single';
+      PASTE.x = PASTE.z = ''; PASTE.details = {};
+      render();
+    } catch (err) { $('pMsg').innerHTML = `<span class="warn">${esc(err.message)}</span>`; }
+  };
+  if (PASTE.x || PASTE.z) update();
 }
 
 // ============================================================== compare view
@@ -911,6 +1075,66 @@ const COLS = [
 ];
 const val = (row, c) => { const v = c.get ? c.get(row) : row[c.key]; return c.abs && v != null ? Math.abs(v) : v; };
 
+/** Charts and plain-English texts comparing tires (Compare tab and reports).
+ *  colorOf(t) gives each tire's colour; metricKeys picks the bar charts. */
+function compareModel(shown, o = {}) {
+  const forReport = !!o.forReport, sc = o.colorOf;
+  const lines = (get, unit, dec = 1) => shown.map((t) => {
+    const D = disp(t, S.settings.smoothMm);
+    return { name: t.label, x: get(D, t.res), y: pctFromRim(t.res, D.matched.z_inf), color: sc(t), width: 2.4, hover: true, unit, dec };
+  });
+  const legendItems = forReport ? shown.map((t) => ({ name: t.label, color: sc(t) })) : null;
+  const common = { w: 520, h: forReport ? 440 : 420, yDomain: [0, 100], yFmt: pctFmt, yFlip: S.settings.rimDraw === 'top', yName: 'height above rim',
+    yLabel: 'height above the rim (% of sidewall)', vlines: [0], legendItems };
+  const ext = (arr, pickMax) => { let k = -1; arr.forEach((v, i) => { if (v != null && (k < 0 || (pickMax ? v > arr[k] : v < arr[k]))) k = i; }); return k; };
+  const many = shown.length > 1;
+
+  const peaks = shown.map((t) => t.res.metrics.matched.peak_outward_mm);
+  const kHi = ext(peaks, true), kLo = ext(peaks, false);
+  const bulge = {
+    title: 'How far each tire’s sidewall pushes out',
+    svg: lineChart({ ...common, title: 'Bulge', xLabel: 'outward deflection (mm)', series: lines((D) => D.matched.du, 'mm') }),
+    what: 'Outward deflection along the sidewall, one line per tire, from the rim (0%) to the shoulder (100%).',
+    how: 'Further right = more bulge at that height. A peak lower down means the tire bulges close to the rim; a flatter line means the bulge is spread out.',
+    mine: many ? `<b>${esc(shown[kHi].label)}</b> pushes out the most (${f(peaks[kHi], 1)} mm at ${pctFmt(pctAt(shown[kHi].res, shown[kHi].res.metrics.matched.inflated_z_of_that_point))} height); <b>${esc(shown[kLo].label)}</b> the least (${f(peaks[kLo], 1)} mm).` : 'Add a second tire to compare.',
+  };
+  const strains = shown.map((t) => t.row.peak_bending_strain_pct);
+  const sHi = ext(strains, true), sLo = ext(strains, false);
+  const bend = {
+    title: 'Where each tire bends hardest',
+    svg: lineChart({ ...common, title: 'Bending', xLabel: 'bending strain at the surface (%)', series: lines((D) => D.strainS, '%') }),
+    what: 'Estimated bending strain of the outer rubber along the sidewall, one line per tire.',
+    how: 'Peaks are the spots that flex most with every wheel turn, where fatigue cracks and heat start. Compare both the height of the peaks and where they sit.',
+    mine: many && sHi >= 0 ? `<b>${esc(shown[sHi].label)}</b> has the hardest bending (${f(strains[sHi], 1)}%${shown[sHi].row.peak_bending_height_mm != null ? ` at ${pctFmt(pctAt(shown[sHi].res, shown[sHi].row.peak_bending_height_mm))} height` : ''}); <b>${esc(shown[sLo].label)}</b> the gentlest (${f(strains[sLo], 1)}%).` : '',
+  };
+  const tilts = shown.map((t) => Math.abs(t.row.max_rotation_deg));
+  const tHi = ext(tilts, true);
+  const tilt = {
+    title: 'How much each tire’s sidewall tilts',
+    svg: lineChart({ ...common, title: 'Tilt', xLabel: 'tilt change (degrees), + = leans further out', series: lines((D) => D.tiltS, '°', 0) }),
+    what: 'How much each part of the sidewall rotates under load, one line per tire.',
+    how: 'Right of the centre line = leans further outward, left = inward. Bigger swings mean more twisting of the rubber.',
+    mine: many ? `<b>${esc(shown[tHi].label)}</b> twists the most (${f(tilts[tHi], 0)}°).` : '',
+  };
+  const metricChart = (key) => {
+    const met = METRICS.find((mm) => mm.key === key) || METRICS[0];
+    const mv = shown.map((t) => { const v = t.row[met.key]; return met.abs && v != null ? Math.abs(v) : v; });
+    const mHi = ext(mv, true), mLo = ext(mv, false);
+    return {
+      key: met.key, title: met.name,
+      svg: barChart({ title: met.name, w: 520, ml: 170, unit: met.unit === '°' ? '°' : met.unit ? ` ${met.unit}` : '', dec: met.dec,
+        xLabel: `${met.name}${met.unit ? ` (${met.unit})` : ''}`, barH: 18,
+        rows: shown.map((t) => ({ label: t.label.length > 26 ? `${t.label.slice(0, 25)}…` : t.label })),
+        groups: [{ name: met.name, colors: shown.map(sc), values: mv }] }),
+      what: `${esc(met.name)}: ${esc(met.say)}.`,
+      how: `One bar per tire, in the tire's colour.${forReport ? '' : ' Hover a bar for the exact value.'}`,
+      mine: many && mHi >= 0 ? `Highest: <b>${esc(shown[mHi].label)}</b> (${f(mv[mHi], met.dec)} ${met.unit}). Lowest: <b>${esc(shown[mLo].label)}</b> (${f(mv[mLo], met.dec)} ${met.unit}). Difference: ${f(mv[mHi] - mv[mLo], met.dec)} ${met.unit}`
+        + `${met.better ? ` (${met.better === 'low' ? 'lower' : 'higher'} is usually better here).` : '.'}` : '',
+    };
+  };
+  return { bulge, bend, tilt, metrics: (o.metricKeys || [S.cmpMetric]).map(metricChart) };
+}
+
 function renderCompare(main) {
   charts.clear();
   const inCmp = okTires().filter((t) => t.inCompare);
@@ -930,43 +1154,13 @@ function renderCompare(main) {
   }
   const table = `<div class="tablewrap"><table class="cmp"><thead><tr>${COLS.map((c) => `<th data-k="${c.key}" title="${esc(c.full || c.name)}">${esc(c.name)}${S.sort.key === c.key ? (S.sort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead>
     <tbody>${rows.map(({ t, r }) => `<tr><td title="${esc(t.name)}"><span class="dot ${t.slot != null ? '' : 'none'}" style="${t.slot != null ? `background:var(--s${t.slot + 1})` : ''};margin-right:6px;vertical-align:-1px"></span>${esc(t.label)}${t.res.metrics.range.manual ? ' <span class="badge adj" title="analysis range adjusted by hand">adjusted</span>' : ''}</td>${COLS.slice(1).map((c) => `<td>${f(val(r, c), c.dec)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
-
   const sc = (t) => css(`--s${t.slot + 1}`);
-  const lines = (get, unit, dec = 1) => shown.map((t) => {
-    const D = disp(t, S.settings.smoothMm);
-    return { name: t.label, x: get(D, t.res), y: pctFromRim(t.res, D.matched.z_inf), color: sc(t), width: 2.4, hover: true, unit, dec };
-  });
-  const common = { w: 520, h: 420, yDomain: [0, 100], yFmt: pctFmt, yFlip: S.settings.rimDraw === 'top', yName: 'height above rim', yLabel: 'height above the rim (% of sidewall)', vlines: [0] };
+  const C = compareModel(shown, { colorOf: sc });
+  const met = C.metrics[0];
   const lg = legendHTML(shown.map((t) => ({ name: t.label, color: sc(t) })));
-  const bulgeC = lineChart({ ...common, title: 'Bulge', xLabel: 'outward deflection (mm)', series: lines((D) => D.matched.du, 'mm') });
-  const tiltC = lineChart({ ...common, title: 'Tilt', xLabel: 'tilt change (degrees), + = leans further out', series: lines((D) => D.tiltS, '°', 0) });
-  const bendC = lineChart({ ...common, title: 'Bending', xLabel: 'bending strain at the surface (%)', series: lines((D) => D.strainS, '%') });
-
-  const met = METRICS.find((mm) => mm.key === S.cmpMetric) || METRICS[0];
-  const mv = shown.map((t) => { const v = t.row[met.key]; return met.abs && v != null ? Math.abs(v) : v; });
-  const barC = barChart({ title: met.name, w: 520, ml: 170, unit: met.unit === '°' ? '°' : met.unit ? ` ${met.unit}` : '', dec: met.dec, xLabel: `${met.name}${met.unit ? ` (${met.unit})` : ''}`,
-    rows: shown.map((t) => ({ label: t.label.length > 26 ? `${t.label.slice(0, 25)}…` : t.label })), barH: 18,
-    groups: [{ name: met.name, colors: shown.map(sc), values: mv }] });
-
-  const ext = (arr, pickMax) => { let k = -1; arr.forEach((v, i) => { if (v != null && (k < 0 || (pickMax ? v > arr[k] : v < arr[k]))) k = i; }); return k; };
-  const peaks = shown.map((t) => t.res.metrics.matched.peak_outward_mm);
-  const kHi = ext(peaks, true), kLo = ext(peaks, false);
-  const bulgeMine = shown.length > 1
-    ? `<b>${esc(shown[kHi].label)}</b> pushes out the most (${f(peaks[kHi], 1)} mm at ${pctFmt(pctAt(shown[kHi].res, shown[kHi].res.metrics.matched.inflated_z_of_that_point))} height); <b>${esc(shown[kLo].label)}</b> the least (${f(peaks[kLo], 1)} mm).`
-    : 'Tick a second tire to compare.';
-  const strains = shown.map((t) => t.row.peak_bending_strain_pct);
-  const sHi = ext(strains, true), sLo = ext(strains, false);
-  const bendMine = shown.length > 1 && sHi >= 0
-    ? `<b>${esc(shown[sHi].label)}</b> has the hardest bending (${f(strains[sHi], 1)}% at ${shown[sHi].row.peak_bending_height_mm != null ? pctFmt(pctAt(shown[sHi].res, shown[sHi].row.peak_bending_height_mm)) : '?'} height); <b>${esc(shown[sLo].label)}</b> the gentlest (${f(strains[sLo], 1)}%).` : '';
-  const tilts = shown.map((t) => Math.abs(t.row.max_rotation_deg));
-  const tHi = ext(tilts, true);
-  const tiltMine = shown.length > 1 ? `<b>${esc(shown[tHi].label)}</b> twists the most (${f(tilts[tHi], 0)}°).` : '';
-  const mHi = ext(mv, true), mLo = ext(mv, false);
-  const metMine = shown.length > 1 && mHi >= 0
-    ? `Highest: <b>${esc(shown[mHi].label)}</b> (${f(mv[mHi], met.dec)} ${met.unit}). Lowest: <b>${esc(shown[mLo].label)}</b> (${f(mv[mLo], met.dec)} ${met.unit}). Difference: ${f(mv[mHi] - mv[mLo], met.dec)} ${met.unit}`
-      + `${met.better ? ` — ${met.better === 'low' ? 'lower' : 'higher'} is usually better here.` : '.'}` : '';
   const overflow = inCmp.length > shown.length ? `<p class="note warn">Charts show ${shown.length} of ${inCmp.length} ticked tires (8 colours at a time). Untick one to bring another into the charts; the table shows all of them.</p>` : '';
-
+  const card = (sec, name, head = '', legend = lg) => `<section class="card"><div class="cardhead"><h3>${sec.title}</h3><div class="opts">${head}<button class="btn ghost png" data-name="${name}">Save PNG</button></div></div>${legend}${sec.svg}
+      ${explainHTML(sec.what, sec.how, sec.mine, 'In this comparison')}</section>`;
   main.innerHTML = `
   <section class="panel first">
     <div class="titlebar"><h2>Compare ${inCmp.length} tire${inCmp.length > 1 ? 's' : ''}</h2><button class="btn" id="exportCmp">Download table (CSV)</button></div>
@@ -978,19 +1172,11 @@ function renderCompare(main) {
       null)}
   </section>
   <div class="grid2">
-    <section class="card"><div class="cardhead"><h3>How far each tire's sidewall pushes out</h3><button class="btn ghost png" data-name="compare_bulge">Save PNG</button></div>${lg}${bulgeC}
-      ${explainHTML('Outward deflection along the sidewall, one line per tire, from the rim (0%) to the shoulder (100%).',
-        'Further right = more bulge at that height. A peak lower down means the tire bulges close to the rim; a flatter line means the bulge is spread out.', bulgeMine, 'In this comparison')}</section>
-    <section class="card"><div class="cardhead"><h3>Pick a number to compare</h3>
-      <div class="opts"><select id="cmpMetric" class="ctl">${METRICS.map((mm) => `<option value="${mm.key}" ${mm.key === met.key ? 'selected' : ''}>${esc(mm.name)}</option>`).join('')}</select>
-      <button class="btn ghost png" data-name="compare_${met.key}">Save PNG</button></div></div>${barC}
-      ${explainHTML(`${esc(met.name)}: ${esc(met.say)}.`, 'One bar per tire, in the tire\'s colour. Hover a bar for the exact value.', metMine, 'In this comparison')}</section>
-    <section class="card"><div class="cardhead"><h3>Where each tire bends hardest</h3><button class="btn ghost png" data-name="compare_bending">Save PNG</button></div>${lg}${bendC}
-      ${explainHTML('Estimated bending strain of the outer rubber along the sidewall, one line per tire.',
-        'Peaks are the spots that flex most with every wheel turn, where fatigue cracks and heat start. Compare both the height of the peaks and where they sit.', bendMine, 'In this comparison')}</section>
-    <section class="card"><div class="cardhead"><h3>How much each tire's sidewall tilts</h3><button class="btn ghost png" data-name="compare_tilt">Save PNG</button></div>${lg}${tiltC}
-      ${explainHTML('How much each part of the sidewall rotates under load, one line per tire.',
-        'Right of the centre line = leans further outward, left = inward. Bigger swings mean more twisting of the rubber.', tiltMine, 'In this comparison')}</section>
+    ${card(C.bulge, 'compare_bulge')}
+    ${card({ ...met, title: 'Pick a number to compare' }, `compare_${met.key}`,
+      `<select id="cmpMetric" class="ctl">${METRICS.map((mm) => `<option value="${mm.key}" ${mm.key === met.key ? 'selected' : ''}>${esc(mm.name)}</option>`).join('')}</select>`, '')}
+    ${card(C.bend, 'compare_bending')}
+    ${card(C.tilt, 'compare_tilt')}
   </div>`;
 
   wireCharts(main);
@@ -1032,12 +1218,23 @@ function howtoHTML() {
   <h3>Comparing tires</h3>
   <p>Choose several files at once (or keep adding). Every file is analysed the same way. Tick the files you want in the Compare tab; each ticked tire gets its own colour.
   Compare tires at the same load and pressure. Use “Download summary (CSV)” to take the numbers into Excel.</p>
+  <h3>If a file will not import</h3>
+  <p>The tool looks for the scan anywhere in the file: the chart inside the report, sheet columns or rows, Excel charts, old .xls files and CSV/text exports.
+  If it still cannot find it, the file list says where it looked. Then open “Paste columns”, copy the laser-distance and Z-position columns from Excel and paste them in.
+  If the load or the machine's radial deflection is missing, type them under “Test details” on the tire's page.</p>
+  <h3>Reports</h3>
+  <p>The Report tab takes the project details (title, project, request number, customer, who prepared and reviewed it, date, objective, conclusions and an optional logo).
+  Choose the tires and sections, then download a PDF or an HTML report. Charts in both are vector graphics, so they stay sharp when zoomed or printed.
+  Reports use the current chart settings and each tire's analysis range.</p>
   <h3>Your data stays on this computer</h3>
   <p>The files are opened inside this web page only. Nothing is uploaded anywhere, and the page works without an internet connection.</p>
   </section>`;
 }
 
 render();
+</script>
+<script id="sw-report">
+/*__REPORT__*/
 </script>
 </body>
 </html>

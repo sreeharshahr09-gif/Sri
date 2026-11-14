@@ -15,7 +15,7 @@ import numpy as np
 from .analysis import analyze, load_scan_meta
 from . import plots
 
-PATTERNS = ("*.xlsx", "*.xlsm", "*.tsv", "*.txt", "*.csv")
+PATTERNS = ("*.xlsx", "*.xlsm", "*.xls", "*.csv", "*.tsv", "*.txt", "*.dat", "*.prn")
 
 
 def expand(inputs):
@@ -91,7 +91,7 @@ def write_one(r, path, out):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Inflated vs loaded sidewall profile analysis")
-    ap.add_argument("inputs", nargs="+", help="lab report .xlsx files, two-row pastes, folders or globs")
+    ap.add_argument("inputs", nargs="+", help="report workbooks (.xlsx/.xls), CSV/text files, folders or globs")
     ap.add_argument("--out", default="output", help="output folder")
     ap.add_argument("--h-mm", type=float, default=5.0,
                     help="distance from carcass ply to outer surface, for bending strain (default 5)")

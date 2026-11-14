@@ -5,7 +5,6 @@
  */
 const SW = (() => {
   'use strict';
-  const DROPOUT = 250;
 
   // ------------------------------------------------------------- numeric helpers
   const arange = (a, b, step) => {
@@ -107,8 +106,14 @@ const SW = (() => {
   }
 
   // --------------------------------------------------------------- file readers
+  // Strategy: collect every long run of numbers the file holds (sheet rows and
+  // columns, embedded chart datasheets, chart caches, nested workbooks, legacy
+  // .xls sheets, text columns). Then pick the (laser distance, Z position) pair
+  // by content: the Z channel runs one way and comes back. Names only break ties.
+  // Test details are found by label wording (several spellings and units).
   const u16 = (b, o) => b[o] | (b[o + 1] << 8);
   const u32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16)) + b[o + 3] * 16777216;
+  const MIN_SERIES = 50;
 
   async function inflateRaw(bytes) {
     const ds = new DecompressionStream('deflate-raw');
@@ -116,7 +121,7 @@ const SW = (() => {
     return new Uint8Array(await new Response(stream).arrayBuffer());
   }
 
-  /** {name: Uint8Array} for every entry of a .zip / .xlsx */
+  /** Entries of a .zip / .xlsx */
   async function unzip(buf) {
     const b = new Uint8Array(buf);
     let eocd = -1;
@@ -143,10 +148,20 @@ const SW = (() => {
         if (!e) return null;
         return e.method === 8 ? inflateRaw(e.data) : e.data;
       },
+      async text(name) { const d = await this.get(name); return d ? new TextDecoder().decode(d) : ''; },
     };
   }
 
-  /** OLE compound file -> {streamName: Uint8Array} */
+  /** A number from a cell or text: accepts "178.79", "178,79", "1.2e3"; anything else -> NaN */
+  function parseNum(v) {
+    if (typeof v === 'number') return isFinite(v) ? v : NaN;
+    if (typeof v !== 'string') return NaN;
+    let s = v.trim();
+    if (/^[-+]?\d+,\d+$/.test(s)) s = s.replace(',', '.');
+    return /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(s) ? parseFloat(s) : NaN;
+  }
+
+  // ---- OLE compound files (.xls, embedded objects): every stream with its path
   function cfbStreams(b) {
     const sig = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
     if (!sig.every((v, i) => b[i] === v)) throw new Error('not an OLE compound file');
@@ -173,182 +188,511 @@ const SW = (() => {
       return o;
     };
     const read = (start, size) => concat(chain(start, fat).map(sector), size);
-    const dirChain = chain(dirStart, fat);
-    const dirs = read(dirStart, dirChain.length * ssz);
+    const dirs = read(dirStart, chain(dirStart, fat).length * ssz);
     const entries = [];
     for (let off = 0; off + 128 <= dirs.length; off += 128) {
       const nlen = u16(dirs, off + 0x40);
       let name = '';
       for (let i = 0; i < Math.max(nlen - 2, 0); i += 2) name += String.fromCharCode(u16(dirs, off + i));
-      entries.push({ name, type: dirs[off + 0x42], start: u32(dirs, off + 0x74), size: u32(dirs, off + 0x78) });
+      entries.push({ name, type: dirs[off + 0x42], left: u32(dirs, off + 0x44), right: u32(dirs, off + 0x48),
+        child: u32(dirs, off + 0x4c), start: u32(dirs, off + 0x74), size: u32(dirs, off + 0x78) });
     }
     const root = entries[0];
     const ministream = read(root.start, root.size);
     let mfat = [];
     if (nMfat) for (const i of chain(mfatStart, fat).slice(0, nMfat)) mfat = mfat.concat(words(sector(i)));
-    const out = {};
-    for (const e of entries) {
-      if (e.type !== 2) continue;
-      out[e.name] = e.size < cutoff
-        ? concat(chain(e.start, mfat).map((i) => ministream.subarray(i * msz, (i + 1) * msz)), e.size)
-        : read(e.start, e.size);
-    }
+    const data = (e) => (e.size < cutoff
+      ? concat(chain(e.start, mfat).map((i) => ministream.subarray(i * msz, (i + 1) * msz)), e.size)
+      : read(e.start, e.size));
+    const out = [], seen = new Set();
+    const visit = (id, prefix) => {
+      if (id === 0xffffffff || id >= entries.length || seen.has(id)) return;
+      seen.add(id);
+      const e = entries[id];
+      visit(e.left, prefix);
+      const path = prefix ? `${prefix}/${e.name}` : e.name;
+      if (e.type === 2) out.push({ path, name: e.name, data: data(e) });
+      else if (e.type === 1) visit(e.child, path);
+      visit(e.right, prefix);
+    };
+    visit(root.child, '');
     return out;
   }
 
-  /** MS Graph datasheet: numeric cells and series titles */
-  function graphDatasheet(w) {
-    const cells = new Map(), titles = [];
-    const dv = new DataView(w.buffer, w.byteOffset, w.byteLength);
-    let p = 0;
-    while (p + 4 <= w.length) {
-      const type = u16(w, p), n = u16(w, p + 2), d = p + 4;
-      p += 4 + n;
-      if ((type === 0x0003 || type === 0x0203) && n >= 12) {
-        cells.set(`${u16(w, d)},${u16(w, d + 2)}`, dv.getFloat64(d + n - 8, true));
-      } else if (type === 0x0002 && n >= 9) {
-        cells.set(`${u16(w, d)},${u16(w, d + 2)}`, u16(w, d + n - 2));
-      } else if (type === 0x100d && n >= 4) {
-        const k = w[d + 2];
-        let t = '';
-        if (w[d + 3]) for (let i = 0; i < k; i++) t += String.fromCharCode(u16(w, d + 4 + 2 * i));
-        else for (let i = 0; i < k; i++) t += String.fromCharCode(w[d + 4 + i]);
-        titles.push(t.trim());
-      }
+  // ---- BIFF records (legacy .xls workbooks and MS Graph datasheets)
+  function rkValue(rk) {
+    let v;
+    if (rk & 2) v = (rk | 0) >> 2;
+    else {
+      const dv = new DataView(new ArrayBuffer(8));
+      dv.setUint32(4, (rk & 0xfffffffc) >>> 0, true);
+      v = dv.getFloat64(0, true);
     }
-    return { cells, titles };
+    return rk & 1 ? v / 100 : v;
   }
 
-  const isStage = (v) => {
-    if (v.length < 10) return false;
-    let flips = 0;
-    for (let i = 2; i < v.length; i++) if ((v[i - 1] - v[i - 2]) * (v[i] - v[i - 1]) < 0) flips++;
-    return flips <= 3 && maxOf(v) - minOf(v) > 20;
-  };
+  function readSST(segs) {
+    let si = 0, p = 8;
+    const total = u32(segs[0], 4), out = [];
+    const byte = () => {
+      while (si < segs.length && p >= segs[si].length) { si++; p = 0; }
+      if (si >= segs.length) throw new Error('end');
+      return segs[si][p++];
+    };
+    const u16c = () => byte() | (byte() << 8);
+    try {
+      for (let s = 0; s < total; s++) {
+        const cch = u16c(), flags = byte();
+        let wide = flags & 1;
+        const runs = flags & 8 ? u16c() : 0, ext = flags & 4 ? u16c() + u16c() * 65536 : 0;
+        let str = '';
+        for (let i = 0; i < cch; i++) {
+          if (si < segs.length && p >= segs[si].length) { si++; p = 0; if (si < segs.length) wide = segs[si][p++] & 1; }
+          str += String.fromCharCode(wide ? u16c() : byte());
+        }
+        for (let i = 0; i < 4 * runs + ext; i++) byte();
+        out.push(str);
+      }
+    } catch (e) { /* truncated table: keep what was read */ }
+    return out;
+  }
 
+  /** BIFF stream -> one cell map per substream (worksheet / datasheet) */
+  function biffSheets(w) {
+    const dv = new DataView(w.buffer, w.byteOffset, w.byteLength);
+    const recs = [];
+    for (let p = 0; p + 4 <= w.length;) { const n = u16(w, p + 2); recs.push([u16(w, p), p + 4, n]); p += 4 + n; }
+    const sheets = [], sst = [];
+    let cur = null;
+    for (let k = 0; k < recs.length; k++) {
+      const [type, d, n] = recs[k];
+      if (type === 0x0809 || type === 0x0409 || type === 0x0209 || type === 0x0009) { cur = new Map(); sheets.push(cur); continue; }
+      if (type === 0x00fc) {
+        const segs = [w.subarray(d, d + n)];
+        while (k + 1 < recs.length && recs[k + 1][0] === 0x003c) { k++; segs.push(w.subarray(recs[k][1], recs[k][1] + recs[k][2])); }
+        sst.push(...readSST(segs));
+        continue;
+      }
+      if (!cur) continue;
+      const set = (r, c, v) => cur.set(`${r},${c}`, v);
+      if ((type === 0x0203 || type === 0x0003) && n >= 12) set(u16(w, d), u16(w, d + 2), dv.getFloat64(d + n - 8, true));
+      else if (type === 0x0002 && n >= 9) set(u16(w, d), u16(w, d + 2), u16(w, d + n - 2));
+      else if (type === 0x027e && n >= 10) set(u16(w, d), u16(w, d + 2), rkValue(u32(w, d + 6)));
+      else if (type === 0x00bd && n >= 6) {
+        const r = u16(w, d), c0 = u16(w, d + 2), cnt = Math.floor((n - 6) / 6);
+        for (let i = 0; i < cnt; i++) set(r, c0 + i, rkValue(u32(w, d + 4 + 6 * i + 2)));
+      } else if (type === 0x0006 && n >= 14) {
+        if (!(w[d + 12] === 0xff && w[d + 13] === 0xff)) set(u16(w, d), u16(w, d + 2), dv.getFloat64(d + 6, true));
+      } else if (type === 0x00fd && n >= 10) {
+        const s = sst[u32(w, d + 6)];
+        if (s != null) set(u16(w, d), u16(w, d + 2), s);
+      } else if (type === 0x0204 && n >= 9) {
+        const cch = u16(w, d + 6), wide = w[d + 8] & 1;
+        let s = '';
+        for (let i = 0; i < cch; i++) s += String.fromCharCode(wide ? u16(w, d + 9 + 2 * i) : w[d + 9 + i]);
+        set(u16(w, d), u16(w, d + 2), s);
+      } else if (type === 0x0004 && n >= 9) {
+        const cch = u16(w, d + 7);
+        let s = '';
+        for (let i = 0; i < cch && d + 9 + i < d + n; i++) s += String.fromCharCode(w[d + 9 + i]);
+        set(u16(w, d), u16(w, d + 2), s);
+      }
+    }
+    return sheets.filter((s) => s.size);
+  }
+
+  // ---- worksheets in .xlsx
   const xmlText = (s) => s.replace(/&(#x?[0-9a-fA-F]+|amp|lt|gt|quot|apos);/g, (_, e) =>
     e[0] === '#' ? String.fromCodePoint(e[1] === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10))
       : { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[e]);
+  const tTexts = (xml) => [...xml.replace(/<(?:\w+:)?rPh\b[\s\S]*?<\/(?:\w+:)?rPh>/g, '')
+    .matchAll(/<(?:\w+:)?t(?:\s[^>]*)?>([\s\S]*?)<\/(?:\w+:)?t>/g)].map((t) => xmlText(t[1])).join('');
 
-  function sheetCells(sheetXml, sharedXml) {
-    const shared = [];
-    if (sharedXml) {
-      for (const m of sharedXml.matchAll(/<si>([\s\S]*?)<\/si>/g)) {
-        shared.push([...m[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((t) => xmlText(t[1])).join(''));
-      }
-    }
+  function sheetCells(sheetXml, shared) {
     const cells = new Map();
-    for (const m of sheetXml.matchAll(/<c ([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+    for (const m of sheetXml.matchAll(/<(?:\w+:)?c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:\w+:)?c>)/g)) {
       const attrs = m[1], body = m[2] || '';
-      const ref = /r="([A-Z]+)(\d+)"/.exec(attrs);
+      const ref = /\br="([A-Z]+)(\d+)"/.exec(attrs);
       if (!ref) continue;
-      const t = (/ t="([^"]+)"/.exec(attrs) || [])[1];
-      const v = /<v>([\s\S]*?)<\/v>/.exec(body);
+      const t = (/\bt="([^"]+)"/.exec(attrs) || [])[1];
+      const v = /<(?:\w+:)?v>([\s\S]*?)<\/(?:\w+:)?v>/.exec(body);
       let val;
       if (!v) {
-        const is = /<is>([\s\S]*?)<\/is>/.exec(body);
+        const is = /<(?:\w+:)?is>([\s\S]*?)<\/(?:\w+:)?is>/.exec(body);
         if (!is) continue;
-        val = [...is[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((x) => xmlText(x[1])).join('');
+        val = tTexts(is[1]);
       } else if (t === 's') val = shared[parseInt(v[1], 10)];
       else if (t === 'str' || t === 'inlineStr' || t === 'e') val = xmlText(v[1]);
       else if (t === 'b') val = v[1] === '1';
       else val = parseFloat(v[1]);
+      if (val === undefined) continue;
       let col = 0;
       for (const ch of ref[1]) col = col * 26 + ch.charCodeAt(0) - 64;
-      cells.set(`${ref[2]},${col}`, val);
+      cells.set(`${+ref[2]},${col}`, val);
     }
     return cells;
   }
 
-  const normLabel = (s) => s.replace(/（/g, '(').replace(/）/g, ')').replace(/[\s:：]+$/, '').trim();
-  const looksLikeLabel = (s) => /\((mm|kg|daN|PSI|°C)\)|^(Tyre Size|Brand|Product ID|Rim Type)$/.test(normLabel(s));
+  const colName = (c) => { let s = ''; for (c += 1; c > 0; c = Math.floor((c - 1) / 26)) s = String.fromCharCode(65 + ((c - 1) % 26)) + s; return s; };
 
-  function headerPairs(cells) {
-    const out = {};
-    const keys = [...cells.keys()].map((k) => k.split(',').map(Number)).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-    const get = (r, c) => cells.get(`${r},${c}`);
-    for (const [r, c] of keys) {
-      const v = get(r, c);
-      if (typeof v !== 'string' || !v.trim()) continue;
-      if (/[:：]\s*$/.test(v)) {
-        for (let cc = c + 1; cc < c + 6; cc++) {
-          const rv = get(r, cc);
-          if (rv !== undefined && rv !== '') { out[normLabel(v)] = rv; break; }
-        }
-        continue;
+  /** Long numeric runs along rows and columns of a cell map. */
+  function gridSeries(cells, group, where) {
+    const lines = { row: new Map(), col: new Map() };
+    for (const [k, v] of cells) {
+      const [r, c] = k.split(',').map(Number);
+      const num = parseNum(v);
+      for (const [o, key, pos] of [['row', r, c], ['col', c, r]]) {
+        if (!lines[o].has(key)) lines[o].set(key, []);
+        lines[o].get(key).push([pos, num, v]);
       }
-      for (let rr = r + 1; rr < r + 4; rr++) {
-        const cv = get(rr, c);
-        if (cv === undefined || cv === '') continue;
-        if (typeof cv === 'string' && looksLikeLabel(cv)) break;
-        if (!(normLabel(v) in out)) out[normLabel(v)] = cv;
-        break;
+    }
+    const out = [];
+    for (const o of ['row', 'col']) {
+      for (const [key, items] of lines[o]) {
+        items.sort((a, b) => a[0] - b[0]);
+        let seg = [];
+        const flush = () => {
+          if (seg.length >= MIN_SERIES) {
+            const p0 = seg[0][0], p1 = seg[seg.length - 1][0];
+            const values = new Float64Array(p1 - p0 + 1).fill(NaN);
+            for (const [pos, num] of seg) values[pos - p0] = num;
+            const lab = items.filter((it) => it[0] < p0 && it[0] >= p0 - 3 && typeof it[2] === 'string' && it[2].trim() && !isFinite(it[1]))
+              .sort((a, b) => b[0] - a[0])[0];
+            const at = o === 'row' ? `row ${key}` : `column ${colName(key - 1)}`;
+            out.push({ name: lab ? String(lab[2]).trim() : '', values, start: p0, group: `${group}|${o}`, where: `${where}, ${at}` });
+          }
+          seg = [];
+        };
+        for (const it of items) {
+          if (!isFinite(it[1])) continue;
+          if (seg.length && it[0] - seg[seg.length - 1][0] > 6) flush();
+          seg.push(it);
+        }
+        flush();
       }
     }
     return out;
   }
 
-  const FIELDS = {
-    'Request No.': 'request', 'Test Date': 'test_date', 'Serial number': 'serial',
-    'Test Feature': 'feature', 'Test engineer name': 'engineer', 'Product ID': 'product_id',
-    'Tyre Size': 'size', 'Brand': 'brand', 'SW (mm)': 'section_width_mm', 'OD (mm)': 'od_mm',
-    'Tire Weight(kg)': 'tire_weight_kg', 'Test Pressure(PSI)': 'pressure_psi',
-    'Load (daN)': 'load_daN', 'Rim Type': 'rim', 'Room Temp. (°C)': 'room_temp_C',
-    'Unload Distance (mm)': 'unload_distance_mm', 'Unload Position (mm)': 'unload_position_mm',
-    'Load Distance (mm)': 'load_distance_mm', 'Load Position (mm)': 'load_position_mm',
-    'Radial Deflection (mm)': 'radial_deflection_mm',
-    'Horizontal Deflection (mm)': 'horizontal_deflection_mm',
-  };
-
-  async function readReport(name, buf) {
-    const z = await unzip(buf);
-    const dec = new TextDecoder();
-    const sheetName = z.names.filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort()[0];
-    const shared = z.names.includes('xl/sharedStrings.xml') ? dec.decode(await z.get('xl/sharedStrings.xml')) : '';
-    const hdr = sheetName ? headerPairs(sheetCells(dec.decode(await z.get(sheetName)), shared)) : {};
-    const meta = { file: name };
-    for (const [label, key] of Object.entries(FIELDS)) meta[key] = hdr[label] ?? null;
-    for (const n of z.names.filter((n) => n.startsWith('xl/embeddings/')).sort()) {
-      let streams;
-      try { streams = cfbStreams(await z.get(n)); } catch { continue; }
-      if (!streams.Workbook) continue;
-      const { cells, titles } = graphDatasheet(streams.Workbook);
-      const rows = new Map();
-      for (const [k, v] of cells) {
-        const [r, c] = k.split(',').map(Number);
-        if (!rows.has(r)) rows.set(r, new Map());
-        rows.get(r).set(c, v);
+  /** Cached values of native Excel charts (xl/charts/chartN.xml) */
+  function chartSeries(xml, group, where) {
+    const out = [];
+    const tag = (name, body) => new RegExp(`<(?:\\w+:)?${name}>([\\s\\S]*?)</(?:\\w+:)?${name}>`).exec(body);
+    for (const ser of xml.matchAll(/<(?:\w+:)?ser>([\s\S]*?)<\/(?:\w+:)?ser>/g)) {
+      const body = ser[1], tx = tag('tx', body);
+      const name = tx ? ([...tx[1].matchAll(/<(?:\w+:)?v>([\s\S]*?)<\/(?:\w+:)?v>/g)].map((m) => xmlText(m[1])).join(' ') || tTexts(tx[1])).trim() : '';
+      for (const [t, role] of [['val', 'y'], ['yVal', 'y'], ['cat', 'x'], ['xVal', 'x']]) {
+        const m = tag(t, body);
+        if (!m) continue;
+        const cache = tag('numCache', m[1]) || tag('numLit', m[1]);
+        if (!cache) continue;
+        const cnt = +((/<(?:\w+:)?ptCount val="(\d+)"/.exec(cache[1]) || [])[1] || 0);
+        const pts = [...cache[1].matchAll(/<(?:\w+:)?pt idx="(\d+)"[^>]*>\s*<(?:\w+:)?v>([^<]*)<\/(?:\w+:)?v>/g)];
+        if (pts.length < MIN_SERIES) continue;
+        const values = new Float64Array(Math.max(cnt, ...pts.map((p) => +p[1] + 1))).fill(NaN);
+        for (const p of pts) values[+p[1]] = parseNum(p[2]);
+        out.push({ name: role === 'y' ? name : `${name} (axis)`.trim(), values, start: 0, group, where });
       }
-      const series = [...rows.keys()].sort((a, b) => a - b)
-        .map((r) => { const row = rows.get(r); return [...row.keys()].sort((a, b) => a - b).map((c) => row.get(c)); });
-      if (series.length < 2) continue;
-      let zi = series.findIndex(isStage);
-      if (zi < 0) zi = 1;
-      const xi = zi === 0 ? 1 : 0;
-      meta.series_titles = titles.filter(Boolean);
-      return { x: Float64Array.from(series[xi]), z: Float64Array.from(series[zi]), meta };
     }
-    throw new Error('no embedded scan found in this workbook (expected an MS Graph chart with the profile)');
+    return out;
   }
 
-  function readText(name, text) {
-    const rows = text.split(/\r?\n/).filter((r) => r.trim());
-    const nums = (cells) => cells.map((c) => c.trim()).filter((c) => c !== '' && !isNaN(Number(c))).map(Number);
-    let x, z;
-    if (rows.length === 2) {
-      [x, z] = rows.map((r) => nums(r.split('\t')));
-    } else {
-      const sep = rows[0].includes('\t') ? '\t' : rows[0].includes(',') ? ',' : /\s+/;
-      const pairs = rows.map((r) => nums(r.split(sep))).filter((p) => p.length >= 2);
-      x = pairs.map((p) => p[0]); z = pairs.map((p) => p[1]);
+  // ---- test details found by label wording
+  function splitLabel(s) {
+    const t = String(s).replace(/（/g, '(').replace(/）/g, ')').replace(/：/g, ':');
+    const units = [...t.matchAll(/\(([^)]*)\)/g)].map((m) => m[1].trim().toLowerCase());
+    return {
+      base: t.replace(/\([^)]*\)/g, ' ').toLowerCase().replace(/tyre/g, 'tire').replace(/[.:#*_]/g, ' ').replace(/\s+/g, ' ').trim(),
+      unit: units.length ? units[units.length - 1] : '',
+      colon: /:\s*$/.test(t),
+    };
+  }
+  const RULES = [ // most specific first
+    ['unload_distance_mm', /^unload(ed)? ?(distance|dist)$/, 'len'],
+    ['unload_position_mm', /^unload(ed)? ?(position|pos)$/, 'len'],
+    ['load_distance_mm', /^load(ed)? ?(distance|dist)$/, 'len'],
+    ['load_position_mm', /^load(ed)? ?(position|pos)$/, 'len'],
+    ['radial_deflection_mm', /\b(radial|vertical) ?deflection$/, 'len'],
+    ['horizontal_deflection_mm', /\b(horizontal|lateral|sidewall) ?(deflection|bulge)$/, 'len'],
+    ['request', /^req(uest)?( no| number| id)?$/, 'text'],
+    ['test_date', /^(test )?date( of test)?$/, 'date'],
+    ['serial', /^serial( no| number)?$|^dot( no| number| code)?$/, 'text'],
+    ['feature', /^(test )?(feature|purpose|objective)$/, 'text'],
+    ['engineer', /engineer|^tested by$|^operator$/, 'text'],
+    ['product_id', /^(product|spec) ?(id|code|no)$/, 'any'],
+    ['size', /^(tire )?size$/, 'text'],
+    ['brand', /^(brand|make|manufacturer)( name)?$/, 'text'],
+    ['section_width_mm', /^(sw|section width)$/, 'len'],
+    ['od_mm', /^(od|outer diameter|overall diameter)$/, 'len'],
+    ['tire_weight_kg', /^(tire )?weight$/, 'mass'],
+    ['pressure_psi', /^(test |inflation )?pressure$/, 'pressure'],
+    ['load_daN', /^(test |vertical |applied |radial )?load$/, 'force'],
+    ['rim', /^rim( type| size)?$/, 'text'],
+    ['room_temp_C', /^(room |ambient )?temp(erature)?$/, 'temp'],
+  ];
+  const FIELD_KEYS = RULES.map((r) => r[0]);
+  const CONV = {
+    len: { '': 1, mm: 1, cm: 10, m: 1000, in: 25.4, inch: 25.4 },
+    force: { '': 1, dan: 1, kg: 0.980665, kgf: 0.980665, n: 0.1, kn: 100, lb: 0.4448222, lbs: 0.4448222, lbf: 0.4448222 },
+    pressure: { '': 1, psi: 1, bar: 14.50377, kpa: 0.1450377, mpa: 145.0377, 'kg/cm2': 14.22334, 'kgf/cm2': 14.22334, ksc: 14.22334 },
+    mass: { '': 1, kg: 1, g: 0.001, lb: 0.4535924, lbs: 0.4535924 },
+  };
+  const matchRule = (base) => RULES.find((r) => r[1].test(base));
+  const excelDate = (v) => {
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000);
+    return `${String(d.getUTCDate()).padStart(2, '0')}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${d.getUTCFullYear()}`;
+  };
+
+  function convertValue(kind, raw, labelUnit, key, notes) {
+    if (kind === 'text' || kind === 'any') {
+      if (typeof raw === 'string') return raw.trim() || null;
+      return typeof raw === 'number' ? raw : null;
     }
-    if (!x.length || x.length !== z.length) throw new Error(`could not read two equal-length channels (got ${x.length} and ${z.length})`);
-    return { x: Float64Array.from(x), z: Float64Array.from(z), meta: { file: name } };
+    if (kind === 'date') {
+      if (typeof raw === 'number' && raw > 20000 && raw < 80000) return excelDate(raw);
+      return typeof raw === 'string' ? raw.trim() || null : raw ?? null;
+    }
+    let num = typeof raw === 'number' ? raw : NaN, unit = labelUnit;
+    if (typeof raw === 'string') {
+      const m = /^\s*([-+]?\d+(?:[.,]\d+)?(?:[eE][-+]?\d+)?)\s*([^\d\s].*)?$/.exec(raw);
+      if (!m) return null;
+      num = parseFloat(m[1].replace(',', '.'));
+      if (m[2] && !unit) unit = m[2].trim().toLowerCase();
+    }
+    if (!isFinite(num)) return null;
+    unit = unit.replace(/\s+/g, '').replace('²', '2').replace(/^°/, '°');
+    if (kind === 'temp') return /f$/.test(unit) ? (num - 32) / 1.8 : num;
+    const table = CONV[kind];
+    if (!(unit in table)) { notes.push(`unit "${unit}" for ${key} not recognised; used as is`); return num; }
+    return num * table[unit];
+  }
+
+  function metaFromCells(cells, into, notes) {
+    const get = (r, c) => cells.get(`${r},${c}`);
+    const labelish = (v) => typeof v === 'string' && (!!matchRule(splitLabel(v).base) || /[:：]\s*$/.test(v));
+    const keys = [...cells.keys()].map((k) => k.split(',').map(Number)).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    for (const [r, c] of keys) {
+      const v = get(r, c);
+      if (typeof v !== 'string') continue;
+      const lab = splitLabel(v), rule = matchRule(lab.base);
+      if (!rule || into[rule[0]] != null) continue;
+      const [key, , kind] = rule;
+      const right = () => { for (let cc = c + 1; cc <= c + 4; cc++) { const x = get(r, cc); if (x === undefined || x === '') continue; return labelish(x) ? undefined : x; } return undefined; };
+      const below = () => { for (let rr = r + 1; rr <= r + 3; rr++) { const x = get(rr, c); if (x === undefined || x === '') continue; return labelish(x) ? undefined : x; } return undefined; };
+      for (const look of lab.colon ? [right, below] : [below, right]) {
+        const raw = look();
+        if (raw === undefined) continue;
+        const val = convertValue(kind, raw, lab.unit, key, notes);
+        if (val != null) { into[key] = val; break; }
+      }
+    }
+  }
+
+  // ---- choosing the scan
+  /** Stage channel: runs one way, turns once, runs back (each half >= 90% one direction). */
+  function stageLike(values) {
+    const f = Array.from(values).filter(isFinite);
+    const n = f.length;
+    if (n < 20 || maxOf(f) - minOf(f) <= 20) return false;
+    const i = f[0] > f[n >> 1] ? argmin(f) : argmax(f);
+    if (i < 0.2 * n || i > 0.8 * n) return false;
+    const share = (a, b, sign) => {
+      let good = 0, tot = 0;
+      for (let k = a + 1; k <= b; k++) { const d = f[k] - f[k - 1]; if (d === 0) continue; tot++; if (Math.sign(d) === sign) good++; }
+      return tot ? good / tot : 0;
+    };
+    const s1 = Math.sign(f[i] - f[0]);
+    return share(0, i, s1) >= 0.9 && share(i, n - 1, -s1) >= 0.9;
+  }
+  const STAGE_NAME = /(^|[^a-z])z([^a-z]|$)|position|stage|height|travel/i;
+  const DIST_NAME = /laser|distance|reading|displacement|deflection|(^|[^a-z])x([^a-z]|$)/i;
+
+  function choosePair(cands) {
+    let best = null;
+    for (const zc of cands) {
+      if (!stageLike(zc.values)) continue;
+      for (const xc of cands) {
+        if (xc === zc || xc.group !== zc.group) continue;
+        const a = Math.max(zc.start, xc.start), b = Math.min(zc.start + zc.values.length, xc.start + xc.values.length);
+        if (b - a < MIN_SERIES) continue;
+        const zs = zc.values.slice(a - zc.start, b - zc.start), xs = xc.values.slice(a - xc.start, b - xc.start);
+        const keep = [];
+        for (let i = 0; i < zs.length; i++) if (isFinite(zs[i])) keep.push(i);
+        const fx = keep.filter((i) => isFinite(xs[i])).length / keep.length;
+        if (keep.length < MIN_SERIES || fx < 0.6) continue;
+        const score = keep.length + fx * 1000 + (STAGE_NAME.test(zc.name) ? 1e5 : 0) + (DIST_NAME.test(xc.name) ? 1e5 : 0)
+          - (stageLike(xs) ? 1e6 : 0);
+        if (!best || score > best.score) best = { score, x: pick(xs, keep), z: pick(zs, keep), xc, zc };
+      }
+    }
+    return best;
+  }
+
+  // ---- collectors: {cands, meta, notes, looked}
+  async function collectZip(bytes, label, depth = 0) {
+    const z = await unzip(bytes);
+    const out = { cands: [], meta: {}, notes: [], looked: [] };
+    const dec = new TextDecoder();
+    const sharedXml = z.names.includes('xl/sharedStrings.xml') ? await z.text('xl/sharedStrings.xml') : '';
+    const shared = [...sharedXml.matchAll(/<(?:\w+:)?si>([\s\S]*?)<\/(?:\w+:)?si>/g)].map((m) => tTexts(m[1]));
+    // sheet names from workbook.xml + rels
+    const names = {};
+    try {
+      const wb = await z.text('xl/workbook.xml'), rels = await z.text('xl/_rels/workbook.xml.rels');
+      const target = {};
+      for (const m of rels.matchAll(/<Relationship\b[^>]*>/g)) {
+        const id = (/\bId="([^"]+)"/.exec(m[0]) || [])[1], tg = (/\bTarget="([^"]+)"/.exec(m[0]) || [])[1];
+        if (id && tg) target[id] = `xl/${tg.replace(/^\/?xl\//, '').replace(/^\//, '')}`;
+      }
+      for (const m of wb.matchAll(/<(?:\w+:)?sheet\b[^>]*>/g)) {
+        const nm = (/\bname="([^"]*)"/.exec(m[0]) || [])[1], id = (/\br:id="([^"]+)"/.exec(m[0]) || /\bid="([^"]+)"/.exec(m[0]) || [])[1];
+        if (nm && target[id]) names[target[id]] = xmlText(nm);
+      }
+    } catch (e) { /* names are only for messages */ }
+    const nat = (a, b) => a.localeCompare(b, undefined, { numeric: true });
+    for (const n of z.names.filter((x) => /^xl\/worksheets\/[^/]+\.xml$/.test(x)).sort(nat)) {
+      const cells = sheetCells(await z.text(n), shared);
+      const sname = names[n] || n.split('/').pop().replace('.xml', '');
+      out.looked.push(`sheet "${sname}"`);
+      metaFromCells(cells, out.meta, out.notes);
+      out.cands.push(...gridSeries(cells, `${label}:${n}`, `sheet "${sname}"`));
+    }
+    for (const n of z.names.filter((x) => /^xl\/charts\/[^/]+\.xml$/.test(x)).sort(nat)) {
+      out.looked.push(`chart ${n.split('/').pop()}`);
+      out.cands.push(...chartSeries(await z.text(n), `${label}:${n}`, `Excel chart ${n.split('/').pop()}`));
+    }
+    for (const n of z.names.filter((x) => x.startsWith('xl/embeddings/')).sort(nat)) {
+      const data = await z.get(n);
+      if (!data || data.length < 8) continue;
+      out.looked.push(`embedded ${n.split('/').pop()}`);
+      try {
+        if (data[0] === 0x50 && data[1] === 0x4b && depth < 2) {
+          const sub = await collectZip(data, `${label}>${n}`, depth + 1);
+          out.cands.push(...sub.cands);
+        } else if (data[0] === 0xd0 && data[1] === 0xcf) {
+          out.cands.push(...(await collectCfb(data, `${label}>${n}`, `embedded object ${n.split('/').pop()}`, depth + 1)).cands);
+        }
+      } catch (e) { out.notes.push(`could not open ${n}: ${e.message}`); }
+    }
+    return out;
+  }
+
+  async function collectCfb(bytes, label, where, depth = 0) {
+    const out = { cands: [], meta: {}, notes: [], looked: [] };
+    const streams = cfbStreams(bytes);
+    for (const s of streams) {
+      if (s.name === 'Workbook' || s.name === 'Book') {
+        const top = !s.path.includes('/');
+        const kind = top && depth === 0 ? 'sheet' : 'chart datasheet';
+        biffSheets(s.data).forEach((cells, i) => {
+          const at = top && depth === 0 ? `${where} sheet ${i + 1}` : `${where}${top ? '' : ` (${s.path})`}, ${kind}`;
+          out.looked.push(at);
+          if (top && depth === 0) metaFromCells(cells, out.meta, out.notes);
+          out.cands.push(...gridSeries(cells, `${label}:${s.path}:${i}`, at));
+        });
+      } else if (s.name === 'Package' && s.data[0] === 0x50 && depth < 3) {
+        out.cands.push(...(await collectZip(s.data, `${label}>pkg`, depth + 1)).cands);
+      }
+    }
+    return out;
+  }
+
+  function collectText(text) {
+    const lines = text.split(/\r?\n/);
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    const sample = lines.slice(0, 200).join('\n');
+    let split;
+    if (sample.includes('\t')) split = (l) => l.split('\t');
+    else if (sample.includes(';')) split = (l) => l.split(';');
+    else if (sample.includes(',') && !(!sample.includes('.') && lines.every((l) => !l.trim() || /^\s*[-+]?\d+,\d+\s*$/.test(l)))) split = (l) => l.split(',');
+    else split = (l) => l.trim().split(/\s+/);
+    const cells = new Map();
+    lines.forEach((l, r) => split(l).forEach((v, c) => { if (v.trim() !== '') cells.set(`${r + 1},${c + 1}`, v.trim()); }));
+    const out = { cands: gridSeries(cells, 'text', 'text'), meta: {}, notes: [], looked: ['text table'] };
+    metaFromCells(cells, out.meta, out.notes);
+    return out;
+  }
+
+  function finish(name, col) {
+    const best = choosePair(col.cands);
+    if (!best) {
+      const seen = col.cands.map((c) => `${c.where}${c.name ? ` ("${c.name}")` : ''}: ${Array.from(c.values).filter(isFinite).length} numbers`);
+      throw new Error(`could not find the scan (a laser-distance series with a Z series that goes out and back). `
+        + `Looked in: ${col.looked.join(', ') || 'nothing readable'}. `
+        + `${seen.length ? `Number series found: ${seen.slice(0, 6).join('; ')}.` : 'No long number series found.'} Use “Paste columns” instead.`);
+    }
+    const meta = { file: name };
+    for (const k of FIELD_KEYS) meta[k] = col.meta[k] ?? null;
+    const nm = (c) => (c.name ? `“${c.name}”` : c.where.split(', ').pop());
+    meta.source = `${best.xc.where.split(', ')[0]}: ${nm(best.xc)} and ${nm(best.zc)}, ${best.z.length} points`;
+    meta.fields_found = FIELD_KEYS.filter((k) => meta[k] != null).length;
+    meta.notes = col.notes;
+    return { x: best.x, z: best.z, meta };
   }
 
   async function readFile(name, buf) {
-    if (/\.(xlsx|xlsm)$/i.test(name)) return readReport(name, buf);
-    return readText(name, new TextDecoder().decode(buf));
+    const b = new Uint8Array(buf);
+    let col;
+    if (b[0] === 0x50 && b[1] === 0x4b) col = await collectZip(b, 'file');
+    else if (b[0] === 0xd0 && b[1] === 0xcf) col = await collectCfb(b, 'file', 'workbook');
+    else {
+      const enc = b[0] === 0xff && b[1] === 0xfe ? 'utf-16le' : b[0] === 0xfe && b[1] === 0xff ? 'utf-16be' : 'utf-8';
+      col = collectText(new TextDecoder(enc).decode(b));
+    }
+    return finish(name, col);
+  }
+
+  /** Columns pasted by hand: a list of numbers per box (blank / text lines inside = missing). */
+  function parseColumnText(text) {
+    const lines = String(text).split(/\r?\n/);
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    let first = 0;
+    while (first < lines.length && !isFinite(parseNum(lines[first].trim().split(/\t/)[0]))) first++;
+    const body = lines.slice(first);
+    const tabbed = body.some((l) => l.includes('\t'));
+    if (tabbed) { // two columns (or two rows) pasted into one box
+      const grid = body.map((l) => l.split('\t').map((c) => parseNum(c)));
+      if (grid.length <= 3 && grid[0].length > MIN_SERIES) {
+        return { columns: grid.map((row) => Float64Array.from(row)), header: lines.slice(0, first).join(' ').trim() };
+      }
+      const ncol = Math.max(...grid.map((r) => r.length));
+      return { columns: Array.from({ length: ncol }, (_, c) => Float64Array.from(grid, (r) => (c < r.length ? r[c] : NaN))),
+        header: lines.slice(0, first).join(' ').trim() };
+    }
+    return { columns: [Float64Array.from(body, (l) => parseNum(l))], header: lines.slice(0, first).join(' ').trim() };
+  }
+
+  /** Build a scan from two pasted columns. Swaps them if the "Z" box is clearly the laser one. */
+  function fromColumns(xVals, zVals, meta = {}) {
+    if (xVals.length !== zVals.length) {
+      throw new Error(`the two columns have different lengths (${xVals.length} and ${zVals.length}); they must line up row by row`);
+    }
+    let x = xVals, z = zVals, swapped = false;
+    if (!stageLike(z) && stageLike(x)) { [x, z] = [z, x]; swapped = true; }
+    if (!stageLike(z)) throw new Error('the Z column does not look like a scan that goes out and comes back');
+    const keep = [];
+    for (let i = 0; i < z.length; i++) if (isFinite(z[i])) keep.push(i);
+    const m = { file: meta.file || 'pasted', source: `pasted columns, ${keep.length} points${swapped ? ' (columns were swapped)' : ''}`, notes: [] };
+    for (const k of FIELD_KEYS) m[k] = meta[k] ?? null;
+    m.fields_found = FIELD_KEYS.filter((k) => m[k] != null).length;
+    return { x: pick(x, keep), z: pick(z, keep), meta: m, swapped };
+  }
+
+  // ---- dropouts: values cut off from the rest by a big gap at either end
+  function percentile(sorted, p) {
+    const i = p * (sorted.length - 1), lo = Math.floor(i), hi = Math.ceil(i);
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
+  }
+  function dropoutMask(x) {
+    const fin = Array.from(x).filter(isFinite).sort((a, b) => a - b);
+    const n = fin.length;
+    let lo = -Infinity, hi = Infinity;
+    if (n >= 20) {
+      const g = Math.max(10, 0.25 * (percentile(fin, 0.95) - percentile(fin, 0.05)));
+      for (let i = Math.max(1, Math.ceil(0.95 * (n - 1))); i < n; i++) if (fin[i] - fin[i - 1] > g) { hi = fin[i - 1]; break; }
+      for (let i = Math.floor(0.05 * (n - 1)); i > 0; i--) if (fin[i] - fin[i - 1] > g) { lo = fin[i]; break; }
+    }
+    return Array.from(x, (v) => isFinite(v) && v >= lo && v <= hi);
   }
 
   // ------------------------------------------------------------------- analysis
@@ -358,11 +702,11 @@ const SW = (() => {
     return [[0, i], [i, n]];
   }
 
-  function cleanPass(name, x, z) {
+  function cleanPass(name, x, z, valid) {
     const n = x.length, keep = [];
     let nDrop = 0, nHold = 0;
     for (let i = 0; i < n; i++) {
-      const ok = x[i] < DROPOUT;
+      const ok = valid[i];
       if (!ok) { nDrop++; continue; }
       if (i > 0 && x[i] === x[i - 1]) { nHold++; continue; }
       keep.push(i);
@@ -386,14 +730,13 @@ const SW = (() => {
     const dEdge = eI - eL;
     const zg = arange(eI + 4, zTop - 1, 0.25);
     const a = interp(zg, inf.z, inf.x), zLoadMin = minOf(load.z);
-    let best = [-2, dEdge, 0];
-    for (const d of arange(dEdge - search, dEdge + search + 1e-9, 0.25)) {
-      if (zg[0] - d < zLoadMin) continue;
-      const b = interp(zg.map((v) => v - d), load.z, load.x);
-      const r = corr(a, b);
-      if (r > best[0]) best = [r, d, mean(b) - mean(a)];
-    }
-    const [r, d, off] = best;
+    const shifts = arange(dEdge - search, dEdge + search + 1e-9, 0.25);
+    const rs = Array.from(shifts, (d) => (zg[0] - d >= zLoadMin ? corr(a, interp(zg.map((v) => v - d), load.z, load.x)) : -1));
+    // centre of the best-matching 2 mm range, not a single noisy peak (see analysis.py)
+    const smooth = rs.map((_, k) => { let t = 0; for (let j = Math.max(0, k - 4); j <= Math.min(rs.length - 1, k + 4); j++) t += rs[j]; return t / 9; });
+    const k = argmax(smooth), d = shifts[k];
+    const b = interp(zg.map((v) => v - d), load.z, load.x);
+    const r = rs[k], off = mean(b) - mean(a);
     return { x_band: xBand, edge_inflated: eI, edge_loaded: eI - d, delta: d, delta_edge: dEdge,
       texture_corr: r, x_offset: off };
   }
@@ -493,8 +836,9 @@ const SW = (() => {
     let loadKN = opts.loadKN ?? null;
     if (loadKN == null && num(meta.load_daN) != null) loadKN = meta.load_daN / 100;
     const [s1, s2] = splitPasses(z);
-    const inf = cleanPass('inflated', x.slice(s1[0], s1[1]), z.slice(s1[0], s1[1]));
-    const load = cleanPass('loaded', x.slice(s2[0], s2[1]), z.slice(s2[0], s2[1]));
+    const valid = dropoutMask(x);
+    const inf = cleanPass('inflated', x.slice(s1[0], s1[1]), z.slice(s1[0], s1[1]), valid.slice(s1[0], s1[1]));
+    const load = cleanPass('loaded', x.slice(s2[0], s2[1]), z.slice(s2[0], s2[1]), valid.slice(s2[0], s2[1]));
     const rawMin = {};
     for (const p of [inf, load]) { const k = argmin(p.x); rawMin[p.name] = [p.x[k], p.z[k]]; }
 
@@ -581,7 +925,7 @@ const SW = (() => {
         surface_strain_pct: 100 * hMm * Math.abs(k_) })),
       assumptions: { rim_end: rimEnd, surface_offset_from_ply_mm: hMm, derivative_window_mm: windowMm, smoothing_mm: smoothMm },
       range: { z_start: loI, edge_inflated: eI, edge_loaded: eL, manual, auto },
-      test: Object.fromEntries(Object.entries(meta).filter(([k]) => k !== 'series_titles')),
+      test: Object.fromEntries(Object.entries(meta).filter(([k]) => !['series_titles', 'notes'].includes(k))),
     };
     if (labRd) metrics.vs_lab = { horizontal_deflection_lab_mm: meta.horizontal_deflection_mm,
       horizontal_deflection_raw_mm: hdRaw, horizontal_deflection_smoothed_mm: growth };
@@ -649,6 +993,7 @@ const SW = (() => {
     return [c(r), c(g), c(b)];
   }
 
-  return { readFile, analyze, displayCurves, summaryRow, label, turbo, interp, savgol };
+  return { readFile, analyze, displayCurves, summaryRow, label, turbo, interp, savgol,
+    parseColumnText, fromColumns, stageLike, parseNum, dropoutMask, FIELD_KEYS };
 })();
 if (typeof module !== 'undefined') module.exports = SW;
