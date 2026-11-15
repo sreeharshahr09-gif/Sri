@@ -718,9 +718,25 @@ const SW = (() => {
   function crossingUp(p, level, zStart) {
     const xs = savgol(p.x, 9, 0);
     for (let i = 0; i < p.z.length; i++) if (p.z[i] > zStart && xs[i] >= level) return p.z[i];
-    throw new Error('could not find where the sidewall meets the shoulder band');
+    throw new Error('could not find where the sidewall meets the rim band');
   }
 
+  /** How well the rim band's texture lines up when the loaded scan is shifted up by d -> [r, sideways shift] */
+  function textureAt(inf, load, eStart, d) {
+    const zg = arange(eStart + 4, maxOf(inf.z) - 1, 0.25);
+    if (zg.length < 8 || zg[0] - d < minOf(load.z)) return [null, null];
+    const a = interp(zg, inf.z, inf.x), b = interp(zg.map((v) => v - d), load.z, load.x);
+    return [corr(a, b), mean(b) - mean(a)];
+  }
+
+  /** z of the largest reading between lo and hi, if it stands above minX */
+  function peakZ(p, lo, hi, minX) {
+    let k = -1;
+    for (let i = 0; i < p.z.length; i++) if (p.z[i] >= lo && p.z[i] <= hi && (k < 0 || p.x[i] > p.x[k])) k = i;
+    return k >= 0 && p.x[k] >= minX ? p.z[k] : null;
+  }
+
+  /** Rim-side starting points of the sidewall in each scan, and the rim drop (see analysis.py). */
   function findBandShift(inf, load, topMm = 30, search = 8, tol = 1) {
     const zTop = maxOf(inf.z);
     const xBand = median(inf.x.filter((_, i) => inf.z[i] > zTop - topMm));
@@ -732,20 +748,15 @@ const SW = (() => {
     const a = interp(zg, inf.z, inf.x), zLoadMin = minOf(load.z);
     const shifts = arange(dEdge - search, dEdge + search + 1e-9, 0.25);
     const rs = Array.from(shifts, (d) => (zg[0] - d >= zLoadMin ? corr(a, interp(zg.map((v) => v - d), load.z, load.x)) : -1));
-    // centre of the best-matching 2 mm range, not a single noisy peak (see analysis.py)
     const smooth = rs.map((_, k) => { let t = 0; for (let j = Math.max(0, k - 4); j <= Math.min(rs.length - 1, k + 4); j++) t += rs[j]; return t / 9; });
-    const k = argmax(smooth), d = shifts[k];
-    const b = interp(zg.map((v) => v - d), load.z, load.x);
-    const r = rs[k], off = mean(b) - mean(a);
-    return { x_band: xBand, edge_inflated: eI, edge_loaded: eI - d, delta: d, delta_edge: dEdge,
-      texture_corr: r, x_offset: off };
-  }
-
-  function textureCorr(inf, load, eI, d) {
-    const zg = arange(eI + 4, maxOf(inf.z) - 1, 0.25);
-    if (zg.length < 8 || zg[0] - d < minOf(load.z)) return null;
-    const a = interp(zg, inf.z, inf.x), b = interp(zg.map((v) => v - d), load.z, load.x);
-    return corr(a, b);
+    const dTex = shifts[argmax(smooth)];
+    let fI = peakZ(inf, eI - 3, eI + 12, xBand + 2);
+    if (fI == null) fI = eI;
+    let fL = peakZ(load, eL - 8, eL + 14, xBand + 1);
+    if (fL == null) fL = fI - dTex;
+    const [r, off] = textureAt(inf, load, fI, fI - fL);
+    return { x_band: xBand, edge_inflated: fI, edge_loaded: fL, delta: fI - fL, delta_edge: dEdge,
+      texture_corr: r, x_offset: off, delta_texture: dTex };
   }
 
   function fitProfile(p, xBand, zLo, zHi, windowMm = 45, uWindowMm = 5, step = 0.25) {
@@ -797,8 +808,8 @@ const SW = (() => {
     return picked.map((i) => [x[i], y[i]]);
   }
 
-  function zoneTable(mt, towardRim, hMm) {
-    const names = ['rim-side', 'middle', 'shoulder-side'];
+  function zoneTable(mt, drop, hMm) {
+    const names = ['rim-side', 'middle', 'tread-side'];
     const sEnd = mt.s[mt.s.length - 1];
     const edges = names.map((_, k) => (k * sEnd) / 3).concat([sEnd]);
     const ds = gradient(mt.s);
@@ -813,7 +824,7 @@ const SW = (() => {
         zone, s_from: edges[k], s_to: edges[k + 1],
         z_inflated_from: mt.z_inf[idx[0]], z_inflated_to: mt.z_inf[idx[idx.length - 1]],
         mean_outward_mm: mean(sel(mt.du)), max_outward_mm: maxOf(sel(mt.du)),
-        mean_toward_rim_mm: mean(sel(towardRim)),
+        mean_drop_mm: mean(sel(drop)),
         mean_abs_rotation_deg: mean(sel(mt.dtheta).map(Math.abs)),
         peak_abs_dkappa_per_m: 1000 * maxOf(dk), peak_surface_strain_pct: 100 * hMm * maxOf(dk),
         share_of_bulge_pct: 100 * idx.reduce((s, i) => s + Math.max(mt.du[i], 0) * ds[i], 0) / bulgeTot,
@@ -831,7 +842,8 @@ const SW = (() => {
   const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
 
   function analyze(x, z, meta = {}, opts = {}) {
-    const hMm = opts.hMm ?? 5, rimEnd = opts.rimEnd ?? 'bottom';
+    const hMm = opts.hMm ?? 5, rimEnd = opts.rimEnd ?? 'top';
+    if (rimEnd !== 'top') throw new Error('The rim must be at the high-Z end of the scan (top), as in the lab rig.');
     const windowMm = opts.windowMm ?? 45, smoothMm = opts.smoothMm ?? 5;
     let loadKN = opts.loadKN ?? null;
     if (loadKN == null && num(meta.load_daN) != null) loadKN = meta.load_daN / 100;
@@ -851,14 +863,16 @@ const SW = (() => {
     const manual = given(opts.zStart) || given(opts.edgeInflated) || given(opts.edgeLoaded);
     const eI = given(opts.edgeInflated) ? +opts.edgeInflated : bandAuto.edge_inflated;
     const eL = given(opts.edgeLoaded) ? +opts.edgeLoaded : eI - bandAuto.delta;
-    const band = manual
-      ? { ...bandAuto, edge_inflated: eI, edge_loaded: eL, delta: eI - eL, texture_corr: textureCorr(inf, load, eI, eI - eL), manual: true }
-      : { ...bandAuto, manual: false };
+    let band = { ...bandAuto, manual: false };
+    if (manual) {
+      const [rM, offM] = textureAt(inf, load, eI, eI - eL);
+      band = { ...bandAuto, edge_inflated: eI, edge_loaded: eL, delta: eI - eL, texture_corr: rM, x_offset: offM, manual: true };
+    }
     let loI, loL;
     if (given(opts.zStart)) loI = loL = +opts.zStart;
     else [loI, loL] = rimBottom ? [loAuto, loAuto] : [minOf(inf.z), minOf(load.z)];
     if (!(eI - loI >= 20 && eL - loL >= 20)) {
-      throw new Error('The sidewall start must be at least 20 mm below both shoulder edges.');
+      throw new Error('The tread-side end must be at least 20 mm below both rim-side starting points.');
     }
     if (eI > maxOf(inf.z) || eL > maxOf(load.z) || loI < minOf(inf.z) - 1 || loL < minOf(load.z) - 1) {
       throw new Error('A chosen position is outside the scanned range.');
@@ -866,7 +880,7 @@ const SW = (() => {
     const pi = fitProfile(inf, band.x_band, loI, band.edge_inflated, windowMm, smoothMm);
     const pl = fitProfile(load, band.x_band, loL, band.edge_loaded, windowMm, smoothMm);
     const mt = matchByArclength(pi, pl, rimBottom ? 'bottom' : 'top');
-    const towardRim = mt.dz.map((v) => (rimBottom ? -v : v));
+    const drop = mt.dz.map((v) => -v); // how far each point moved down in the scanner (toward the contact)
 
     const zc = arange(Math.max(pi.z[0], pl.z[0]), Math.min(pi.z[pi.z.length - 1], pl.z[pl.z.length - 1]), 0.25);
     const ndU = interp(zc, pl.z, pl.u), ndI = interp(zc, pi.z, pi.u);
@@ -880,7 +894,7 @@ const SW = (() => {
     const ds = gradient(mt.s);
     let bulgeArea = 0;
     for (let i = 0; i < mt.s.length; i++) bulgeArea += Math.max(mt.du[i], 0) * ds[i];
-    const zones = zoneTable(mt, towardRim, hMm);
+    const zones = zoneTable(mt, drop, hMm);
     const hdRaw = rawMin.inflated[0] - rawMin.loaded[0];
     const margin = windowMm / 2, sEnd = mt.s[mt.s.length - 1];
     const tIdx = Array.from(mt.s.keys()).filter((i) => mt.s[i] >= margin && mt.s[i] <= sEnd - margin);
@@ -895,10 +909,9 @@ const SW = (() => {
       noise_floor_mm: { inflated: pi.sigma, loaded: pl.sigma },
       band,
       deflection: {
-        radial_lab_mm: labRd, shoulder_travel_mm: band.delta,
-        crown_share_mm: labRd ? labRd - band.delta : null,
-        sidewall_share_pct: labRd ? (100 * band.delta) / labRd : null,
-        basis: labRd ? 'lab radial deflection' : 'shoulder travel (no lab value)',
+        radial_lab_mm: labRd, rim_drop_scan_mm: band.delta,
+        rim_drop_minus_radial_mm: labRd ? band.delta - labRd : null,
+        basis: labRd ? 'lab radial deflection' : 'rim drop in the scan (no lab value)',
       },
       load_kN: loadKN,
       vertical_stiffness_N_per_mm: loadKN ? (1000 * loadKN) / radial : null,
@@ -916,8 +929,8 @@ const SW = (() => {
       naive_same_z: { peak_mm: nd[kNv], at_z: zc[kNv], area_mm2: trapezoid(nd.map((v) => Math.max(v, 0)), zc) },
       matched: {
         peak_outward_mm: mt.du[kMt], at_s: mt.s[kMt], inflated_z_of_that_point: mt.z_inf[kMt],
-        bulge_area_mm2: bulgeArea, toward_rim_at_rim_end_mm: towardRim[0],
-        toward_rim_at_far_end_mm: towardRim[towardRim.length - 1], max_rotation_deg: mt.dtheta[kRot],
+        bulge_area_mm2: bulgeArea, drop_at_rim_end_mm: drop[0],
+        drop_at_tread_end_mm: drop[drop.length - 1], max_rotation_deg: mt.dtheta[kRot],
       },
       arc_length: { inflated_mm: pi.length, loaded_visible_mm: pl.length, deficit_mm: pi.length - pl.length,
         deficit_pct: (100 * (pi.length - pl.length)) / pi.length },
@@ -929,7 +942,7 @@ const SW = (() => {
     };
     if (labRd) metrics.vs_lab = { horizontal_deflection_lab_mm: meta.horizontal_deflection_mm,
       horizontal_deflection_raw_mm: hdRaw, horizontal_deflection_smoothed_mm: growth };
-    return { passes: { inflated: inf, loaded: load }, band, inf: pi, load: pl, matched: mt, towardRim,
+    return { passes: { inflated: inf, loaded: load }, band, inf: pi, load: pl, matched: mt, drop,
       naive: { z: zc, du: nd }, metrics, zones, meta, auto, opts: { hMm, rimEnd, windowMm, smoothMm } };
   }
 
@@ -942,7 +955,7 @@ const SW = (() => {
     const mt = matchByArclength(pi, pl, rimBottom ? 'bottom' : 'top');
     const zc = res.naive.z;
     const a = interp(zc, pl.z, pl.u), b = interp(zc, pi.z, pi.u);
-    return { inf: pi, load: pl, matched: mt, towardRim: mt.dz.map((v) => (rimBottom ? -v : v)),
+    return { inf: pi, load: pl, matched: mt, drop: mt.dz.map((v) => -v),
       naive: { z: zc, du: a.map((v, i) => v - b[i]) } };
   }
 
@@ -961,8 +974,8 @@ const SW = (() => {
       file: t.file, tire: label(res.meta), size: t.size ?? null, brand: t.brand ?? null, serial: t.serial ?? null,
       test_date: t.test_date ?? null, feature: t.feature ?? null, load_daN: t.load_daN ?? null,
       pressure_psi: t.pressure_psi ?? null, rim: t.rim ?? null,
-      radial_deflection_lab_mm: d.radial_lab_mm, shoulder_travel_mm: d.shoulder_travel_mm,
-      crown_share_mm: d.crown_share_mm, sidewall_share_pct: d.sidewall_share_pct,
+      radial_deflection_lab_mm: d.radial_lab_mm, rim_drop_scan_mm: d.rim_drop_scan_mm,
+      rim_drop_minus_radial_mm: d.rim_drop_minus_radial_mm,
       vertical_stiffness_N_per_mm: m.vertical_stiffness_N_per_mm,
       horizontal_deflection_lab_mm: t.horizontal_deflection_mm ?? null,
       horizontal_deflection_raw_mm: m.lab_style.horizontal_deflection_mm,
@@ -975,7 +988,7 @@ const SW = (() => {
       peak_bending_strain_pct: peak.surface_strain_pct ?? null, peak_bending_height_mm: peak.z_inflated ?? null,
       rim_side_bending_share_pct: z['rim-side'].share_of_bending_energy_pct,
       middle_bending_share_pct: z.middle.share_of_bending_energy_pct,
-      shoulder_side_bending_share_pct: z['shoulder-side'].share_of_bending_energy_pct,
+      tread_side_bending_share_pct: z['tread-side'].share_of_bending_energy_pct,
       hidden_sidewall_when_loaded_mm: m.arc_length.deficit_mm,
       noise_mm: Math.max(m.noise_floor_mm.inflated, m.noise_floor_mm.loaded),
       range_manual: m.range.manual, range_z_start_mm: m.range.z_start,

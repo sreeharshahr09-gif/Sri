@@ -17,9 +17,13 @@ uploaded and it works offline.
   chart has a plain-English "What it shows / How to read it / For this tire" box.
 - **Test details**: check or fill in size, load, pressure, radial deflection etc.
   for any tire (e.g. when a file's labels were not recognised). Every number updates.
-- **Analysis range**: the sidewall start (rim side) and the shoulder edge in
-  each scan are found automatically and can be changed per tire by dragging the
-  dashed lines or typing a height.
+- **Scan as recorded**: the full laser record (distance vs Z), like the lab's own
+  chart, with lost readings shown apart, so you can see exactly what is analysed.
+- **Analysis range**: the rim-side starting point in each scan and the tread-side
+  end are found automatically and can be changed per tire by dragging the dashed
+  lines on the "scan as recorded" chart or typing a height.
+- **Orientation**: every chart, in the tool, the reports and the Python figures,
+  puts the rim at the top and the tread / flat contact at the bottom.
 - **Compare tires**: sortable table, overlays, pick-a-metric bar chart, CSV export.
 - **Interactive charts** (tool and HTML report): hover read-out with crosshair
   and dots, linked across a tire's charts; drag-box zoom, +/- buttons,
@@ -89,14 +93,17 @@ skipped with the reason.
 
 1. **Clean**: split at the turnaround; drop dropouts and repeated readings (the
    laser updates slower than Z is logged).
-2. **Shoulder travel**: the textured band at the shoulder end moves straight
-   toward the rim under load. Its shift (centre of the best-matching 2 mm range
-   of the texture correlation) is how much the sidewall shortened. The lab
-   radial deflection minus this is the part taken by the tread/crown.
+2. **Starting points and rim drop**: the rim is at the top of the scan (high Z).
+   The scanner stays with the contact plate, so under load the rim moves down
+   toward it. The inflated starting point is the sharp peak where the profile
+   meets the rim; the loaded one is the top of the step where the loaded profile
+   meets the rim band. Their difference is the rim drop seen by the scan, shown
+   next to the machine's radial deflection. How well the rim-band texture lines
+   up after that shift is reported as a cross-check.
 3. **Smooth**: profiles lightly (5 mm); slope and curvature over 45 mm. Shorter
    windows pick up lettering texture rather than bending.
 4. **Follow the material**: cords make the sidewall almost inextensible, so the
-   same distance along the sidewall from the rim end is the same rubber in both
+   same distance along the sidewall from the rim-side starting point is the same rubber in both
    scans. Displacement, tilt and curvature change are compared that way.
 5. **Zones**: thirds of the sidewall from the rim: share of bulge, share of
    bending (integral of curvature change squared), tilt, and surface strain =
@@ -107,8 +114,10 @@ numbers (checked to 1e-11 on all sample and variant files).
 
 ## Things to confirm per test
 
-- Rim end of the scan (`--rim-end`, default: low Z end) - set by the rig.
+- The rim must be at the high-Z end of the scan, as in the lab rig.
 - Rubber thickness over the ply for strain (`--h-mm`, default 5 mm).
-- About 15-25 mm of sidewall just under the shoulder folds out of the laser's
-  view when loaded (`hidden_sidewall_when_loaded_mm`); values near the shoulder
-  end are less certain.
+- About 20 mm of sidewall at the tread end rolls into the contact and out of the
+  laser's view when loaded (`hidden_sidewall_when_loaded_mm`); values at the
+  tread-side end are less certain.
+- The rim drop in the scan can differ from the machine's radial deflection by a
+  few mm (preload, or the scan plane not being at the contact centre).

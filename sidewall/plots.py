@@ -35,9 +35,8 @@ def _zones(ax, r: Result, label=True):
                     ha="right", va="center", fontsize=8.5, color=INK2, rotation=90)
 
 
-def _toward_rim(r: Result) -> np.ndarray:
-    dz = r.matched.dz
-    return -dz if r.metrics["assumptions"]["rim_end"] == "bottom" else dz
+def _drop(r: Result) -> np.ndarray:
+    return -r.matched.dz  # downward movement in the scanner (toward the contact)
 
 
 def cross_section(ax, r: Result, fig=None):
@@ -55,15 +54,15 @@ def cross_section(ax, r: Result, fig=None):
     lc.set_array(0.5 * (mt.du[1:] + mt.du[:-1]))
     lc.set_clim(min(0.0, mt.du.min()), mt.du.max())
     ax.add_collection(lc)
-    ax.plot([], [], color=LOAD, lw=4, label="loaded (coloured by outward deflection)")
+    ax.plot([], [], color=LOAD, lw=4, label="loaded, coloured\nby outward push")
     if fig is not None:
         cb = fig.colorbar(lc, ax=ax, orientation="horizontal", fraction=0.04, pad=0.08)
         cb.set_label("outward deflection (mm): blue = less, red = more")
 
-    # the shoulder band moves toward the rim
+    # the rim-side starting point drops toward the contact
     ax.annotate("", xy=(-3, b.edge_loaded), xytext=(-3, b.edge_inflated),
                 arrowprops=dict(arrowstyle="-|>", color=INK, lw=1.2))
-    ax.text(-4, (b.edge_loaded + b.edge_inflated) / 2, f"shoulder moves\n{b.delta:.0f} mm\ntoward rim",
+    ax.text(-4, (b.edge_loaded + b.edge_inflated) / 2, f"rim side drops\n{b.delta:.0f} mm",
             ha="right", va="center", fontsize=8.5, color=INK)
 
     mw = r.metrics["max_width"]
@@ -72,22 +71,22 @@ def cross_section(ax, r: Result, fig=None):
                 xytext=(10, 0), textcoords="offset points", va="center", fontsize=8.5, color=INK)
 
     al = r.metrics["arc_length"]
-    ax.annotate(f"~{al['deficit_mm']:.0f} mm of sidewall\nfolds out of view\nwhen loaded",
-                (pl.u[-1], pl.z[-1]), xytext=(12, -6), textcoords="offset points",
-                ha="left", va="top", fontsize=8.5, color=INK2)
-    rim_low = r.metrics["assumptions"]["rim_end"] == "bottom"
-    ylo, yhi = pi.z[0], r.passes["inflated"].z.max()
-    ax.text(0.02, 0.01 if rim_low else 0.99, "RIM end", transform=ax.transAxes, fontsize=9,
-            color=INK2, fontweight="bold", va="bottom" if rim_low else "top")
-    ax.text(0.02, 0.99 if rim_low else 0.01, "SHOULDER end", transform=ax.transAxes, fontsize=9,
-            color=INK2, fontweight="bold", va="top" if rim_low else "bottom")
+    ax.annotate(f"~{al['deficit_mm']:.0f} mm of sidewall\nrolls out of view\nat the contact",
+                (pl.u[0], pl.z[0]), xytext=(70, 28), textcoords="offset points",
+                ha="left", va="bottom", fontsize=8.5, color=INK2,
+                arrowprops=dict(arrowstyle="-", color=MUTED, lw=0.8))
+    zs = np.concatenate([pi.z, pl.z, r.passes["inflated"].z])
+    ax.text(0.02, 0.99, "RIM side", transform=ax.transAxes, fontsize=9,
+            color=INK2, fontweight="bold", va="top")
+    ax.text(0.02, 0.01, "TREAD / CONTACT side", transform=ax.transAxes, fontsize=9,
+            color=INK2, fontweight="bold", va="bottom")
     ax.set_xlim(min(pi.u.min(), pl.u.min()) - 22, max(pi.u.max(), pl.u.max()) + 16)
-    ax.set_ylim(min(ylo, pl.z[0]) - 5, yhi + 5)
-    ax.set_xlabel("outward position (mm), 0 = shoulder band →")
+    ax.set_ylim(zs.min() - 5, zs.max() + 5)
+    ax.set_xlabel("outward position (mm), 0 = rim band →")
     ax.set_ylabel("scanner height z (mm)")
     ax.set_title("Sidewall shape: inflated vs loaded")
     ax.set_aspect("equal")
-    ax.legend(loc="upper right", fontsize=8.5)
+    ax.legend(loc="center left", fontsize=8.5)
 
 
 def bulge(ax_u, ax_z, r: Result):
@@ -106,14 +105,14 @@ def bulge(ax_u, ax_z, r: Result):
     ax_u.set_title("Outward bulge along the sidewall")
     ax_u.legend(loc="upper right", fontsize=8.5)
 
-    tr = _toward_rim(r)
+    tr = _drop(r)
     ax_z.plot(tr, mt.z_inf, color=CHANGE)
     ax_z.axvline(0, color=MUTED, lw=0.8)
     ax_z.annotate(f"{tr[-1]:.0f} mm", (tr[-1], mt.z_inf[-1]), xytext=(4, 0),
                   textcoords="offset points", fontsize=8.5, color=INK)
     _zones(ax_z, r)
-    ax_z.set_xlabel("movement toward the rim (mm)")
-    ax_z.set_title("How far each point slides toward the rim")
+    ax_z.set_xlabel("downward movement (mm)")
+    ax_z.set_title("How far each point moves down toward the contact")
 
 
 def curvature(ax_k, ax_dk, ax_th, r: Result):
@@ -180,43 +179,52 @@ def overview(r: Result, path):
 
 
 def data_quality(r: Result, path, x_all, z_all):
+    """Scan as recorded, noise after cleaning, rim-band check. Rim at the top in every panel."""
     from .analysis import split_passes
+    from .readers import dropout_mask
     s1, _ = split_passes(x_all, z_all)
-    fig, ax = plt.subplots(1, 3, figsize=(16, 4.8), layout="constrained")
+    fig, ax = plt.subplots(1, 3, figsize=(16, 6.4), layout="constrained")
+    rg, b = r.metrics["range"], r.band
 
     a = ax[0]
-    idx = np.arange(len(x_all))
-    bad = x_all >= 250
-    xa = np.where(bad, np.nan, x_all)
-    a.plot(idx[: s1.stop], xa[: s1.stop], color=INF, lw=1, label="inflated pass")
-    a.plot(idx[s1.stop:], xa[s1.stop:], color=LOAD, lw=1, label="loaded pass")
-    lo = np.nanmin(xa)
-    a.plot(idx[bad], np.full(bad.sum(), lo - 2), "x", color=INK, ms=6, label="dropout (300.15)")
-    a.set_xlabel("sample #")
-    a.set_ylabel("laser reading x (mm)")
-    a.set_title("Raw record: two passes, dropouts at the ends")
-    a.legend(loc="upper center", fontsize=8.5)
+    ok = np.array(dropout_mask(x_all), dtype=bool)
+    xa = np.where(ok, x_all, np.nan)
+    a.plot(xa[: s1.stop], z_all[: s1.stop], color=INF, lw=1.2, label="inflated scan")
+    a.plot(xa[s1.stop:], z_all[s1.stop:], color=LOAD, lw=1.2, label="loaded scan")
+    xr = np.nanmax(xa) + 5
+    if (~ok).any():
+        a.plot(np.full((~ok).sum(), xr), z_all[~ok], "x", color=INK2, ms=5,
+               label=f"lost readings, left out ({(~ok).sum()})")
+    for zz, col, txt in [(rg["edge_inflated"], INF, "rim-side start, inflated"),
+                         (rg["edge_loaded"], LOAD, "rim-side start, loaded"),
+                         (rg["z_start"], INK2, "tread-side end")]:
+        a.axhline(zz, color=col, lw=1, ls="--")
+        left = txt.startswith("tread")  # clear of the scan lines, which end at the right
+        a.text(0.01 if left else 0.99, zz, f"{txt} {zz:.1f}", transform=a.get_yaxis_transform(),
+               ha="left" if left else "right", va="bottom", fontsize=8, color=col)
+    a.set_xlabel("laser distance as recorded (mm); smaller = sidewall further out")
+    a.set_ylabel("Z position (mm)")
+    a.set_title("Scan as recorded (full range)")
+    a.legend(loc="upper left", fontsize=8.5)
 
     a = ax[1]
     for p, prof, col in [(r.passes["inflated"], r.inf, INF), (r.passes["loaded"], r.load, LOAD)]:
         a.plot(prof.resid, prof.resid_z, ".", ms=3, color=col, label=f"{p.name}: σ = {prof.sigma:.2f} mm")
     a.axvline(0, color=MUTED, lw=0.8)
     a.set_xlabel("raw − smoothed (mm)")
-    a.set_ylabel("stage height z (mm)")
+    a.set_ylabel("Z position (mm)")
     a.set_title("Noise after cleaning")
     a.legend(loc="upper right", fontsize=8.5)
 
     a = ax[2]
-    b = r.band
     pi, pl = r.passes["inflated"], r.passes["loaded"]
-    a.plot(pi.z, pi.x, color=INF, lw=1.2, label="inflated")
-    a.plot(pl.z + b.delta, pl.x, color=LOAD, lw=1.2, label=f"loaded, shifted +{b.delta:.1f} mm")
-    a.set_xlim(b.edge_inflated - 30, pi.z.max() + 2)
-    a.set_ylim(b.x_band - 15, b.x_band + 10)
-    a.invert_yaxis()
-    a.set_xlabel("stage height z (mm)")
-    a.set_ylabel("laser reading x (mm)")
-    a.set_title(f"Rigid band texture lines up (r = {b.texture_corr:.2f}, axial shift {b.x_offset:+.2f} mm)")
+    a.plot(pi.x, pi.z, color=INF, lw=1.2, label="inflated")
+    a.plot(pl.x, pl.z + b.delta, color=LOAD, lw=1.2, label=f"loaded, moved up {b.delta:.1f} mm")
+    a.set_ylim(b.edge_inflated - 30, pi.z.max() + 2)
+    a.set_xlim(b.x_band - 15, b.x_band + 10)
+    a.set_xlabel("laser distance (mm)")
+    a.set_ylabel("Z position (mm)")
+    a.set_title(f"Rim band lines up after the rim drop (r = {b.texture_corr:.2f})")
     a.legend(loc="lower left", fontsize=8.5)
     fig.savefig(path, dpi=110)
     plt.close(fig)
@@ -226,7 +234,7 @@ SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#62
 
 
 def _pct_from_rim(r: Result) -> np.ndarray:
-    """Height of each matched point in the inflated scan, as % of the span from the rim end."""
+    """Position of each matched point in the inflated scan, as % of the sidewall from the rim (0 = rim)."""
     z = r.matched.z_inf
     lo, hi = r.inf.z[0], r.inf.z[-1]
     f = (z - lo) / (hi - lo)
@@ -242,14 +250,16 @@ def comparison(results, path):
         ax[0].plot(r.matched.du, h, color=c, label=r.label)
         ax[1].plot(r.matched.dtheta, h, color=c, label=r.label)
     ax[0].set_xlabel("outward deflection (mm)")
-    ax[0].set_ylabel("height above rim end (% of sidewall)")
+    for a in ax[:2]:
+        a.set_ylim(100, 0)  # rim (0 %) at the top, tread / contact (100 %) at the bottom
+        a.set_ylabel("position from the rim (% of sidewall)")
     ax[0].set_title("Outward bulge along the sidewall")
     ax[1].axvline(0, color=MUTED, lw=0.8)
     ax[1].set_xlabel("tilt change (deg), + = leans outward")
     ax[1].set_title("Tilt of the sidewall under load")
-    ax[0].legend(loc="upper right", fontsize=8)
+    ax[0].legend(loc="lower right", fontsize=8)
 
-    zones = ["rim-side", "middle", "shoulder-side"]
+    zones = ["rim-side", "middle", "tread-side"]
     y = np.arange(len(zones))
     hgt = 0.8 / len(shown)
     for k, r in enumerate(shown):

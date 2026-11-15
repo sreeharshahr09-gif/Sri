@@ -90,13 +90,14 @@ def noise_floor(p: Pass, z0: float, z1: float, window: int = 15) -> float:
 # ------------------------------------------------------ rigid band and deflection
 @dataclass
 class BandShift:
-    x_band: float          # laser reading of the rigid band (mm)
-    edge_inflated: float   # z where the inflated sidewall meets the band
-    edge_loaded: float     # same feature in the loaded scan (= edge_inflated - delta)
-    delta: float           # vertical translation of the band, inflated -> loaded (mm)
-    delta_edge: float      # independent estimate from the band-level crossing
-    texture_corr: float    # correlation of band texture at the chosen shift
-    x_offset: float        # axial shift of the band at that delta (≈0 for rigid)
+    x_band: float          # laser reading of the rim band (rim flange / bead area) (mm)
+    edge_inflated: float   # rim-side starting point of the sidewall, inflated scan (z, mm)
+    edge_loaded: float     # rim-side starting point, loaded scan (z, mm)
+    delta: float           # rim drop between the scans = edge_inflated - edge_loaded (mm)
+    delta_edge: float      # cross-check: shift of the band-level crossing
+    texture_corr: float    # how well the band texture lines up at this drop (r)
+    x_offset: float        # sideways shift of the band at this drop (≈0 for a rigid rim)
+    delta_texture: float = float("nan")  # cross-check: best texture-matching shift
 
 
 def _crossing_up(p: Pass, level: float, z_start: float) -> float:
@@ -106,14 +107,38 @@ def _crossing_up(p: Pass, level: float, z_start: float) -> float:
     return float(p.z[idx[0]])
 
 
+def texture_at(inf: Pass, load: Pass, e_start: float, d: float):
+    """How well the rim band's texture lines up when the loaded scan is shifted up by d.
+
+    Uses the band above the inflated starting point. Returns (r, sideways shift)."""
+    zg = np.arange(e_start + 4.0, inf.z.max() - 1.0, 0.25)
+    if len(zg) < 8 or zg[0] - d < load.z.min():
+        return None, None
+    a, b = np.interp(zg, inf.z, inf.x), np.interp(zg - d, load.z, load.x)
+    return float(np.corrcoef(a, b)[0, 1]), float(np.mean(b - a))
+
+
+def _peak_z(p: Pass, lo: float, hi: float, min_x: float):
+    """z of the largest reading between lo and hi, if it stands above min_x."""
+    m = (p.z >= lo) & (p.z <= hi)
+    if not m.any():
+        return None
+    k = int(np.argmax(np.where(m, p.x, -np.inf)))
+    return float(p.z[k]) if p.x[k] >= min_x else None
+
+
 def find_band_shift(inf: Pass, load: Pass, top_mm: float = 30.0,
                     search: float = 8.0, tol: float = 1.0) -> BandShift:
-    """Locate the textured rigid band at the top of the scan and how far it moved.
+    """Find where the sidewall starts at the rim in each scan, and the rim drop.
 
-    1. Band level = median reading over the top ``top_mm`` of the inflated scan.
-    2. Edge = where each profile climbs from its widest point up to that level.
-    3. Refine the shift by correlating the band's surface texture between the
-       scans within +/- ``search`` mm of the edge-based estimate.
+    The rim (flange and bead area) is at the top of the scan: a textured band that
+    the scanner sees in both scans, shifted down by the rim drop in the loaded one.
+      1. Band level = median reading over the top ``top_mm`` of the inflated scan.
+      2. Crossing = where each profile climbs from its widest point to that level.
+      3. Starting points: the sharp peak where the inflated profile meets the rim,
+         and the top of the step where the loaded profile meets it (the points an
+         engineer marks on the raw chart). Falls back to the crossing / texture.
+      4. Cross-check: best match of the band texture between the scans.
     """
     x_band = float(np.median(inf.x[inf.z > inf.z.max() - top_mm]))
     z_mw_i = float(inf.z[np.argmin(savgol_filter(inf.x, 15, 2))])
@@ -129,14 +154,15 @@ def find_band_shift(inf: Pass, load: Pass, top_mm: float = 30.0,
     for k, d in enumerate(shifts):
         if zg[0] - d >= load.z.min():
             rs[k] = np.corrcoef(a, np.interp(zg - d, load.z, load.x))[0, 1]
-    # centre of the best-matching 2 mm range, not a single noisy peak: the match
-    # curve is often flat-topped and small timing differences flip between peaks
     smooth = np.array([rs[max(0, k - 4):k + 5].sum() / 9 for k in range(len(rs))])
-    k = int(np.argmax(smooth))
-    d = float(shifts[k])
-    b = np.interp(zg - d, load.z, load.x)
-    r, off = float(rs[k]), float(np.mean(b - a))
-    return BandShift(x_band, e_i, e_i - d, d, d_edge, r, off)
+    d_tex = float(shifts[int(np.argmax(smooth))])
+
+    f_i = _peak_z(inf, e_i - 3.0, e_i + 12.0, x_band + 2.0)
+    f_i = e_i if f_i is None else f_i
+    f_l = _peak_z(load, e_l - 8.0, e_l + 14.0, x_band + 1.0)
+    f_l = f_i - d_tex if f_l is None else f_l
+    r, off = texture_at(inf, load, f_i, f_i - f_l)
+    return BandShift(x_band, f_i, f_l, f_i - f_l, d_edge, r, off, d_tex)
 
 
 # --------------------------------------------------------------- smooth profiles
@@ -248,7 +274,7 @@ def _trim_ends(y: np.ndarray, x: np.ndarray, margin: float):
     return y[m], x[m]
 
 
-def zone_table(mt: Matched, toward_rim: np.ndarray, names=("rim-side", "middle", "shoulder-side"),
+def zone_table(mt: Matched, drop: np.ndarray, names=("rim-side", "middle", "tread-side"),
                h_mm: float = 5.0):
     """Split the matched sidewall into thirds of arc length, starting at the rim end."""
     edges = np.linspace(0, mt.s[-1], len(names) + 1)
@@ -264,7 +290,7 @@ def zone_table(mt: Matched, toward_rim: np.ndarray, names=("rim-side", "middle",
             z_inflated_from=float(mt.z_inf[m][0]), z_inflated_to=float(mt.z_inf[m][-1]),
             mean_outward_mm=float(np.mean(mt.du[m])),
             max_outward_mm=float(np.max(mt.du[m])),
-            mean_toward_rim_mm=float(np.mean(toward_rim[m])),
+            mean_drop_mm=float(np.mean(drop[m])),
             mean_abs_rotation_deg=float(np.mean(np.abs(mt.dtheta[m]))),
             peak_abs_dkappa_per_m=float(1000 * np.max(np.abs(mt.dkappa[m]))),
             peak_surface_strain_pct=float(100 * h_mm * np.max(np.abs(mt.dkappa[m]))),
@@ -296,30 +322,26 @@ class Result:
         return " | ".join(parts) if parts else Path(m.get("file", "scan")).stem
 
 
-def _texture_corr(inf: Pass, load: Pass, e_i: float, d: float):
-    zg = np.arange(e_i + 4.0, inf.z.max() - 1.0, 0.25)
-    if len(zg) < 8 or zg[0] - d < load.z.min():
-        return None
-    return float(np.corrcoef(np.interp(zg, inf.z, inf.x), np.interp(zg - d, load.z, load.x))[0, 1])
-
-
 def analyze(path: str | Path, h_mm: float = 5.0, load_kN: float | None = None,
-            rim_end: str = "bottom", window_mm: float = 45.0, smooth_mm: float = 5.0,
+            rim_end: str = "top", window_mm: float = 45.0, smooth_mm: float = 5.0,
             z_start: float | None = None, edge_inflated: float | None = None,
             edge_loaded: float | None = None) -> Result:
     """Full analysis of one scan file (.xlsx lab report, or two-row paste).
 
-    rim_end    : which end of the scan is the rim. "bottom" (default) for the lab
-                 rig: the rim end stays put relative to the scanner and the
-                 textured band at the top is the shoulder. Arc lengths are
-                 measured from the rim end.
+    rim_end    : must be "top" (the lab rig): high Z = rim, low Z = tread / flat
+                 contact. The scanner stays with
+                 the contact plate, so under load the rim drops toward the contact.
+                 Arc lengths are measured from the rim-side starting point.
     smooth_mm  : smoothing of the plotted profiles and displacements.
     window_mm  : length scale for slope and curvature.
     z_start, edge_inflated, edge_loaded : optional manual analysis range
-                 (scanner heights, mm). None keeps the automatic value. If only
-                 edge_inflated is given, the loaded edge follows it with the
-                 automatic shoulder travel.
+                 (scanner heights, mm): the tread-side end (both scans) and the
+                 rim-side starting point in each scan. None keeps the automatic
+                 value. If only edge_inflated is given, the loaded starting point
+                 follows it with the automatic rim drop.
     """
+    if rim_end != "top":
+        raise ValueError("the rim must be at the high-Z end of the scan (top), as in the lab rig")
     x, z, meta = load_scan_meta(path)
     if load_kN is None and isinstance(meta.get("load_daN"), (int, float)):
         load_kN = meta["load_daN"] / 100.0
@@ -339,8 +361,9 @@ def analyze(path: str | Path, h_mm: float = 5.0, load_kN: float | None = None,
     e_l = float(edge_loaded) if edge_loaded is not None else e_i - band_auto.delta
     band = band_auto
     if manual:
-        band = BandShift(band_auto.x_band, e_i, e_l, e_i - e_l, band_auto.delta_edge,
-                         _texture_corr(inf, load, e_i, e_i - e_l), band_auto.x_offset)
+        r_m, off_m = texture_at(inf, load, e_i, e_i - e_l)
+        band = BandShift(band_auto.x_band, e_i, e_l, e_i - e_l, band_auto.delta_edge, r_m, off_m,
+                         band_auto.delta_texture)
     if z_start is not None:
         lo_i = lo_l = float(z_start)
     elif rim_bottom:
@@ -348,14 +371,14 @@ def analyze(path: str | Path, h_mm: float = 5.0, load_kN: float | None = None,
     else:
         lo_i, lo_l = inf.z.min(), load.z.min()
     if not (e_i - lo_i >= 20 and e_l - lo_l >= 20):
-        raise ValueError("the sidewall start must be at least 20 mm below both shoulder edges")
+        raise ValueError("the tread-side end must be at least 20 mm below both rim-side starting points")
     if e_i > inf.z.max() or e_l > load.z.max() or lo_i < inf.z.min() - 1 or lo_l < load.z.min() - 1:
         raise ValueError("a chosen position is outside the scanned range")
     kw = dict(window_mm=window_mm, u_window_mm=smooth_mm)
     pi = fit_profile(inf, band.x_band, lo_i, band.edge_inflated, **kw)
     pl = fit_profile(load, band.x_band, lo_l, band.edge_loaded, **kw)
     mt = match_by_arclength(pi, pl, anchor="bottom" if rim_bottom else "top")
-    toward_rim = -mt.dz if rim_bottom else mt.dz
+    drop = -mt.dz  # how far each point moved down in the scanner (toward the contact)
 
     # naive delta at equal stage height (the "same z" comparison)
     zc = np.arange(max(pi.z[0], pl.z[0]), min(pi.z[-1], pl.z[-1]), 0.25)
@@ -364,7 +387,7 @@ def analyze(path: str | Path, h_mm: float = 5.0, load_kN: float | None = None,
     i_mw, l_mw = int(np.argmax(pi.u)), int(np.argmax(pl.u))
     k_mt, k_nv = int(np.argmax(mt.du)), int(np.argmax(nd))
 
-    def frac_from_rim(zv, p):  # 0 at rim end of the span, 1 at the band edge
+    def frac_from_rim(zv, p):  # 0 at the rim end of the span, 1 at the tread end
         f = (zv - p.z[0]) / (p.z[-1] - p.z[0])
         return float(f if rim_bottom else 1 - f)
 
@@ -375,7 +398,7 @@ def analyze(path: str | Path, h_mm: float = 5.0, load_kN: float | None = None,
     ds = np.gradient(mt.s)
     bulge_area = float(np.sum(np.clip(mt.du, 0, None) * ds))
 
-    zones = zone_table(mt, toward_rim, h_mm=h_mm)
+    zones = zone_table(mt, drop, h_mm=h_mm)
     hd_raw = raw_min["inflated"][0] - raw_min["loaded"][0]
     metrics = dict(
         samples_total=int(len(x)),
@@ -387,10 +410,9 @@ def analyze(path: str | Path, h_mm: float = 5.0, load_kN: float | None = None,
         band={**asdict(band), "manual": manual},
         deflection=dict(
             radial_lab_mm=lab_rd,
-            shoulder_travel_mm=band.delta,               # sidewall span shortening
-            crown_share_mm=(lab_rd - band.delta) if lab_rd else None,
-            sidewall_share_pct=(100 * band.delta / lab_rd) if lab_rd else None,
-            basis="lab radial deflection" if lab_rd else "shoulder travel (no lab value)",
+            rim_drop_scan_mm=band.delta,                 # rim-side starting point, inflated - loaded
+            rim_drop_minus_radial_mm=(band.delta - lab_rd) if lab_rd else None,
+            basis="lab radial deflection" if lab_rd else "rim drop in the scan (no lab value)",
         ),
         load_kN=load_kN,
         vertical_stiffness_N_per_mm=(1000 * load_kN / radial) if load_kN else None,
@@ -414,8 +436,8 @@ def analyze(path: str | Path, h_mm: float = 5.0, load_kN: float | None = None,
         matched=dict(peak_outward_mm=float(mt.du[k_mt]), at_s=float(mt.s[k_mt]),
                      inflated_z_of_that_point=float(mt.z_inf[k_mt]),
                      bulge_area_mm2=bulge_area,
-                     toward_rim_at_rim_end_mm=float(toward_rim[0]),
-                     toward_rim_at_far_end_mm=float(toward_rim[-1]),
+                     drop_at_rim_end_mm=float(drop[0]),
+                     drop_at_tread_end_mm=float(drop[-1]),
                      max_rotation_deg=float(mt.dtheta[np.argmax(np.abs(mt.dtheta))])),
         arc_length=dict(inflated_mm=pi.length, loaded_visible_mm=pl.length,
                         deficit_mm=pi.length - pl.length,

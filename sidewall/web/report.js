@@ -58,7 +58,7 @@ function renderReport(main) {
       <button class="btn ghost" id="rPreview">Preview HTML in a new tab</button>
       <span class="small" id="rMsg"></span>
     </div>
-    <p class="small muted" style="margin-top:10px">Charts use the current settings: curve smoothing, rim drawn at ${S.settings.rimDraw}, colour by “${(COLOR_BY[S.settings.colorBy] || COLOR_BY.du).name}”, rubber over ply ${S.settings.hMm} mm, and each tire's analysis range.</p>
+    <p class="small muted" style="margin-top:10px">Charts use the current settings: curve smoothing, rim at the top of every chart, colour by “${(COLOR_BY[S.settings.colorBy] || COLOR_BY.du).name}”, rubber over ply ${S.settings.hMm} mm, and each tire's analysis range.</p>
   </section>`;
   main.querySelectorAll('[data-r]').forEach((el) => { el.oninput = () => { REPORT[el.dataset.r] = el.value; saveReport(); }; });
   main.querySelectorAll('[data-s]').forEach((el) => { el.onchange = () => { REPORT.sections[el.dataset.s] = el.checked; saveReport(); }; });
@@ -113,19 +113,19 @@ function buildReportBlocks(list) {
     if (sec.summary) {
       B.push({ type: 'h1', text: 'Summary' });
       B.push({ type: 'p', html: highlights(list) });
-      B.push({ type: 'table', head: ['Tire', 'Load (daN)', 'Pressure (psi)', 'Radial defl. (mm)', 'Bulge (mm)', 'Stiffness (N/mm)', 'Sidewall share (%)', 'Peak bending (%)', 'Bending at (% height)'],
+      B.push({ type: 'table', head: ['Tire', 'Load (daN)', 'Pressure (psi)', 'Radial defl. (mm)', 'Rim drop, scan (mm)', 'Bulge (mm)', 'Stiffness (N/mm)', 'Peak bending (%)', 'Bending at (% from rim)'],
         widths: [2.6, 1, 1, 1, 1, 1.1, 1.1, 1, 1.1], align: 'lrrrrrrrr',
-        rows: list.map((t) => { const r = t.row; return [t.label, f(r.load_daN, 0), f(r.pressure_psi, 0), f(r.radial_deflection_lab_mm, 1), f(r.horizontal_deflection_smoothed_mm, 1),
-          f(r.vertical_stiffness_N_per_mm, 0), f(r.sidewall_share_pct, 0), f(r.peak_bending_strain_pct, 1), r.peak_bending_height_mm != null ? f(pctAt(t.res, r.peak_bending_height_mm), 0) : '–']; }),
-        raw: list.map((t) => { const r = t.row; return [null, r.load_daN, r.pressure_psi, r.radial_deflection_lab_mm, r.horizontal_deflection_smoothed_mm, r.vertical_stiffness_N_per_mm,
-          r.sidewall_share_pct, r.peak_bending_strain_pct, r.peak_bending_height_mm != null ? pctAt(t.res, r.peak_bending_height_mm) : null]; }),
+        rows: list.map((t) => { const r = t.row; return [t.label, f(r.load_daN, 0), f(r.pressure_psi, 0), f(r.radial_deflection_lab_mm, 1), f(r.rim_drop_scan_mm, 1),
+          f(r.horizontal_deflection_smoothed_mm, 1), f(r.vertical_stiffness_N_per_mm, 0), f(r.peak_bending_strain_pct, 1), r.peak_bending_height_mm != null ? f(pctAt(t.res, r.peak_bending_height_mm), 0) : '–']; }),
+        raw: list.map((t) => { const r = t.row; return [null, r.load_daN, r.pressure_psi, r.radial_deflection_lab_mm, r.rim_drop_scan_mm, r.horizontal_deflection_smoothed_mm,
+          r.vertical_stiffness_N_per_mm, r.peak_bending_strain_pct, r.peak_bending_height_mm != null ? pctAt(t.res, r.peak_bending_height_mm) : null]; }),
         names: list.map((t) => t.label), targets: list.map((t) => `tire${t.id}`), sortable: true });
-      B.push({ type: 'p', small: true, html: 'Radial deflection is the machine value from each file. Bulge is the outward push of the widest point (smoothed). Stiffness = load ÷ radial deflection. Sidewall share = part of the deflection taken by the sidewall; the rest is taken by the tread/crown. Bending is the estimated surface strain where the sidewall flexes most.' });
+      B.push({ type: 'p', small: true, html: 'Radial deflection is the machine value from each file. Rim drop is how far the rim-side starting point of the sidewall moved down between the inflated and the loaded scan. Bulge is the outward push of the widest point (smoothed). Stiffness = load ÷ radial deflection. Bending is the estimated surface strain where the sidewall flexes most; its position is given as % of the way from the rim to the tread end.' });
     }
 
     if (sec.compare && many) {
       const shown = list.slice(0, 8);
-      const C = compareModel(shown, { forReport: true, colorOf, metricKeys: ['vertical_stiffness_N_per_mm', 'horizontal_deflection_smoothed_mm', 'peak_bending_strain_pct', 'sidewall_share_pct'] });
+      const C = compareModel(shown, { forReport: true, colorOf, metricKeys: ['vertical_stiffness_N_per_mm', 'horizontal_deflection_smoothed_mm', 'peak_bending_strain_pct', 'rim_drop_scan_mm'] });
       B.push({ type: 'h1', text: 'Comparison', pageBreak: true });
       if (list.length > 8) B.push({ type: 'p', small: true, html: `Charts show the first 8 of ${list.length} tires; the summary table lists all of them.` });
       const fig = (s) => ({ title: s.title, chart: s.svg, svgs: [chartStatic(s.svg)], caption: captionHTML(s, 'In this comparison') });
@@ -147,8 +147,12 @@ function buildReportBlocks(list) {
           ['Pressure', meta.pressure_psi != null ? `${f(meta.pressure_psi, 1).replace(/\.0$/, '')} psi` : null], ['Rim', meta.rim],
           ['Room temperature', meta.room_temp_C != null ? `${f(meta.room_temp_C, 1)} °C` : null],
         ].filter(([, v]) => v != null && v !== ''), long: [['File', t.name], ['Scan read from', meta.source],
-          ['Analysis range', `${rg.manual ? 'set by hand' : 'automatic'}: sidewall from ${f(rg.z_start, 1)} mm, shoulder edge ${f(rg.edge_inflated, 1)} mm (inflated) / ${f(rg.edge_loaded, 1)} mm (loaded)`]] });
+          ['Analysis range', `${rg.manual ? 'set by hand' : 'automatic'}: rim-side starting point Z = ${f(rg.edge_inflated, 1)} mm (inflated) / ${f(rg.edge_loaded, 1)} mm (loaded), rim drop ${f(rg.edge_inflated - rg.edge_loaded, 1)} mm; tread-side end Z = ${f(t.res.inf.z[0], 1)} / ${f(t.res.load.z[0], 1)} mm`]] });
         B.push({ type: 'kpis', items: M.kpis });
+        B.push({ type: 'figrow', widths: [0.5, 0.5], items: [
+          { title: M.raw.title, chart: M.raw.svg, svgs: [chartStatic(M.raw.svg)] },
+          { html: captionHTML(M.raw) },
+        ] });
         B.push({ type: 'figrow', widths: [0.5, 0.5], items: [
           { title: M.shape.title, chart: M.shape.svg, svgs: [chartStatic(M.shape.svg)] },
           { html: captionHTML(M.shape) },
@@ -191,10 +195,10 @@ function highlights(list) {
   };
   if (list.length === 1) {
     const t = list[0], r = t.row;
-    return `<b>${esc(t.label)}</b>: radial deflection ${f(r.radial_deflection_lab_mm ?? r.shoulder_travel_mm, 1)} mm${r.load_daN != null ? ` at ${f(r.load_daN, 0)} daN` : ''}`
+    return `<b>${esc(t.label)}</b>: radial deflection ${f(r.radial_deflection_lab_mm ?? r.rim_drop_scan_mm, 1)} mm${r.load_daN != null ? ` at ${f(r.load_daN, 0)} daN` : ''}`
       + `${r.vertical_stiffness_N_per_mm ? `, vertical stiffness ${f(r.vertical_stiffness_N_per_mm, 0)} N/mm` : ''}; the sidewall bulges ${f(r.horizontal_deflection_smoothed_mm, 1)} mm`
-      + `${r.sidewall_share_pct != null ? ` and takes ${f(r.sidewall_share_pct, 0)}% of the deflection` : ''}. `
-      + `${r.peak_bending_strain_pct != null ? `It bends hardest at about ${f(pctAt(t.res, r.peak_bending_height_mm), 0)}% of the height above the rim (≈${f(r.peak_bending_strain_pct, 1)}% surface strain).` : ''}`;
+      + `; between the two scans the rim dropped ${f(r.rim_drop_scan_mm, 1)} mm${r.radial_deflection_lab_mm != null ? ` (machine: ${f(r.radial_deflection_lab_mm, 1)} mm)` : ''}. `
+      + `${r.peak_bending_strain_pct != null ? `It bends hardest at about ${f(pctAt(t.res, r.peak_bending_height_mm), 0)}% of the way from the rim (≈${f(r.peak_bending_strain_pct, 1)}% surface strain).` : ''}`;
   }
   const parts = [];
   const add = (key, hi, txt, unit, d) => { const t = pickT(key, hi); if (t) parts.push(`${txt} <b>${esc(t.label)}</b> (${f(t.row[key], d)} ${unit})`); };
@@ -208,29 +212,29 @@ function highlights(list) {
   const press = new Set(list.map((t) => t.row.pressure_psi).filter((v) => v != null).map((v) => Math.round(v)));
   const warn = loads.size > 1 || press.size > 1 ? ' <b>Note:</b> the tires were not all tested at the same load and pressure, so compare with care.' : '';
   const missing = list.filter((t) => t.row.radial_deflection_lab_mm == null).map((t) => `<b>${esc(t.label)}</b>`);
-  const miss = missing.length ? ` No machine radial deflection for ${missing.join(', ')}, so stiffness and sidewall share are not given for ${missing.length > 1 ? 'them' : 'it'}.` : '';
+  const miss = missing.length ? ` No machine radial deflection for ${missing.join(', ')}, so stiffness is not given for ${missing.length > 1 ? 'them' : 'it'}.` : '';
   return `${list.length} tires analysed.${parts.length ? ` ${parts.join('; ').replace(/^./, (c) => c.toUpperCase())}.` : ''}${miss}${warn}`;
 }
 
 const METHOD_TEXT = [
-  ['The test', 'A laser looks at the side of the tire and travels from the rim end to the shoulder, measuring how far away the rubber is at each height. It does this twice: first with the tire only inflated, then with the load applied. Comparing the two scans shows how the sidewall moves under load.'],
+  ['The test', 'A laser looks at the side of the tire and travels from the rim (top of the scan) to the tread and its flat contact (bottom), measuring how far away the rubber is at each height. It does this twice: first with the tire only inflated, then with the load applied. Comparing the two scans shows how the sidewall moves under load.'],
   ['Cleaning the readings', 'Readings where the laser lost the surface (out-of-range codes) are removed, as are repeated readings logged while the laser was still updating. Profiles are smoothed lightly; slope and curvature are smoothed over 45 mm so that raised lettering on the sidewall does not look like bending.'],
-  ['Shoulder travel and sidewall share', 'The textured band at the shoulder end of the scan moves straight toward the rim under load. Its shift between the two scans is how much the sidewall itself shortened (shoulder travel). The machine’s radial deflection minus the shoulder travel is the part taken by the tread and crown.'],
-  ['Following the same rubber', 'Under load the sidewall also slides toward the rim, so comparing the two scans at the same height compares different pieces of rubber. The cords make the sidewall almost unstretchable, so the tool follows each point by its distance along the sidewall from the rim instead.'],
+  ['Starting points and rim drop', 'The sidewall starts where the profile leaves the rim: in the inflated scan at the sharp peak where it meets the rim, in the loaded scan at the top of the step. Above that point the scan sees the rim area, which moves straight down under load. The distance between the two starting points is the rim drop; it is compared with the machine’s radial deflection. A small difference can come from a light preload already applied in the inflated scan, or from the scan not being exactly at the centre of the contact. The starting points can be set by hand.'],
+  ['Following the same rubber', 'Under load the sidewall also moves down toward the contact, so comparing the two scans at the same height compares different pieces of rubber. The cords make the sidewall almost unstretchable, so the tool follows each point by its distance along the sidewall from the rim-side starting point instead.'],
   ['Bulge, tilt and bending', 'Outward deflection is how far each point moved outward. Tilt is how much the surface rotated. Bending strain is the change in curvature multiplied by the rubber thickness over the cords (an assumed value), which estimates how much the outer surface stretches.'],
-  ['Limits', 'Under load a little of the sidewall just below the shoulder folds out of the laser’s view, so values near the shoulder end are less certain. Strain values depend on the assumed rubber thickness over the cords. The analysis range (where the sidewall starts and ends) is found automatically and can be set by hand for each tire.'],
+  ['Limits', 'Under load a little of the sidewall near the tread end rolls into the flat contact, out of the laser’s view, so values at the tread end are less certain. Strain values depend on the assumed rubber thickness over the cords. The analysis range (starting points and tread-side end) is found automatically and can be set by hand for each tire.'],
 ];
 const GLOSSARY = [
-  ['Rim end / shoulder end', 'The sidewall runs from the wheel rim to the shoulder, where it meets the tread.'],
+  ['Rim side / tread (contact) side', 'The sidewall runs from the wheel rim (top of the scan) to the tread with its flat contact (bottom of the scan).'],
   ['Radial deflection', 'How far the tire squashes down under the load, measured by the machine.'],
   ['Sidewall bulge (horizontal deflection)', 'How far the widest point of the sidewall pushes out under load.'],
   ['Vertical stiffness', 'Load divided by radial deflection. Higher means the tire squashes less.'],
-  ['Shoulder travel', 'How far the shoulder moves toward the rim under load: the shortening of the sidewall.'],
-  ['Sidewall share', 'Shoulder travel as a share of the radial deflection.'],
+  ['Starting point', 'Where the sidewall leaves the rim in a scan.'],
+  ['Rim drop', 'How far the starting point moved down between the inflated and the loaded scan.'],
   ['Outward deflection', 'How far each point of the sidewall moves outward under load.'],
   ['Tilt', 'How much a part of the sidewall rotates under load, in degrees.'],
   ['Bending strain', 'Estimated stretch of the outer rubber surface caused by bending. Peaks are where fatigue and heat build up first.'],
-  ['Rim-side / middle / shoulder-side', 'The sidewall split into three equal parts.'],
+  ['Rim-side / middle / tread-side', 'The sidewall split into three equal parts.'],
 ];
 
 // ============================================================== HTML report (interactive)

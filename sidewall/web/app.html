@@ -184,10 +184,6 @@ details.check ul { margin: 8px 0 0; padding-left: 18px; }
     <input type="file" id="fileinput" multiple accept=".xlsx,.xlsm,.xls,.csv,.tsv,.txt,.dat,.prn" hidden>
     <label class="ctl" title="Changes how smooth the curves look. The numbers do not change.">Curve smoothing
       <input type="range" id="smooth" min="1" max="20" step="1"><span id="smoothv"></span></label>
-    <label class="ctl" title="Which end of the scan data is the rim. In the lab rig the rim is at the low end of the Z positions.">Rim in scan
-      <select id="rimend"><option value="bottom">low Z end</option><option value="top">high Z end</option></select></label>
-    <label class="ctl" title="Only changes how charts are drawn.">Draw rim at
-      <select id="rimdraw"><option value="bottom">bottom</option><option value="top">top</option></select></label>
     <label class="ctl" title="Rubber thickness from the cord ply to the outer surface. Used only to turn bending into strain.">Rubber over ply
       <input type="number" id="hmm" min="1" max="20" step="0.5"> mm</label>
     <button class="btn ghost" id="theme" title="Switch light / dark">◐ Theme</button>
@@ -230,11 +226,11 @@ details.check ul { margin: 8px 0 0; padding-left: 18px; }
 // ============================================================== state & settings
 const S = {
   tires: [], current: null, tab: 'single', sort: { key: null, dir: -1 }, cmpMetric: 'vertical_stiffness_N_per_mm',
-  settings: { smoothMm: 8, rimEnd: 'bottom', rimDraw: 'bottom', hMm: 5, colorBy: 'du', showRaw: true, theme: null },
+  settings: { smoothMm: 8, hMm: 5, colorBy: 'du', showRaw: true, theme: null },
 };
 let nextId = 1;
-try { Object.assign(S.settings, JSON.parse(localStorage.getItem('swda-settings') || '{}')); } catch (e) { /* storage blocked */ }
-const saveSettings = () => { try { localStorage.setItem('swda-settings', JSON.stringify(S.settings)); } catch (e) { /* ignore */ } };
+try { Object.assign(S.settings, JSON.parse(localStorage.getItem('swda-settings-v2') || '{}')); } catch (e) { /* storage blocked */ }
+const saveSettings = () => { try { localStorage.setItem('swda-settings-v2', JSON.stringify(S.settings)); } catch (e) { /* ignore */ } };
 if (S.settings.theme) document.documentElement.dataset.theme = S.settings.theme;
 
 const $ = (id) => document.getElementById(id);
@@ -295,9 +291,9 @@ async function addFiles(files) {
 }
 
 function runAnalysis(t) {
-  const { rimEnd, hMm } = S.settings;
+  const { hMm } = S.settings;
   t.ov = t.ov || {};
-  t.res = SW.analyze(t.x, t.z, t.meta, { rimEnd, hMm, ...t.ov });
+  t.res = SW.analyze(t.x, t.z, t.meta, { hMm, ...t.ov });
   t.row = SW.summaryRow(t.res);
   t.label = t.customLabel || SW.label(t.meta);
   t.disp = {};
@@ -330,10 +326,8 @@ const charted = () => okTires().filter((t) => t.inCompare && t.slot != null).sor
 
 // ============================================================== settings wiring
 $('smooth').value = S.settings.smoothMm; $('smoothv').textContent = `${S.settings.smoothMm} mm`;
-$('rimend').value = S.settings.rimEnd; $('hmm').value = S.settings.hMm; $('rimdraw').value = S.settings.rimDraw;
-$('rimdraw').onchange = (e) => { S.settings.rimDraw = e.target.value; saveSettings(); renderMain(); };
+$('hmm').value = S.settings.hMm;
 $('smooth').oninput = (e) => { S.settings.smoothMm = +e.target.value; $('smoothv').textContent = `${e.target.value} mm`; saveSettings(); renderMain(); };
-$('rimend').onchange = (e) => { S.settings.rimEnd = e.target.value; saveSettings(); reanalyzeAll(); };
 $('hmm').onchange = (e) => { const v = +e.target.value; if (v > 0) { S.settings.hMm = v; saveSettings(); reanalyzeAll(); } };
 $('theme').onclick = () => {
   const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
@@ -423,10 +417,9 @@ function wireEmpty() { const b = $('choose2'); if (b) b.onclick = () => $('filei
 const explainHTML = (what, how, mine, label = 'For this tire') => `<div class="explain"><p><b>What it shows.</b> ${what}</p><p><b>How to read it.</b> ${how}</p>${mine ? `<p class="this"><b>${label}.</b> ${mine}</p>` : ''}</div>`;
 
 // ============================================================== helpers on results
-const rimBottom = () => S.settings.rimEnd === 'bottom';
-function pctFromRim(res, zArr) { // inflated height of each matched point -> % of sidewall above the rim end
+function pctFromRim(res, zArr) { // inflated position of each matched point -> % of the sidewall from the rim end
   const lo = res.inf.z[0], hi = res.inf.z[res.inf.z.length - 1];
-  return Array.from(zArr, (z) => { const p = (100 * (z - lo)) / (hi - lo); return rimBottom() ? p : 100 - p; });
+  return Array.from(zArr, (z) => { const p = (100 * (z - lo)) / (hi - lo); return 100 - p; }); // the rim is the high-Z end
 }
 const pctAt = (res, z) => pctFromRim(res, [z])[0];
 function zoneBands(res) {
@@ -436,14 +429,14 @@ function zoneBands(res) {
   });
 }
 const pctFmt = (v) => `${Math.round(v)}%`;
-const where = (p) => (p < 33 ? 'the third next to the rim' : p < 67 ? 'the middle third' : 'the third next to the shoulder');
+const where = (p) => (p < 33 ? 'the third next to the rim' : p < 67 ? 'the middle third' : 'the third next to the tread');
 
 const COLOR_BY = {
   du: { name: 'Outward deflection', unit: 'mm', dec: 1, get: (d) => d.matched.du,
     say: 'how far each point pushed outward when the load went on', noun: 'the outward push',
     neg: 'negative = moved slightly inward' },
-  rim: { name: 'Movement toward the rim', unit: 'mm', dec: 1, get: (d) => d.towardRim,
-    say: 'how far each point slid toward the rim', noun: 'the slide toward the rim' },
+  drop: { name: 'Downward movement', unit: 'mm', dec: 1, get: (d) => d.drop,
+    say: 'how far each point moved down toward the contact', noun: 'the downward movement' },
   tilt: { name: 'Tilt change', unit: '°', dec: 1, get: (d) => d.tiltS,
     say: 'how much each part of the sidewall rotated', noun: 'the tilt', neg: 'negative = leans inward' },
   strain: { name: 'Bending strain', unit: '%', dec: 1, get: (d) => d.strainS,
@@ -468,16 +461,16 @@ function tireModel(t, o = {}) {
 
   const labH = meta.horizontal_deflection_mm;
   const kpis = [
-    { k: 'Radial deflection', v: f(d.radial_lab_mm ?? d.shoulder_travel_mm, 1), u: 'mm',
-      d: d.radial_lab_mm ? 'How far the tire squashes down under the load (lab machine value).' : 'No lab value given; this is the shoulder travel measured from the scan.' },
+    { k: 'Radial deflection', v: f(d.radial_lab_mm ?? d.rim_drop_scan_mm, 1), u: 'mm',
+      d: d.radial_lab_mm ? 'How far the tire squashes down under the load (lab machine value).' : 'No lab value given; this is the rim drop measured from the scan.' },
     { k: 'Sidewall bulge', v: f(mw.growth_mm, 1), u: 'mm',
       d: `How far the widest point of the sidewall pushes out.${labH != null ? ` Lab report: ${f(labH, 2)} mm.` : ''}` },
     { k: 'Vertical stiffness', v: m.vertical_stiffness_N_per_mm ? f(m.vertical_stiffness_N_per_mm, 0) : '–', u: 'N/mm',
       d: m.vertical_stiffness_N_per_mm ? 'Load ÷ radial deflection. Higher = the tire is stiffer and squashes less.' : 'Needs the load (enter it under Test details).' },
-    { k: 'Sidewall share of deflection', v: d.sidewall_share_pct != null ? f(d.sidewall_share_pct, 0) : '–', u: '%',
-      d: d.crown_share_mm != null ? `The sidewall takes ${f(d.shoulder_travel_mm, 1)} mm of the squash; the tread/crown takes the other ${f(d.crown_share_mm, 1)} mm.` : 'Needs the radial deflection from the machine (enter it under Test details).' },
+    { k: 'Rim drop in the scan', v: f(d.rim_drop_scan_mm, 1), u: 'mm',
+      d: d.radial_lab_mm != null ? `How far the rim-side starting point moved down between the two scans. Machine radial deflection: ${f(d.radial_lab_mm, 1)} mm (difference ${fs(d.rim_drop_minus_radial_mm, 1)} mm).` : 'How far the rim-side starting point moved down between the two scans.' },
     { k: 'Peak bending strain', v: peak ? f(peak.surface_strain_pct, 1) : '–', u: '%',
-      d: peak ? `At ${pctFmt(pctAt(res, peak.z_inflated))} of the height above the rim. Highest bending = most fatigue with every turn.` : '' },
+      d: peak ? `At ${pctFmt(pctAt(res, peak.z_inflated))} of the way from the rim. Highest bending = most fatigue with every turn.` : '' },
     { k: 'Bulge per mm of deflection', v: f(m.bulge_per_mm_deflection, 2), u: '',
       d: 'Outward bulge for each mm the tire squashes. Lower = the sidewall stays more upright.' },
   ];
@@ -495,44 +488,80 @@ function tireModel(t, o = {}) {
     { name: 'Loaded', group: 'loaded, coloured by movement', x: D.matched.u_load, y: D.matched.z_load, colorKey: true, width: 6, hover: true, unit: 'mm out', tipColor: css('--load') },
   ];
   const zTop = Math.max(...pin.z, ...pld.z), zBot = Math.min(...pin.z, ...pld.z);
-  const rimTopDrawn = S.settings.rimDraw === 'top';
-  const flipShape = rimTopDrawn === rimBottom();
-  const ends = rimTopDrawn ? ['SHOULDER end', 'RIM end'] : ['RIM end', 'SHOULDER end']; // [bottom, top]
+  // every chart puts the rim at the top and the tread / contact at the bottom
+  const ends = ['TREAD / CONTACT side', 'RIM side']; // [bottom, top]
+  const rg = m.range;
+
+  // ---- 0. the scan as recorded (laser distance vs Z, like the lab's own chart)
+  const valid = SW.dropoutMask(t.x), n1 = pin.xRaw.length;
+  const passXY = (a, b) => ({ x: Array.from({ length: b - a }, (_, i) => (valid[a + i] ? t.x[a + i] : NaN)), y: Array.from(t.z.slice(a, b)) });
+  const rawI = passXY(0, n1), rawL = passXY(n1, t.x.length);
+  const okX = Array.from(t.x).filter((v, i) => valid[i]);
+  const xLo = Math.min(...okX), xHi = Math.max(...okX);
+  const lost = Array.from(t.z).filter((_, i) => !valid[i]);
+  const rawH = forReport ? 600 : 640;
+  const raw = lineChart({
+    title: 'Scan as recorded', w: 520, h: rawH, fileName: `${slug(t.label)}_scan`,
+    xDomain: niceDomain(xLo - 4, xHi + 10, 6, 0), yDomain: niceDomain(zBot, zTop, 6, 0.01),
+    xLabel: 'laser distance as recorded (mm); smaller = sidewall further out', yLabel: 'Z position (mm)', yName: 'Z', yUnit: ' mm',
+    legend: [{ name: 'inflated scan', color: css('--inf') }, { name: 'loaded scan', color: css('--load') },
+      { name: 'readings lost by the laser (left out)', color: css('--muted'), dot: true }],
+    series: [
+      { name: 'Inflated', group: 'inflated scan', ...rawI, color: css('--inf'), width: 1.4, hover: true, unit: 'mm', dec: 1 },
+      { name: 'Loaded', group: 'loaded scan', ...rawL, color: css('--load'), width: 1.4, hover: true, unit: 'mm', dec: 1 },
+      { name: 'lost', group: 'readings lost by the laser (left out)', x: lost.map(() => xHi + 6), y: lost, dots: true, r: 2.6, color: css('--muted'), opacity: 0.9 },
+    ],
+    // the tread-side label sits just under the tread-side end line, clear of it
+    texts: [{ px: 64, y: rg.z_start, dy: 11, keepIn: true, text: ends[0], bold: true }, { px: 64, py: forReport ? 46 : 22, text: ends[1], bold: true }],
+    handles: forReport ? null : [
+      { key: 'edgeInflated', y: rg.edge_inflated, color: css('--inf'), label: 'rim-side start · inflated' },
+      { key: 'edgeLoaded', y: rg.edge_loaded, color: css('--load'), label: 'rim-side start · loaded' },
+      { key: 'zStart', y: rg.z_start, color: css('--ink2'), label: 'tread-side end' },
+    ],
+    refLines: forReport ? [
+      { y: rg.edge_inflated, color: css('--inf'), label: `rim-side start, inflated ${f(rg.edge_inflated, 1)} mm`, side: 'left' },
+      { y: rg.edge_loaded, color: css('--load'), label: `rim-side start, loaded ${f(rg.edge_loaded, 1)} mm`, side: 'left' },
+      { y: rg.z_start, color: css('--ink2'), label: `tread-side end ${f(rg.z_start, 1)} mm`, side: 'left' },
+    ] : [],
+    onHandle: (key, v) => setRange(t, key, v),
+  });
+  const labRd = d.radial_lab_mm;
+  const rawTx = {
+    what: 'The two laser scans exactly as recorded in the file: distance from the laser (across) against the scanner position Z (up). Readings where the laser lost the surface (out-of-range codes) are left out and shown as grey dots at the right, so you can see what was removed.',
+    how: `The rim is at the top and the tread / flat contact at the bottom. Smaller distance means the sidewall sticks out further. The dashed lines mark the part that is analysed: where the sidewall starts at the rim in each scan, and the tread-side end.${forReport ? '' : ' Drag a line, or type a value in the box, if it is not where you would put it.'}`,
+    mine: `The sidewall starts at Z = <b>${f(rg.edge_inflated, 1)} mm</b> in the inflated scan and Z = <b>${f(rg.edge_loaded, 1)} mm</b> under load, so the rim dropped <b>${f(res.band.delta, 1)} mm</b>`
+      + `${labRd != null ? ` (machine radial deflection ${f(labRd, 1)} mm, difference ${fs(res.band.delta - labRd, 1)} mm)` : ''}. `
+      + `Analysed down to Z = ${f(res.inf.z[0], 1)} mm (inflated) and ${f(res.load.z[0], 1)} mm (loaded). ${lost.length} readings were lost by the laser and left out.`,
+  };
   const xmin = Math.min(...D.inf.u, ...D.matched.u_load) - 8, xmax = Math.max(...D.inf.u, ...D.matched.u_load) + 10;
   const kq = Array.from(q).indexOf(qhi);
-  const rg = m.range, startSide = rimBottom() ? 'rim side' : 'shoulder side';
+  const startSide = 'tread side';
   const shapeLegend = [{ name: 'inflated only', color: css('--inf') }, { name: 'loaded, coloured by movement', gradient: true },
     { name: 'measured points', color: css('--muted'), dot: true }];
   const shapeH = forReport ? 660 : 640;
   const shape = lineChart({
     title: 'Sidewall shape', w: 520, h: shapeH, xDomain: niceDomain(xmin, xmax, 5, 0), yDomain: niceDomain(zBot, zTop, 6, 0.01),
-    xLabel: 'sideways position (mm), 0 = shoulder band → further out', yLabel: 'height in the scanner (mm)', yName: 'height', yUnit: ' mm',
-    series, vlines: [0], yFlip: flipShape, legend: shapeLegend, hidden: showRaw ? [] : ['measured points'],
+    xLabel: 'sideways position (mm), 0 = rim band → further out', yLabel: 'Z position (mm)', yName: 'Z', yUnit: ' mm',
+    series, vlines: [0], legend: shapeLegend, hidden: showRaw ? [] : ['measured points'],
     colorOptions, colorBy, markColorMax: true, fileName: `${slug(t.label)}_shape`,
     markers: [{ x: mw.inflated_u, y: mw.inflated_z, color: css('--inf'), label: 'widest (inflated)', side: 'left', group: 'inflated only' }],
     texts: [{ px: 64, py: shapeH - 58, text: ends[0], bold: true }, { px: 64, py: forReport ? 46 : 22, text: ends[1], bold: true }],
-    handles: forReport ? null : [
-      { key: 'zStart', y: rg.z_start, color: css('--ink2'), label: `sidewall start (${startSide})` },
-      { key: 'edgeInflated', y: rg.edge_inflated, color: css('--inf'), label: 'shoulder edge · inflated' },
-      { key: 'edgeLoaded', y: rg.edge_loaded, color: css('--load'), label: 'shoulder edge · loaded' },
-    ],
-    onHandle: (key, v) => setRange(t, key, v),
     onColorBy: forReport ? null : (k) => { S.settings.colorBy = k; saveSettings(); renderMain(); },
     onLegend: forReport ? null : (name, hidden) => { if (name === 'measured points') { S.settings.showRaw = !hidden; saveSettings(); } },
   });
   const pHi = pctAt(res, D.matched.z_inf[kq]), kl = Array.from(q).indexOf(qlo), pLo = pctAt(res, D.matched.z_inf[kl]);
   const shapeTx = {
     what: 'A slice through the sidewall, as the laser saw it. The thin blue line is the tire inflated with no load. The thick coloured line is the same sidewall with the load on. Dots are the actual laser readings; the lines are smoothed through them.',
-    how: `The ${ends[0] === 'RIM end' ? 'rim' : 'shoulder'} is at the bottom of the chart and the ${ends[1] === 'RIM end' ? 'rim' : 'shoulder'} at the top${forReport ? '' : ' (switch with “Draw rim at”)'}. Further right means that part of the sidewall sticks out more. The colour shows ${cb.say}: <b>blue = little, green/yellow = medium, red = most</b>.${forReport ? '' : ' Use “Colour by” to switch what the colours mean.'} The sideways scale is stretched so small movements are easy to see.${forReport ? '' : ' Hover the chart to read values.'}`,
-    mine: `The red part is at about <b>${pctFmt(pHi)}</b> of the height above the rim (${where(pHi)}). That is where ${cb.noun} is largest: <b>${f(qhi, cb.dec)} ${cb.unit}</b>. `
-      + `The bluest part is at about ${pctFmt(pLo)} (${f(qlo, cb.dec)} ${cb.unit}${qlo < 0 && cb.neg ? `; ${cb.neg}` : ''}). The shoulder band moves <b>${f(res.band.delta, 1)} mm</b> toward the rim.`,
+    how: `The rim is at the top of the chart and the tread / contact at the bottom. Further right means that part of the sidewall sticks out more. The colour shows ${cb.say}: <b>blue = little, green/yellow = medium, red = most</b>.${forReport ? '' : ' Use “Colour by” to switch what the colours mean.'} The sideways scale is stretched so small movements are easy to see.${forReport ? '' : ' Hover the chart to read values.'}`,
+    mine: `The red part is at about <b>${pctFmt(pHi)}</b> of the way from the rim (${where(pHi)}). That is where ${cb.noun} is largest: <b>${f(qhi, cb.dec)} ${cb.unit}</b>. `
+      + `The bluest part is at about ${pctFmt(pLo)} (${f(qlo, cb.dec)} ${cb.unit}${qlo < 0 && cb.neg ? `; ${cb.neg}` : ''}). The rim-side starting point drops <b>${f(res.band.delta, 1)} mm</b> toward the contact.`,
   };
 
   // ---- 2. bulge
   const hB = pctFromRim(res, D.matched.z_inf), hBf = pctFromRim(res, Dfine.matched.z_inf);
   const bands = zoneBands(res);
-  const pct = { w: 520, h: forReport ? 370 : 420, yDomain: [0, 100], yFmt: 'pct', yFlip: rimTopDrawn, yName: 'height above rim',
-    yLabel: 'height above the rim (% of sidewall)', vlines: [0], bands, sync: `tire${t.id}` };
+  const pct = { w: 520, h: forReport ? 370 : 420, yDomain: [0, 100], yFmt: 'pct', yFlip: true, yName: 'from rim',
+    yLabel: 'position from the rim (% of sidewall)', vlines: [0], bands, sync: `tire${t.id}` };
   const faint = css('--change');
   const bulge = lineChart({ ...pct, title: 'Outward bulge', xLabel: 'outward deflection (mm)', fileName: `${slug(t.label)}_bulge`,
     legend: [{ name: 'outward deflection', color: faint }, { name: 'less smoothed', color: faint, opacity: 0.35 }, { name: 'same-height subtraction', color: css('--naive'), dash: true }],
@@ -545,10 +574,10 @@ function tireModel(t, o = {}) {
   });
   const pPk = pctAt(res, m.matched.inflated_z_of_that_point);
   const bulgeTx = {
-    what: 'For every point on the sidewall, how far it moved outward when the load went on. Shaded bands mark the rim-side, middle and shoulder-side thirds.',
-    how: `Height runs from the rim (0%, ${rimTopDrawn ? 'top' : 'bottom'}) to the shoulder (100%, ${rimTopDrawn ? 'bottom' : 'top'}). The further right the green line, the bigger the bulge at that height. The faint line is the same thing with less smoothing, so nothing is hidden. The grey dashed line is the simple “subtract the two scans at the same height” method; it drifts because the sidewall also slides toward the rim under load.`,
-    mine: `The sidewall pushes out most at about <b>${pctFmt(pPk)}</b> of the height above the rim (${where(pPk)}), by <b>${f(m.matched.peak_outward_mm, 1)} mm</b>. `
-      + `On average the rim-side third moves out ${f(zones['rim-side'].mean_outward_mm, 1)} mm, the middle ${f(zones.middle.mean_outward_mm, 1)} mm and the shoulder-side third ${f(zones['shoulder-side'].mean_outward_mm, 1)} mm. `
+    what: 'For every point on the sidewall, how far it moved outward when the load went on. Shaded bands mark the rim-side, middle and tread-side thirds.',
+    how: `Position runs from the rim (0%, top) to the tread end (100%, bottom). The further right the green line, the bigger the bulge at that point. The faint line is the same thing with less smoothing, so nothing is hidden. The grey dashed line is the simple “subtract the two scans at the same height” method; it drifts because under load the sidewall also moves down toward the contact.`,
+    mine: `The sidewall pushes out most at about <b>${pctFmt(pPk)}</b> of the way from the rim (${where(pPk)}), by <b>${f(m.matched.peak_outward_mm, 1)} mm</b>. `
+      + `On average the rim-side third moves out ${f(zones['rim-side'].mean_outward_mm, 1)} mm, the middle ${f(zones.middle.mean_outward_mm, 1)} mm and the tread-side third ${f(zones['tread-side'].mean_outward_mm, 1)} mm. `
       + `The simple same-height subtraction gives a peak of ${f(m.naive_same_z.peak_mm, 1)} mm.`,
   };
 
@@ -594,7 +623,7 @@ function tireModel(t, o = {}) {
   const bigBulge = res.zones.reduce((a, b) => (b.share_of_bulge_pct > a.share_of_bulge_pct ? b : a));
   const bigBend = res.zones.reduce((a, b) => (b.share_of_bending_energy_pct > a.share_of_bending_energy_pct ? b : a));
   const zonesTx = {
-    what: 'The sidewall split into three equal parts: next to the rim, the middle, and next to the shoulder.',
+    what: 'The sidewall split into three equal parts: next to the rim, the middle, and next to the tread.',
     how: 'Green = how much of the total push-out happens in that part. Yellow = how much of the total bending happens there. Each colour adds up to 100%.',
     mine: `The <b>${bigBulge.zone}</b> third carries most of the bulge (${f(bigBulge.share_of_bulge_pct, 0)}%), while the <b>${bigBend.zone}</b> third does most of the bending (${f(bigBend.share_of_bending_energy_pct, 0)}%).`,
   };
@@ -604,13 +633,14 @@ function tireModel(t, o = {}) {
     `Scan read from: ${esc(meta.source || 'file')}. Test details found in the file: ${meta.fields_found ?? 0} of ${SW.FIELD_KEYS.length}${t.metaEdited ? ' (some entered by hand)' : ''}.`,
     `Laser noise after cleaning: <b>${f(Math.max(m.noise_floor_mm.inflated, m.noise_floor_mm.loaded), 2)} mm</b> (small compared with a ${f(mw.growth_mm, 0)} mm bulge).`,
     `Readings where the laser lost the surface: ${m.inflated.dropouts + m.loaded.dropouts}. Repeated readings removed: ${m.inflated.held_repeats + m.loaded.held_repeats}.`,
-    `Shoulder band match between the two scans: r = ${f(res.band.texture_corr, 2)} at ${f(res.band.delta, 1)} mm shift${rg.manual ? ' (range set by hand)' : ''}, sideways shift ${f(Math.abs(res.band.x_offset), 2)} mm (≈0 = it moved straight toward the rim).`,
-    `About <b>${f(m.arc_length.deficit_mm, 0)} mm</b> of sidewall just under the shoulder folds out of the laser's view when loaded, so values in the top part of the charts are less certain.`,
+    `Rim drop ${f(res.band.delta, 1)} mm${rg.manual ? ' (starting points set by hand)' : ' (between the automatic starting points)'}${labRd != null ? `; machine radial deflection ${f(labRd, 1)} mm` : ''}. Cross-check from matching the rim band's texture: ${f(res.band.delta_texture, 1)} mm; at the rim drop used the texture matches with r = ${f(res.band.texture_corr, 2)} and ${f(Math.abs(res.band.x_offset ?? NaN), 2)} mm sideways shift (≈0 = the rim moved straight down).`,
+    `About <b>${f(m.arc_length.deficit_mm, 0)} mm</b> of sidewall near the tread end rolls into the flat contact under load, out of the laser's view, so values at the tread end of the charts are less certain.`,
     vl ? `Check against the lab report: horizontal deflection ${f(vl.horizontal_deflection_lab_mm, 3)} mm (lab) vs ${f(vl.horizontal_deflection_raw_mm, 3)} mm (same method here) vs ${f(vl.horizontal_deflection_smoothed_mm, 2)} mm (smoothed).` : null,
     ...(meta.notes || []).map((n) => `Note from reading the file: ${esc(n)}.`),
   ].filter(Boolean);
 
-  return { t, res, m, chips, kpis, peak, cb, rg, startSide, ends, rimTopDrawn,
+  return { t, res, m, chips, kpis, peak, cb, rg, startSide, ends,
+    raw: { svg: raw, ...rawTx, title: 'The scan as recorded (laser distance vs Z)' },
     shape: { svg: shape, ...shapeTx, title: 'Sidewall shape, coloured by how much it moves' },
     bulge: { svg: bulge, ...bulgeTx, title: 'How far each part pushes out' },
     tilt: { svg: tilt, ...tiltTx, title: 'How much each part tilts' },
@@ -638,7 +668,7 @@ function renderSingle(main, t) {
     <div class="titlebar"><div><h2>${esc(t.label)}</h2><div class="small muted">${esc(t.name)}</div></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn" id="dlProfile">Download profile data (CSV)</button><button class="btn ghost" id="dlRaw">Raw scan (CSV)</button></div></div>
     <div class="chips">${M.chips.map(([k, v]) => `<span class="chip">${esc(k)} <b>${esc(v)}</b></span>`).join('')}</div>
-    ${missing.length ? `<p class="note warn" style="margin-top:8px">Not found in the file: ${missing.map((k) => DETAIL_FIELDS.find((d) => d[0] === k)[1].toLowerCase()).join(' and ')}. Enter ${missing.length > 1 ? 'them' : 'it'} under “Test details” below to get stiffness and the sidewall share.</p>` : ''}
+    ${missing.length ? `<p class="note warn" style="margin-top:8px">Not found in the file: ${missing.map((k) => DETAIL_FIELDS.find((d) => d[0] === k)[1].toLowerCase()).join(' and ')}. Enter ${missing.length > 1 ? 'them' : 'it'} under “Test details” below to get stiffness and the comparison with the rim drop.</p>` : ''}
     <div class="kpis">${M.kpis.map((k) => `<div class="kpi"><div class="k">${esc(k.k)}</div><div class="v">${k.v}<small>${esc(k.u)}</small></div><div class="d">${esc(k.d)}</div></div>`).join('')}</div>
     <details class="check details-edit" style="margin-top:12px" ${missing.length || t.metaEdited ? 'open' : ''}><summary>Test details${t.metaEdited ? ' <span class="badge adj">edited</span>' : ''} <span class="small muted">— check or fill in; changes update every number</span></summary>
       <div class="formgrid">
@@ -649,24 +679,31 @@ function renderSingle(main, t) {
     </details>
   </section>
   <section class="card" style="margin-bottom:16px">
-    <div class="cardhead"><h3>1 · ${M.shape.title}</h3></div>
+    <div class="cardhead"><h3>0 · ${M.raw.title}</h3></div>
     <div class="chart-split">
-      <div>${M.shape.svg}</div>
-      <div>${explainHTML(M.shape.what, M.shape.how, M.shape.mine)}
+      <div>${M.raw.svg}</div>
+      <div>${explainHTML(M.raw.what, M.raw.how, M.raw.mine)}
         <div class="range" id="rangeBox">
           <h4>Analysis range <span class="badge ${rg.manual ? 'adj' : ''}">${rg.manual ? 'adjusted by you' : 'automatic'}</span></h4>
-          <div class="small muted">Where the sidewall starts and ends in each scan. The tool finds these automatically; if a line is in the wrong place, drag it on the chart or type a height (mm). Each tire keeps its own setting.</div>
-          ${[['zStart', `Sidewall start (${M.startSide}), both scans`, rg.z_start, rg.auto.z_start, '--ink2'],
-             ['edgeInflated', 'Shoulder edge, inflated scan', rg.edge_inflated, rg.auto.edge_inflated, '--inf'],
-             ['edgeLoaded', 'Shoulder edge, loaded scan', rg.edge_loaded, rg.auto.edge_loaded, '--load']]
+          <div class="small muted">Where the sidewall starts at the rim in each scan, and where the analysis stops at the tread end (Z, mm). The tool finds these automatically; drag the dashed lines on the chart or type a value to change them. Each tire keeps its own setting.</div>
+          ${[['edgeInflated', 'Rim-side starting point, inflated scan', rg.edge_inflated, rg.auto.edge_inflated, '--inf'],
+             ['edgeLoaded', 'Rim-side starting point, loaded scan', rg.edge_loaded, rg.auto.edge_loaded, '--load'],
+             ['zStart', 'Tread-side end, both scans', rg.z_start, rg.auto.z_start, '--ink2']]
             .map(([k, name, v, a, c]) => `<label class="row"><i style="border-color:var(${c})"></i><span>${name}</span>
               <input type="number" step="0.5" data-k="${k}" value="${v.toFixed(1)}"><span class="auto">auto ${a.toFixed(1)}</span></label>`).join('')}
-          <div class="small" style="margin-top:8px">Shoulder travel used: <b>${f(res.band.delta, 1)} mm</b>
-            ${res.band.texture_corr != null ? ` · band texture match r = ${f(res.band.texture_corr, 2)}${res.band.texture_corr < 0.5 ? ' <span class="warn">(weak: check the shoulder lines)</span>' : ''}` : ''}</div>
+          <div class="small" style="margin-top:8px">Rim drop used: <b>${f(res.band.delta, 1)} mm</b>${M.m.deflection.radial_lab_mm != null ? ` · machine radial deflection ${f(M.m.deflection.radial_lab_mm, 1)} mm` : ''}
+            ${res.band.texture_corr != null ? ` · rim band texture match r = ${f(res.band.texture_corr, 2)}${res.band.texture_corr < 0.5 ? ' <span class="warn">(weak: check the starting points)</span>' : ''}` : ''}</div>
           ${t.rangeError ? `<div class="small warn" style="margin-top:6px">Not applied: ${esc(t.rangeError)}</div>` : ''}
           <div style="margin-top:8px"><button class="btn" id="rangeReset" ${rg.manual ? '' : 'disabled'}>Reset to automatic</button></div>
         </div>
       </div>
+    </div>
+  </section>
+  <section class="card" style="margin-bottom:16px">
+    <div class="cardhead"><h3>1 · ${M.shape.title}</h3></div>
+    <div class="chart-split">
+      <div>${M.shape.svg}</div>
+      <div>${explainHTML(M.shape.what, M.shape.how, M.shape.mine)}</div>
     </div>
   </section>
   <div class="grid2">
@@ -687,11 +724,11 @@ function renderSingle(main, t) {
   wireCharts(main);
   $('dlProfile').onclick = () => {
     const Dd = disp(t, sm), mt = res.matched;
-    const head = ['arc_from_rim_mm', 'height_above_rim_pct', 'z_inflated_mm', 'z_loaded_mm', 'u_inflated_mm', 'u_loaded_mm',
-      'outward_deflection_mm', 'outward_deflection_smoothed_mm', 'toward_rim_mm', 'tilt_change_deg', 'bending_strain_pct'];
+    const head = ['arc_from_rim_mm', 'position_from_rim_pct', 'z_inflated_mm', 'z_loaded_mm', 'u_inflated_mm', 'u_loaded_mm',
+      'outward_deflection_mm', 'outward_deflection_smoothed_mm', 'moves_down_mm', 'tilt_change_deg', 'bending_strain_pct'];
     const hp = pctFromRim(res, mt.z_inf);
     const smU = SW.interp(mt.s, Dd.matched.s, Dd.matched.du);
-    const rows = Array.from(mt.s, (s, i) => [s, hp[i], mt.z_inf[i], mt.z_load[i], mt.u_inf[i], mt.u_load[i], mt.du[i], smU[i], res.towardRim[i], mt.dtheta[i], 100 * res.opts.hMm * mt.dkappa[i]]);
+    const rows = Array.from(mt.s, (s, i) => [s, hp[i], mt.z_inf[i], mt.z_load[i], mt.u_inf[i], mt.u_load[i], mt.du[i], smU[i], res.drop[i], mt.dtheta[i], 100 * res.opts.hMm * mt.dkappa[i]]);
     download(new Blob([toCSV([head, ...rows])], { type: 'text/csv' }), `${fileName}_profile.csv`);
   };
   $('dlRaw').onclick = () => {
@@ -722,7 +759,7 @@ function renderPaste(main) {
       <label><b>Z position (mm)</b><textarea id="pZ" spellcheck="false" placeholder="268.41&#10;268.10&#10;…">${esc(PASTE.z)}</textarea><span class="small muted" id="pZc"></span></label>
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button class="btn" id="pSwap">Swap the two boxes</button><button class="btn ghost" id="pClear">Clear</button></div>
-    <h3 style="margin-top:16px">Test details <span class="small muted">(optional, but load and radial deflection give stiffness and the sidewall share)</span></h3>
+    <h3 style="margin-top:16px">Test details <span class="small muted">(optional, but load and radial deflection give stiffness and the comparison with the rim drop)</span></h3>
     <div class="formgrid">
       <label><span>Name</span><input data-k="__label" value="${esc(PASTE.details.__label || '')}" placeholder="e.g. Tire A, 4500 kg"></label>
       ${DETAIL_FIELDS.map(([k, name, kind]) => `<label><span>${esc(name)}</span><input data-k="${k}" ${kind === 'num' ? 'type="number" step="any"' : ''} value="${esc(PASTE.details[k] ?? '')}"></label>`).join('')}
@@ -802,13 +839,13 @@ const METRICS = [
   { key: 'radial_deflection_lab_mm', name: 'Radial deflection', unit: 'mm', dec: 1, better: 'low', say: 'how far the tire squashes down' },
   { key: 'horizontal_deflection_smoothed_mm', name: 'Sidewall bulge', unit: 'mm', dec: 1, better: 'low', say: 'how far the widest point pushes out' },
   { key: 'vertical_stiffness_N_per_mm', name: 'Vertical stiffness', unit: 'N/mm', dec: 0, better: 'high', say: 'load needed per mm of squash' },
-  { key: 'sidewall_share_pct', short: 'Sidewall share', name: 'Sidewall share of deflection', unit: '%', dec: 0, say: 'part of the squash taken by the sidewall (the rest is the tread/crown)' },
+  { key: 'rim_drop_scan_mm', short: 'Rim drop (scan)', name: 'Rim drop in the scan', unit: 'mm', dec: 1, say: 'how far the rim-side starting point moved down between the two scans' },
   { key: 'bulge_per_mm_deflection', short: 'Bulge per mm defl.', name: 'Bulge per mm of deflection', unit: '', dec: 2, better: 'low', say: 'outward bulge for each mm of squash' },
   { key: 'peak_bending_strain_pct', short: 'Peak bending', name: 'Peak bending strain', unit: '%', dec: 1, better: 'low', say: 'strongest bending of the sidewall surface' },
-  { key: 'widest_point_loaded_pct_from_rim', short: 'Widest point, loaded', name: 'Widest point under load (height above rim)', unit: '%', dec: 0, say: 'where the bulge sits; lower = closer to the rim' },
+  { key: 'widest_point_loaded_pct_from_rim', short: 'Widest point, loaded', name: 'Widest point under load (% from the rim)', unit: '%', dec: 0, say: 'where the bulge sits; smaller = closer to the rim' },
   { key: 'max_rotation_deg', name: 'Largest tilt', unit: '°', dec: 0, abs: true, say: 'biggest rotation of any part of the sidewall' },
   { key: 'rim_side_bending_share_pct', short: 'Rim-side bending', name: 'Rim-side share of bending', unit: '%', dec: 0, say: 'how much of the bending happens next to the rim' },
-  { key: 'hidden_sidewall_when_loaded_mm', short: 'Hidden under load', name: 'Sidewall hidden from the laser under load', unit: 'mm', dec: 0, say: 'how much sidewall folds out of view under the shoulder' },
+  { key: 'hidden_sidewall_when_loaded_mm', short: 'Hidden under load', name: 'Sidewall hidden from the laser under load', unit: 'mm', dec: 0, say: 'how much sidewall rolls into the flat contact, out of the laser’s view' },
 ];
 const COLS = [
   { key: 'tire', name: 'Tire' },
@@ -827,8 +864,8 @@ function compareModel(shown, o = {}) {
     return { name: t.label, x: get(D, t.res), y: pctFromRim(t.res, D.matched.z_inf), color: sc(t), width: 2.4, hover: true, unit, dec };
   });
   const legend = shown.map((t) => ({ name: t.label, color: sc(t) }));
-  const common = { w: 520, h: forReport ? 440 : 420, yDomain: [0, 100], yFmt: 'pct', yFlip: S.settings.rimDraw === 'top', yName: 'height above rim',
-    yLabel: 'height above the rim (% of sidewall)', vlines: [0], legend, sync: 'compare' };
+  const common = { w: 520, h: forReport ? 440 : 420, yDomain: [0, 100], yFmt: 'pct', yFlip: true, yName: 'from rim',
+    yLabel: 'position from the rim (% of sidewall)', vlines: [0], legend, sync: 'compare' };
   const ext = (arr, pickMax) => { let k = -1; arr.forEach((v, i) => { if (v != null && (k < 0 || (pickMax ? v > arr[k] : v < arr[k]))) k = i; }); return k; };
   const many = shown.length > 1;
 
@@ -837,7 +874,7 @@ function compareModel(shown, o = {}) {
   const bulge = {
     title: 'How far each tire’s sidewall pushes out',
     svg: lineChart({ ...common, title: 'Bulge comparison', fileName: 'compare_bulge', xLabel: 'outward deflection (mm)', series: lines((D) => D.matched.du, 'mm') }),
-    what: 'Outward deflection along the sidewall, one line per tire, from the rim (0%) to the shoulder (100%).',
+    what: 'Outward deflection along the sidewall, one line per tire, from the rim (0%) to the tread end (100%).',
     how: 'Further right = more bulge at that height. A peak lower down means the tire bulges close to the rim; a flatter line means the bulge is spread out.',
     mine: many ? `<b>${esc(shown[kHi].label)}</b> pushes out the most (${f(peaks[kHi], 1)} mm at ${pctFmt(pctAt(shown[kHi].res, shown[kHi].res.metrics.matched.inflated_z_of_that_point))} height); <b>${esc(shown[kLo].label)}</b> the least (${f(peaks[kLo], 1)} mm).` : 'Add a second tire to compare.',
   };
@@ -945,17 +982,17 @@ function howtoHTML() {
   It does this twice: first with the tire inflated, then again with the load applied. Comparing the two scans shows how the sidewall moves under load.</p>
   <h3>Words used in the tool</h3>
   <dl>
-    <dt>Rim end / shoulder end</dt><dd>The sidewall runs from the wheel rim to the shoulder (where it meets the tread). In this test rig the rim is at the bottom of the scan.</dd>
+    <dt>Rim side / tread (contact) side</dt><dd>The sidewall runs from the wheel rim to the tread. In this test rig the scan has the rim at the top (high Z) and the tread with its flat contact at the bottom (low Z). The chart “The scan as recorded” shows the file's data exactly as recorded.</dd>
     <dt>Radial deflection</dt><dd>How far the tire squashes down under the load, measured by the machine (from the report).</dd>
     <dt>Sidewall bulge (horizontal deflection)</dt><dd>How far the widest point of the sidewall pushes out under load. The lab report uses the single closest laser reading in each scan; the tool shows the same number and a smoothed one, which is less affected by noise.</dd>
-    <dt>Shoulder travel and sidewall share</dt><dd>The textured band at the top of the scan is the shoulder. Under load it moves straight toward the rim. That movement is how much the sidewall itself shortened. The rest of the radial deflection is taken by the tread and crown.</dd>
-    <dt>Outward deflection</dt><dd>How far each point of the sidewall moved outward. The tool follows the same piece of rubber in both scans, not just the same height, because under load the rubber also slides toward the rim.</dd>
+    <dt>Starting points and rim drop</dt><dd>The sidewall starts where the profile leaves the rim: in the inflated scan the sharp peak at the rim, in the loaded scan the top of the step. The rim (with the textured band above the starting point) moves straight down under load; the distance between the two starting points is the rim drop, which is compared with the machine's radial deflection. The starting points are found automatically and can be dragged.</dd>
+    <dt>Outward deflection</dt><dd>How far each point of the sidewall moved outward. The tool follows the same piece of rubber in both scans (measured along the sidewall from the rim-side starting point), not just the same height, because under load the rubber also moves down toward the contact.</dd>
     <dt>Tilt</dt><dd>How much a part of the sidewall rotates under load, in degrees.</dd>
     <dt>Bending strain</dt><dd>How sharply the sidewall is bent, turned into an estimate of how much the outer surface stretches. It assumes a rubber thickness over the cords (setting at the top, default 5 mm). Peaks are where fatigue and heat build up first.</dd>
-    <dt>Rim-side / middle / shoulder-side</dt><dd>The sidewall split into three equal parts, so tires can be compared part by part.</dd>
+    <dt>Rim-side / middle / tread-side</dt><dd>The sidewall split into three equal parts, so tires can be compared part by part.</dd>
     <dt>Colours on the shape chart</dt><dd>Blue = little, green/yellow = medium, red = most, like an FEA contour plot. The colour bar under the chart gives the values.</dd>
     <dt>Curve smoothing</dt><dd>Only changes how smooth the curves look. The measured points stay on the chart and the numbers in the tiles and tables do not change.</dd>
-    <dt>Sidewall hidden under load</dt><dd>Under load, a little of the sidewall just below the shoulder folds out of the laser's view. Values in the top part of the charts are therefore less certain.</dd>
+    <dt>Sidewall hidden under load</dt><dd>Under load, a little of the sidewall near the tread end rolls into the flat contact, out of the laser's view. Values at the tread end of the charts are therefore less certain.</dd>
   </dl>
   <h3>Comparing tires</h3>
   <p>Choose several files at once (or keep adding). Every file is analysed the same way. Tick the files you want in the Compare tab; each ticked tire gets its own colour.

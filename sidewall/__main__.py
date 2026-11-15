@@ -42,9 +42,8 @@ def summary_row(r):
         "serial": t.get("serial"), "test_date": t.get("test_date"), "feature": t.get("feature"),
         "load_daN": t.get("load_daN"), "pressure_psi": t.get("pressure_psi"), "rim": t.get("rim"),
         "radial_deflection_lab_mm": d["radial_lab_mm"],
-        "shoulder_travel_mm": d["shoulder_travel_mm"],
-        "crown_share_mm": d["crown_share_mm"],
-        "sidewall_share_pct": d["sidewall_share_pct"],
+        "rim_drop_scan_mm": d["rim_drop_scan_mm"],
+        "rim_drop_minus_radial_mm": d["rim_drop_minus_radial_mm"],
         "vertical_stiffness_N_per_mm": m["vertical_stiffness_N_per_mm"],
         "horizontal_deflection_lab_mm": t.get("horizontal_deflection_mm"),
         "horizontal_deflection_raw_mm": m["lab_style"]["horizontal_deflection_mm"],
@@ -60,7 +59,7 @@ def summary_row(r):
         "peak_bending_height_mm": peak.get("z_inflated"),
         "rim_side_bending_share_pct": zones["rim-side"]["share_of_bending_energy_pct"],
         "middle_bending_share_pct": zones["middle"]["share_of_bending_energy_pct"],
-        "shoulder_side_bending_share_pct": zones["shoulder-side"]["share_of_bending_energy_pct"],
+        "tread_side_bending_share_pct": zones["tread-side"]["share_of_bending_energy_pct"],
         "hidden_sidewall_when_loaded_mm": m["arc_length"]["deficit_mm"],
         "noise_mm": max(m["noise_floor_mm"].values()),
         "range_manual": m["range"]["manual"], "range_z_start_mm": m["range"]["z_start"],
@@ -97,18 +96,16 @@ def main(argv=None):
                     help="distance from carcass ply to outer surface, for bending strain (default 5)")
     ap.add_argument("--load-kN", type=float, default=None,
                     help="applied load if the file does not carry one")
-    ap.add_argument("--rim-end", choices=["bottom", "top"], default="bottom",
-                    help="which end of the scan is the rim (default bottom)")
     ap.add_argument("--window-mm", type=float, default=45.0,
                     help="length scale for slope/curvature (default 45)")
     ap.add_argument("--smooth-mm", type=float, default=5.0,
                     help="smoothing of plotted profiles (default 5)")
     ap.add_argument("--z-start", type=float, default=None,
-                    help="manual start of the sidewall at the rim end (scanner height, mm)")
+                    help="manual tread-side end of the sidewall, both scans (scanner height, mm)")
     ap.add_argument("--edge-inflated", type=float, default=None,
-                    help="manual shoulder edge in the inflated scan (scanner height, mm)")
+                    help="manual rim-side starting point, inflated scan (scanner height, mm)")
     ap.add_argument("--edge-loaded", type=float, default=None,
-                    help="manual shoulder edge in the loaded scan (scanner height, mm)")
+                    help="manual rim-side starting point, loaded scan (scanner height, mm)")
     a = ap.parse_args(argv)
 
     files = expand(a.inputs)
@@ -118,7 +115,7 @@ def main(argv=None):
     results, rows = [], []
     for f in files:
         try:
-            r = analyze(f, h_mm=a.h_mm, load_kN=a.load_kN, rim_end=a.rim_end,
+            r = analyze(f, h_mm=a.h_mm, load_kN=a.load_kN,
                         window_mm=a.window_mm, smooth_mm=a.smooth_mm, z_start=a.z_start,
                         edge_inflated=a.edge_inflated, edge_loaded=a.edge_loaded)
         except Exception as e:  # keep the batch going; report the bad file
@@ -129,7 +126,7 @@ def main(argv=None):
         rows.append(summary_row(r))
         d = r.metrics["deflection"]
         lab = f"{d['radial_lab_mm']:.1f}" if d["radial_lab_mm"] else "  - "
-        print(f"{r.label[:48]:48s}  radial {lab} mm  shoulder {d['shoulder_travel_mm']:5.1f} mm"
+        print(f"{r.label[:48]:48s}  radial {lab} mm  rim drop {d['rim_drop_scan_mm']:5.1f} mm"
               f"  bulge {r.metrics['max_width']['growth_mm']:5.1f} mm")
 
     if len(results) > 1:

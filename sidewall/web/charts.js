@@ -215,8 +215,16 @@ function lineSVG(st, isStatic) {
       g += `<text x="${X(mk.x) + (right ? 9 : -9)}" y="${Y(mk.y)}" text-anchor="${right ? 'start' : 'end'}" dominant-baseline="middle" font-size="11.5" fill="${ink}" paint-order="stroke" stroke="${card}" stroke-width="3">${esc(mk.label)}</text>`;
     }
   }
+  for (const rl of cfg.refLines || []) { // fixed dashed reference lines (static stand-in for drag handles)
+    if (!(rl.y >= Math.min(...yd) && rl.y <= Math.max(...yd))) continue;
+    const y = Y(rl.y).toFixed(1), left = rl.side === 'left';
+    g += `<line x1="${m.l}" x2="${m.l + pw}" y1="${y}" y2="${y}" stroke="${rl.color}" stroke-width="1.4" stroke-dasharray="6 4"/>`;
+    if (rl.label) g += `<text x="${left ? m.l + 6 : m.l + pw - 6}" y="${(+y - 5).toFixed(1)}" text-anchor="${left ? 'start' : 'end'}" font-size="11" fill="${rl.color}" paint-order="stroke" stroke="${card}" stroke-width="3">${esc(rl.label)}</text>`;
+  }
   for (const t of cfg.texts || []) {
-    const px = t.px != null ? t.px : X(t.x), py = t.py != null ? t.py : Y(t.y);
+    const px = t.px != null ? t.px : X(t.x);
+    let py = (t.py != null ? t.py : Y(t.y)) + (t.dy || 0);
+    if (t.keepIn) py = Math.max(m.t + 7, Math.min(m.t + ph - 7, py)); // stay inside the plot
     g += `<text x="${px}" y="${py}" text-anchor="${t.anchor || 'start'}" dominant-baseline="middle" font-size="${t.size || 11.5}" font-weight="${t.bold ? 650 : 400}" fill="${t.color || ink2}" paint-order="stroke" stroke="${card}" stroke-width="3">${esc(t.text)}</text>`;
   }
   if (cb && cbH) { // colour bar under the x axis
