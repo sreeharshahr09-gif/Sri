@@ -21,16 +21,26 @@ uploaded and it works offline.
   each scan are found automatically and can be changed per tire by dragging the
   dashed lines or typing a height.
 - **Compare tires**: sortable table, overlays, pick-a-metric bar chart, CSV export.
+- **Interactive charts** (tool and HTML report): hover read-out with crosshair
+  and dots, linked across a tire's charts; drag-box zoom, +/- buttons,
+  Ctrl+wheel, Shift+drag pan, double-click reset; click to pin readings (table,
+  copy for Excel); legend toggles; colour-by switch on the shape chart; full
+  screen; data table with CSV / copy; PNG and SVG export.
 - **Report**: project details form (title, project, request no., customer,
   prepared/reviewed by, date, objective, conclusions, logo), choice of tires and
-  sections, then **Download PDF** or **Download HTML**. Charts are vector graphics
-  in both, so they stay sharp when zoomed or printed.
+  sections, then **Download PDF** (fixed, vector, for print) or **Download
+  interactive HTML** (single offline file: the interactive charts above plus a
+  contents bar with scroll tracking, foldable sections, sortable summary table
+  whose rows highlight that tire in every chart, light/dark, print). If a viewer
+  blocks scripts, the HTML report still shows every chart as a picture.
 - **Paste columns**: if a file will not import, paste the laser-distance and
   Z-position columns from Excel (two boxes, or both columns in one box), with a
   preview before adding the tire.
 
-Source files: `web/engine.js` (file reading + analysis), `web/app.html` (UI),
-`web/report.js` (reports, PDF writer). Rebuild the single file after editing:
+Source files: `web/engine.js` (file reading + analysis), `web/charts.js`
+(interactive charts, shared with the HTML report), `web/app.html` (UI),
+`web/report.js` (reports, PDF writer), `web/report_runtime.js` (navigation inside
+the HTML report). Rebuild the single file after editing:
 
 ```bash
 python sidewall/web/build.py

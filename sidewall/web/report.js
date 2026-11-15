@@ -40,7 +40,7 @@ function renderReport(main) {
   }
   main.innerHTML = `<section class="panel first">
     <h2>Report</h2>
-    <p class="muted">Fill in the project details, choose the tires and sections, then download. Both formats contain the same pages; charts are vector graphics, so they stay sharp when zoomed or printed. Details are remembered on this computer.</p>
+    <p class="muted">Fill in the project details, choose the tires and sections, then download. Both formats contain the same pages and vector charts that stay sharp when zoomed or printed. The <b>HTML report is interactive</b>: hover for values, zoom, pin readings, full screen, data tables, a contents bar, a sortable summary and light/dark. The PDF is the fixed version for printing and sending. Details are remembered on this computer.</p>
     <div class="formgrid">
       ${RFIELDS.map(([k, name, type]) => `<label><span>${name}</span><input data-r="${k}" ${type ? `type="${type}"` : ''} value="${esc(REPORT[k] || '')}"></label>`).join('')}
       <label class="wide"><span>Objective of the test</span><textarea data-r="objective" placeholder="e.g. Compare sidewall flexing of candidate designs at 4500 kg / 170 psi">${esc(REPORT.objective)}</textarea></label>
@@ -54,7 +54,7 @@ function renderReport(main) {
     <div class="formgrid">${RSECTIONS.map(([k, name]) => `<label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" data-s="${k}" ${REPORT.sections[k] ? 'checked' : ''}><span>${name}</span></label>`).join('')}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;align-items:center">
       <button class="btn primary" id="rPdf">Download PDF report</button>
-      <button class="btn" id="rHtml">Download HTML report</button>
+      <button class="btn" id="rHtml">Download interactive HTML report</button>
       <button class="btn ghost" id="rPreview">Preview HTML in a new tab</button>
       <span class="small" id="rMsg"></span>
     </div>
@@ -116,7 +116,10 @@ function buildReportBlocks(list) {
       B.push({ type: 'table', head: ['Tire', 'Load (daN)', 'Pressure (psi)', 'Radial defl. (mm)', 'Bulge (mm)', 'Stiffness (N/mm)', 'Sidewall share (%)', 'Peak bending (%)', 'Bending at (% height)'],
         widths: [2.6, 1, 1, 1, 1, 1.1, 1.1, 1, 1.1], align: 'lrrrrrrrr',
         rows: list.map((t) => { const r = t.row; return [t.label, f(r.load_daN, 0), f(r.pressure_psi, 0), f(r.radial_deflection_lab_mm, 1), f(r.horizontal_deflection_smoothed_mm, 1),
-          f(r.vertical_stiffness_N_per_mm, 0), f(r.sidewall_share_pct, 0), f(r.peak_bending_strain_pct, 1), r.peak_bending_height_mm != null ? f(pctAt(t.res, r.peak_bending_height_mm), 0) : '–']; }) });
+          f(r.vertical_stiffness_N_per_mm, 0), f(r.sidewall_share_pct, 0), f(r.peak_bending_strain_pct, 1), r.peak_bending_height_mm != null ? f(pctAt(t.res, r.peak_bending_height_mm), 0) : '–']; }),
+        raw: list.map((t) => { const r = t.row; return [null, r.load_daN, r.pressure_psi, r.radial_deflection_lab_mm, r.horizontal_deflection_smoothed_mm, r.vertical_stiffness_N_per_mm,
+          r.sidewall_share_pct, r.peak_bending_strain_pct, r.peak_bending_height_mm != null ? pctAt(t.res, r.peak_bending_height_mm) : null]; }),
+        names: list.map((t) => t.label), targets: list.map((t) => `tire${t.id}`), sortable: true });
       B.push({ type: 'p', small: true, html: 'Radial deflection is the machine value from each file. Bulge is the outward push of the widest point (smoothed). Stiffness = load ÷ radial deflection. Sidewall share = part of the deflection taken by the sidewall; the rest is taken by the tread/crown. Bending is the estimated surface strain where the sidewall flexes most.' });
     }
 
@@ -125,7 +128,7 @@ function buildReportBlocks(list) {
       const C = compareModel(shown, { forReport: true, colorOf, metricKeys: ['vertical_stiffness_N_per_mm', 'horizontal_deflection_smoothed_mm', 'peak_bending_strain_pct', 'sidewall_share_pct'] });
       B.push({ type: 'h1', text: 'Comparison', pageBreak: true });
       if (list.length > 8) B.push({ type: 'p', small: true, html: `Charts show the first 8 of ${list.length} tires; the summary table lists all of them.` });
-      const fig = (s) => ({ title: s.title, svgs: [svgOf(s.svg)], caption: captionHTML(s, 'In this comparison') });
+      const fig = (s) => ({ title: s.title, chart: s.svg, svgs: [chartStatic(s.svg)], caption: captionHTML(s, 'In this comparison') });
       B.push({ type: 'figrow', items: [fig(C.bulge), fig(C.bend)] });
       B.push({ type: 'figrow', items: [fig(C.tilt), fig(C.metrics[0])] });
       B.push({ type: 'figrow', items: [fig(C.metrics[1]), fig(C.metrics[2])] });
@@ -137,7 +140,7 @@ function buildReportBlocks(list) {
       for (const t of list) {
         const M = tireModel(t, { forReport: true, showRaw: true });
         const m = M.m, meta = t.meta, rg = m.range;
-        B.push({ type: 'h1', text: t.label, pageBreak: true });
+        B.push({ type: 'h1', text: t.label, pageBreak: true, anchor: `tire${t.id}` });
         B.push({ type: 'kv2', rows: [
           ['Tire size', meta.size], ['Brand', meta.brand], ['Serial', meta.serial], ['Test date', meta.test_date], ['Test type', meta.feature],
           ['Load', meta.load_daN != null ? `${f(meta.load_daN, 0)} daN (${f(kg(meta.load_daN), 0)} kg)` : null],
@@ -147,10 +150,10 @@ function buildReportBlocks(list) {
           ['Analysis range', `${rg.manual ? 'set by hand' : 'automatic'}: sidewall from ${f(rg.z_start, 1)} mm, shoulder edge ${f(rg.edge_inflated, 1)} mm (inflated) / ${f(rg.edge_loaded, 1)} mm (loaded)`]] });
         B.push({ type: 'kpis', items: M.kpis });
         B.push({ type: 'figrow', widths: [0.5, 0.5], items: [
-          { title: M.shape.title, svgs: [svgOf(M.shape.svg), svgOf(M.shape.colorbar)] },
+          { title: M.shape.title, chart: M.shape.svg, svgs: [chartStatic(M.shape.svg)] },
           { html: captionHTML(M.shape) },
         ] });
-        const fig = (s) => ({ title: s.title, svgs: [svgOf(s.svg)], caption: captionHTML(s) });
+        const fig = (s) => ({ title: s.title, chart: s.svg, svgs: [chartStatic(s.svg)], caption: captionHTML(s) });
         B.push({ type: 'figrow', items: [fig(M.bulge), fig(M.tilt)] });
         B.push({ type: 'figrow', items: [fig(M.bend), fig(M.zones)] });
         checks.push([t.label, M.quality]);
@@ -230,67 +233,131 @@ const GLOSSARY = [
   ['Rim-side / middle / shoulder-side', 'The sidewall split into three equal parts.'],
 ];
 
-// ============================================================== HTML report
+// ============================================================== HTML report (interactive)
 function reportHTML(B, list) {
-  const R = REPORT;
+  const R = REPORT, specs = {};
+  let nSpec = 0, nSec = 0, open = false;
   const cell = (v) => esc(v ?? '–');
-  const out = [];
+  const out = [], toc = [];
+  const startSection = (title, opts = {}) => {
+    if (open) out.push('</div></section>');
+    const id = opts.anchor || `sec${++nSec}`;
+    toc.push({ id, title });
+    out.push(`<section class="rsec${opts.pb ? ' pb' : ''}" id="${id}">${opts.noHeading ? '' : `<h1 class="rsec-h" title="Click to fold or unfold">${esc(title)}<span class="fold" aria-hidden="true">▾</span></h1>`}<div class="rsec-b">`);
+    open = true;
+  };
+  const chartSlot = (it) => {
+    if (!it.chart) return (it.svgs || []).join('');
+    const key = `c${++nSpec}`, spec = chartSpec(it.chart);
+    if (spec) specs[key] = spec;
+    return `<div class="ichart-slot" data-spec="${key}">${(it.svgs || []).join('')}</div>`;
+  };
   for (const b of B) {
-    if (b.type === 'cover') out.push(coverHTML(list));
-    else if (b.type === 'h1') out.push(`<h1 class="${b.pageBreak ? 'pb' : ''}">${esc(b.text)}</h1>`);
-    else if (b.type === 'h2') out.push(`<h2>${esc(b.text)}</h2>`);
+    if (b.type === 'cover') { startSection('Overview', { anchor: 'overview', noHeading: true }); out.push(coverHTML(list)); continue; }
+    if (b.type === 'h1') { startSection(b.text, { pb: b.pageBreak, anchor: b.anchor }); continue; }
+    if (b.type === 'h2') out.push(`<h2>${esc(b.text)}</h2>`);
     else if (b.type === 'p') out.push(`<p class="${b.small ? 'small' : ''}">${b.html}</p>`);
+    else if (b.type === 'kv') out.push(`<table class="kv ${b.wide ? 'wide' : ''}">${b.rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${cell(v)}</td></tr>`).join('')}</table>`);
     else if (b.type === 'kv2') {
       const half = Math.ceil(b.rows.length / 2);
       out.push(`<table class="kv kv2">${Array.from({ length: half }, (_, i) => {
-        const a = b.rows[i], c = b.rows[i + half];
-        return `<tr><th>${esc(a[0])}</th><td>${cell(a[1])}</td>${c ? `<th>${esc(c[0])}</th><td>${cell(c[1])}</td>` : '<th></th><td></td>'}</tr>`;
+        const x = b.rows[i], y = b.rows[i + half];
+        return `<tr><th>${esc(x[0])}</th><td>${cell(x[1])}</td>${y ? `<th>${esc(y[0])}</th><td>${cell(y[1])}</td>` : '<th></th><td></td>'}</tr>`;
       }).join('')}</table><table class="kv kvl">${b.long.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${cell(v)}</td></tr>`).join('')}</table>`);
-    } else if (b.type === 'kv') out.push(`<table class="kv ${b.wide ? 'wide' : ''}">${b.rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${cell(v)}</td></tr>`).join('')}</table>`);
-    else if (b.type === 'table') out.push(`<table class="data"><thead><tr>${b.head.map((h, i) => `<th class="${b.align[i] === 'r' ? 'r' : ''}">${esc(h)}</th>`).join('')}</tr></thead><tbody>${b.rows.map((r) => `<tr>${r.map((v, i) => `<td class="${b.align[i] === 'r' ? 'r' : ''}">${cell(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>`);
-    else if (b.type === 'kpis') out.push(`<table class="data kpi"><thead><tr><th>Result</th><th class="r">Value</th><th>What it means</th></tr></thead><tbody>${b.items.map((k) => `<tr><td><b>${esc(k.k)}</b></td><td class="r nowrap">${esc(k.v)} ${esc(k.u)}</td><td>${esc(k.d)}</td></tr>`).join('')}</tbody></table>`);
-    else if (b.type === 'figrow') {
+    } else if (b.type === 'table') {
+      out.push(`<div class="twrap"><table class="data${b.sortable ? ' sortable' : ''}"><thead><tr>${b.head.map((h, i) => `<th class="${b.align[i] === 'r' ? 'r' : ''}">${esc(h)}</th>`).join('')}</tr></thead><tbody>${b.rows.map((r, ri) =>
+        `<tr${b.names ? ` data-name="${esc(b.names[ri])}" data-target="${b.targets[ri]}" title="Hover to highlight this tire in the charts; click to open its section"` : ''}>${r.map((v, i) => {
+          const raw = b.raw ? b.raw[ri][i] : undefined;
+          return `<td class="${b.align[i] === 'r' ? 'r' : ''}"${raw !== undefined && i > 0 ? ` data-v="${raw == null || !isFinite(raw) ? '' : raw}"` : ''}>${cell(v)}</td>`;
+        }).join('')}</tr>`).join('')}</tbody></table></div>`);
+    } else if (b.type === 'kpis') {
+      out.push(`<div class="kpis">${b.items.map((k) => `<div class="kpi"><div class="k">${esc(k.k)}</div><div class="v">${esc(k.v)}<small>${esc(k.u)}</small></div><div class="d">${esc(k.d)}</div></div>`).join('')}</div>`);
+    } else if (b.type === 'figrow') {
       const w = b.widths || b.items.map(() => 1 / b.items.length);
-      out.push(`<div class="figrow" style="grid-template-columns:${w.map((x) => `${x}fr`).join(' ')}">${b.items.map((it) => (it.svgs
-        ? `<figure class="${it.svgs.length > 1 ? 'shape' : ''}">${it.title ? `<div class="ft">${esc(it.title)}</div>` : ''}${it.svgs.join('')}${it.caption ? `<figcaption>${it.caption}</figcaption>` : ''}</figure>`
+      out.push(`<div class="figrow" style="grid-template-columns:${w.map((x) => `minmax(0,${x}fr)`).join(' ')}">${b.items.map((it) => (it.svgs || it.chart
+        ? `<figure class="${it.svgs && it.svgs[0] && /colour bar|blue = less/.test(it.svgs[0]) ? 'shape' : ''}">${it.title ? `<div class="ft">${esc(it.title)}</div>` : ''}${chartSlot(it)}${it.caption ? `<figcaption>${it.caption}</figcaption>` : ''}</figure>`
         : `<div class="side">${it.html}</div>`)).join('')}</div>`);
     } else if (b.type === 'list') out.push(`<ul>${b.items.map((i) => `<li>${i}</li>`).join('')}</ul>`);
   }
+  if (open) out.push('</div></section>');
   const foot = [R.title, R.project, R.number].filter(Boolean).join(' · ');
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  const chartsJs = document.getElementById('sw-charts').textContent;
+  const runtimeJs = document.getElementById('sw-report-runtime').textContent;
+  const json = JSON.stringify(specs).replace(/</g, '\\u003c');
+  return `<!doctype html><html lang="en" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(R.title)}${R.project ? ` – ${esc(R.project)}` : ''}</title>
 <style>
-@page { size: A4; margin: 15mm 14mm 17mm; }
+:root { color-scheme: light; --bg: #ecebe7; --card: #ffffff; --raise: #fbfbfa; --border: #dcdbd6; --grid: #ebeae6; --zone: #f0efec; --ink: #111111; --ink2: #52514e; --muted: #77766f; --hover: #efeeea; --accent: #2a78d6; }
+:root[data-theme="dark"] { color-scheme: dark; --bg: #121211; --card: #1a1a19; --raise: #222220; --border: #34342f; --grid: #2a2a27; --zone: #242422; --ink: #f0efec; --ink2: #c3c2b7; --muted: #9a998f; --hover: #2a2a27; --accent: #3987e5; }
 * { box-sizing: border-box; }
-html { background: #ecebe7; }
-body { margin: 0; color: #111; font: 10.5pt/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-.sheet { background: #fff; max-width: 210mm; margin: 10mm auto; padding: 16mm 15mm; box-shadow: 0 2px 14px rgba(0,0,0,.12); }
-@media print { html { background: #fff; } .sheet { margin: 0; padding: 0; box-shadow: none; max-width: none; } }
-h1 { font-size: 16pt; margin: 18pt 0 8pt; padding-bottom: 4pt; border-bottom: 2px solid #2a78d6; break-after: avoid; }
-h1.pb { break-before: page; }
-h2 { font-size: 12pt; margin: 14pt 0 6pt; break-after: avoid; }
-p { margin: 0 0 8pt; } p.small, figcaption, .side { font-size: 8.8pt; color: #333; }
-table { border-collapse: collapse; width: 100%; margin: 4pt 0 10pt; break-inside: avoid; }
-table.data th, table.data td { border-bottom: 1px solid #dcdbd6; padding: 4pt 5pt; vertical-align: top; font-size: 9pt; }
-table.data th { background: #f0efec; text-align: left; font-weight: 600; }
-table.data .r { text-align: right; font-variant-numeric: tabular-nums; } .nowrap { white-space: nowrap; }
-table.kv th { text-align: left; font-weight: 600; color: #52514e; width: 34%; padding: 2.5pt 8pt 2.5pt 0; vertical-align: top; font-size: 9.5pt; }
-table.kv td { padding: 2.5pt 0; font-size: 9.5pt; overflow-wrap: anywhere; } table.kv.wide th { width: 28%; }
-table.kv2 { margin-bottom: 0; } table.kv2 th, table.kvl th { width: 17%; } table.kv2 td { width: 33%; padding-right: 8pt; }
-table.kv2 th, table.kv2 td, table.kvl th, table.kvl td { padding-top: 1.5pt; padding-bottom: 1.5pt; font-size: 9pt; }
-figure.shape { max-width: 76mm; }
-.figrow { display: grid; gap: 7mm; margin: 6pt 0 10pt; break-inside: avoid; align-items: start; }
-figure { margin: 0; break-inside: avoid; } figure svg { width: 100%; height: auto; display: block; }
-.ft { font-weight: 600; font-size: 10pt; margin-bottom: 3pt; } figcaption { margin-top: 4pt; } .side { padding-top: 18pt; }
-ul { margin: 0 0 10pt; padding-left: 16pt; font-size: 9pt; } li { margin-bottom: 3pt; }
-.cover-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10mm; border-bottom: 3px solid #2a78d6; padding-bottom: 6mm; }
-.cover-top h1 { border: 0; font-size: 22pt; margin: 0 0 3pt; } .cover-top .sub { color: #52514e; font-size: 11pt; }
-.cover-top img { max-height: 22mm; max-width: 55mm; object-fit: contain; }
-.foot { margin-top: 12mm; font-size: 8pt; color: #77766f; border-top: 1px solid #dcdbd6; padding-top: 3mm; }
-</style></head><body><div class="sheet">
+html { scroll-padding-top: 64px; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+.rbar { position: sticky; top: 0; z-index: 20; background: var(--card); border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 8px 18px; }
+.rbar .t { font-weight: 650; flex: 1 1 260px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rbar button { font: inherit; font-size: 13px; color: var(--ink2); background: var(--raise); border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+.rbar button:hover { background: var(--hover); color: var(--ink); }
+.rlayout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 18px; max-width: 1320px; margin: 0 auto; padding: 16px 18px 40px; }
+.toc { position: sticky; top: 64px; align-self: start; max-height: calc(100vh - 80px); overflow: auto; font-size: 13px; }
+.toc b { display: block; color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; margin: 2px 0 6px 8px; }
+.toc a { display: block; padding: 5px 8px; border-radius: 6px; color: var(--ink2); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-left: 3px solid transparent; }
+.toc a:hover { background: var(--hover); color: var(--ink); }
+.toc a.on { color: var(--ink); font-weight: 600; border-left-color: var(--accent); background: var(--hover); }
+.sheet { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 22px 30px; min-width: 0; }
+.hint { background: var(--zone); border-radius: 8px; padding: 8px 12px; font-size: 13px; color: var(--ink2); margin-bottom: 14px; }
+@media (max-width: 900px) { .rlayout { grid-template-columns: minmax(0, 1fr); padding: 12px 10px 30px; } .toc { position: static; max-height: none; } .sheet { padding: 16px; } }
+.rsec { margin-bottom: 8px; }
+.rsec-h { font-size: 19px; margin: 18px 0 10px; padding-bottom: 5px; border-bottom: 2px solid var(--accent); cursor: pointer; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.rsec-h .fold { font-size: 14px; color: var(--muted); transition: transform .15s; }
+.rsec.collapsed .rsec-b { display: none; }
+.rsec.collapsed .rsec-h .fold { transform: rotate(-90deg); }
+h2 { font-size: 15px; margin: 16px 0 6px; }
+p { margin: 0 0 8px; } p.small, figcaption, .side { font-size: 12.5px; color: var(--ink2); }
+table { border-collapse: collapse; width: 100%; margin: 4px 0 12px; }
+.twrap { overflow-x: auto; }
+table.data th, table.data td { border-bottom: 1px solid var(--border); padding: 5px 7px; vertical-align: top; font-size: 13px; }
+table.data th { background: var(--zone); text-align: left; font-weight: 600; }
+table.data .r { text-align: right; font-variant-numeric: tabular-nums; }
+table.sortable th { cursor: pointer; user-select: none; } table.sortable th[data-dir="asc"]::after { content: " ▲"; } table.sortable th[data-dir="desc"]::after { content: " ▼"; }
+table.data tr[data-name] { cursor: pointer; } table.data tbody tr:hover td { background: var(--hover); }
+table.kv th { text-align: left; font-weight: 600; color: var(--ink2); width: 30%; padding: 3px 10px 3px 0; vertical-align: top; font-size: 13px; }
+table.kv td { padding: 3px 0; font-size: 13px; overflow-wrap: anywhere; }
+table.kv2 { margin-bottom: 0; } table.kv2 th, table.kvl th { width: 17%; } table.kv2 td { width: 33%; padding-right: 10px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 8px 0 14px; }
+.kpi { border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; background: var(--raise); }
+.kpi .k { font-size: 12.5px; color: var(--ink2); } .kpi .v { font-size: 23px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.kpi .v small { font-size: 13px; font-weight: 500; color: var(--ink2); margin-left: 3px; } .kpi .d { font-size: 12px; color: var(--muted); line-height: 1.4; }
+.figrow { display: grid; gap: 22px; margin: 8px 0 16px; align-items: start; }
+@media (max-width: 1000px) { .figrow { grid-template-columns: minmax(0, 1fr) !important; } }
+figure { margin: 0; min-width: 0; } figure svg { width: 100%; height: auto; display: block; }
+.ft { font-weight: 650; font-size: 14px; margin-bottom: 4px; } figcaption { margin-top: 6px; } .side { padding-top: 30px; }
+ul { margin: 0 0 12px; padding-left: 18px; font-size: 13px; } li { margin-bottom: 4px; }
+.cover-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+.cover-top h1 { font-size: 26px; margin: 0 0 3px; border: 0; } .cover-top .sub { color: var(--ink2); font-size: 14px; }
+.cover-top img { max-height: 70px; max-width: 220px; object-fit: contain; background: #fff; border-radius: 6px; padding: 4px; }
+.foot { margin-top: 18px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 8px; }
+@media print {
+  @page { size: A4; margin: 14mm 13mm 16mm; }
+  body { background: #fff; font-size: 10pt; } .rbar, .toc, .hint { display: none !important; }
+  .rlayout { display: block; padding: 0; max-width: none; } .sheet { border: 0; padding: 0; }
+  .rsec.pb { break-before: page; } .rsec-h { cursor: default; } .rsec-h .fold { display: none; }
+  .rsec.collapsed .rsec-b { display: block; } .figrow { break-inside: avoid; grid-template-columns: inherit; }
+  figure.shape { max-width: 80mm; } table, .kpis { break-inside: avoid; }
+}
+</style></head><body>
+<div class="rbar"><span class="t">${esc(R.title || 'Sidewall Deflection Analysis')}${R.project ? ` · ${esc(R.project)}` : ''}</span>
+  <button id="rExpand" title="Open every section">Expand all</button><button id="rCollapse" title="Fold every section">Collapse all</button>
+  <button id="rTheme" title="Switch light / dark">◐ Theme</button><button id="rPrint" title="Print or save as PDF">Print</button></div>
+<div class="rlayout">
+<nav class="toc" aria-label="Contents"><b>Contents</b>${toc.map((t) => `<a href="#${t.id}">${esc(t.title)}</a>`).join('')}</nav>
+<main class="sheet">
+<div class="hint"><b>Interactive report.</b> Hover a chart to read values (charts of the same tire follow each other) · drag a box to zoom, Shift+drag to pan, double-click to reset · click to pin a reading · each chart's buttons give full screen, the numbers, and PNG/SVG downloads · click a legend entry to hide a line · hover a tire in the summary table to highlight it in every chart, click it to jump to its section.</div>
 ${out.join('\n')}
 <div class="foot">${esc(foot)} · Generated ${esc(new Date().toLocaleString())} with the Sidewall Deflection Analyzer.</div>
-</div></body></html>`;
+</main></div>
+<script type="application/json" id="chart-specs">${json}<\/script>
+<script>${chartsJs}<\/script>
+<script>${runtimeJs}<\/script>
+</body></html>`;
 }
 
 function coverRows(list) {
@@ -302,7 +369,7 @@ function coverRows(list) {
 function coverHTML(list) {
   const R = REPORT;
   return `<div class="cover-top"><div><h1>${esc(R.title || 'Sidewall Deflection Analysis')}</h1><div class="sub">Sidewall deflection under load: bulge, tilt and bending</div></div>${R.logo ? `<img src="${R.logo}" alt="logo">` : ''}</div>
-    <table class="kv" style="margin-top:6mm">${coverRows(list).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</table>
+    <table class="kv" style="margin-top:14px">${coverRows(list).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</table>
     ${R.objective ? `<h2>Objective</h2><p>${esc(R.objective).replace(/\n/g, '<br>')}</p>` : ''}
     ${R.conclusions ? `<h2>Conclusions</h2><p>${esc(R.conclusions).replace(/\n/g, '<br>')}</p>` : ''}`;
 }
@@ -485,7 +552,12 @@ function svgToPdf(pdf, ops, markup, x0, yTop, width) {
     return M;
   };
   const ATTRS = ['fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'stroke-linejoin', 'font-size', 'font-weight', 'text-anchor', 'dominant-baseline'];
-  const styleOf = (el, inh) => { const st = { ...inh, opacity: el.getAttribute('opacity') ?? 1 }; for (const a of ATTRS) { const v = el.getAttribute(a); if (v != null) st[a] = v; } return st; };
+  const styleOf = (el, inh) => { // group opacity multiplies into everything inside the group
+    const own = parseFloat(el.getAttribute('opacity') ?? 1), gop = inh.gop ?? 1;
+    const st = { ...inh, opacity: own * gop, gop: el.localName === 'g' ? own * gop : gop };
+    for (const a of ATTRS) { const v = el.getAttribute(a); if (v != null) st[a] = v; }
+    return st;
+  };
   const paint = (st, M, path) => {
     const fill = parseColor(st.fill ?? 'black'), stroke = parseColor(st.stroke ?? 'none');
     if ((!fill && !stroke) || !path.length) return;

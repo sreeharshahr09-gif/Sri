@@ -222,6 +222,9 @@ details.check ul { margin: 8px 0 0; padding-left: 18px; }
 <script id="sw-engine">
 /*__ENGINE__*/
 </script>
+<script id="sw-charts">
+/*__CHARTS__*/
+</script>
 <script>
 'use strict';
 // ============================================================== state & settings
@@ -235,10 +238,6 @@ const saveSettings = () => { try { localStorage.setItem('swda-settings', JSON.st
 if (S.settings.theme) document.documentElement.dataset.theme = S.settings.theme;
 
 const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-const f = (v, d = 1) => (v == null || !isFinite(v) ? '–' : Number(v).toFixed(d));
-const fs = (v, d = 1) => (v == null || !isFinite(v) ? '–' : (v > 0 ? '+' : '') + Number(v).toFixed(d));
 const kg = (daN) => (daN == null ? null : (daN * 10) / 9.80665);
 const SLOTS = 8;
 
@@ -420,257 +419,8 @@ function emptyHTML() {
 }
 function wireEmpty() { const b = $('choose2'); if (b) b.onclick = () => $('fileinput').click(); }
 
-// ============================================================== chart toolkit
-function niceTicks(min, max, count = 5) {
-  const span = max - min;
-  if (!(span > 0)) return [min];
-  const raw = span / count, mag = 10 ** Math.floor(Math.log10(raw)), e = raw / mag;
-  const step = (e >= 7.5 ? 10 : e >= 3.5 ? 5 : e >= 1.5 ? 2 : 1) * mag;
-  const out = [];
-  for (let v = Math.ceil(min / step) * step; v <= max + step * 1e-6; v += step) out.push(+v.toFixed(10));
-  return out;
-}
-function niceDomain(min, max, count = 5, pad = 0.04) {
-  const span = max - min || 1;
-  min -= span * pad; max += span * pad;
-  const t = niceTicks(min, max, count), step = t.length > 1 ? t[1] - t[0] : span;
-  return [Math.floor(min / step) * step, Math.ceil(max / step) * step];
-}
-const extent = (arrs) => { let a = Infinity, b = -Infinity; for (const r of arrs) for (const v of r) if (isFinite(v)) { if (v < a) a = v; if (v > b) b = v; } return [a, b]; };
-
-const charts = new Map(); // id -> config (for hover)
-let chartSeq = 0;
-
-/**
- * Line chart in "profile" orientation: values on x, height on y. Hover reads by height.
- * cfg: { w, h, xLabel, yLabel, xDomain?, yDomain?, series:[{name,x,y,color,width,dash,opacity,colors,dots,hover,unit,dec}],
- *        bands:[{y0,y1,label}], vlines:[x], markers:[{x,y,color,label,side}], texts:[{x,y,text,anchor}], yFmt }
- */
-function lineChart(cfg) {
-  const id = `ch${++chartSeq}`;
-  const W = cfg.w || 560, H = cfg.h || 420, m = { l: 58, r: 18, t: 10, b: 44, ...(cfg.m || {}) };
-  const legendSvg = cfg.legendItems ? svgLegend(cfg.legendItems, m.l, 14, W - m.r) : null;
-  if (legendSvg) m.t += legendSvg.h;
-  const pw = W - m.l - m.r, ph = H - m.t - m.b;
-  const xs = cfg.series.map((s) => s.x), ys = cfg.series.map((s) => s.y);
-  const xd = cfg.xDomain || niceDomain(...extent(xs.concat((cfg.vlines || []).map((v) => [v]))));
-  const yd = cfg.yDomain || niceDomain(...extent(ys), 6, 0.02);
-  const X = (v) => m.l + ((v - xd[0]) / (xd[1] - xd[0])) * pw;
-  const Y = cfg.yFlip ? (v) => m.t + ((v - yd[0]) / (yd[1] - yd[0])) * ph : (v) => m.t + ph - ((v - yd[0]) / (yd[1] - yd[0])) * ph;
-  const Yinv = cfg.yFlip ? (py) => yd[0] + ((py - m.t) / ph) * (yd[1] - yd[0]) : (py) => yd[0] + ((m.t + ph - py) / ph) * (yd[1] - yd[0]);
-  const grid = css('--grid'), ink2 = css('--ink2'), muted = css('--muted'), zone = css('--zone'), ink = css('--ink'), card = css('--card');
-  let g = '';
-  for (const b of cfg.bands || []) {
-    const ya = Y(Math.max(b.y0, yd[0])), yb = Y(Math.min(b.y1, yd[1]));
-    const y0 = Math.max(ya, yb), y1 = Math.min(ya, yb);
-    if (b.fill !== false) g += `<rect x="${m.l}" y="${y1}" width="${pw}" height="${Math.max(0, y0 - y1)}" fill="${zone}"/>`;
-    if (b.label) g += `<text x="${m.l + pw - 6}" y="${(y0 + y1) / 2}" text-anchor="end" dominant-baseline="middle" font-size="11" fill="${muted}">${esc(b.label)}</text>`;
-  }
-  for (const v of niceTicks(xd[0], xd[1], cfg.xTicks || 6)) {
-    g += `<line x1="${X(v)}" x2="${X(v)}" y1="${m.t}" y2="${m.t + ph}" stroke="${grid}"/>`;
-    g += `<text x="${X(v)}" y="${m.t + ph + 16}" text-anchor="middle" font-size="11.5" fill="${ink2}">${+v.toFixed(6)}</text>`;
-  }
-  for (const v of niceTicks(yd[0], yd[1], cfg.yTicks || 6)) {
-    g += `<line x1="${m.l}" x2="${m.l + pw}" y1="${Y(v)}" y2="${Y(v)}" stroke="${grid}"/>`;
-    g += `<text x="${m.l - 8}" y="${Y(v)}" text-anchor="end" dominant-baseline="middle" font-size="11.5" fill="${ink2}">${cfg.yFmt ? cfg.yFmt(v) : +v.toFixed(6)}</text>`;
-  }
-  for (const v of cfg.vlines || []) if (v >= xd[0] && v <= xd[1]) g += `<line x1="${X(v)}" x2="${X(v)}" y1="${m.t}" y2="${m.t + ph}" stroke="${muted}" stroke-width="1"/>`;
-  g += `<text x="${m.l + pw / 2}" y="${H - 6}" text-anchor="middle" font-size="12" fill="${ink2}">${esc(cfg.xLabel || '')}</text>`;
-  g += `<text transform="translate(14 ${m.t + ph / 2}) rotate(-90)" text-anchor="middle" font-size="12" fill="${ink2}">${esc(cfg.yLabel || '')}</text>`;
-  if (legendSvg) g += legendSvg.g;
-  g += `<clipPath id="${id}c"><rect x="${m.l}" y="${m.t}" width="${pw}" height="${ph}"/></clipPath><g clip-path="url(#${id}c)">`;
-  for (const s of cfg.series) {
-    const n = s.x.length;
-    if (s.dots) {
-      for (let i = 0; i < n; i++) g += `<circle cx="${X(s.x[i]).toFixed(1)}" cy="${Y(s.y[i]).toFixed(1)}" r="${s.r || 1.6}" fill="${s.color}" opacity="${s.opacity ?? 0.4}"/>`;
-      continue;
-    }
-    if (s.colors) { // per-point colours: draw runs of equal colour
-      let run = null, d = '';
-      const flush = () => { if (run) g += `<path d="${d}" fill="none" stroke="${run}" stroke-width="${s.width || 5}" stroke-linecap="round" stroke-linejoin="round"/>`; };
-      for (let i = 1; i < n; i++) {
-        const c = s.colors[i];
-        if (c !== run) { flush(); run = c; d = `M${X(s.x[i - 1]).toFixed(1)} ${Y(s.y[i - 1]).toFixed(1)}`; }
-        d += `L${X(s.x[i]).toFixed(1)} ${Y(s.y[i]).toFixed(1)}`;
-      }
-      flush();
-      continue;
-    }
-    let d = '';
-    for (let i = 0; i < n; i++) d += `${i ? 'L' : 'M'}${X(s.x[i]).toFixed(1)} ${Y(s.y[i]).toFixed(1)}`;
-    g += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="${s.width || 2}" ${s.dash ? `stroke-dasharray="${s.dash}"` : ''} opacity="${s.opacity ?? 1}" stroke-linejoin="round" stroke-linecap="round"/>`;
-  }
-  g += `</g>`;
-  for (const mk of cfg.markers || []) {
-    g += `<circle cx="${X(mk.x)}" cy="${Y(mk.y)}" r="5" fill="${mk.color}" stroke="${card}" stroke-width="2"/>`;
-    if (mk.label) {
-      const right = mk.side !== 'left';
-      g += `<text x="${X(mk.x) + (right ? 9 : -9)}" y="${Y(mk.y)}" text-anchor="${right ? 'start' : 'end'}" dominant-baseline="middle" font-size="11.5" fill="${ink}" paint-order="stroke" stroke="${card}" stroke-width="3">${esc(mk.label)}</text>`;
-    }
-  }
-  for (const t of cfg.texts || []) {
-    g += `<text x="${t.px != null ? t.px : X(t.x)}" y="${t.py != null ? t.py : Y(t.y)}" text-anchor="${t.anchor || 'start'}" dominant-baseline="middle" font-size="${t.size || 11.5}" font-weight="${t.bold ? 650 : 400}" fill="${t.color || ink2}" paint-order="stroke" stroke="${card}" stroke-width="3">${esc(t.text)}</text>`;
-  }
-  g += `<line class="hx" x1="${m.l}" x2="${m.l + pw}" y1="0" y2="0" stroke="${muted}" stroke-dasharray="3 3" visibility="hidden"/>`;
-  g += `<rect class="hit" x="${m.l}" y="${m.t}" width="${pw}" height="${ph}" fill="transparent"/>`;
-  for (const hd of cfg.handles || []) {
-    if (!(hd.y >= yd[0] && hd.y <= yd[1])) continue;
-    g += `<g class="handle" data-key="${hd.key}" transform="translate(0 ${Y(hd.y).toFixed(1)})">
-      <line x1="${m.l}" x2="${m.l + pw}" y1="0" y2="0" stroke="${hd.color}" stroke-width="1.6" stroke-dasharray="6 4"/>
-      <line x1="${m.l}" x2="${m.l + pw}" y1="0" y2="0" stroke="transparent" stroke-width="14"/>
-      <rect x="${m.l + pw - 30}" y="-7" width="26" height="14" rx="7" fill="${hd.color}"/>
-      <text x="${m.l + pw - 17}" y="0.5" text-anchor="middle" dominant-baseline="middle" font-size="10" fill="#fff">⇕</text>
-      <text class="hl" x="${m.l + pw - 36}" y="-7" text-anchor="end" font-size="11" fill="${ink}" paint-order="stroke" stroke="${card}" stroke-width="3">${esc(hd.label)} · ${hd.y.toFixed(1)} mm</text></g>`;
-  }
-  charts.set(id, { cfg, X, Y, Yinv, yd, m, W, H, ph });
-  return `<div class="chartwrap" data-chart="${id}"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(cfg.title || '')}" font-family="system-ui, sans-serif">${g}</svg><div class="tip"></div></div>`;
-}
-
-function wireCharts(root) {
-  root.querySelectorAll('.chartwrap[data-chart]').forEach((wrap) => {
-    const ch = charts.get(wrap.dataset.chart);
-    if (!ch) return;
-    const svg = wrap.querySelector('svg'), tip = wrap.querySelector('.tip'), hx = svg.querySelector('.hx'), hit = svg.querySelector('.hit');
-    if (!hit) return;
-    // draggable range lines
-    svg.querySelectorAll('.handle').forEach((hg) => {
-      const key = hg.dataset.key, hd = (ch.cfg.handles || []).find((h) => h.key === key), lbl = hg.querySelector('.hl');
-      let drag = false, value = hd.y;
-      const toY = (ev) => { const r = svg.getBoundingClientRect(); return (ev.clientY - r.top) * (ch.W / r.width); };
-      hg.addEventListener('pointerdown', (ev) => { ev.preventDefault(); drag = true; hg.setPointerCapture(ev.pointerId); });
-      hg.addEventListener('pointermove', (ev) => {
-        if (!drag) return;
-        const py = Math.min(ch.m.t + ch.ph, Math.max(ch.m.t, toY(ev)));
-        value = Math.round(ch.Yinv(py) * 2) / 2;
-        hg.setAttribute('transform', `translate(0 ${ch.Y(value).toFixed(1)})`);
-        lbl.textContent = `${hd.label} · ${value.toFixed(1)} mm`;
-      });
-      hg.addEventListener('pointerup', () => { if (drag) { drag = false; ch.cfg.onHandle?.(key, value); } });
-    });
-    const hoverSeries = ch.cfg.series.filter((s) => s.hover);
-    if (!hoverSeries.length) return;
-    // y-sorted copies for interpolation
-    const sorted = hoverSeries.map((s) => {
-      const idx = Array.from(s.y.keys()).sort((a, b) => s.y[a] - s.y[b]);
-      return { s, y: Float64Array.from(idx, (i) => s.y[i]), x: Float64Array.from(idx, (i) => s.x[i]) };
-    });
-    const move = (ev) => {
-      const r = svg.getBoundingClientRect(), k = ch.W / r.width;
-      const sy = (ev.clientY - r.top) * k;
-      const yv = ch.Yinv(sy);
-      hx.setAttribute('y1', sy); hx.setAttribute('y2', sy); hx.setAttribute('visibility', 'visible');
-      const rows = sorted.filter((o) => yv >= o.y[0] && yv <= o.y[o.y.length - 1])
-        .map((o) => `<div class="row"><i class="sw" style="background:${o.s.tipColor || o.s.color}"></i>${esc(o.s.name)}: <b>${fs(SW.interp([yv], o.y, o.x)[0], o.s.dec ?? 1)}</b> ${esc(o.s.unit || '')}</div>`);
-      tip.innerHTML = `<div class="muted">${esc(ch.cfg.yName || 'height')}: ${(ch.cfg.yFmt ? ch.cfg.yFmt(yv) : yv.toFixed(0))}${esc(ch.cfg.yUnit || '')}</div>${rows.join('') || '<div class="muted">no data at this height</div>'}`;
-      tip.style.display = 'block';
-      const wr = wrap.getBoundingClientRect();
-      let left = ev.clientX - wr.left + 14, top = ev.clientY - wr.top + 12;
-      if (left + tip.offsetWidth > wr.width) left = ev.clientX - wr.left - tip.offsetWidth - 14;
-      tip.style.left = `${Math.max(0, left)}px`; tip.style.top = `${top}px`;
-    };
-    hit.addEventListener('mousemove', move);
-    hit.addEventListener('mouseleave', () => { tip.style.display = 'none'; hx.setAttribute('visibility', 'hidden'); });
-  });
-}
-
-/** Legend drawn inside an SVG: wraps onto more lines when needed. Returns {g, h}. */
-function svgLegend(items, x0, y0, xMax) {
-  const ink2 = css('--ink2'), card = css('--card');
-  let x = x0, y = y0, g = '';
-  for (const it of items) {
-    const label = it.name.length > 48 ? `${it.name.slice(0, 47)}…` : it.name;
-    const w = 26 + label.length * 6.1 + 14;
-    if (x + w > xMax && x > x0) { x = x0; y += 17; }
-    if (it.dot) g += `<circle cx="${x + 9}" cy="${y}" r="3.5" fill="${it.color}"/>`;
-    else if (it.gradient) [0, 0.25, 0.5, 0.75].forEach((t, k) => { g += `<line x1="${x + k * 5}" x2="${x + k * 5 + 5}" y1="${y}" y2="${y}" stroke="${turboCss(t + 0.125)}" stroke-width="4"/>`; });
-    else g += `<line x1="${x}" x2="${x + 20}" y1="${y}" y2="${y}" stroke="${it.color}" stroke-width="${it.opacity ? 1.6 : 2.6}" ${it.dash ? 'stroke-dasharray="5 3"' : ''} opacity="${it.opacity ?? 1}" stroke-linecap="round"/>`;
-    g += `<text x="${x + 26}" y="${y}" dominant-baseline="middle" font-size="11.5" fill="${ink2}">${esc(label)}</text>`;
-    x += w;
-  }
-  return { g, h: y - y0 + 22 };
-}
-
-/** Horizontal grouped bars. rows: [{label}], groups: [{name,color,values:[]}] */
-function barChart(cfg) {
-  const W = cfg.w || 560, rows = cfg.rows, groups = cfg.groups;
-  const bh = cfg.barH || 16, gap = 3, rowGap = 16, m = { l: cfg.ml || 120, r: 56, t: 6, b: 34 };
-  const legendSvg = cfg.legendItems ? svgLegend(cfg.legendItems, 8, 14, W - m.r) : null;
-  if (legendSvg) m.t += legendSvg.h;
-  const rowH = groups.length * (bh + gap) - gap;
-  const H = m.t + rows.length * (rowH + rowGap) - rowGap + m.b;
-  const pw = W - m.l - m.r;
-  const vals = groups.flatMap((g) => g.values).filter((v) => v != null && isFinite(v));
-  const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals) || 1;
-  const nd = niceDomain(lo, hi, 5, 0.02);
-  const xd = [lo >= 0 ? 0 : nd[0], hi <= 0 ? 0 : nd[1]];
-  const X = (v) => m.l + ((v - xd[0]) / (xd[1] - xd[0])) * pw;
-  const grid = css('--grid'), ink2 = css('--ink2'), ink = css('--ink'), muted = css('--muted');
-  let g = '';
-  for (const v of niceTicks(xd[0], xd[1], 5)) {
-    g += `<line x1="${X(v)}" x2="${X(v)}" y1="${m.t}" y2="${H - m.b}" stroke="${grid}"/>`;
-    g += `<text x="${X(v)}" y="${H - m.b + 16}" text-anchor="middle" font-size="11.5" fill="${ink2}">${+v.toFixed(6)}</text>`;
-  }
-  g += `<line x1="${X(0)}" x2="${X(0)}" y1="${m.t}" y2="${H - m.b}" stroke="${muted}"/>`;
-  rows.forEach((row, i) => {
-    const y0 = m.t + i * (rowH + rowGap);
-    g += `<text x="${m.l - 8}" y="${y0 + rowH / 2}" text-anchor="end" dominant-baseline="middle" font-size="12" fill="${ink}">${esc(row.label)}</text>`;
-    groups.forEach((gr, j) => {
-      const v = gr.values[i];
-      if (v == null || !isFinite(v)) return;
-      const y = y0 + j * (bh + gap), x0 = X(Math.min(0, v)), x1 = X(Math.max(0, v));
-      g += `<rect x="${x0}" y="${y}" width="${Math.max(1, x1 - x0)}" height="${bh}" rx="3" fill="${gr.colors ? gr.colors[i] : gr.color}"><title>${esc(gr.name)} · ${esc(row.label)}: ${f(v, cfg.dec ?? 1)}${esc(cfg.unit || '')}</title></rect>`;
-      g += `<text x="${v >= 0 ? x1 + 5 : x0 - 5}" y="${y + bh / 2}" text-anchor="${v >= 0 ? 'start' : 'end'}" dominant-baseline="middle" font-size="11.5" fill="${ink}">${f(v, cfg.dec ?? 1)}${esc(cfg.unit || '')}</text>`;
-    });
-  });
-  g += `<text x="${m.l + pw / 2}" y="${H - 4}" text-anchor="middle" font-size="12" fill="${ink2}">${esc(cfg.xLabel || '')}</text>`;
-  if (legendSvg) g += legendSvg.g;
-  return `<div class="chartwrap"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(cfg.title || '')}" font-family="system-ui, sans-serif">${g}</svg></div>`;
-}
-
-const turboCss = (t) => `rgb(${SW.turbo(t).join(',')})`;
-function colorbarSVG(lo, hi, caption, dec = 1, w = 520) {
-  const m = { l: 58, r: 18 }, pw = w - m.l - m.r, H = 58, N = 64;
-  const ink2 = css('--ink2');
-  let g = '';
-  for (let i = 0; i < N; i++) g += `<rect x="${(m.l + (i * pw) / N).toFixed(2)}" y="4" width="${(pw / N + 0.6).toFixed(2)}" height="12" fill="${turboCss((i + 0.5) / N)}"/>`;
-  for (const v of niceTicks(lo, hi, 4).filter((v) => v >= lo && v <= hi)) {
-    const x = m.l + ((v - lo) / (hi - lo || 1)) * pw;
-    g += `<line x1="${x}" x2="${x}" y1="16" y2="20" stroke="${ink2}"/><text x="${x}" y="31" text-anchor="middle" font-size="11.5" fill="${ink2}">${+v.toFixed(6)}</text>`;
-  }
-  g += `<text x="${m.l + pw / 2}" y="50" text-anchor="middle" font-size="12" fill="${ink2}">${esc(caption)}: blue = less, red = more (${f(lo, dec)} to ${f(hi, dec)})</text>`;
-  return `<div class="chartwrap"><svg viewBox="0 0 ${w} ${H}" role="img" aria-label="colour scale" font-family="system-ui, sans-serif">${g}</svg></div>`;
-}
-const svgOf = (html) => (html.match(/<svg[\s\S]*<\/svg>/) || [''])[0];
-const legendHTML = (items) => `<div class="legend">${items.map((it) => `<span><i class="${it.cls || ''}" style="background:${it.color}"></i>${esc(it.name)}</span>`).join('')}</div>`;
+// ============================================================== chart helpers (charts.js has the toolkit)
 const explainHTML = (what, how, mine, label = 'For this tire') => `<div class="explain"><p><b>What it shows.</b> ${what}</p><p><b>How to read it.</b> ${how}</p>${mine ? `<p class="this"><b>${label}.</b> ${mine}</p>` : ''}</div>`;
-
-function savePNG(wrap, name) {
-  const svg = wrap.querySelector('svg');
-  const vb = svg.viewBox.baseVal, scale = 2;
-  const clone = svg.cloneNode(true);
-  clone.setAttribute('width', vb.width); clone.setAttribute('height', vb.height);
-  clone.insertAdjacentHTML('afterbegin', `<rect width="100%" height="100%" fill="${css('--card')}"/>`);
-  clone.querySelectorAll('.hx,.hit').forEach((n) => n.remove());
-  const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml' }));
-  const img = new Image();
-  img.onload = () => {
-    const c = document.createElement('canvas');
-    c.width = vb.width * scale; c.height = vb.height * scale;
-    const ctx = c.getContext('2d'); ctx.scale(scale, scale); ctx.drawImage(img, 0, 0);
-    URL.revokeObjectURL(url);
-    c.toBlob((b) => download(b, `${name}.png`));
-  };
-  img.src = url;
-}
-function download(blob, name) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob); a.download = name;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}
-const csvCell = (v) => (v == null ? '' : typeof v === 'number' ? (isFinite(v) ? +v.toFixed(6) : '') : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
-const toCSV = (rows) => rows.map((r) => r.map(csvCell).join(',')).join('\n');
-const slug = (s) => String(s).replace(/\.[^.]+$/, '').replace(/[^\w.-]+/g, '_').slice(0, 80);
 
 // ============================================================== helpers on results
 const rimBottom = () => S.settings.rimEnd === 'bottom';
@@ -736,16 +486,14 @@ function tireModel(t, o = {}) {
   const cb = COLOR_BY[colorBy] || COLOR_BY.du;
   const q = cb.get(D, res);
   const qlo = Math.min(...q), qhi = Math.max(...q);
-  const qcol = Array.from(q, (v) => turboCss(Math.round(((v - qlo) / (qhi - qlo || 1)) * 48) / 48));
+  const colorOptions = Object.fromEntries(Object.entries(COLOR_BY).map(([k, c]) => [k, { name: c.name, unit: c.unit, dec: c.dec, values: Array.from(c.get(D, res)) }]));
   const pin = res.passes.inflated, pld = res.passes.loaded, xb = res.band.x_band;
-  const series = [];
-  if (showRaw) {
-    series.push({ name: 'measured (inflated)', x: Array.from(pin.x, (v) => xb - v), y: pin.z, dots: true, color: css('--inf'), opacity: 0.35 });
-    series.push({ name: 'measured (loaded)', x: Array.from(pld.x, (v) => xb - v), y: pld.z, dots: true, color: css('--load'), opacity: 0.35 });
-  }
-  series.push({ name: 'Inflated', x: D.inf.u, y: D.inf.z, color: css('--inf'), width: 2.2, hover: true, unit: 'mm out' });
-  series.push({ name: 'Loaded', x: D.matched.u_load, y: D.matched.z_load, colors: qcol, width: 6, hover: true, unit: 'mm out', tipColor: css('--load') });
-  if (!forReport) series.push({ name: cb.name, x: q, y: D.matched.z_load, hover: true, unit: cb.unit, dec: cb.dec, color: 'transparent', width: 0, tipColor: turboCss(0.85) });
+  const series = [
+    { name: 'measured (inflated)', group: 'measured points', x: Array.from(pin.x, (v) => xb - v), y: pin.z, dots: true, color: css('--inf'), opacity: 0.35 },
+    { name: 'measured (loaded)', group: 'measured points', x: Array.from(pld.x, (v) => xb - v), y: pld.z, dots: true, color: css('--load'), opacity: 0.35 },
+    { name: 'Inflated', group: 'inflated only', x: D.inf.u, y: D.inf.z, color: css('--inf'), width: 2.2, hover: true, unit: 'mm out' },
+    { name: 'Loaded', group: 'loaded, coloured by movement', x: D.matched.u_load, y: D.matched.z_load, colorKey: true, width: 6, hover: true, unit: 'mm out', tipColor: css('--load') },
+  ];
   const zTop = Math.max(...pin.z, ...pld.z), zBot = Math.min(...pin.z, ...pld.z);
   const rimTopDrawn = S.settings.rimDraw === 'top';
   const flipShape = rimTopDrawn === rimBottom();
@@ -754,14 +502,14 @@ function tireModel(t, o = {}) {
   const kq = Array.from(q).indexOf(qhi);
   const rg = m.range, startSide = rimBottom() ? 'rim side' : 'shoulder side';
   const shapeLegend = [{ name: 'inflated only', color: css('--inf') }, { name: 'loaded, coloured by movement', gradient: true },
-    ...(showRaw ? [{ name: 'measured points', color: css('--muted'), dot: true }] : [])];
+    { name: 'measured points', color: css('--muted'), dot: true }];
   const shapeH = forReport ? 660 : 640;
   const shape = lineChart({
     title: 'Sidewall shape', w: 520, h: shapeH, xDomain: niceDomain(xmin, xmax, 5, 0), yDomain: niceDomain(zBot, zTop, 6, 0.01),
     xLabel: 'sideways position (mm), 0 = shoulder band → further out', yLabel: 'height in the scanner (mm)', yName: 'height', yUnit: ' mm',
-    series, vlines: [0], yFlip: flipShape, legendItems: forReport ? shapeLegend : null,
-    markers: [{ x: mw.inflated_u, y: mw.inflated_z, color: css('--inf'), label: 'widest (inflated)', side: 'left' },
-      { x: D.matched.u_load[kq], y: D.matched.z_load[kq], color: turboCss(1), label: `max: ${f(qhi, cb.dec)} ${cb.unit}` }],
+    series, vlines: [0], yFlip: flipShape, legend: shapeLegend, hidden: showRaw ? [] : ['measured points'],
+    colorOptions, colorBy, markColorMax: true, fileName: `${slug(t.label)}_shape`,
+    markers: [{ x: mw.inflated_u, y: mw.inflated_z, color: css('--inf'), label: 'widest (inflated)', side: 'left', group: 'inflated only' }],
     texts: [{ px: 64, py: shapeH - 58, text: ends[0], bold: true }, { px: 64, py: forReport ? 46 : 22, text: ends[1], bold: true }],
     handles: forReport ? null : [
       { key: 'zStart', y: rg.z_start, color: css('--ink2'), label: `sidewall start (${startSide})` },
@@ -769,6 +517,8 @@ function tireModel(t, o = {}) {
       { key: 'edgeLoaded', y: rg.edge_loaded, color: css('--load'), label: 'shoulder edge · loaded' },
     ],
     onHandle: (key, v) => setRange(t, key, v),
+    onColorBy: forReport ? null : (k) => { S.settings.colorBy = k; saveSettings(); renderMain(); },
+    onLegend: forReport ? null : (name, hidden) => { if (name === 'measured points') { S.settings.showRaw = !hidden; saveSettings(); } },
   });
   const pHi = pctAt(res, D.matched.z_inf[kq]), kl = Array.from(q).indexOf(qlo), pLo = pctAt(res, D.matched.z_inf[kl]);
   const shapeTx = {
@@ -777,22 +527,21 @@ function tireModel(t, o = {}) {
     mine: `The red part is at about <b>${pctFmt(pHi)}</b> of the height above the rim (${where(pHi)}). That is where ${cb.noun} is largest: <b>${f(qhi, cb.dec)} ${cb.unit}</b>. `
       + `The bluest part is at about ${pctFmt(pLo)} (${f(qlo, cb.dec)} ${cb.unit}${qlo < 0 && cb.neg ? `; ${cb.neg}` : ''}). The shoulder band moves <b>${f(res.band.delta, 1)} mm</b> toward the rim.`,
   };
-  const colorbar = colorbarSVG(qlo, qhi, `${cb.name} (${cb.unit})`, cb.dec);
 
   // ---- 2. bulge
   const hB = pctFromRim(res, D.matched.z_inf), hBf = pctFromRim(res, Dfine.matched.z_inf);
   const bands = zoneBands(res);
-  const pct = { w: 520, h: forReport ? 370 : 420, yDomain: [0, 100], yFmt: pctFmt, yFlip: rimTopDrawn, yName: 'height above rim',
-    yLabel: 'height above the rim (% of sidewall)', vlines: [0], bands };
+  const pct = { w: 520, h: forReport ? 370 : 420, yDomain: [0, 100], yFmt: 'pct', yFlip: rimTopDrawn, yName: 'height above rim',
+    yLabel: 'height above the rim (% of sidewall)', vlines: [0], bands, sync: `tire${t.id}` };
   const faint = css('--change');
-  const bulge = lineChart({ ...pct, title: 'Outward bulge', xLabel: 'outward deflection (mm)',
-    legendItems: forReport ? [{ name: 'outward deflection', color: faint }, { name: 'less smoothed', color: faint, opacity: 0.35 }, { name: 'same-height subtraction', color: css('--naive'), dash: true }] : null,
+  const bulge = lineChart({ ...pct, title: 'Outward bulge', xLabel: 'outward deflection (mm)', fileName: `${slug(t.label)}_bulge`,
+    legend: [{ name: 'outward deflection', color: faint }, { name: 'less smoothed', color: faint, opacity: 0.35 }, { name: 'same-height subtraction', color: css('--naive'), dash: true }],
     series: [
       { name: 'less smoothed', x: Dfine.matched.du, y: hBf, color: faint, width: 1.2, opacity: 0.35 },
-      { name: 'same height (simple)', x: D.naive.du, y: pctFromRim(res, D.naive.z), color: css('--naive'), width: 1.6, dash: '6 4', hover: true, unit: 'mm' },
-      { name: 'Outward deflection', x: D.matched.du, y: hB, color: faint, width: 2.6, hover: true, unit: 'mm' },
+      { name: 'same height (simple)', group: 'same-height subtraction', x: D.naive.du, y: pctFromRim(res, D.naive.z), color: css('--naive'), width: 1.6, dash: '6 4', hover: true, unit: 'mm' },
+      { name: 'Outward deflection', group: 'outward deflection', x: D.matched.du, y: hB, color: faint, width: 2.6, hover: true, unit: 'mm' },
     ],
-    markers: [{ x: m.matched.peak_outward_mm, y: pctAt(res, m.matched.inflated_z_of_that_point), color: faint, label: `${f(m.matched.peak_outward_mm, 1)} mm` }],
+    markers: [{ x: m.matched.peak_outward_mm, y: pctAt(res, m.matched.inflated_z_of_that_point), color: faint, label: `${f(m.matched.peak_outward_mm, 1)} mm`, group: 'outward deflection' }],
   });
   const pPk = pctAt(res, m.matched.inflated_z_of_that_point);
   const bulgeTx = {
@@ -804,10 +553,10 @@ function tireModel(t, o = {}) {
   };
 
   // ---- 3. tilt
-  const tilt = lineChart({ ...pct, title: 'Tilt', xLabel: 'tilt change (degrees), + = leans further out',
-    legendItems: forReport ? [{ name: 'tilt change', color: faint }, { name: 'less smoothed', color: faint, opacity: 0.35 }] : null,
+  const tilt = lineChart({ ...pct, title: 'Tilt', xLabel: 'tilt change (degrees), + = leans further out', fileName: `${slug(t.label)}_tilt`,
+    legend: [{ name: 'tilt change', color: faint }, { name: 'less smoothed', color: faint, opacity: 0.35 }],
     series: [{ name: 'less smoothed', x: D.matched.dtheta, y: hB, color: faint, width: 1.2, opacity: 0.35 },
-      { name: 'Tilt change', x: D.tiltS, y: hB, color: faint, width: 2.6, hover: true, unit: '°' }] });
+      { name: 'Tilt change', group: 'tilt change', x: D.tiltS, y: hB, color: faint, width: 2.6, hover: true, unit: '°' }] });
   let kT = 0;
   D.matched.dtheta.forEach((v, i) => { if (Math.abs(v) > Math.abs(D.matched.dtheta[kT])) kT = i; });
   const tMax = D.matched.dtheta[kT], pT = hB[kT];
@@ -820,12 +569,12 @@ function tireModel(t, o = {}) {
   };
 
   // ---- 4. bending
-  const bend = lineChart({ ...pct, title: 'Bending', xLabel: 'bending strain at the surface (%)',
-    legendItems: forReport ? [{ name: 'bending strain', color: faint }, { name: 'less smoothed (peaks read here)', color: faint, opacity: 0.35 }] : null,
-    series: [{ name: 'less smoothed', x: D.strain, y: hB, color: faint, width: 1.2, opacity: 0.35 },
-      { name: 'Bending strain', x: D.strainS, y: hB, color: faint, width: 2.6, hover: true, unit: '%' }],
+  const bend = lineChart({ ...pct, title: 'Bending', xLabel: 'bending strain at the surface (%)', fileName: `${slug(t.label)}_bending`,
+    legend: [{ name: 'bending strain', color: faint }, { name: 'less smoothed (peaks read here)', color: faint, opacity: 0.35 }],
+    series: [{ name: 'less smoothed', group: 'less smoothed (peaks read here)', x: D.strain, y: hB, color: faint, width: 1.2, opacity: 0.35, hover: true, unit: '% (less smoothed)' },
+      { name: 'Bending strain', group: 'bending strain', x: D.strainS, y: hB, color: faint, width: 2.6, hover: true, unit: '%' }],
     markers: m.hinges.slice(0, 2).map((h) => ({ x: Math.sign(h.dkappa_per_m) * h.surface_strain_pct, y: pctAt(res, h.z_inflated), color: faint,
-      label: `≈${f(h.surface_strain_pct, 1)}%`, side: h.dkappa_per_m < 0 ? 'left' : 'right' })) });
+      label: `≈${f(h.surface_strain_pct, 1)}%`, side: h.dkappa_per_m < 0 ? 'left' : 'right', group: 'less smoothed (peaks read here)' })) });
   const bendTx = {
     what: 'How sharply the sidewall is being bent under load, turned into an estimate of how much the outer rubber surface stretches (strain, %).',
     how: 'Peaks are the places that flex the most every time the wheel turns. That is where cracks and heat start first. Right = bent outward more than before; left = bent the other way.',
@@ -837,11 +586,11 @@ function tireModel(t, o = {}) {
   };
 
   // ---- 5. zones
-  const zonesC = barChart({ title: 'Zones', w: 520, ml: 108, unit: '%', dec: 0, xLabel: '% of the whole sidewall',
-    legendItems: forReport ? [{ name: 'share of the bulge', color: faint }, { name: 'share of the bending', color: css('--energy') }] : null,
+  const zonesC = barChart({ title: 'Zones', w: 520, ml: 108, unit: '%', dec: 0, xLabel: '% of the whole sidewall', rowName: 'zone', fileName: `${slug(t.label)}_zones`,
+    legend: [{ name: 'share of the bulge', color: faint, box: true }, { name: 'share of the bending', color: css('--energy'), box: true }],
     rows: res.zones.map((z) => ({ label: z.zone })),
-    groups: [{ name: 'Share of the bulge', color: faint, values: res.zones.map((z) => z.share_of_bulge_pct) },
-      { name: 'Share of the bending', color: css('--energy'), values: res.zones.map((z) => z.share_of_bending_energy_pct) }] });
+    groups: [{ name: 'share of the bulge', color: faint, values: res.zones.map((z) => z.share_of_bulge_pct) },
+      { name: 'share of the bending', color: css('--energy'), values: res.zones.map((z) => z.share_of_bending_energy_pct) }] });
   const bigBulge = res.zones.reduce((a, b) => (b.share_of_bulge_pct > a.share_of_bulge_pct ? b : a));
   const bigBend = res.zones.reduce((a, b) => (b.share_of_bending_energy_pct > a.share_of_bending_energy_pct ? b : a));
   const zonesTx = {
@@ -862,7 +611,7 @@ function tireModel(t, o = {}) {
   ].filter(Boolean);
 
   return { t, res, m, chips, kpis, peak, cb, rg, startSide, ends, rimTopDrawn,
-    shape: { svg: shape, colorbar, ...shapeTx, title: 'Sidewall shape, coloured by how much it moves' },
+    shape: { svg: shape, ...shapeTx, title: 'Sidewall shape, coloured by how much it moves' },
     bulge: { svg: bulge, ...bulgeTx, title: 'How far each part pushes out' },
     tilt: { svg: tilt, ...tiltTx, title: 'How much each part tilts' },
     bend: { svg: bend, ...bendTx, title: 'Where the sidewall bends hardest' },
@@ -877,12 +626,13 @@ const DETAIL_FIELDS = [
 ];
 
 function renderSingle(main, t) {
-  charts.clear();
+  clearCharts();
   const M = tireModel(t), res = M.res, rg = M.rg, fileName = slug(t.name);
+  void fileName;
   const sm = S.settings.smoothMm;
   const missing = ['load_daN', 'radial_deflection_mm'].filter((k) => t.meta[k] == null);
-  const card = (n, sec, legend, extra = '') => `<section class="card"><div class="cardhead"><h3>${n} · ${sec.title}</h3><button class="btn ghost png" data-name="${fileName}_${n}">Save PNG</button></div>
-      ${legend}${sec.svg}${explainHTML(sec.what, sec.how, sec.mine)}${extra}</section>`;
+  const card = (n, sec, extra = '') => `<section class="card"><div class="cardhead"><h3>${n} · ${sec.title}</h3></div>
+      ${sec.svg}${explainHTML(sec.what, sec.how, sec.mine)}${extra}</section>`;
   main.innerHTML = `
   <section class="panel first">
     <div class="titlebar"><div><h2>${esc(t.label)}</h2><div class="small muted">${esc(t.name)}</div></div>
@@ -899,14 +649,10 @@ function renderSingle(main, t) {
     </details>
   </section>
   <section class="card" style="margin-bottom:16px">
-    <div class="cardhead"><h3>1 · ${M.shape.title}</h3>
-      <div class="opts"><label class="ctl">Colour by <select id="colorBy">${Object.entries(COLOR_BY).map(([k, v]) => `<option value="${k}" ${k === S.settings.colorBy ? 'selected' : ''}>${v.name}</option>`).join('')}</select></label>
-      <label class="ctl"><input type="checkbox" id="showRaw" ${S.settings.showRaw ? 'checked' : ''}> show measured points</label>
-      <button class="btn ghost png" data-name="${fileName}_1">Save PNG</button></div></div>
+    <div class="cardhead"><h3>1 · ${M.shape.title}</h3></div>
     <div class="chart-split">
-      <div>${M.shape.svg}${M.shape.colorbar}</div>
-      <div>${legendHTML([{ name: 'Inflated only', color: css('--inf') }, { name: 'Loaded (coloured)', color: `linear-gradient(90deg,${turboCss(0)},${turboCss(0.5)},${turboCss(1)})` }, ...(S.settings.showRaw ? [{ name: 'measured points', color: css('--muted'), cls: 'dotk' }] : [])])}
-      ${explainHTML(M.shape.what, M.shape.how, M.shape.mine)}
+      <div>${M.shape.svg}</div>
+      <div>${explainHTML(M.shape.what, M.shape.how, M.shape.mine)}
         <div class="range" id="rangeBox">
           <h4>Analysis range <span class="badge ${rg.manual ? 'adj' : ''}">${rg.manual ? 'adjusted by you' : 'automatic'}</span></h4>
           <div class="small muted">Where the sidewall starts and ends in each scan. The tool finds these automatically; if a line is in the wrong place, drag it on the chart or type a height (mm). Each tire keeps its own setting.</div>
@@ -924,10 +670,10 @@ function renderSingle(main, t) {
     </div>
   </section>
   <div class="grid2">
-    ${card(2, M.bulge, legendHTML([{ name: 'outward deflection (smoothed)', color: css('--change') }, { name: 'less smoothed', color: css('--change') + '59' }, { name: 'same-height subtraction (simple)', color: css('--naive'), cls: 'dash' }]))}
-    ${card(3, M.tilt, legendHTML([{ name: 'tilt change (smoothed)', color: css('--change') }, { name: 'less smoothed', color: css('--change') + '59' }]))}
-    ${card(4, M.bend, legendHTML([{ name: 'bending strain (smoothed)', color: css('--change') }, { name: 'less smoothed (peak values are read from this)', color: css('--change') + '59' }]))}
-    ${card(5, M.zones, legendHTML([{ name: 'share of the bulge', color: css('--change') }, { name: 'share of the bending', color: css('--energy') }]),
+    ${card(2, M.bulge)}
+    ${card(3, M.tilt)}
+    ${card(4, M.bend)}
+    ${card(5, M.zones,
       `<details class="check" style="margin-top:12px"><summary>Data check</summary><ul>${M.quality.map((qq) => `<li>${qq}</li>`).join('')}</ul></details>`)}
   </div>`;
 
@@ -939,9 +685,6 @@ function renderSingle(main, t) {
   });
   $('rangeReset').onclick = () => { t.ov = {}; t.rangeError = null; runAnalysis(t); render(); };
   wireCharts(main);
-  main.querySelectorAll('.png').forEach((b) => { b.onclick = () => savePNG(b.closest('.card').querySelector('.chartwrap'), b.dataset.name); });
-  $('colorBy').onchange = (e) => { S.settings.colorBy = e.target.value; saveSettings(); renderMain(); };
-  $('showRaw').onchange = (e) => { S.settings.showRaw = e.target.checked; saveSettings(); renderMain(); };
   $('dlProfile').onclick = () => {
     const Dd = disp(t, sm), mt = res.matched;
     const head = ['arc_from_rim_mm', 'height_above_rim_pct', 'z_inflated_mm', 'z_loaded_mm', 'u_inflated_mm', 'u_loaded_mm',
@@ -1083,9 +826,9 @@ function compareModel(shown, o = {}) {
     const D = disp(t, S.settings.smoothMm);
     return { name: t.label, x: get(D, t.res), y: pctFromRim(t.res, D.matched.z_inf), color: sc(t), width: 2.4, hover: true, unit, dec };
   });
-  const legendItems = forReport ? shown.map((t) => ({ name: t.label, color: sc(t) })) : null;
-  const common = { w: 520, h: forReport ? 440 : 420, yDomain: [0, 100], yFmt: pctFmt, yFlip: S.settings.rimDraw === 'top', yName: 'height above rim',
-    yLabel: 'height above the rim (% of sidewall)', vlines: [0], legendItems };
+  const legend = shown.map((t) => ({ name: t.label, color: sc(t) }));
+  const common = { w: 520, h: forReport ? 440 : 420, yDomain: [0, 100], yFmt: 'pct', yFlip: S.settings.rimDraw === 'top', yName: 'height above rim',
+    yLabel: 'height above the rim (% of sidewall)', vlines: [0], legend, sync: 'compare' };
   const ext = (arr, pickMax) => { let k = -1; arr.forEach((v, i) => { if (v != null && (k < 0 || (pickMax ? v > arr[k] : v < arr[k]))) k = i; }); return k; };
   const many = shown.length > 1;
 
@@ -1093,7 +836,7 @@ function compareModel(shown, o = {}) {
   const kHi = ext(peaks, true), kLo = ext(peaks, false);
   const bulge = {
     title: 'How far each tire’s sidewall pushes out',
-    svg: lineChart({ ...common, title: 'Bulge', xLabel: 'outward deflection (mm)', series: lines((D) => D.matched.du, 'mm') }),
+    svg: lineChart({ ...common, title: 'Bulge comparison', fileName: 'compare_bulge', xLabel: 'outward deflection (mm)', series: lines((D) => D.matched.du, 'mm') }),
     what: 'Outward deflection along the sidewall, one line per tire, from the rim (0%) to the shoulder (100%).',
     how: 'Further right = more bulge at that height. A peak lower down means the tire bulges close to the rim; a flatter line means the bulge is spread out.',
     mine: many ? `<b>${esc(shown[kHi].label)}</b> pushes out the most (${f(peaks[kHi], 1)} mm at ${pctFmt(pctAt(shown[kHi].res, shown[kHi].res.metrics.matched.inflated_z_of_that_point))} height); <b>${esc(shown[kLo].label)}</b> the least (${f(peaks[kLo], 1)} mm).` : 'Add a second tire to compare.',
@@ -1102,7 +845,7 @@ function compareModel(shown, o = {}) {
   const sHi = ext(strains, true), sLo = ext(strains, false);
   const bend = {
     title: 'Where each tire bends hardest',
-    svg: lineChart({ ...common, title: 'Bending', xLabel: 'bending strain at the surface (%)', series: lines((D) => D.strainS, '%') }),
+    svg: lineChart({ ...common, title: 'Bending comparison', fileName: 'compare_bending', xLabel: 'bending strain at the surface (%)', series: lines((D) => D.strainS, '%') }),
     what: 'Estimated bending strain of the outer rubber along the sidewall, one line per tire.',
     how: 'Peaks are the spots that flex most with every wheel turn, where fatigue cracks and heat start. Compare both the height of the peaks and where they sit.',
     mine: many && sHi >= 0 ? `<b>${esc(shown[sHi].label)}</b> has the hardest bending (${f(strains[sHi], 1)}%${shown[sHi].row.peak_bending_height_mm != null ? ` at ${pctFmt(pctAt(shown[sHi].res, shown[sHi].row.peak_bending_height_mm))} height` : ''}); <b>${esc(shown[sLo].label)}</b> the gentlest (${f(strains[sLo], 1)}%).` : '',
@@ -1111,7 +854,7 @@ function compareModel(shown, o = {}) {
   const tHi = ext(tilts, true);
   const tilt = {
     title: 'How much each tire’s sidewall tilts',
-    svg: lineChart({ ...common, title: 'Tilt', xLabel: 'tilt change (degrees), + = leans further out', series: lines((D) => D.tiltS, '°', 0) }),
+    svg: lineChart({ ...common, title: 'Tilt comparison', fileName: 'compare_tilt', xLabel: 'tilt change (degrees), + = leans further out', series: lines((D) => D.tiltS, '°', 0) }),
     what: 'How much each part of the sidewall rotates under load, one line per tire.',
     how: 'Right of the centre line = leans further outward, left = inward. Bigger swings mean more twisting of the rubber.',
     mine: many ? `<b>${esc(shown[tHi].label)}</b> twists the most (${f(tilts[tHi], 0)}°).` : '',
@@ -1122,9 +865,9 @@ function compareModel(shown, o = {}) {
     const mHi = ext(mv, true), mLo = ext(mv, false);
     return {
       key: met.key, title: met.name,
-      svg: barChart({ title: met.name, w: 520, ml: 170, unit: met.unit === '°' ? '°' : met.unit ? ` ${met.unit}` : '', dec: met.dec,
+      svg: barChart({ title: met.name, fileName: `compare_${met.key}`, rowName: 'tire', w: 520, ml: 170, unit: met.unit === '°' ? '°' : met.unit ? ` ${met.unit}` : '', dec: met.dec,
         xLabel: `${met.name}${met.unit ? ` (${met.unit})` : ''}`, barH: 18,
-        rows: shown.map((t) => ({ label: t.label.length > 26 ? `${t.label.slice(0, 25)}…` : t.label })),
+        rows: shown.map((t) => ({ label: t.label.length > 26 ? `${t.label.slice(0, 25)}…` : t.label, full: t.label, group: t.label })),
         groups: [{ name: met.name, colors: shown.map(sc), values: mv }] }),
       what: `${esc(met.name)}: ${esc(met.say)}.`,
       how: `One bar per tire, in the tire's colour.${forReport ? '' : ' Hover a bar for the exact value.'}`,
@@ -1136,7 +879,7 @@ function compareModel(shown, o = {}) {
 }
 
 function renderCompare(main) {
-  charts.clear();
+  clearCharts();
   const inCmp = okTires().filter((t) => t.inCompare);
   const shown = charted();
   if (inCmp.length < 1) {
@@ -1153,13 +896,12 @@ function renderCompare(main) {
     });
   }
   const table = `<div class="tablewrap"><table class="cmp"><thead><tr>${COLS.map((c) => `<th data-k="${c.key}" title="${esc(c.full || c.name)}">${esc(c.name)}${S.sort.key === c.key ? (S.sort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead>
-    <tbody>${rows.map(({ t, r }) => `<tr><td title="${esc(t.name)}"><span class="dot ${t.slot != null ? '' : 'none'}" style="${t.slot != null ? `background:var(--s${t.slot + 1})` : ''};margin-right:6px;vertical-align:-1px"></span>${esc(t.label)}${t.res.metrics.range.manual ? ' <span class="badge adj" title="analysis range adjusted by hand">adjusted</span>' : ''}</td>${COLS.slice(1).map((c) => `<td>${f(val(r, c), c.dec)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+    <tbody>${rows.map(({ t, r }) => `<tr data-name="${esc(t.label)}"><td title="${esc(t.name)}"><span class="dot ${t.slot != null ? '' : 'none'}" style="${t.slot != null ? `background:var(--s${t.slot + 1})` : ''};margin-right:6px;vertical-align:-1px"></span>${esc(t.label)}${t.res.metrics.range.manual ? ' <span class="badge adj" title="analysis range adjusted by hand">adjusted</span>' : ''}</td>${COLS.slice(1).map((c) => `<td>${f(val(r, c), c.dec)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
   const sc = (t) => css(`--s${t.slot + 1}`);
   const C = compareModel(shown, { colorOf: sc });
   const met = C.metrics[0];
-  const lg = legendHTML(shown.map((t) => ({ name: t.label, color: sc(t) })));
   const overflow = inCmp.length > shown.length ? `<p class="note warn">Charts show ${shown.length} of ${inCmp.length} ticked tires (8 colours at a time). Untick one to bring another into the charts; the table shows all of them.</p>` : '';
-  const card = (sec, name, head = '', legend = lg) => `<section class="card"><div class="cardhead"><h3>${sec.title}</h3><div class="opts">${head}<button class="btn ghost png" data-name="${name}">Save PNG</button></div></div>${legend}${sec.svg}
+  const card = (sec, name, head = '') => `<section class="card" data-name="${name}"><div class="cardhead"><h3>${sec.title}</h3><div class="opts">${head}</div></div>${sec.svg}
       ${explainHTML(sec.what, sec.how, sec.mine, 'In this comparison')}</section>`;
   main.innerHTML = `
   <section class="panel first">
@@ -1174,14 +916,14 @@ function renderCompare(main) {
   <div class="grid2">
     ${card(C.bulge, 'compare_bulge')}
     ${card({ ...met, title: 'Pick a number to compare' }, `compare_${met.key}`,
-      `<select id="cmpMetric" class="ctl">${METRICS.map((mm) => `<option value="${mm.key}" ${mm.key === met.key ? 'selected' : ''}>${esc(mm.name)}</option>`).join('')}</select>`, '')}
+      `<select id="cmpMetric" class="ctl">${METRICS.map((mm) => `<option value="${mm.key}" ${mm.key === met.key ? 'selected' : ''}>${esc(mm.name)}</option>`).join('')}</select>`)}
     ${card(C.bend, 'compare_bending')}
     ${card(C.tilt, 'compare_tilt')}
   </div>`;
 
   wireCharts(main);
   main.querySelectorAll('th[data-k]').forEach((th) => { th.onclick = () => { const k = th.dataset.k; S.sort = { key: k, dir: S.sort.key === k ? -S.sort.dir : -1 }; renderMain(); }; });
-  main.querySelectorAll('.png').forEach((b) => { b.onclick = () => savePNG(b.closest('.card').querySelector('.chartwrap'), b.dataset.name); });
+  main.querySelectorAll('tr[data-name]').forEach((tr) => { tr.onmouseenter = () => highlightAll(tr.dataset.name); tr.onmouseleave = () => highlightAll(null); });
   $('cmpMetric').onchange = (e) => { S.cmpMetric = e.target.value; renderMain(); };
   $('exportCmp').onclick = () => exportSummary(inCmp);
 }
@@ -1218,6 +960,14 @@ function howtoHTML() {
   <h3>Comparing tires</h3>
   <p>Choose several files at once (or keep adding). Every file is analysed the same way. Tick the files you want in the Compare tab; each ticked tire gets its own colour.
   Compare tires at the same load and pressure. Use “Download summary (CSV)” to take the numbers into Excel.</p>
+  <h3>Working with the charts</h3>
+  <dl>
+    <dt>Read values</dt><dd>Hover a chart: a line follows the mouse and a box lists every curve's value at that height. Charts of the same tire follow each other, so you see the bulge, tilt and bending at the same height at once.</dd>
+    <dt>Zoom and move</dt><dd>Drag a box over the part you want to see. Use ＋ / － on the chart's toolbar, or Ctrl + mouse wheel. Shift + drag moves the view. Double-click (or ⟲) goes back to the full chart.</dd>
+    <dt>Pin readings</dt><dd>Click a chart to pin a reading at that height (click the line again to remove it). Pinned values collect in a small table under the chart; “Copy for Excel” puts them on the clipboard.</dd>
+    <dt>Show or hide curves</dt><dd>Click an entry in a chart's legend to hide or show that curve; point at it to make it stand out.</dd>
+    <dt>More from each chart</dt><dd>“Full screen” opens the chart large. “Data” shows the numbers behind it, ready to copy or download as CSV. “PNG” saves a picture, “SVG” a vector drawing for slides. On the sidewall-shape chart, “Colour” switches what the rainbow colours show.</dd>
+  </dl>
   <h3>If a file will not import</h3>
   <p>The tool looks for the scan anywhere in the file: the chart inside the report, sheet columns or rows, Excel charts, old .xls files and CSV/text exports.
   If it still cannot find it, the file list says where it looked. Then open “Paste columns”, copy the laser-distance and Z-position columns from Excel and paste them in.
@@ -1235,6 +985,9 @@ render();
 </script>
 <script id="sw-report">
 /*__REPORT__*/
+</script>
+<script type="text/plain" id="sw-report-runtime">
+/*__RUNTIME__*/
 </script>
 </body>
 </html>
