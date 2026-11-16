@@ -1006,7 +1006,47 @@ const SW = (() => {
     return [c(r), c(g), c(b)];
   }
 
+  /** Were the tires tested under the same conditions (rim, load, pressure)?
+   *  items: [{ name, rim, load_daN, pressure_psi }]. Returns
+   *  { notes: [{ key, level: 'warn' | 'info', text, groups: [{ value, names }] }], differs: { rim, load_daN, pressure_psi } }
+   *  The same rules and wording as condition_notes() in sidewall/__main__.py. */
+  const CONDITIONS = [
+    { key: 'rim', what: 'rim', plural: 'rims', why: 'Part of any difference between these tires may come from the rim, not the tire.' },
+    { key: 'load_daN', what: 'load', plural: 'loads', unit: 'daN', tol: 0.02, why: 'A heavier load gives more deflection and bulge; compare “Bulge per mm of deflection” rather than the bulge itself, or test at the same load.' },
+    { key: 'pressure_psi', what: 'pressure', plural: 'pressures', unit: 'psi', tol: 0.02, why: 'Pressure changes stiffness and bulge, so part of any difference may come from the pressure.' },
+  ];
+  const normRim = (v) => (v == null || String(v).trim() === '' ? null : String(v).toUpperCase().replace(/\s+/g, '').replace(/[×*]/g, 'X'));
+  function testConditions(items) {
+    const notes = [], differs = {};
+    if (items.length < 2) return { notes, differs };
+    for (const c of CONDITIONS) {
+      const vals = items.map((it) => (c.unit ? (typeof it[c.key] === 'number' && isFinite(it[c.key]) ? it[c.key] : null) : normRim(it[c.key])));
+      const known = vals.filter((v) => v != null), unknown = items.filter((_, i) => vals[i] == null).map((it) => it.name);
+      const shown = (v) => (!c.unit ? String(v) : c.unit === 'daN' ? `${Math.round(v)} daN (${Math.round((v * 10) / 9.80665)} kg)` : `${Math.round(v)} ${c.unit}`);
+      const groups = [];
+      items.forEach((it, i) => {
+        if (vals[i] == null) return;
+        const k = shown(vals[i]), g = groups.find((x) => x.value === k);
+        if (g) g.names.push(it.name); else groups.push({ value: k, names: [it.name] });
+      });
+      let differ = false;
+      if (known.length > 1) {
+        if (c.unit) { const lo = Math.min(...known), hi = Math.max(...known); differ = hi - lo > c.tol * Math.abs(hi); }
+        else differ = groups.length > 1;
+      }
+      differs[c.key] = differ;
+      const list = groups.map((g) => `${g.value} for ${g.names.join(', ')}`).join('; ');
+      if (differ) notes.push({ key: c.key, level: 'warn', groups, text: `Different ${c.plural}: ${list}. ${c.why}` });
+      if (unknown.length && known.length) {
+        notes.push({ key: c.key, level: 'info', groups, text: `No ${c.what} found for ${unknown.join(', ')}; check it matches the others${groups.length === 1 ? `: ${groups[0].value}` : ''}.` });
+      } else if (!known.length) {
+        notes.push({ key: c.key, level: 'info', groups, text: `No ${c.what} found in the files; make sure the tires were tested ${c.key === 'rim' ? 'on the same rim' : `at the same ${c.what}`}.` });
+      }
+    }
+    return { notes, differs };
+  }
+
   return { readFile, analyze, displayCurves, summaryRow, label, turbo, interp, savgol,
-    parseColumnText, fromColumns, stageLike, parseNum, dropoutMask, FIELD_KEYS };
+    parseColumnText, fromColumns, stageLike, parseNum, dropoutMask, FIELD_KEYS, testConditions };
 })();
 if (typeof module !== 'undefined') module.exports = SW;

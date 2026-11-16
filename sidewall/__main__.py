@@ -67,6 +67,53 @@ def summary_row(r):
     }
 
 
+CONDITIONS = [
+    ("rim", "rim", "rims", None, "Part of any difference between these tires may come from the rim, not the tire."),
+    ("load_daN", "load", "loads", "daN", "A heavier load gives more deflection and bulge; compare \u201cBulge per mm of "
+     "deflection\u201d rather than the bulge itself, or test at the same load."),
+    ("pressure_psi", "pressure", "pressures", "psi",
+     "Pressure changes stiffness and bulge, so part of any difference may come from the pressure."),
+]
+
+
+def condition_notes(rows):
+    """Were the tires tested on the same rim, load and pressure? -> [(level, text)].
+
+    Same rules and wording as testConditions() in web/engine.js: rims must match
+    as written (case and spaces ignored), loads and pressures within 2 %."""
+    notes = []
+    if len(rows) < 2:
+        return notes
+    for key, what, plural, unit, why in CONDITIONS:
+        if unit:
+            vals = [r.get(key) if isinstance(r.get(key), (int, float)) and np.isfinite(r.get(key)) else None for r in rows]
+        else:
+            vals = [str(r.get(key)).upper().replace(" ", "").replace("\u00d7", "X").replace("*", "X")
+                    if r.get(key) not in (None, "") else None for r in rows]
+        known = [v for v in vals if v is not None]
+        unknown = [r["tire"] for r, v in zip(rows, vals) if v is None]
+        groups = {}
+        for r, v in zip(rows, vals):
+            if v is not None:
+                shown = (v if not unit else f"{v:.0f} daN ({v * 10 / 9.80665:.0f} kg)" if unit == "daN"
+                         else f"{v:.0f} {unit}")
+                groups.setdefault(shown, []).append(r["tire"])
+        if unit:
+            differ = len(known) > 1 and max(known) - min(known) > 0.02 * abs(max(known))
+        else:
+            differ = len(groups) > 1
+        listing = "; ".join(f"{k} for {', '.join(n)}" for k, n in groups.items())
+        if differ:
+            notes.append(("warn", f"Different {plural}: {listing}. {why}"))
+        if unknown and known:
+            only = f": {next(iter(groups))}" if len(groups) == 1 else ""
+            notes.append(("info", f"No {what} found for {', '.join(unknown)}; check it matches the others{only}."))
+        elif not known:
+            same = "on the same rim" if key == "rim" else f"at the same {what}"
+            notes.append(("info", f"No {what} found in the files; make sure the tires were tested {same}."))
+    return notes
+
+
 def write_one(r, path, out):
     out.mkdir(parents=True, exist_ok=True)
     (out / "metrics.json").write_text(json.dumps(r.metrics, indent=2, default=float))
@@ -134,7 +181,10 @@ def main(argv=None):
             w = csv.DictWriter(f, fieldnames=list(rows[0]))
             w.writeheader()
             w.writerows(rows)
-        plots.comparison(results, out / "comparison.png")
+        notes = condition_notes(rows)
+        for level, text in notes:
+            print(("CHECK: " if level == "warn" else "note: ") + text)
+        plots.comparison(results, out / "comparison.png", notes=[t for lv, t in notes if lv == "warn"])
     print(f"{len(results)} of {len(files)} file(s) analysed -> {out}/")
 
 

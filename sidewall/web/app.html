@@ -145,6 +145,7 @@ table.cmp tr:hover td { background: var(--hover); }
 .tablewrap { overflow-x: auto; }
 .note { font-size: 12.5px; color: var(--ink2); }
 .warn { color: var(--bad); }
+table.cmp td.diff { color: var(--bad); font-weight: 600; }
 details.check summary { cursor: pointer; font-weight: 600; }
 details.check ul { margin: 8px 0 0; padding-left: 18px; }
 .howto h3 { margin: 16px 0 4px; }
@@ -651,7 +652,7 @@ function tireModel(t, o = {}) {
 
 const DETAIL_FIELDS = [
   ['size', 'Tire size', 'text'], ['brand', 'Brand', 'text'], ['serial', 'Serial', 'text'], ['test_date', 'Test date', 'text'],
-  ['load_daN', 'Load (daN)', 'num'], ['pressure_psi', 'Pressure (psi)', 'num'],
+  ['load_daN', 'Load (daN)', 'num'], ['pressure_psi', 'Pressure (psi)', 'num'], ['rim', 'Rim', 'text'],
   ['radial_deflection_mm', 'Radial deflection from the machine (mm)', 'num'], ['horizontal_deflection_mm', 'Horizontal deflection, lab report (mm)', 'num'],
 ];
 
@@ -849,11 +850,16 @@ const METRICS = [
 ];
 const COLS = [
   { key: 'tire', name: 'Tire' },
-  { key: 'load_kg', name: 'Load (kg)', dec: 0, get: (r) => kg(r.load_daN) },
-  { key: 'pressure_psi', name: 'Pressure (psi)', dec: 0 },
+  { key: 'load_kg', name: 'Load (kg)', dec: 0, get: (r) => kg(r.load_daN), cond: 'load_daN' },
+  { key: 'pressure_psi', name: 'Pressure (psi)', dec: 0, cond: 'pressure_psi' },
+  { key: 'rim', name: 'Rim', text: true, cond: 'rim' },
   ...METRICS.map((mm) => ({ key: mm.key, name: `${mm.short || mm.name}${mm.unit ? ` (${mm.unit})` : ''}`, full: mm.name, dec: mm.dec, abs: mm.abs })),
 ];
 const val = (row, c) => { const v = c.get ? c.get(row) : row[c.key]; return c.abs && v != null ? Math.abs(v) : v; };
+/** Same rim, load and pressure? (rules in engine.js testConditions; edits in Test details count) */
+const conditionsOf = (tires) => SW.testConditions(tires.map((t) => ({ name: t.label, rim: t.row.rim, load_daN: t.row.load_daN, pressure_psi: t.row.pressure_psi })));
+const conditionNotesHTML = (cond) => cond.notes.map((n) => (n.level === 'warn'
+  ? `<p class="note warn"><b>Check:</b> ${esc(n.text)}</p>` : `<p class="note">${esc(n.text)}</p>`)).join('');
 
 /** Charts and plain-English texts comparing tires (Compare tab and reports).
  *  colorOf(t) gives each tire's colour; metricKeys picks the bar charts. */
@@ -932,8 +938,13 @@ function renderCompare(main) {
       return (va > vb ? 1 : va < vb ? -1 : 0) * S.sort.dir;
     });
   }
+  const cond = conditionsOf(inCmp);
+  const cellOf = (r, c) => {
+    const v = val(r, c), diff = c.cond && cond.differs[c.cond];
+    return `<td${diff ? ' class="diff" title="Not the same for all tires in this comparison"' : ''}>${c.text ? esc(v ?? '–') : f(v, c.dec)}</td>`;
+  };
   const table = `<div class="tablewrap"><table class="cmp"><thead><tr>${COLS.map((c) => `<th data-k="${c.key}" title="${esc(c.full || c.name)}">${esc(c.name)}${S.sort.key === c.key ? (S.sort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead>
-    <tbody>${rows.map(({ t, r }) => `<tr data-name="${esc(t.label)}"><td title="${esc(t.name)}"><span class="dot ${t.slot != null ? '' : 'none'}" style="${t.slot != null ? `background:var(--s${t.slot + 1})` : ''};margin-right:6px;vertical-align:-1px"></span>${esc(t.label)}${t.res.metrics.range.manual ? ' <span class="badge adj" title="analysis range adjusted by hand">adjusted</span>' : ''}</td>${COLS.slice(1).map((c) => `<td>${f(val(r, c), c.dec)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+    <tbody>${rows.map(({ t, r }) => `<tr data-name="${esc(t.label)}"><td title="${esc(t.name)}"><span class="dot ${t.slot != null ? '' : 'none'}" style="${t.slot != null ? `background:var(--s${t.slot + 1})` : ''};margin-right:6px;vertical-align:-1px"></span>${esc(t.label)}${t.res.metrics.range.manual ? ' <span class="badge adj" title="analysis range adjusted by hand">adjusted</span>' : ''}</td>${COLS.slice(1).map((c) => cellOf(r, c)).join('')}</tr>`).join('')}</tbody></table></div>`;
   const sc = (t) => css(`--s${t.slot + 1}`);
   const C = compareModel(shown, { colorOf: sc });
   const met = C.metrics[0];
@@ -944,9 +955,10 @@ function renderCompare(main) {
   <section class="panel first">
     <div class="titlebar"><h2>Compare ${inCmp.length} tire${inCmp.length > 1 ? 's' : ''}</h2><button class="btn" id="exportCmp">Download table (CSV)</button></div>
     ${overflow}
+    ${conditionNotesHTML(cond)}
     ${table}
     ${explainHTML(
-      'One row per tire, with the key numbers from each file. Load and pressure are shown so you only compare like with like.',
+      'One row per tire, with the key numbers from each file. Load, pressure and rim are shown so you only compare like with like; any of them that differ between the tires are shown in red, with a note above the table.',
       'Click a column heading to sort by it. Radial deflection and stiffness describe the whole tire; bulge, tilt and bending describe how the sidewall behaves. Smaller bulge and bending usually mean a calmer, cooler-running sidewall.',
       null)}
   </section>

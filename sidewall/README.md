@@ -24,7 +24,13 @@ uploaded and it works offline.
   lines on the "scan as recorded" chart or typing a height.
 - **Orientation**: every chart, in the tool, the reports and the Python figures,
   puts the rim at the top and the tread / flat contact at the bottom.
-- **Compare tires**: sortable table, overlays, pick-a-metric bar chart, CSV export.
+- **Compare tires**: sortable table (with load, pressure and rim), overlays,
+  pick-a-metric bar chart, CSV export.
+- **Same test conditions?** When compared tires were tested on different rims,
+  loads or pressures (loads and pressures more than 2 % apart), the values are
+  shown in red and a "Check:" note says which tire used what. The same notes
+  appear in the HTML / PDF report and the Python batch output. Rim, load and
+  pressure can be filled in or corrected under "Test details".
 - **Interactive charts** (tool and HTML report): hover read-out with crosshair
   and dots, linked across a tire's charts; drag-box zoom, +/- buttons,
   Ctrl+wheel, Shift+drag pan, double-click reset; click to pin readings (table,
@@ -86,7 +92,8 @@ python -m sidewall report.xlsx --edge-inflated 225 --z-start 15
 
 Per file: `metrics.json`, `zones.csv`, `matched_profile.csv`, `raw_scan.csv`,
 `overview.png`, `data_quality.png`. With 2+ files: `comparison.csv` (same
-columns as the browser tool's export) and `comparison.png`. Unreadable files are
+columns as the browser tool's export) and `comparison.png`; different rims, loads or
+pressures are printed as "CHECK:" lines and shown on `comparison.png`. Unreadable files are
 skipped with the reason.
 
 ## Method

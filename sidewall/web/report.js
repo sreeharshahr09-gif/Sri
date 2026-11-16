@@ -108,16 +108,21 @@ function buildReportBlocks(list) {
   try {
     const B = [], sec = REPORT.sections, many = list.length > 1;
     const colorOf = (t) => css(`--s${(list.indexOf(t) % 8) + 1}`);
+    // same rim, load and pressure? warnings go in the summary and again over the comparison charts
+    const cond = conditionsOf(list);
+    const condBlocks = cond.notes.map((n) => (n.level === 'warn'
+      ? { type: 'p', warn: true, html: `<b>Check:</b> ${esc(n.text)}` } : { type: 'p', small: true, html: esc(n.text) }));
     B.push({ type: 'cover' });
 
     if (sec.summary) {
       B.push({ type: 'h1', text: 'Summary' });
       B.push({ type: 'p', html: highlights(list) });
-      B.push({ type: 'table', head: ['Tire', 'Load (daN)', 'Pressure (psi)', 'Radial defl. (mm)', 'Rim drop, scan (mm)', 'Bulge (mm)', 'Stiffness (N/mm)', 'Peak bending (%)', 'Bending at (% from rim)'],
-        widths: [2.6, 1, 1, 1, 1, 1.1, 1.1, 1, 1.1], align: 'lrrrrrrrr',
-        rows: list.map((t) => { const r = t.row; return [t.label, f(r.load_daN, 0), f(r.pressure_psi, 0), f(r.radial_deflection_lab_mm, 1), f(r.rim_drop_scan_mm, 1),
+      B.push(...condBlocks);
+      B.push({ type: 'table', head: ['Tire', 'Load (daN)', 'Pressure (psi)', 'Rim', 'Radial defl. (mm)', 'Rim drop, scan (mm)', 'Bulge (mm)', 'Stiffness (N/mm)', 'Peak bending (%)', 'Bending at (% from rim)'],
+        widths: [2.15, 0.85, 1.15, 0.95, 0.95, 1, 1, 1.05, 0.95, 1.05], align: 'lrrlrrrrrr',
+        rows: list.map((t) => { const r = t.row; return [t.label, f(r.load_daN, 0), f(r.pressure_psi, 0), r.rim ?? '–', f(r.radial_deflection_lab_mm, 1), f(r.rim_drop_scan_mm, 1),
           f(r.horizontal_deflection_smoothed_mm, 1), f(r.vertical_stiffness_N_per_mm, 0), f(r.peak_bending_strain_pct, 1), r.peak_bending_height_mm != null ? f(pctAt(t.res, r.peak_bending_height_mm), 0) : '–']; }),
-        raw: list.map((t) => { const r = t.row; return [null, r.load_daN, r.pressure_psi, r.radial_deflection_lab_mm, r.rim_drop_scan_mm, r.horizontal_deflection_smoothed_mm,
+        raw: list.map((t) => { const r = t.row; return [null, r.load_daN, r.pressure_psi, undefined, r.radial_deflection_lab_mm, r.rim_drop_scan_mm, r.horizontal_deflection_smoothed_mm,
           r.vertical_stiffness_N_per_mm, r.peak_bending_strain_pct, r.peak_bending_height_mm != null ? pctAt(t.res, r.peak_bending_height_mm) : null]; }),
         names: list.map((t) => t.label), targets: list.map((t) => `tire${t.id}`), sortable: true });
       B.push({ type: 'p', small: true, html: 'Radial deflection is the machine value from each file. Rim drop is how far the rim-side starting point of the sidewall moved down between the inflated and the loaded scan. Bulge is the outward push of the widest point (smoothed). Stiffness = load ÷ radial deflection. Bending is the estimated surface strain where the sidewall flexes most; its position is given as % of the way from the rim to the tread end.' });
@@ -127,6 +132,7 @@ function buildReportBlocks(list) {
       const shown = list.slice(0, 8);
       const C = compareModel(shown, { forReport: true, colorOf, metricKeys: ['vertical_stiffness_N_per_mm', 'horizontal_deflection_smoothed_mm', 'peak_bending_strain_pct', 'rim_drop_scan_mm'] });
       B.push({ type: 'h1', text: 'Comparison', pageBreak: true });
+      B.push(...condBlocks.filter((b) => b.warn));
       if (list.length > 8) B.push({ type: 'p', small: true, html: `Charts show the first 8 of ${list.length} tires; the summary table lists all of them.` });
       const fig = (s) => ({ title: s.title, chart: s.svg, svgs: [chartStatic(s.svg)], caption: captionHTML(s, 'In this comparison') });
       B.push({ type: 'figrow', items: [fig(C.bulge), fig(C.bend)] });
@@ -208,12 +214,13 @@ function highlights(list) {
   add('horizontal_deflection_smoothed_mm', false, 'smallest bulge:', 'mm', 1);
   add('peak_bending_strain_pct', true, 'hardest bending:', '%', 1);
   add('peak_bending_strain_pct', false, 'gentlest bending:', '%', 1);
-  const loads = new Set(list.map((t) => t.row.load_daN).filter((v) => v != null).map((v) => Math.round(v)));
-  const press = new Set(list.map((t) => t.row.pressure_psi).filter((v) => v != null).map((v) => Math.round(v)));
-  const warn = loads.size > 1 || press.size > 1 ? ' <b>Note:</b> the tires were not all tested at the same load and pressure, so compare with care.' : '';
-  const missing = list.filter((t) => t.row.radial_deflection_lab_mm == null).map((t) => `<b>${esc(t.label)}</b>`);
-  const miss = missing.length ? ` No machine radial deflection for ${missing.join(', ')}, so stiffness is not given for ${missing.length > 1 ? 'them' : 'it'}.` : '';
-  return `${list.length} tires analysed.${parts.length ? ` ${parts.join('; ').replace(/^./, (c) => c.toUpperCase())}.` : ''}${miss}${warn}`;
+  // stiffness = load / machine radial deflection; without the machine value it uses the rim drop in the scan
+  const names = (ts) => ts.map((t) => `<b>${esc(t.label)}</b>`).join(', ');
+  const fallback = list.filter((t) => t.row.radial_deflection_lab_mm == null && t.row.vertical_stiffness_N_per_mm != null);
+  const noStiff = list.filter((t) => t.row.vertical_stiffness_N_per_mm == null);
+  const miss = (fallback.length ? ` No machine radial deflection for ${names(fallback)}; ${fallback.length > 1 ? 'their' : 'its'} stiffness uses the rim drop in the scan instead.` : '')
+    + (noStiff.length ? ` No load for ${names(noStiff)}, so stiffness is not given for ${noStiff.length > 1 ? 'them' : 'it'}.` : '');
+  return `${list.length} tires analysed.${parts.length ? ` ${parts.join('; ').replace(/^./, (c) => c.toUpperCase())}.` : ''}${miss}`;
 }
 
 const METHOD_TEXT = [
@@ -260,7 +267,7 @@ function reportHTML(B, list) {
     if (b.type === 'cover') { startSection('Overview', { anchor: 'overview', noHeading: true }); out.push(coverHTML(list)); continue; }
     if (b.type === 'h1') { startSection(b.text, { pb: b.pageBreak, anchor: b.anchor }); continue; }
     if (b.type === 'h2') out.push(`<h2>${esc(b.text)}</h2>`);
-    else if (b.type === 'p') out.push(`<p class="${b.small ? 'small' : ''}">${b.html}</p>`);
+    else if (b.type === 'p') out.push(`<p class="${b.small ? 'small' : ''}${b.warn ? ' callout' : ''}">${b.html}</p>`);
     else if (b.type === 'kv') out.push(`<table class="kv ${b.wide ? 'wide' : ''}">${b.rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${cell(v)}</td></tr>`).join('')}</table>`);
     else if (b.type === 'kv2') {
       const half = Math.ceil(b.rows.length / 2);
@@ -316,6 +323,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 syste
 .rsec.collapsed .rsec-h .fold { transform: rotate(-90deg); }
 h2 { font-size: 15px; margin: 16px 0 6px; }
 p { margin: 0 0 8px; } p.small, figcaption, .side { font-size: 12.5px; color: var(--ink2); }
+p.callout { border-left: 3px solid #eb6834; background: rgba(235, 104, 52, 0.10); padding: 7px 11px; border-radius: 4px; }
 table { border-collapse: collapse; width: 100%; margin: 4px 0 12px; }
 .twrap { overflow-x: auto; }
 table.data th, table.data td { border-bottom: 1px solid var(--border); padding: 5px 7px; vertical-align: top; font-size: 13px; }
@@ -654,7 +662,7 @@ function svgToPdf(pdf, ops, markup, x0, yTop, width) {
 }
 
 // ============================================================== PDF: page layout
-const PC = { ink: [0.043, 0.043, 0.043], ink2: [0.322, 0.318, 0.306], muted: [0.467, 0.463, 0.435], rule: [0.863, 0.859, 0.839], band: [0.941, 0.937, 0.925], accent: [0.165, 0.471, 0.839] };
+const PC = { ink: [0.043, 0.043, 0.043], ink2: [0.322, 0.318, 0.306], muted: [0.467, 0.463, 0.435], rule: [0.863, 0.859, 0.839], band: [0.941, 0.937, 0.925], accent: [0.165, 0.471, 0.839], warn: [0.66, 0.25, 0.05] };
 
 class PdfLayout {
   constructor(pdf) { this.pdf = pdf; this.ml = 46; this.mr = 46; this.mt = 50; this.mb = 56; this.cw = PDF_W - this.ml - this.mr; this.pages = []; this.newPage(); }
@@ -816,7 +824,7 @@ async function reportPDF(B, list) {
       if (R.conclusions) { L.heading('Conclusions', 2); L.para(esc(R.conclusions)); }
     } else if (b.type === 'h1') L.heading(b.text, 1, b.pageBreak);
     else if (b.type === 'h2') L.heading(b.text, 2);
-    else if (b.type === 'p') L.para(b.html, b.small ? { size: 8.4, color: PC.ink2 } : {});
+    else if (b.type === 'p') L.para(b.html, b.small ? { size: 8.4, color: PC.ink2 } : b.warn ? { color: PC.warn } : {});
     else if (b.type === 'kv') L.kv(b.rows, b.wide ? 0.3 : 0.28);
     else if (b.type === 'kv2') L.kv2(b.rows, b.long);
     else if (b.type === 'table') L.table(b.head, b.rows, b.widths, b.align);

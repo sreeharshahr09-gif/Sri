@@ -241,8 +241,10 @@ def _pct_from_rim(r: Result) -> np.ndarray:
     return 100 * (f if r.metrics["assumptions"]["rim_end"] == "bottom" else 1 - f)
 
 
-def comparison(results, path):
-    """Several tires on common axes (first 8; one colour per tire, fixed order)."""
+def comparison(results, path, notes=()):
+    """Several tires on common axes (first 8; one colour per tire, fixed order).
+
+    notes: warnings printed over the charts (e.g. tires tested on different rims)."""
     shown = results[:8]
     fig, ax = plt.subplots(1, 3, figsize=(17, 6.2), layout="constrained")
     for k, r in enumerate(shown):
@@ -273,8 +275,11 @@ def comparison(results, path):
     ax[2].grid(axis="y", visible=False)
     ax[2].set_xlabel("share of the bending (%)")
     ax[2].set_title("Where each tire bends")
+    import textwrap
+    head = [f"Check: {textwrap.fill(n, 170)}" for n in notes]
     if len(results) > len(shown):
-        fig.suptitle(f"First {len(shown)} of {len(results)} tires shown; all are in comparison.csv",
-                     color=INK2, fontsize=10)
+        head.append(f"First {len(shown)} of {len(results)} tires shown; all are in comparison.csv")
+    if head:
+        fig.suptitle("\n".join(head), color="#a8400d" if notes else INK2, fontsize=10, ha="left", x=0.01)
     fig.savefig(path, dpi=110)
     plt.close(fig)
